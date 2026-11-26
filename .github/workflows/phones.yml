@@ -152,6 +152,10 @@ jobs:
 
       - run: flutter pub get --enforce-lockfile
 
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh ios_sim_arm64
+
       # Waits out the boot, or boots the iPhone if that failed, then turns
       # Slide to Type off, which only a booted iPhone accepts, so its
       # introduction doesn't cover the first keyboard.

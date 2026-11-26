@@ -25,6 +25,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../test/fake_kapy_ai.dart';
+import 'keyboard_support.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
 
@@ -108,7 +109,7 @@ void main() {
     final chats = find.byKey(const ValueKey('kapy-ai-page-chats'));
 
     await tester.tap(field);
-    await until(() => tester.view.viewInsets.bottom > 0, 'the keyboard');
+    await settleKeyboard(tester, up: true);
     expect(focused(), isTrue);
     await until(
       () => (above(keyboard()) - 12).abs() < 1,
@@ -117,27 +118,21 @@ void main() {
     await screenshot('kapy-ai-page-keyboard-up', device: true);
 
     await tester.tapAt(tester.getCenter(chats));
-    await until(
-      () => tester.view.viewInsets.bottom == 0,
-      'the keyboard to go down',
-    );
+    await settleKeyboard(tester, up: false);
     expect(focused(), isFalse);
     expect(tester.takeException(), isNull);
     expect(above(bar()), moreOrLessEquals(12, epsilon: 1));
     await screenshot('kapy-ai-page-keyboard-closed', device: true);
 
     await tester.tap(field);
-    await until(() => tester.view.viewInsets.bottom > 0, 'the keyboard again');
+    await settleKeyboard(tester, up: true);
     tester.widget<TextField>(field).controller!.text = 'What is left';
     await until(
       () => (above(keyboard()) - 12).abs() < 1,
       'Ask Kapy AI 12 above the keyboard, typed in',
     );
     await tester.tapAt(tester.getCenter(chats));
-    await until(
-      () => tester.view.viewInsets.bottom == 0,
-      'the keyboard to go down again',
-    );
+    await settleKeyboard(tester, up: false);
     expect(
       above(bar()),
       moreOrLessEquals(12, epsilon: 1),

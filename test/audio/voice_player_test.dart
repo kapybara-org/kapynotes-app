@@ -19,11 +19,15 @@ class FakeBackend implements VoicePlayerBackend {
   Duration? seekedTo;
   double? speed;
 
+  /// Loads that answer only when their completer does, by path.
+  final held = <String, Completer<Duration?>>{};
+
   @override
   Future<Duration?> load(File file) async {
     if (failLoad) throw const FileSystemException('gone');
     loaded.add(file.path);
-    return reports;
+    final hold = held[file.path];
+    return hold == null ? reports : await hold.future;
   }
 
   @override
@@ -186,6 +190,25 @@ void main() {
     expect(player.activeHash, 'b');
     expect(backend.stops, 1);
     expect(player.progressFor('a').value, isNull);
+  });
+
+  test('a late load leaves the next recording alone', () async {
+    // On Windows a load can wait for the player to report the length
+    // (KAP-398), so it can land after the next recording has started.
+    final slow = backend.held[fileA.path] = Completer<Duration?>();
+    final first = player.play('a', from: const Duration(seconds: 4));
+    await pumpEventQueue();
+    backend.reports = const Duration(seconds: 7);
+    await player.play('b');
+    backend.seekedTo = null;
+
+    slow.complete(const Duration(seconds: 10));
+    await first;
+
+    expect(player.activeHash, 'b');
+    expect(player.duration, const Duration(seconds: 7));
+    expect(player.position, Duration.zero);
+    expect(backend.seekedTo, isNull, reason: "not at a's 0:04");
   });
 
   test('pressing play again resumes rather than reloading', () async {

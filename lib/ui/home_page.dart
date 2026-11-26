@@ -266,7 +266,7 @@ class HomePage extends StatefulWidget {
 
   /// Injectable media boundaries keep launch tests independent of a physical
   /// camera and let the real page remember which note owns an interrupted
-  /// Android photo-library result.
+  /// Android camera or photo-library result.
   final ImageFileAcquirer? imageAcquirer;
   final LostImageRetriever? lostImageRetriever;
   final HiddenNotesGate hiddenNotesGate;
@@ -289,7 +289,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const String _pendingImageNoteKey = 'pendingImageNote.v1';
 
-  final FocusNode _desktopShortcutFocus = FocusNode(
+  final FocusScopeNode _desktopShortcutFocus = FocusScopeNode(
     debugLabel: 'desktop-shortcuts',
   );
   final NoteSwitcher _noteSwitcher = NoteSwitcher();
@@ -555,6 +555,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _showTabOf(_selectedId);
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     widget.notes.addListener(_onNotesChanged);
+    widget.dayTabs?.addListener(_onDayTabsChanged);
     if (widget.folders case final folders?) {
       folders.addListener(_onFoldersChanged);
       unawaited(
@@ -606,6 +607,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_statusBarHidden) unawaited(StatusBar.setHidden(false));
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
+    widget.dayTabs?.removeListener(_onDayTabsChanged);
     widget.folders?.removeListener(_onFoldersChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
     widget.account?.removeListener(_offerRecoveryKey);
@@ -817,7 +819,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!AppPlatform.isAndroid) return await acquireNoteImages(context);
       return await acquireNoteImages(
         context,
-        chooseFromLibrary: () => _pickImagesFromAndroidLibrary(noteId),
+        takePhoto: () => _pickImagesOnAndroid(noteId, takeNotePhoto),
+        chooseFromLibrary: () =>
+            _pickImagesOnAndroid(noteId, pickExistingImageFiles),
       );
     } finally {
       if (protectsHiddenSession) _hiddenSystemUiDepth--;
@@ -849,13 +853,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Remembers the target note only for the moment Android leaves Flutter for
-  /// its system photo picker. This durable marker is needed where the operating
-  /// system may reclaim the Activity while another one is choosing photos.
-  Future<List<XFile>> _pickImagesFromAndroidLibrary(String noteId) async {
+  /// its camera or system photo picker. This durable marker is needed where the
+  /// operating system may reclaim the Activity while another one is open.
+  Future<List<XFile>> _pickImagesOnAndroid(
+    String noteId,
+    Future<List<XFile>> Function() pick,
+  ) async {
     widget.store.put(_pendingImageNoteKey, noteId);
     await widget.store.flush();
     try {
-      return await pickExistingImageFiles();
+      return await pick();
     } finally {
       widget.store.put(_pendingImageNoteKey, null);
       unawaited(widget.store.flush());
@@ -1013,6 +1020,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         await recording.finishRecordingAndFlush();
         if (mounted) {
           progress.success('Recording stopped');
+        } else {
+          progress.dismiss();
+        }
+        return;
+      }
+      if (!await recording.hasMicrophone()) {
+        if (mounted) {
+          progress.error('No microphone found');
         } else {
           progress.dismiss();
         }
@@ -1710,7 +1725,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // the real keyboard focus agree, while further Tabs still reach the
       // same held-key session.
       if (selectionPreview && _noteSwitcher.isActive) {
-        _desktopShortcutFocus.requestFocus();
+        _desktopShortcutFocus.requestScopeFocus();
       }
     }
     final paneBefore = _workspace.activePane;
@@ -1765,9 +1780,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Opens an empty pane beside the focused note, for the next note chosen.
+  /// The note's editor lets go of the keyboard first: More hands it back to
+  /// that editor as it closes, which would focus the note's pane again.
   void _splitEditor() {
     if (_usesCompactLayout || _specialMode || !_workspace.canSplit) return;
     final previous = _selectedId;
+    _selectedEditor?.releaseKeyboard();
     setState(() {
       _workspace.split();
       _adoptWorkspaceSelection(previous);
@@ -2097,14 +2115,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _dayOfFreshNote[note.id] ??
       noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
 
-  /// A day picked in the page's week or its month: [notes], its notes, the
-  /// earliest written first, become the tabs, one to a tab and the first in
-  /// front, up to [EditorWorkspace.dayTabLimit] of them, a later day's too,
-  /// though the list leaves that day out until it comes. All of them are lit
-  /// in the list, which stays whole. A day with none opens a page to write on
-  /// it, in the folder in front if there is one. The tabs open before the
-  /// first day was picked come back with the notice's Undo, or a click on the
-  /// day picked.
+  /// A day picked in the page's week or its month: [notes], its notes, become
+  /// the tabs in the day's own order where it has one, pinned tabs first, and
+  /// otherwise the earliest written first. They open one to a tab, the first
+  /// in front, up to [EditorWorkspace.dayTabLimit] of them, a later day's
+  /// too, though the list leaves that day out until it comes. All of them are
+  /// lit in the list, which stays whole. A day with none opens a page to
+  /// write on it, in the folder in front if there is one. The tabs open
+  /// before the first day was picked come back with the notice's Undo, or a
+  /// click on the day picked.
   void _openDay(DateTime day, List<Note> notes) {
     if (day == _workspace.dayInTabs) return _leaveDay();
     if (notes.isEmpty &&
@@ -2120,9 +2139,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!mounted) return;
       final previous = _selectedId;
       final first = _workspace.dayInTabs == null;
-      final opened = _workspace.showDay(day, [
-        for (final note in notes) note.id,
-      ]);
+      final ids = [for (final note in notes) note.id];
+      final opened = _workspace.showDay(
+        day,
+        widget.dayTabs?.arrange(day, ids).order ?? ids,
+      );
       if (keyboard) _holdEditorAutofocus();
       setState(() => _adoptWorkspaceSelection(previous));
       Toast.show(
@@ -2148,6 +2169,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (keyboard) _holdEditorAutofocus();
       return _workspace.leaveDay();
     }, focus: !keyboard);
+  }
+
+  /// A day's tabs arranged anew, here or on another device: the tabs of the
+  /// day open now take the new order, the one in front staying in front.
+  void _onDayTabsChanged() {
+    final day = _workspace.dayInTabs;
+    final tabs = widget.dayTabs;
+    if (day == null || tabs == null) return;
+    final order = tabs.arrange(day, [..._workspace.dayNoteIds]).order;
+    if (_workspace.arrangeDay(order)) setState(() {});
   }
 
   /// Whether the keyboard is on a day of the page's week, there by Tab. A day
@@ -3511,6 +3542,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ? 'kapy-ai-toggle'
           : kapyAccountRowId(ai.accounts.first.kind),
     ),
+    onSignIn: widget.account == null
+        ? null
+        : () => _showSettings(section: SettingsSection.account),
+    onUpgrade: switch (widget.account?.billing) {
+      final billing? => () => unawaited(
+        showProSheet(context, billing: billing),
+      ),
+      null => null,
+    },
     onClose: onClose,
     now: widget.notes.now,
   );
@@ -3825,9 +3865,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         unawaited(
           moveNotesToFolder(
             context,
-            Offset(
-              (window.width - TagPopover.defaultWidth) / 2,
-              commandMenuTop(window),
+            spotAt(
+              Offset(
+                (window.width - TagPopover.defaultWidth) / 2,
+                commandMenuTop(window),
+              ),
             ),
             widget.folders!,
             [note.id],
@@ -3958,8 +4000,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// How many notes the list shows as the filter narrows it, for the bar
   /// over the list, whatever the search has narrowed the list to. By day,
-  /// Notes leaves out a note for a later day until its day.
-  int get _matchingCount {
+  /// Notes leaves out a note for a later day until its day, and so does
+  /// Drawings beside the rail. A [phone] lists every drawing under Recent, so
+  /// its Drawings counts them all.
+  int _matchingCount({required bool phone}) {
     final notes = _filtered(
       _archiveMode
           ? widget.notes.archivedNotes
@@ -3967,7 +4011,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ? widget.notes.hiddenNotes
           : widget.notes.notes,
     );
-    return _space == LibrarySpace.notes &&
+    return (_space == LibrarySpace.notes ||
+                (_space == LibrarySpace.drawings && !phone)) &&
             widget.prefs.notesGrouping == NotesGrouping.byDate
         ? _listedByDay(notes).length
         : notes.length;
@@ -4394,7 +4439,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   setState(() => _pinnedOnly = value),
               windowBar: SidebarWindowBar(
                 title: _listTitle,
-                count: _matchingCount,
+                count: _matchingCount(phone: false),
                 noun: createNoun,
                 onCreate: _createInSpace,
                 newNoteShortcut: newNoteShortcut,
@@ -4827,7 +4872,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Does what the page's More menu names: the window's own actions, then
   /// the folder's in front or the open note's. [at] is where a list or a
   /// field it opens goes.
-  void _runPageAction(String action, Note? note, Offset at) {
+  void _runPageAction(String action, Note? note, MenuSpot at) {
     switch (action) {
       case 'split':
         _splitEditor();
@@ -4936,6 +4981,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The open tabs, under the toolbar while there is more than one.
   Widget _buildTabRow() {
     final front = _workspace.frontTab;
+    final day = _workspace.dayInTabs;
+    final ofDay = _workspace.dayNoteIds;
+    var pinned = const <String>{};
+    if ((day, widget.dayTabs) case (final day?, final tabs?)) {
+      final arranged = tabs.arrange(day, [...ofDay]);
+      pinned = arranged.order.take(arranged.pinned).toSet();
+    }
     return NoteTabRow(
       tabs: [
         for (final tab in _workspace.tabs)
@@ -4947,13 +4999,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 icon: KapyIcons.folderOutlined,
               ),
           ] else if (widget.notes.byId(tab.noteId) case final note?)
-            NoteTab(id: '${tab.id}', title: note.title, icon: _tabIcon(note)),
+            NoteTab(
+              id: '${tab.id}',
+              title: note.title,
+              icon: _tabIcon(note),
+              pinned:
+                  widget.dayTabs != null &&
+                      tab.noteIds.length == 1 &&
+                      ofDay.contains(note.id)
+                  ? pinned.contains(note.id)
+                  : null,
+            ),
       ],
       activeId: front == null ? null : '${front.id}',
       recentIds: [for (final tab in _workspace.recentTabs) '${tab.id}'],
       onSelect: _activateTab,
       onClose: _closeTab,
       onCloseOthers: _closeOtherTabs,
+      onPin: day == null
+          ? null
+          : (id, {required pin}) {
+              final tab = _workspace.tabs.firstWhere(
+                (tab) => '${tab.id}' == id,
+              );
+              if (tab.noteId case final noteId?) {
+                _pinDayTab(
+                  day,
+                  noteId,
+                  pin: pin,
+                  kept: {..._workspace.dayNoteIds},
+                );
+              }
+            },
       // While the tab is split, the chord closes its focused pane first.
       closeShortcut: _workspace.isSplit
           ? null
@@ -5041,14 +5118,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A folder card's menu on its folder's page.
   Future<void> _showFolderMenu(Folder folder, Offset at) async {
-    final action = await showFolderMenu(context, at, folder, newInside: false);
+    var spot = spotAt(at);
+    final action = await showFolderMenu(
+      context,
+      at,
+      folder,
+      newInside: false,
+      onClosed: (placed) => spot = placed,
+    );
     if (action == null || !mounted) return;
-    await _runFolderAction(action, folder, at);
+    await _runFolderAction(action, folder, spot);
   }
 
   /// Does a folder's action from its card or, while it is in front, from the
   /// page's More. [at] is where a list or a field it opens goes.
-  Future<void> _runFolderAction(String action, Folder folder, Offset at) =>
+  Future<void> _runFolderAction(String action, Folder folder, MenuSpot at) =>
       runFolderAction(
         context,
         action,
@@ -5710,7 +5794,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               title: folder?.name ?? _listTitle,
               count: folder != null
                   ? _listedByDay(notes).length
-                  : _matchingCount,
+                  : _matchingCount(phone: true),
               onBack: page ? _showFolders : null,
               trailing: page ? _phoneAccount() : null,
             ),
@@ -5989,7 +6073,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               onList: () =>
                   unawaited(_openPhoneDayNotes(tabsOn, tabs.notes, note.id)),
               onPin: (id, {required pin}) =>
-                  _pinPhoneTab(tabsOn, id, pin: pin, kept: kept),
+                  _pinDayTab(tabsOn, id, pin: pin, kept: kept),
               onMove: (id, to) => _movePhoneTab(tabsOn, id, to, kept: kept),
             ),
       tasks: tasks,
@@ -6130,7 +6214,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  void _pinPhoneTab(
+  void _pinDayTab(
     DateTime day,
     String id, {
     required bool pin,
@@ -6622,7 +6706,7 @@ class _DesktopShortcuts extends StatelessWidget {
   });
 
   final Widget child;
-  final FocusNode focusNode;
+  final FocusScopeNode focusNode;
   final VoidCallback onNewNote;
 
   /// The pair's keys, unless they belong to a field being typed in.
@@ -6778,8 +6862,8 @@ class _DesktopShortcuts extends StatelessWidget {
         ?shortcuts.bindingFor(ShortcutAction.toggleKapyAi)?.activator:
             ?onToggleKapyAi,
       },
-      child: Focus(
-        focusNode: focusNode,
+      child: FocusScope(
+        node: focusNode,
         autofocus: autofocus,
         onKeyEvent: _pairKey,
         child: child,

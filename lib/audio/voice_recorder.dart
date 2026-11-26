@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:record/record.dart';
 
+import '../core/platform.dart';
+
 /// What a recording backend has to be able to do.
 ///
 /// An interface rather than a direct `AudioRecorder` because the controller
@@ -11,6 +13,11 @@ import 'package:record/record.dart';
 /// exercise.
 abstract class VoiceRecorderBackend {
   Future<bool> hasPermission();
+
+  /// Whether this computer has a microphone to record from at all. Asked
+  /// before a recording starts, so one with none says so instead of
+  /// recording silence.
+  Future<bool> hasMicrophone();
 
   /// Begins writing to [path]. The extension decides the container on
   /// Windows, where Media Foundation's sink writer picks its muxer from it,
@@ -70,6 +77,13 @@ class VoiceRecorder implements VoiceRecorderBackend {
 
   @override
   Future<bool> hasPermission() => _live.hasPermission();
+
+  /// A Mac or a Windows PC is asked, and only an empty list is a no. A phone
+  /// always has one.
+  @override
+  Future<bool> hasMicrophone() async =>
+      !(AppPlatform.isMacOS || AppPlatform.isWindows) ||
+      (await _live.listInputDevices()).isNotEmpty;
 
   @override
   Future<void> start(String path) async {

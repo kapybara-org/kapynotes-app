@@ -1,5 +1,11 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:image/image.dart' as img;
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
+import 'package:kapy_notes/data/blob_store.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'package:kapy_notes/audio/voice_recorder.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
@@ -39,6 +45,8 @@ Future<void> pumpLaunch(
   String? action,
   VoiceRecordingController? recording,
   LostImageRetriever? lostImageRetriever,
+  bool systemPicker = false,
+  bool settle = true,
   Duration answerAfter = Duration.zero,
 }) async {
   stubLaunchIntent(action, after: answerAfter);
@@ -54,14 +62,16 @@ Future<void> pumpLaunch(
       prefs: prefs,
       shortcuts: shortcuts,
       recording: recording,
-      imageAcquirer: (_) async {
-        imageRequests.add('camera');
-        return const [];
-      },
+      imageAcquirer: systemPicker
+          ? null
+          : (_) async {
+              imageRequests.add('camera');
+              return const [];
+            },
       lostImageRetriever: lostImageRetriever,
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) await tester.pumpAndSettle();
 }
 
 void main() {
@@ -428,6 +438,87 @@ void main() {
     expect(store.data['pendingImageNote.v1'], isNull);
     expect(notes.notes.single.id, 'last');
   });
+
+  testWidgets('a Capture photo taken while Android killed the app lands in '
+      'its note', (tester) async {
+    final folder = await tester.runAsync(
+      () => Directory.systemTemp.createTemp('kapy_lost_photo_'),
+    );
+    addTearDown(() => folder!.delete(recursive: true));
+    final camera = _KilledCamera();
+    final platform = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = camera;
+    addTearDown(() => ImagePickerPlatform.instance = platform);
+    notes = NotesStore(store, blobs: BlobStore(directory: folder!));
+
+    await pumpLaunch(tester, action: 'capture', systemPicker: true);
+    await tester.tap(find.text('Camera'));
+    await tester.pump();
+    expect(camera.opened, 1);
+
+    // Android reclaims the process while its camera is in front. All that
+    // survives is what was saved before the camera opened.
+    final saved = Map.of(store.data);
+    expect(saved['pendingImageNote.v1'], 'last');
+    await tester.pumpWidget(const SizedBox());
+    store = MemoryStore()..data.addAll(saved);
+    notes = NotesStore(store, blobs: BlobStore(directory: folder));
+    prefs = LayoutPrefs(store);
+    rates = RatesRepository(store);
+    shortcuts = ShortcutPrefs(store);
+    final photo = img.Image(width: 32, height: 24, numChannels: 3);
+    camera.lost = XFile.fromData(
+      Uint8List.fromList(img.encodePng(photo, level: 1)),
+      name: 'photo.png',
+      mimeType: 'image/png',
+    );
+
+    await pumpLaunch(
+      tester,
+      action: 'capture',
+      systemPicker: true,
+      settle: false,
+    );
+    for (var i = 0; i < 100 && notes.byId('last')!.attachments.isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.pump(const Duration(seconds: 5));
+
+    expect(camera.opened, 1, reason: 'the returning photo does not reopen it');
+    expect(notes.notes.single.id, 'last');
+    expect(notes.byId('last')!.attachments, hasLength(1));
+    expect(store.data['pendingImageNote.v1'], isNull);
+  });
+}
+
+/// A camera Android never returns from: the process dies while it is open,
+/// and the photo waits in image_picker's lost-data store for the next launch.
+class _KilledCamera extends ImagePickerPlatform
+    with MockPlatformInterfaceMixin {
+  int opened = 0;
+  XFile? lost;
+
+  @override
+  Future<XFile?> getImageFromSource({
+    required ImageSource source,
+    ImagePickerOptions options = const ImagePickerOptions(),
+  }) {
+    expect(source, ImageSource.camera);
+    opened++;
+    return Completer<XFile?>().future;
+  }
+
+  @override
+  Future<LostDataResponse> getLostData() async {
+    final file = lost;
+    lost = null;
+    return file == null
+        ? LostDataResponse.empty()
+        : LostDataResponse(file: file, files: [file], type: RetrieveType.image);
+  }
 }
 
 /// A recorder with no microphone behind it, and no ticker worth waiting on.
@@ -442,6 +533,9 @@ class _SilentRecorder implements VoiceRecorderBackend {
 
   @override
   Future<bool> hasPermission() async => permitted;
+
+  @override
+  Future<bool> hasMicrophone() async => true;
 
   @override
   Future<void> start(String path) async => startedAt = path;

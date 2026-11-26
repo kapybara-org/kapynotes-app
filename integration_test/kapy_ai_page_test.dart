@@ -18,6 +18,7 @@ import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../test/fake_kapy_ai.dart';
+import 'keyboard_support.dart';
 import 'screenshot.dart';
 
 void main() {
@@ -143,7 +144,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       FocusManager.instance.primaryFocus?.unfocus();
-      await tester.pumpAndSettle();
+      await settleKeyboard(tester, up: false);
       await tester.tap(find.bySemanticsLabel('Answers with Kapy AI Cloud'));
       await save('picker');
       expect(tester.takeException(), isNull);
