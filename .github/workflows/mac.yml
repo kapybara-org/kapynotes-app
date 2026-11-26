@@ -69,6 +69,10 @@ jobs:
 
       - run: flutter pub get --enforce-lockfile
 
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh
+
       - name: Integration tests on the Mac
         env:
           TESTS: ${{ inputs.tests }}

@@ -71,6 +71,11 @@ jobs:
 
       - run: flutter pub get
 
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - shell: bash
+        run: bash tool/ci/gemma_natives.sh
+
       # Platform-independent, so it need not run on both platforms. The test
       # suite is deliberately absent: the goldens under test/goldens/ render
       # with macOS system fonts by design, so they cannot pass on Windows.
@@ -137,6 +142,10 @@ jobs:
           key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ hashFiles('pubspec.lock') }}
 
       - run: flutter pub get
+
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh
 
       # `mac-unsigned` builds the app ad-hoc signed and wraps it in the real
       # branded disk image, using the committed packaging/dmg/DS_Store rather
@@ -241,6 +250,10 @@ jobs:
       - run: flutter --version
 
       - run: flutter pub get
+
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh
 
       # The LGPL ffmpeg that every package ships in libexec/. It changes only
       # with its script, so a cache keyed on the script's hash skips the
