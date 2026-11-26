@@ -716,6 +716,20 @@ void main() {
       }
     });
 
+    testWidgets('draws its bars at the floor when it has no waveform', (
+      tester,
+    ) async {
+      for (final platform in [TargetPlatform.macOS, TargetPlatform.iOS]) {
+        on(platform);
+        await tester.pumpWidget(harness(recording(), width: 350));
+        expect(
+          tester.renderObject(waveform()),
+          paintsExactlyCountTimes(#drawLine, 32),
+          reason: '$platform',
+        );
+      }
+    });
+
     testWidgets('reads the time so far and the total while it plays', (
       tester,
     ) async {

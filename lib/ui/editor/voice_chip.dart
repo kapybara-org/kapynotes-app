@@ -907,20 +907,24 @@ class VoiceWaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final levels = peaks;
     // A recording from a client that never wrote peaks, or one still being
-    // adopted: a flat line reads as "no waveform", not as silence.
-    if (levels == null || levels.isEmpty || size.width <= 0) return;
-    final count = bars ?? levels.length;
+    // adopted, draws its bars at the floor, so it still reads as a player
+    // rather than a gap before its length.
+    final levels = (peaks?.isEmpty ?? true) ? null : peaks;
+    final count = bars ?? levels?.length;
+    if (count == null || size.width <= 0) return;
 
     final barWidth = size.width / count;
     final head = (progress ?? 0) * size.width;
     final paint = Paint()..strokeCap = StrokeCap.round;
 
     for (var i = 0; i < count; i++) {
-      final from = i * levels.length ~/ count;
-      final to = math.max(from + 1, (i + 1) * levels.length ~/ count);
-      final level = levels.sublist(from, to).reduce(math.max) / 255;
+      var level = 0.0;
+      if (levels != null) {
+        final from = i * levels.length ~/ count;
+        final to = math.max(from + 1, (i + 1) * levels.length ~/ count);
+        level = levels.sublist(from, to).reduce(math.max) / 255;
+      }
       // A floor, so silence is still a visible line rather than a gap.
       final height = (size.height * level).clamp(2.0, size.height);
       final x = i * barWidth + barWidth / 2;
