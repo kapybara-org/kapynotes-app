@@ -6301,13 +6301,29 @@ void main() {
         await pumpWithPair(tester);
         await tester.tap(find.byKey(const ValueKey('rail-tasks')));
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+      });
+
+      testWidgets('on ${platform.name}, ↵ stops choosing and starts your pick '
+          'so far', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpWithPair(tester);
+        await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(find.text('Most important so far'), findsOneWidget);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
       });
@@ -6327,10 +6343,10 @@ void main() {
         );
 
         await press(tester, ShortcutAction.showTasks);
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
       });
 
       testWidgets('on ${platform.name}, New task from Notes still puts the '
@@ -6344,15 +6360,15 @@ void main() {
         expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
 
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
       });
     }
   });

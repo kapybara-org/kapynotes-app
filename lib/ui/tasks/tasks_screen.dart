@@ -72,6 +72,7 @@ class TasksScreen extends StatefulWidget {
     this.scrollController,
     this.onFilter,
     this.toolbar,
+    this.explainPair = true,
   });
 
   /// A window's page bar over the list. A task's details stand beside the
@@ -122,6 +123,11 @@ class TasksScreen extends StatefulWidget {
 
   /// Printed on the add row at rest.
   final String? newTaskShortcut;
+
+  /// Whether a round's first pair says in a line how choosing works: on a
+  /// desktop until How Tasks works is put away, and always on a phone, which
+  /// has no such card.
+  final bool explainPair;
 
   @override
   State<TasksScreen> createState() => TasksScreenState();
@@ -310,7 +316,8 @@ class TasksScreenState extends State<TasksScreen> {
     return true;
   }
 
-  /// esc: start with your choice so far, while Start with shows.
+  /// ↵ or esc: stop choosing and start your pick so far, while Stop choosing
+  /// shows.
   bool startEarly() {
     final pair = _pair;
     if (pair == null || pair.pairsLeft == 0) return false;
@@ -767,6 +774,7 @@ class TasksScreenState extends State<TasksScreen> {
               now: now,
               labelOf: labelOf,
               justDone: _tasks.justDone,
+              explain: widget.explainPair,
               phone: phone,
               onKeep: () => _tasks.keepChoice(stage),
               onTake: () => _tasks.takeNext(stage),

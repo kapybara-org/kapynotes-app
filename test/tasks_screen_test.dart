@@ -13,6 +13,7 @@ import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/ui/note_day_scope.dart';
 import 'package:kapy_notes/ui/tasks/task_choice.dart';
+import 'package:kapy_notes/ui/tasks/task_choice_cards.dart';
 import 'package:kapy_notes/ui/tasks/task_details_sheet.dart';
 import 'package:kapy_notes/ui/tasks/task_marks.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
@@ -56,6 +57,7 @@ void main() {
     NoteDayStore? days,
     double textScale = 1,
     Size? size,
+    bool explainPair = true,
   }) async {
     await tester.binding.setSurfaceSize(
       size ?? (phone ? const Size(393, 852) : const Size(900, 1000)),
@@ -83,6 +85,7 @@ void main() {
               onFilter: onFilter,
               newTaskShortcut: '⌘N',
               phone: phone,
+              explainPair: explainPair,
             ),
           ),
         ),
@@ -606,30 +609,42 @@ void main() {
   });
 
   group('the pair', () {
-    testWidgets('with nothing chosen: the first task on the list against the '
-        'next, the count, Start with, and the rest below', (tester) async {
-      await setUpTasks(tester, errands);
-      await pumpScreen(tester);
+    testWidgets(
+      'with nothing chosen: the first task on the list against the '
+      'next with "or" between, the count, Stop choosing, and the rest below',
+      (tester) async {
+        await setUpTasks(tester, errands);
+        await pumpScreen(tester);
 
-      expect(find.text('What do you want to work on next?'), findsOneWidget);
-      expect(inPair('left', 'First on the list'), findsOneWidget);
-      expect(inPair('left', 'Send the report'), findsOneWidget);
-      expect(inPair('right', 'Next on the list'), findsOneWidget);
-      expect(inPair('right', 'Book flights'), findsOneWidget);
-      expect(find.text('2 more pairs after this'), findsOneWidget);
-      expect(
-        find.text('The one you don’t pick waits its turn.'),
-        findsOneWidget,
-      );
-      expect(find.text('Start with Send the report'), findsOneWidget);
-      expect(find.text('esc'), findsOneWidget);
-      expect(find.text('Up next'), findsNothing);
-      expect(box('Call the garage'), findsOneWidget);
-      expect(box('Send the report'), findsNothing);
-      expect(find.text('←'), findsOneWidget);
-      expect(find.text('→'), findsOneWidget);
-      await settle(tester);
-    });
+        expect(find.text('Which is more important?'), findsOneWidget);
+        expect(inPair('left', 'First on your list'), findsOneWidget);
+        expect(inPair('left', 'Send the report'), findsOneWidget);
+        expect(inPair('left', 'Pick'), findsOneWidget);
+        expect(inPair('right', 'Next on your list'), findsOneWidget);
+        expect(inPair('right', 'Book flights'), findsOneWidget);
+        expect(inPair('right', 'Pick'), findsOneWidget);
+        expect(find.text('or'), findsOneWidget);
+        expect(find.text('2 of 4 seen'), findsOneWidget);
+        expect(
+          find.text(
+            'Nothing comes off your list. Earlier picks wait in Up next.',
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Stop choosing and start Send the report'),
+          findsOneWidget,
+        );
+        expect(find.text('↵'), findsOneWidget);
+        expect(find.text('esc'), findsNothing);
+        expect(find.text('Up next'), findsNothing);
+        expect(box('Call the garage'), findsOneWidget);
+        expect(box('Send the report'), findsNothing);
+        expect(find.text('←'), findsOneWidget);
+        expect(find.text('→'), findsOneWidget);
+        await settle(tester);
+      },
+    );
 
     testWidgets('a click on the left keeps your choice; a click on the right '
         'makes it your choice and the old one waits in Up next', (
@@ -640,9 +655,9 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('tasks-pair-left')));
       await settle(tester);
-      expect(inPair('left', 'Your choice so far'), findsOneWidget);
+      expect(inPair('left', 'Most important so far'), findsOneWidget);
       expect(inPair('right', 'Call the garage'), findsOneWidget);
-      expect(find.text('1 more pair after this'), findsOneWidget);
+      expect(find.text('3 of 4 seen'), findsOneWidget);
       expect(box('Book flights'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('tasks-pair-right')));
@@ -683,16 +698,14 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('on the last pair Start with goes and the foot says the pick '
-        'becomes Do now', (tester) async {
+    testWidgets('on the last pair Stop choosing goes, the count says Last one '
+        'and the foot says the pick becomes Do now', (tester) async {
       await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
       await pumpScreen(tester);
       expect(find.byKey(const ValueKey('tasks-start')), findsNothing);
-      expect(
-        find.text('Your pick becomes Do now. The other waits its turn.'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('more pair'), findsNothing);
+      expect(find.text('Your pick becomes Do now.'), findsOneWidget);
+      expect(find.text('Last one'), findsOneWidget);
+      expect(find.textContaining(' seen'), findsNothing);
       final screen = tester.state<TasksScreenState>(find.byType(TasksScreen));
       expect(screen.startEarly(), isFalse);
 
@@ -704,19 +717,102 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('Start with uses the task\'s first words', (tester) async {
+    testWidgets('Stop choosing names the whole task, on up to two lines', (
+      tester,
+    ) async {
       await setUpTasks(
         tester,
         'Errands\n☐ Ask Ana which Sintra palace to skip\n☐ B\n☐ C',
       );
       await pumpScreen(tester);
-      expect(find.text('Start with Ask Ana…'), findsOneWidget);
-      expect(
-        find.bySemanticsLabel('Start with Ask Ana which Sintra palace to skip'),
-        findsOneWidget,
-      );
+      const label =
+          'Stop choosing and start Ask Ana which Sintra palace to skip';
+      expect(find.text(label), findsOneWidget);
+      expect(tester.widget<Text>(find.text(label)).maxLines, 2);
+      expect(find.bySemanticsLabel(label), findsOneWidget);
       await settle(tester);
     });
+
+    testWidgets('a round\'s first pair says how choosing works until a pick, '
+        'and not once How Tasks works is put away', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester);
+      const line =
+          'Tasks shows two at a time. Pick the more important one. The most '
+          'important becomes Do now.';
+      expect(find.text(line), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('tasks-pair-left')));
+      await settle(tester);
+      expect(find.text(line), findsNothing);
+
+      tasks.chooseAgain();
+      await pumpScreen(tester, explainPair: false);
+      expect(inPair('left', 'First on your list'), findsOneWidget);
+      expect(find.byKey(const ValueKey('tasks-pair-explain')), findsNothing);
+      await settle(tester);
+    });
+
+    testWidgets(
+      'hovering or focusing Stop choosing outlines the task it starts, and ↵ '
+      'on it starts that task',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await setUpTasks(tester, errands);
+        await pumpScreen(tester);
+        final ink = TaskInk.of(tester.element(find.byType(TasksScreen)));
+        Color edgeOf(String side) {
+          final box = tester.widget<Container>(
+            find
+                .descendant(
+                  of: find.byKey(ValueKey('tasks-pair-$side')),
+                  matching: find.byType(Container),
+                )
+                .first,
+          );
+          return ((box.decoration! as BoxDecoration).border! as Border)
+              .top
+              .color;
+        }
+
+        final start = find.byKey(const ValueKey('tasks-start'));
+        expect(edgeOf('left'), ink.edge);
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(location: Offset.zero);
+        await mouse.moveTo(tester.getCenter(start));
+        await tester.pump();
+        expect(edgeOf('left'), ink.sage);
+        expect(edgeOf('right'), ink.edge);
+        await mouse.moveTo(Offset.zero);
+        await tester.pump();
+        expect(edgeOf('left'), ink.edge);
+
+        FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.alwaysTraditional;
+        addTearDown(
+          () => FocusManager.instance.highlightStrategy =
+              FocusHighlightStrategy.automatic,
+        );
+        Focus.of(
+          tester.element(
+            find.descendant(of: start, matching: find.byType(GestureDetector)),
+          ),
+        ).requestFocus();
+        // Focus lands in a microtask, so the outline it asks for paints on the
+        // frame after.
+        await tester.pump();
+        await tester.pump();
+        expect(edgeOf('left'), ink.sage);
+        expect(edgeOf('right'), ink.edge);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await settle(tester);
+        expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+        expect(item('Send the report').doNow, isTrue);
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    );
 
     testWidgets('screen readers hear what each card is and what a tap does', (
       tester,
@@ -727,8 +823,8 @@ void main() {
       expect(
         tester.getSemantics(find.byKey(const ValueKey('tasks-pair-left'))),
         matchesSemantics(
-          label: 'First on the list: Send the report',
-          hint: 'Choose',
+          label: 'First on your list: Send the report',
+          hint: 'Pick',
           isButton: true,
           hasTapAction: true,
         ),
@@ -738,8 +834,8 @@ void main() {
       expect(
         tester.getSemantics(find.byKey(const ValueKey('tasks-pair-right'))),
         matchesSemantics(
-          label: 'Next on the list: Call the garage',
-          hint: 'Choose this instead',
+          label: 'Next on your list: Call the garage',
+          hint: 'Pick',
           isButton: true,
           hasTapAction: true,
         ),
@@ -802,9 +898,10 @@ void main() {
       await tester.runAsync(() => Future<void>.delayed(Duration.zero));
       await settle(tester);
       expect(find.text('Two is done.'), findsOneWidget);
-      expect(inPair('left', 'Your choice so far'), findsOneWidget);
+      expect(inPair('left', 'Most important so far'), findsOneWidget);
       expect(inPair('left', 'One'), findsOneWidget);
-      expect(inPair('right', 'New since you chose'), findsOneWidget);
+      expect(inPair('right', 'New since you started'), findsOneWidget);
+      expect(find.text('Last one'), findsOneWidget);
       expect(inPair('right', 'Four'), findsOneWidget);
       expect(find.textContaining('added 9:'), findsOneWidget);
       await settle(tester);
@@ -1125,7 +1222,9 @@ void main() {
     });
 
     testWidgets('Today with its date and count, the pair as two stacked cards '
-        'you tap, and Start with under them; no keys', (tester) async {
+        'you tap with "or" between, and Stop choosing under them; no keys', (
+      tester,
+    ) async {
       await setUpTasks(tester, errands);
       await pumpScreen(tester, phone: true);
 
@@ -1135,8 +1234,20 @@ void main() {
       expect(find.byType(Keycap), findsNothing);
       expect(find.text('←'), findsNothing);
       expect(find.text('esc'), findsNothing);
+      expect(find.text('↵'), findsNothing);
+      expect(find.text('Pick'), findsNWidgets(2));
+      expect(find.text('2 of 4 seen'), findsOneWidget);
       expect(
-        find.text('Tap the one you’d rather do. 2 more pairs after this.'),
+        find.text(
+          'Tasks shows two at a time. Tap the more important one. The most '
+          'important becomes Do now.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'Nothing comes off your list. Earlier picks wait in Up next.',
+        ),
         findsOneWidget,
       );
       final left = tester.getRect(
@@ -1196,14 +1307,14 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('the card with First on the list is radius 12 on the 4% fill, '
+    testWidgets('the card with First on your list is radius 12 on the 4% fill, '
         '14 in at the top and 16 at the sides and bottom', (tester) async {
       await setUpTasks(tester, errands);
       await pumpScreen(tester, phone: true);
 
       final pair = find.byKey(const ValueKey('tasks-pair'));
       expect(
-        find.descendant(of: pair, matching: find.text('First on the list')),
+        find.descendant(of: pair, matching: find.text('First on your list')),
         findsOneWidget,
       );
       final card = tester.widget<Container>(pair);
@@ -1504,7 +1615,7 @@ void main() {
     });
 
     testWidgets('Increase contrast outlines the add row, its note chip and '
-        'Start with in the theme\'s contrast line, and moves nothing', (
+        'Stop choosing in the theme\'s contrast line, and moves nothing', (
       tester,
     ) async {
       await canonical(tester);

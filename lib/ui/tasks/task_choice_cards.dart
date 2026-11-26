@@ -6,6 +6,7 @@ import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/blob_store.dart';
 import '../../data/task_board.dart';
+import '../checklist_pie.dart';
 import '../sidebar_timestamp.dart';
 import 'task_choice.dart';
 import 'task_marks.dart';
@@ -117,38 +118,6 @@ TextStyle _mono(Color color) => TextStyle(
   color: color,
 );
 
-const _connectors = {
-  'a',
-  'an',
-  'and',
-  'at',
-  'before',
-  'by',
-  'for',
-  'from',
-  'in',
-  'of',
-  'on',
-  'or',
-  'that',
-  'the',
-  'to',
-  'which',
-  'with',
-};
-
-/// A task's first words, short enough for "Start with …": up to three, and
-/// never ending on a little word such as "which" or "the".
-String shortTaskName(String words) {
-  final parts = words.trim().split(RegExp(r'\s+'));
-  final kept = parts.take(3).toList();
-  while (kept.length > 1 && _connectors.contains(kept.last.toLowerCase())) {
-    kept.removeLast();
-  }
-  final short = kept.join(' ');
-  return kept.length < parts.length ? '$short…' : short;
-}
-
 /// Whether [item] has sat untouched long enough to ask if it's still wanted.
 bool taskIsStale(TaskItem item, DateTime now) =>
     !item.doNow &&
@@ -215,10 +184,10 @@ const double _pairBesideWidth = 440;
 /// a narrower card puts them under it.
 const double _doNowBesideWidth = 420;
 
-/// "What do you want to work on next?": your choice so far against the next
-/// task on the list. ← or a click keeps the left, → or a click takes the
-/// right, and Start with (or esc) stops early.
-class TaskPairCard extends StatelessWidget {
+/// "Which is more important?": your pick so far against the next task on the
+/// list, with "or" between them. ← or a click keeps the left, → or a click
+/// takes the right, and Stop choosing (↵ or esc) starts your pick so far.
+class TaskPairCard extends StatefulWidget {
   const TaskPairCard({
     super.key,
     required this.pair,
@@ -228,6 +197,7 @@ class TaskPairCard extends StatelessWidget {
     required this.onTake,
     required this.onStart,
     this.justDone,
+    this.explain = false,
     this.phone = false,
   });
 
@@ -241,75 +211,132 @@ class TaskPairCard extends StatelessWidget {
   /// The task just finished, when the pair asks about tasks that joined
   /// since you chose.
   final TaskItem? justDone;
+
+  /// Whether a round's first pair says in a line how choosing works.
+  final bool explain;
   final bool phone;
+
+  @override
+  State<TaskPairCard> createState() => _TaskPairCardState();
+}
+
+class _TaskPairCardState extends State<TaskPairCard> {
+  /// While Stop choosing is hovered or focused, the task it starts is
+  /// outlined.
+  bool _startLit = false;
 
   String? _added(TaskItem item, {required bool joined}) {
     final at = DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt);
     if (joined) return 'added ${SidebarTimestamp.clock(at)}';
-    if (taskIsStale(item, now)) {
-      return 'added ${SidebarTimestamp.shortDay(at, now: now)}';
+    if (taskIsStale(item, widget.now)) {
+      return 'added ${SidebarTimestamp.shortDay(at, now: widget.now)}';
     }
     return null;
   }
 
-  String get _count => pair.pairsLeft == 1
-      ? '1 more pair after this'
-      : '${pair.pairsLeft} more pairs after this';
-
   @override
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
+    final pair = widget.pair;
+    final phone = widget.phone;
     final last = pair.pairsLeft == 0;
-    final leftLabel = pair.chosen ? 'Your choice so far' : 'First on the list';
-    final rightLabel = pair.joined ? 'New since you chose' : 'Next on the list';
     final left = _PairOption(
       key: const ValueKey('tasks-pair-left'),
-      heading: leftLabel,
+      heading: pair.chosen ? 'Most important so far' : 'First on your list',
       item: pair.left,
       meta: TaskCardMeta(
         item: pair.left,
-        label: labelOf(pair.left),
+        label: widget.labelOf(pair.left),
         added: _added(pair.left, joined: false),
         phone: phone,
       ),
       keyLabel: '←',
-      action: pair.chosen ? 'Keep your choice' : 'Choose',
-      onPressed: onKeep,
+      marked: _startLit && !last,
+      onPressed: widget.onKeep,
       phone: phone,
     );
     final right = _PairOption(
       key: const ValueKey('tasks-pair-right'),
-      heading: rightLabel,
+      heading: pair.joined ? 'New since you started' : 'Next on your list',
       item: pair.right,
       meta: TaskCardMeta(
         item: pair.right,
-        label: labelOf(pair.right),
+        label: widget.labelOf(pair.right),
         added: _added(pair.right, joined: pair.joined),
         phone: phone,
       ),
       keyLabel: '→',
-      action: pair.chosen ? 'Choose this instead' : 'Choose',
-      onPressed: onTake,
+      marked: false,
+      onPressed: widget.onTake,
       phone: phone,
     );
-    final question = Semantics(
-      header: true,
+    final quiet = phone
+        ? taskText(13, 18, ink.quiet)
+        : taskText(12, 16, ink.quiet);
+    final head = Row(
+      children: [
+        Expanded(
+          child: Semantics(
+            header: true,
+            child: Text(
+              'Which is more important?',
+              style: phone
+                  ? taskText(15, 20, ink.text, 500)
+                  : taskText(15, 22, ink.text, 520),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        if (!last) ...[
+          ExcludeSemantics(
+            child: ChecklistPie(
+              done: pair.seen,
+              total: pair.total,
+              fill: ink.quiet,
+              check: ink.card,
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Text(
+          last
+              ? 'Last one'
+              : pair.joined
+              ? '${pair.seen} of ${pair.total} new'
+              : '${pair.seen} of ${pair.total} seen',
+          style: taskText(
+            12,
+            16,
+            ink.quiet,
+          ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+        ),
+      ],
+    );
+    final explain = widget.explain && !pair.chosen && !pair.joined;
+    final or = ExcludeSemantics(
       child: Text(
-        'What do you want to work on next?',
-        style: phone
-            ? taskText(15, 20, ink.text, 500)
-            : taskText(15, 22, ink.text, 520),
+        'or',
+        textAlign: TextAlign.center,
+        style: taskText(12, 16, ink.quiet),
       ),
     );
-    final done = justDone;
+    final foot = Text(
+      last
+          ? 'Your pick becomes Do now.'
+          : 'Nothing comes off your list. Earlier picks wait in Up next.',
+      style: quiet,
+    );
     final start = last
         ? null
-        : _StartButton(
-            label: 'Start with ${shortTaskName(pair.left.words)}',
-            semantics: 'Start with ${pair.left.words}',
-            onPressed: onStart,
+        : _StopButton(
+            task: pair.left.words,
+            onPressed: widget.onStart,
+            onLit: (lit) {
+              if (lit != _startLit) setState(() => _startLit = lit);
+            },
             phone: phone,
           );
+    final done = widget.justDone;
     return Container(
       key: const ValueKey('tasks-pair'),
       padding: phone
@@ -319,108 +346,110 @@ class TaskPairCard extends StatelessWidget {
         color: ink.card,
         borderRadius: BorderRadius.circular(phone ? 12 : 10),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 12,
-        children: [
-          if (done != null && done.doneAt != null)
-            Row(
-              key: const ValueKey('tasks-just-done'),
-              children: [
-                KapyIcon(
-                  KapyIcons.checkCircleRounded,
-                  size: 16,
-                  color: ink.secondary,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${done.words} is done.',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: taskText(13, 18, ink.secondary),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  SidebarTimestamp.clock(done.doneAt!),
-                  style: taskText(12, 16, ink.quiet).copyWith(
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
-          if (phone || last)
-            question
-          else
-            Row(
-              children: [
-                Expanded(child: question),
-                const SizedBox(width: 8),
-                Text(
-                  _count,
-                  style: taskText(12, 16, ink.quiet).copyWith(
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ],
-            ),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              if (phone ||
-                  constraints.maxWidth <
-                      _pairBesideWidth *
-                          MediaQuery.textScalerOf(context).scale(16) /
-                          16) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  spacing: 8,
-                  children: [left, right],
-                );
-              }
-              return IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  spacing: 12,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final beside =
+              !phone &&
+              constraints.maxWidth >=
+                  _pairBesideWidth *
+                      MediaQuery.textScalerOf(context).scale(16) /
+                      16;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: 12,
+            children: [
+              if (done != null && done.doneAt != null)
+                Row(
+                  key: const ValueKey('tasks-just-done'),
                   children: [
-                    Expanded(child: left),
-                    Expanded(child: right),
+                    KapyIcon(
+                      KapyIcons.checkCircleRounded,
+                      size: 16,
+                      color: ink.secondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${done.words} is done.',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: taskText(13, 18, ink.secondary),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      SidebarTimestamp.clock(done.doneAt!),
+                      style: taskText(12, 16, ink.quiet).copyWith(
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
                   ],
                 ),
-              );
-            },
-          ),
-          if (phone) ...[
-            Text(
-              last
-                  ? 'Tap the one you’d rather do. Your pick becomes Do now.'
-                  : 'Tap the one you’d rather do. $_count.',
-              style: taskText(13, 18, ink.quiet),
-            ),
-            ?(start == null
-                ? null
-                : Align(alignment: Alignment.centerLeft, child: start)),
-          ] else
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    last
-                        ? 'Your pick becomes Do now. The other waits its turn.'
-                        : 'The one you don’t pick waits its turn.',
-                    style: taskText(12, 16, ink.quiet),
-                  ),
-                ),
-                if (start != null) ...[
-                  const SizedBox(width: 8),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 320),
-                    child: start,
-                  ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 4,
+                children: [
+                  head,
+                  if (explain)
+                    Text(
+                      phone
+                          ? 'Tasks shows two at a time. Tap the more important '
+                                'one. The most important becomes Do now.'
+                          : 'Tasks shows two at a time. Pick the more '
+                                'important one. The most important becomes Do '
+                                'now.',
+                      key: const ValueKey('tasks-pair-explain'),
+                      style: phone
+                          ? taskText(13, 18, ink.secondary)
+                          : taskText(12, 16, ink.secondary),
+                    ),
                 ],
-              ],
-            ),
-        ],
+              ),
+              if (beside)
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    spacing: 6,
+                    children: [
+                      Expanded(child: left),
+                      SizedBox(width: 20, child: Center(child: or)),
+                      Expanded(child: right),
+                    ],
+                  ),
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: 4,
+                  children: [left, or, right],
+                ),
+              if (beside)
+                Row(
+                  children: [
+                    Expanded(child: foot),
+                    if (start != null) ...[
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 340),
+                            child: start,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                )
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  spacing: 10,
+                  children: [foot, ?start],
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -433,7 +462,7 @@ class _PairOption extends StatefulWidget {
     required this.item,
     required this.meta,
     required this.keyLabel,
-    required this.action,
+    required this.marked,
     required this.onPressed,
     required this.phone,
   });
@@ -442,7 +471,9 @@ class _PairOption extends StatefulWidget {
   final TaskItem item;
   final Widget meta;
   final String keyLabel;
-  final String action;
+
+  /// Outlined as the task Stop choosing starts.
+  final bool marked;
   final VoidCallback onPressed;
   final bool phone;
 
@@ -457,11 +488,21 @@ class _PairOptionState extends State<_PairOption> {
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
     final phone = widget.phone;
-    final lit = _hovered && !phone;
+    final lit = (_hovered && !phone) || widget.marked;
+    final pick = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Pick',
+          style: taskText(12, 16, lit ? ink.text : ink.secondary, 500),
+        ),
+        if (!phone) ...[const SizedBox(width: 6), TaskKey(widget.keyLabel)],
+      ],
+    );
     return Semantics(
       button: true,
       label: '${widget.heading}: ${widget.item.words}',
-      hint: widget.action,
+      hint: 'Pick',
       excludeSemantics: true,
       onTap: widget.onPressed,
       child: MouseRegion(
@@ -481,7 +522,14 @@ class _PairOptionState extends State<_PairOption> {
                   : Border.all(color: lit ? ink.sage : ink.edge),
               borderRadius: BorderRadius.circular(phone ? 10 : 8),
             ),
-            foregroundDecoration: phone ? taskContrastEdge(context, 10) : null,
+            foregroundDecoration: !phone
+                ? null
+                : widget.marked
+                ? BoxDecoration(
+                    border: Border.all(color: ink.sage),
+                    borderRadius: BorderRadius.circular(10),
+                  )
+                : taskContrastEdge(context, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -506,15 +554,13 @@ class _PairOptionState extends State<_PairOption> {
                 ),
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: phone
-                      ? widget.meta
-                      : Row(
-                          children: [
-                            Expanded(child: widget.meta),
-                            const SizedBox(width: 8),
-                            TaskKey(widget.keyLabel),
-                          ],
-                        ),
+                  child: Row(
+                    children: [
+                      Expanded(child: widget.meta),
+                      const SizedBox(width: 8),
+                      pick,
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -550,48 +596,118 @@ class TaskKey extends StatelessWidget {
   }
 }
 
-class _StartButton extends StatelessWidget {
-  const _StartButton({
-    required this.label,
-    required this.semantics,
+/// "Stop choosing and start" and the task's name: your pick so far becomes
+/// Do now. The whole name wraps to a second line before anything is cut,
+/// and with larger text it is never cut.
+/// While it is hovered or focused, [onLit] has the pair outline that task.
+class _StopButton extends StatefulWidget {
+  const _StopButton({
+    required this.task,
     required this.onPressed,
+    required this.onLit,
     required this.phone,
   });
 
-  final String label;
-  final String semantics;
+  final String task;
   final VoidCallback onPressed;
+  final ValueChanged<bool> onLit;
   final bool phone;
+
+  @override
+  State<_StopButton> createState() => _StopButtonState();
+}
+
+class _StopButtonState extends State<_StopButton> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  void _light({bool? hovered, bool? focused}) {
+    setState(() {
+      _hovered = hovered ?? _hovered;
+      _focused = focused ?? _focused;
+    });
+    widget.onLit(_hovered || _focused);
+  }
 
   @override
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
-    return TaskButton(
-      key: const ValueKey('tasks-start'),
-      semantics: semantics,
-      onPressed: onPressed,
-      fill: ink.lifted,
-      outline: taskContrastEdge(context, phone ? 8 : 6),
-      height: phone ? 44 : 32,
-      innerHeight: phone ? 36 : 32,
-      radius: phone ? 8 : 6,
-      padding: phone ? 14 : 12,
-      children: [
-        Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: phone
-                ? taskText(15, 20, ink.text, 500)
-                : taskText(13, 18, ink.text, 460),
+    final phone = widget.phone;
+    final label = 'Stop choosing and start ${widget.task}';
+    final radius = phone ? 8.0 : 6.0;
+    return Semantics(
+      button: true,
+      label: label,
+      excludeSemantics: true,
+      onTap: widget.onPressed,
+      child: Actions(
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onPressed();
+              return null;
+            },
+          ),
+        },
+        child: Focus(
+          onFocusChange: (focused) => _light(focused: focused),
+          child: MouseRegion(
+            key: const ValueKey('tasks-start'),
+            cursor: SystemMouseCursors.click,
+            onEnter: (_) => _light(hovered: true),
+            onExit: (_) => _light(hovered: false),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onPressed,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: phone ? 44 : 32),
+                child: Center(
+                  widthFactor: 1,
+                  heightFactor: 1,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: phone ? 14 : 12,
+                      vertical: phone ? 8 : 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: ink.lifted,
+                      borderRadius: BorderRadius.circular(radius),
+                    ),
+                    foregroundDecoration: _focused
+                        ? BoxDecoration(
+                            border: Border.all(color: ink.sage),
+                            borderRadius: BorderRadius.circular(radius),
+                          )
+                        : taskContrastEdge(context, radius),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            label,
+                            maxLines:
+                                MediaQuery.textScalerOf(context).scale(1) > 1
+                                ? null
+                                : 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: phone
+                                ? taskText(15, 20, ink.text, 500)
+                                : taskText(13, 18, ink.text, 460),
+                          ),
+                        ),
+                        if (!phone && AppPlatform.hasPointer) ...[
+                          const SizedBox(width: 8),
+                          const TaskKey('↵'),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ),
-        if (!phone && AppPlatform.hasPointer) ...[
-          const SizedBox(width: 8),
-          ExcludeSemantics(child: Text('esc', style: _mono(ink.secondary))),
-        ],
-      ],
+      ),
     );
   }
 }

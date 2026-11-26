@@ -4943,6 +4943,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         newTaskShortcut: widget.shortcuts
             .hintFor(ShortcutAction.newNote)
             ?.keycapLabel,
+        explainPair: _taskFolds?.howSeen == false,
         toolbar: PageToolbar(
           path: filter.done
               ? PagePath(
@@ -6712,7 +6713,9 @@ class _DesktopShortcuts extends StatelessWidget {
     final action = switch (event.logicalKey) {
       LogicalKeyboardKey.arrowLeft => onKeepChoice,
       LogicalKeyboardKey.arrowRight => onTakeNext,
-      LogicalKeyboardKey.escape => onStartEarly,
+      LogicalKeyboardKey.escape ||
+      LogicalKeyboardKey.enter ||
+      LogicalKeyboardKey.numpadEnter => onStartEarly,
       _ => null,
     };
     if (action == null) return KeyEventResult.ignored;
@@ -6720,6 +6723,12 @@ class _DesktopShortcuts extends StatelessWidget {
     if (focused != null &&
         (focused.widget is EditableText ||
             focused.findAncestorWidgetOfExactType<EditableText>() != null)) {
+      return KeyEventResult.ignored;
+    }
+    // ↵ on a focused control is that control's own.
+    if (event.logicalKey != LogicalKeyboardKey.escape &&
+        focused != null &&
+        Actions.maybeFind<ActivateIntent>(focused) != null) {
       return KeyEventResult.ignored;
     }
     return action() ? KeyEventResult.handled : KeyEventResult.ignored;
