@@ -42,7 +42,19 @@ env:
   PHONE_TESTS: ${{ inputs.tests }}
 
 jobs:
+  # Checks the names in `tests` before either phone job takes a runner, so a
+  # typo fails in seconds rather than after a macOS job's setup.
+  names:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: bash tool/ci/phone_screenshots.sh --check
+
   android:
+    needs: names
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -106,6 +118,7 @@ jobs:
           if-no-files-found: error
 
   ios:
+    needs: names
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
     runs-on: xcode-27
     timeout-minutes: 150

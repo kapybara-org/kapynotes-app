@@ -4,6 +4,8 @@
 #
 #   bash tool/ci/phone_screenshots.sh <device id>
 #
+# With --check in place of a device id, it only checks PHONE_TESTS's names.
+#
 # A shot a test takes with device: true is also read off the device's own
 # screen, keyboard included, as build/screenshots/<name>-device.png.
 #
@@ -44,6 +46,7 @@ for name in ${PHONE_TESTS:-}; do
   fi
 done
 set +f
+[[ $device == --check ]] && exit 0
 
 drive() {
   wanted "$1" || return 0
