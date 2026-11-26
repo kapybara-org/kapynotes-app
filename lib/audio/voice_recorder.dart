@@ -17,6 +17,11 @@ import 'adts.dart';
 abstract class VoiceRecorderBackend {
   Future<bool> hasPermission();
 
+  /// Whether this computer has a microphone to record from at all. Asked
+  /// before a recording starts, so one with none says so instead of
+  /// recording silence.
+  Future<bool> hasMicrophone();
+
   /// Begins a recording that [stop] leaves at [path]. The extension decides
   /// the container on Windows, where Media Foundation's sink writer picks its
   /// muxer from it, so it must end in `.m4a`.
@@ -87,6 +92,13 @@ class VoiceRecorder implements VoiceRecorderBackend {
 
   @override
   Future<bool> hasPermission() => _live.hasPermission();
+
+  /// Only a Mac is asked, and only an empty list is a no. A phone always has
+  /// one. Windows records as before until its listing has been proven on a
+  /// machine that has one (KAP-381).
+  @override
+  Future<bool> hasMicrophone() async =>
+      !AppPlatform.isMacOS || (await _live.listInputDevices()).isNotEmpty;
 
   @override
   Future<void> start(String path) async {

@@ -11,7 +11,8 @@
 # With no files it runs every integration_test/*_test.dart except these:
 # - phone_*, kapy_ai_page and kapy_ai_sheet, which test the phones' screens;
 # - apple_transcribe and voice_recording, which need speech recognition or
-#   the microphone, permissions a runner can't grant;
+#   the microphone. voice_recording runs when it's named, after
+#   mac_microphone.sh has given the runner one;
 # - gemma_summary and parakeet_transcribe, which skip themselves without
 #   their models, 2.6 GB and 670 MB.
 #

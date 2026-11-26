@@ -105,6 +105,10 @@ final class _AtLimit extends _Notice {
   final int? limit;
 }
 
+final class _MicrophoneRefused extends _Notice {
+  const _MicrophoneRefused();
+}
+
 final class _NoMicrophone extends _Notice {
   const _NoMicrophone();
 }
@@ -395,12 +399,16 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final recording = widget.recording;
     if (recording == null || recording.isRecording) return;
     if (!_canCreate) return _say(_AtLimit(widget.noteLimit?.limit));
+    if (!await recording.hasMicrophone()) {
+      if (mounted) _say(const _NoMicrophone());
+      return;
+    }
     final note = widget.notes.create(body: Note.blankBody, authored: false);
     setState(() => _recordingNoteId = note.id);
     if (await recording.start(noteId: note.id)) return;
     _recordingNoteId = null;
     widget.notes.delete(note.id);
-    if (mounted) _say(const _NoMicrophone());
+    if (mounted) _say(const _MicrophoneRefused());
   }
 
   Future<void> _stopRecording() async {
@@ -785,8 +793,11 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
         const SizedBox(width: 6),
         _Link('Upgrade', style: link, onTap: () => unawaited(widget.inWindow((window) => window.explainNoteLimit()))),
       ]),
-      _NoMicrophone() => _Hint(children: [
+      _MicrophoneRefused() => _Hint(children: [
         Text('Kapy Notes needs microphone access to record', style: style),
+      ]),
+      _NoMicrophone() => _Hint(children: [
+        Text('No microphone found', style: style),
       ]),
       null when _draft.text.trim().isNotEmpty && !_isRecording => _Hint(children: [
         const Keycap('↵'),

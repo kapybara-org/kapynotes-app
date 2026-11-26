@@ -70,9 +70,7 @@ class KapyCloudClient implements AnswerEngine {
 
   Future<Map<String, Object?>> _send(http.Request request) async {
     final token = _token();
-    if (token == null) {
-      throw const AnswerFailed('Sign in to use Kapy AI Cloud.');
-    }
+    if (token == null) throw const AnswerSignInNeeded();
     request.headers
       ..['authorization'] = 'Bearer $token'
       ..['accept'] = 'application/json'
@@ -91,12 +89,15 @@ class KapyCloudClient implements AnswerEngine {
     switch (response.statusCode) {
       case 200:
         return body;
-      case 401:
-        throw const AnswerFailed('Sign in again to use Kapy AI Cloud.');
+      case 401 when body['error'] == 'unauthorized':
+        throw const AnswerSignInNeeded();
       case 402:
-        throw const AnswerFailed('Kapy AI Cloud is part of Pro.');
+        throw const AnswerProNeeded();
       case 426:
-        throw const AnswerFailed('Update Kapy Notes to use Kapy AI Cloud.');
+        throw const AnswerFailed(
+          'Update Kapy Notes to use Kapy AI Cloud.',
+          retry: false,
+        );
       case 429:
         final usage = _usageFrom(body['usage']);
         if (usage == null) throw const AnswerFailed(_busy);

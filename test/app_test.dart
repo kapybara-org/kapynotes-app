@@ -28,6 +28,7 @@ import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/editor_workspace.dart';
 import 'package:kapy_notes/data/folders.dart';
+import 'package:kapy_notes/data/day_tabs.dart';
 import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note.dart';
@@ -92,6 +93,7 @@ import 'package:kapy_notes/ui/window_drag_area.dart';
 import 'audio/voice_recording_controller_test.dart'
     show FakeRecordingControls, FakeVoiceRecorder;
 import 'kapy_icon_finder.dart';
+import 'note_editor_test.dart' show sendShortcut;
 import 'quick_capture_test.dart' show stubLaunchIntent;
 import 'support/note_driver.dart';
 import 'sync/fake_server.dart';
@@ -154,6 +156,7 @@ Future<void> pumpApp(
   TagStore? tags,
   FolderStore? folders,
   NoteDayStore? days,
+  DayTabsStore? dayTabs,
   TitleModel titleModel = const NoTitleModel('Not in tests'),
   VoiceRecordingController? recording,
   TaskLibrary? tasks,
@@ -189,6 +192,7 @@ Future<void> pumpApp(
     tags: tags,
     folders: folders,
     days: days,
+    dayTabs: dayTabs,
     titleModel: titleModel,
     recording: recording,
     tasks: tasks,
@@ -3857,6 +3861,48 @@ void main() {
     });
   });
 
+  group('with no microphone (KAP-372)', () {
+    late FakeVoiceRecorder recorder;
+    late VoiceRecordingController recording;
+
+    for (final platform in [TargetPlatform.linux, TargetPlatform.macOS]) {
+      testWidgets('the shortcut on ${platform.name} says "No microphone '
+          'found" and records nothing', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final temp = Directory.systemTemp.createTempSync('kapy-no-mic');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        recorder = FakeVoiceRecorder(writesFile: false, microphone: false);
+        recording = VoiceRecordingController(
+          recorder: recorder,
+          tempDirectory: temp,
+        );
+        addTearDown(recording.dispose);
+        final note = notes.create(body: 'Standup');
+        await pumpApp(
+          tester,
+          size: const Size(1400, 800),
+          recording: recording,
+        );
+
+        await sendShortcut(
+          tester,
+          shortcuts.bindingFor(ShortcutAction.recordVoiceNote)!,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('No microphone found'), findsOneWidget);
+        expect(find.text('Recording started'), findsNothing);
+        expect(find.byKey(const ValueKey('recording-status')), findsNothing);
+        expect(recorder.startedAt, isNull, reason: 'nothing may record');
+        expect(recording.isRecording, isFalse);
+        expect(notes.byId(note.id)!.attachments, isEmpty);
+        await tester.pump(const Duration(seconds: 5));
+      });
+    }
+  });
+
   group('notes list', () {
     setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -3867,6 +3913,7 @@ void main() {
       WidgetTester tester, {
       FolderStore? folders,
       NoteDayStore? days,
+      DayTabsStore? dayTabs,
     }) async {
       int at(int month, int day, int hour) =>
           DateTime(2026, month, day, hour).millisecondsSinceEpoch;
@@ -3888,6 +3935,7 @@ void main() {
         size: const Size(1400, 800),
         folders: folders,
         days: days,
+        dayTabs: dayTabs,
       );
     }
 
@@ -4311,6 +4359,234 @@ void main() {
 
       await tap(tester, find.text('Undo'));
       expect(openNoteBody(tester), blank.body.trimRight());
+    });
+
+    /// The tab on the row titled [title].
+    Finder tabOf(String title) => find
+        .ancestor(
+          of: find.descendant(
+            of: find.byType(NoteTabRow),
+            matching: find.text(title),
+          ),
+          matching: find.byWidgetPredicate(
+            (widget) => '${widget.key}'.contains('note-tab-'),
+          ),
+        )
+        .first;
+    Finder pinOn(String title) => find.descendant(
+      of: tabOf(title),
+      matching: findKapyIcon(KapyIcons.pinOutlined),
+    );
+    Future<void> tabMenu(WidgetTester tester, String title) async {
+      await tester.tap(tabOf(title), buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+    }
+
+    final wednesday = DateTime(2026, 11, 18);
+    const wednesdayNotes = ['October plan', 'Standup notes'];
+
+    testWidgets("a day with an order of its own opens in it, a pinned tab "
+        "first with a pin in its icon's place, and Pin tab and Unpin tab in "
+        "a day's tab menu arrange it again", (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final dayTabs = DayTabsStore(store);
+      await dayTabs.load();
+      await library(tester, days: days, dayTabs: dayTabs);
+      days.setDay('October plan', wednesday);
+      dayTabs.pin(wednesday, wednesdayNotes, 'Standup notes');
+      await tester.pumpAndSettle();
+
+      await tap(tester, day(18));
+      expect(tabTitles(tester), ['Standup notes', 'October plan']);
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(pinOn('Standup notes'), findsOneWidget);
+      expect(pinOn('October plan'), findsNothing);
+
+      // Unpinned, a tab keeps its place.
+      await tabMenu(tester, 'Standup notes');
+      await tap(tester, find.text('Unpin tab'));
+      expect(tabTitles(tester), ['Standup notes', 'October plan']);
+      expect(pinOn('Standup notes'), findsNothing);
+      expect(dayTabs.arrange(wednesday, wednesdayNotes).pinned, 0);
+
+      // Pinned, it comes to the front, and the one in front stays.
+      await tabMenu(tester, 'October plan');
+      await tap(tester, find.text('Pin tab'));
+      expect(tabTitles(tester), wednesdayNotes);
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(pinOn('October plan'), findsOneWidget);
+      expect(dayTabs.arrange(wednesday, wednesdayNotes).pinned, 1);
+
+      // A tab opened over the day's has no pin to give.
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.tap(find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      await tabMenu(tester, 'Call with Arjun');
+      expect(find.text('Close tab'), findsOneWidget);
+      expect(find.text('Pin tab'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets(
+      'a note that leaves the day keeps its tab and its pin while the day is '
+      'open, and the day picked again leaves it out with its pin',
+      (tester) async {
+        final days = NoteDayStore(store);
+        await days.load();
+        final dayTabs = DayTabsStore(store);
+        await dayTabs.load();
+        await library(tester, days: days, dayTabs: dayTabs);
+        days.setDay('October plan', wednesday);
+        days.setDay('Pricing ideas', wednesday);
+        await tester.pumpAndSettle();
+        await tap(tester, day(18));
+        expect(tabTitles(tester), [
+          'October plan',
+          'Pricing ideas',
+          'Standup notes',
+        ]);
+        await tabMenu(tester, 'Standup notes');
+        await tap(tester, find.text('Pin tab'));
+        expect(tabTitles(tester), [
+          'Standup notes',
+          'October plan',
+          'Pricing ideas',
+        ]);
+        expect(pinOn('Standup notes'), findsOneWidget);
+
+        notes.updateBody('Standup notes', 'Standup notes\nmoved on');
+        await tester.pumpAndSettle();
+        expect(tabTitles(tester), [
+          'Standup notes',
+          'October plan',
+          'Pricing ideas',
+        ]);
+        expect(pinOn('Standup notes'), findsOneWidget);
+
+        await tabMenu(tester, 'Standup notes');
+        await tap(tester, find.text('Unpin tab'));
+        expect(pinOn('Standup notes'), findsNothing);
+        await tabMenu(tester, 'Standup notes');
+        await tap(tester, find.text('Pin tab'));
+        expect(pinOn('Standup notes'), findsOneWidget);
+        expect(tabTitles(tester).first, 'Standup notes');
+
+        await tap(tester, day(18));
+        await tap(tester, day(18));
+        expect(tabTitles(tester), ['October plan', 'Pricing ideas']);
+        expect(pinOn('October plan'), findsNothing);
+        expect(pinOn('Pricing ideas'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      "a screen reader pins and unpins a day's tab with the tab's own action",
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        final days = NoteDayStore(store);
+        await days.load();
+        final dayTabs = DayTabsStore(store);
+        await dayTabs.load();
+        await library(tester, days: days, dayTabs: dayTabs);
+        days.setDay('October plan', wednesday);
+        await tester.pumpAndSettle();
+        await tap(tester, day(18));
+        SemanticsNode node(String title) => tester.semantics.find(
+          find.descendant(of: tabOf(title), matching: find.text(title)).first,
+        );
+        Map<String, int> actions(String title) => {
+          for (final id
+              in node(title).getSemanticsData().customSemanticsActionIds ??
+                  const <int>[])
+            CustomSemanticsAction.getAction(id)!.label!: id,
+        };
+        Future<void> act(String title, String label) async {
+          final tab = node(title);
+          final id = actions(title)[label];
+          expect(id, isNotNull, reason: '$title offers $label');
+          tab.owner!.performAction(tab.id, SemanticsAction.customAction, id);
+          await tester.pumpAndSettle();
+        }
+
+        expect(
+          actions('Standup notes').keys,
+          containsAll(['Pin tab', 'Close tab']),
+        );
+        await act('Standup notes', 'Pin tab');
+        expect(tabTitles(tester), ['Standup notes', 'October plan']);
+        expect(pinOn('Standup notes'), findsOneWidget);
+        await act('Standup notes', 'Unpin tab');
+        expect(pinOn('Standup notes'), findsNothing);
+        handle.dispose();
+      },
+    );
+
+    testWidgets("a day's tab split with another note beside it has no pin to "
+        'give', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final dayTabs = DayTabsStore(store);
+      await dayTabs.load();
+      await library(tester, days: days, dayTabs: dayTabs);
+      days.setDay('October plan', wednesday);
+      await tester.pumpAndSettle();
+      await tap(tester, day(18));
+      expect(tabTitles(tester), wednesdayNotes);
+
+      await pickPageAction(tester, 'split');
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.focusSecondPane)!,
+      );
+      await tester.pumpAndSettle();
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.focusFirstPane)!,
+      );
+      await tester.pumpAndSettle();
+      final front = tester
+          .widget<NoteTabRow>(find.byType(NoteTabRow))
+          .tabs
+          .first;
+      expect(front.title, 'October plan');
+      expect(front.pinned, isNull);
+      await tabMenu(tester, 'October plan');
+      expect(find.text('Close tab'), findsOneWidget);
+      expect(find.text('Pin tab'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    });
+
+    testWidgets("a day's order changed on another device shows in its tabs "
+        'here at once, the tab in front staying', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final dayTabs = DayTabsStore(store);
+      await dayTabs.load();
+      await library(tester, days: days, dayTabs: dayTabs);
+      days.setDay('October plan', wednesday);
+      await tester.pumpAndSettle();
+      await tap(tester, day(18));
+      expect(tabTitles(tester), wednesdayNotes);
+
+      dayTabs.applyRemote(
+        DayTabs(
+          day: '2026-11-18',
+          tabs: Stamped(
+            const TabOrder(['Standup notes', 'October plan'], 1),
+            1,
+          ),
+        ),
+        1,
+      );
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['Standup notes', 'October plan']);
+      expect(openNoteBody(tester), 'October plan');
+      expect(pinOn('Standup notes'), findsOneWidget);
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "
@@ -13146,6 +13422,45 @@ void main() {
       expect(find.text('Upcoming'), findsNothing);
     });
 
+    testWidgets("a phone's Drawings lists a drawing for a later day under "
+        'Recent and counts it, as it does every drawing', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final days = NoteDayStore(store);
+      await days.load();
+      final folders = FolderStore(store);
+      await folders.load();
+      final shelf = notes.create(drawing: true);
+      notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+      final deck = notes.create(drawing: true);
+      notes.updateDrawing(deck.id, NoteDrawing.empty, title: 'Deck flow');
+      final now = notes.now();
+      days.setDay(shelf.id, DateTime(now.year, now.month, now.day + 2));
+      await pumpApp(
+        tester,
+        size: const Size(390, 844),
+        folders: folders,
+        days: days,
+      );
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('bar-folders')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('folders-drawings-tile')));
+      await tester.pumpAndSettle();
+
+      Finder listed(String title) =>
+          find.descendant(of: find.byType(Sidebar), matching: find.text(title));
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(listed('Deck flow'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(PhoneListTitle),
+          matching: find.text('2'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('⋮ gives the open note another day, and Remove day takes it '
         'off', (tester) async {
       final days = NoteDayStore(store);
@@ -13227,6 +13542,49 @@ void main() {
         findsOneWidget,
       );
       expect(count(), before);
+    });
+
+    testWidgets("a drawing for a later day stays off the desktop's Drawings "
+        'and out of its count until its day, though pinned it stays and '
+        'counts, and A to Z lists and counts it', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final shelf = notes.create(drawing: true);
+      notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+      final deck = notes.create(drawing: true);
+      notes.updateDrawing(deck.id, NoteDrawing.empty, title: 'Deck flow');
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      int count() =>
+          tester.widget<SidebarWindowBar>(find.byType(SidebarWindowBar)).count;
+      Finder listed(String title) =>
+          find.descendant(of: find.byType(Sidebar), matching: find.text(title));
+      expect(count(), 2);
+
+      final now = notes.now();
+      days.setDay(shelf.id, DateTime(now.year, now.month, now.day + 2));
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsNothing);
+      expect(listed('Deck flow'), findsOneWidget);
+      expect(count(), 1, reason: 'the count is what the list shows');
+
+      prefs.notesGrouping = NotesGrouping.aToZ;
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(count(), 2);
+
+      prefs.notesGrouping = NotesGrouping.byDate;
+      notes.togglePinned(shelf.id);
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(count(), 2);
+
+      notes.togglePinned(shelf.id);
+      days.setDay(shelf.id, DateTime(now.year, now.month, now.day));
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(count(), 2);
     });
 
     testWidgets('Archived Notes lists and counts an archived note for a '
@@ -14368,6 +14726,32 @@ void main() {
       });
     }
   });
+
+  testWidgets(
+    'on Linux a window left with a note open draws nothing more, its caret '
+    'showing, 10 seconds after the last key',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await notes.load();
+      notes.create(body: 'Groceries');
+      await pumpApp(tester);
+
+      await tester.enterNote('Coffee: 12.40\nOats: 3.99\ntotal');
+      final driver = NoteDriver(tester);
+      expect(driver.state.layout.marks.caretColor, isNotNull);
+      await tester.binding.delayed(const Duration(milliseconds: 500));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
+      expect(driver.state.layout.marks.caretColor, isNotNull);
+      await tester.binding.delayed(const Duration(minutes: 5));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(tester.binding.transientCallbackCount, 0);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.linux),
+  );
 }
 
 /// Android 14's text scale, which grows large type less than small: the

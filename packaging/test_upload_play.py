@@ -5,7 +5,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import upload_play
@@ -222,7 +222,89 @@ class PromoteTest(unittest.TestCase):
                     "--version-code", "43", "--notes-file", "metadata/play.txt"]
         self.addCleanup(setattr, sys, "argv", original)
         upload_play.main()
-        self.assertEqual(seen, [("43", "production", 1.0, "metadata/play.txt")])
+        self.assertEqual(seen, [("43", "production", 1.0, "metadata/play.txt", None, False)])
+
+    def test_main_passes_from_track_and_validate_only_to_promote(self):
+        seen = []
+        self.patch("promote", lambda *args: seen.append(args))
+        original = sys.argv
+        sys.argv = ["upload_play.py", "promote", "--track", "production", "--rollout", "1",
+                    "--version-code", "48", "--notes-file", "n.txt", "--from-track", "internal",
+                    "--validate-only"]
+        self.addCleanup(setattr, sys, "argv", original)
+        upload_play.main()
+        self.assertEqual(seen, [("48", "production", 1.0, "n.txt", "internal", True)])
+
+    def tracks(self, *entries):
+        recorded = upload_play.call
+
+        def fake_call(method, url, *, body=None, data=None, content_type=None, soft=False):
+            if method == "GET" and url.endswith("/tracks"):
+                self.calls.append((method, url, body))
+                return {"tracks": [{"track": name, "releases": [{"versionCodes": codes, "status": status}]}
+                                   for name, codes, status in entries]}
+            return recorded(method, url, body=body, data=data, content_type=content_type, soft=soft)
+
+        self.patch("call", fake_call)
+
+    def deletes(self):
+        return [url for method, url, _ in self.calls if method == "DELETE"]
+
+    def test_promote_from_internal_refuses_a_code_not_on_internal(self):
+        self.tracks(("production", ["48"], "completed"), ("internal", ["47"], "completed"))
+        with redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            upload_play.promote("48", "production", 1.0, self.notes_file("Notes"), "internal")
+        self.assertIn("not on the internal track", err.getvalue())
+        self.assertEqual(self.puts(), [])
+        self.assertEqual(self.commits(), [])
+        self.assertEqual(len(self.deletes()), 1)
+
+    def test_promote_of_a_code_already_live_changes_nothing(self):
+        self.tracks(("internal", ["48"], "completed"), ("production", ["48"], "completed"))
+        upload_play.promote("48", "production", 1.0, self.notes_file("Notes"), "internal")
+        self.assertEqual(self.puts(), [])
+        self.assertEqual(self.commits(), [])
+        self.assertEqual(len(self.deletes()), 1)
+
+    def test_validate_only_asks_play_to_validate_and_never_commits(self):
+        self.tracks(("internal", ["48"], "completed"), ("production", ["47"], "completed"))
+        with redirect_stdout(io.StringIO()) as out:
+            upload_play.promote("48", "production", 1.0, self.notes_file("Notes"), "internal", True)
+        self.assertIn("nothing was committed", out.getvalue())
+        self.assertNotIn("is now on", out.getvalue())
+        [body] = self.puts()
+        self.assertEqual(body["releases"][0]["versionCodes"], ["48"])
+        self.assertEqual(body["releases"][0]["status"], "completed")
+        self.assertEqual(self.commits(), [])
+        validates = [url for _, url, _ in self.calls if url.endswith(":validate")]
+        self.assertEqual(validates, [f"{upload_play.API}/applications/{upload_play.PACKAGE_NAME}/edits/edit:validate"])
+        self.assertEqual(len(self.deletes()), 1)
+
+    def test_validate_only_still_checks_a_code_already_live(self):
+        self.tracks(("internal", ["48"], "completed"), ("production", ["48"], "completed"))
+        upload_play.promote("48", "production", 1.0, self.notes_file("Notes"), "internal", True)
+        self.assertEqual(len(self.puts()), 1)
+        self.assertEqual(self.commits(), [])
+
+    def test_promote_while_changes_are_in_review_says_so_plainly(self):
+        self.tracks(("internal", ["48"], "completed"), ("production", ["47"], "completed"))
+        recorded = upload_play.call
+
+        def fake_call(method, url, *, body=None, data=None, content_type=None, soft=False):
+            if ":commit" in url:
+                self.calls.append((method, url, body))
+                raise upload_play.PlayError(
+                    "You already have changes in review. Cancel this review or wait for it "
+                    "to complete before you try again.")
+            return recorded(method, url, body=body, data=data, content_type=content_type, soft=soft)
+
+        self.patch("call", fake_call)
+        with redirect_stderr(io.StringIO()) as err, self.assertRaises(SystemExit):
+            upload_play.promote("48", "production", 1.0, self.notes_file("Notes"), "internal")
+        self.assertIn("Google is still reviewing an earlier change", err.getvalue())
+        self.assertIn("nothing was changed", err.getvalue())
+        self.assertEqual(len(self.puts()), 1)
+        self.assertEqual(len(self.deletes()), 1)
 
 
 if __name__ == "__main__":

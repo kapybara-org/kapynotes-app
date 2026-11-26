@@ -14,7 +14,14 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/tags.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
+import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/billing/pro_sheet.dart';
 import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
@@ -26,7 +33,9 @@ import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'billing/billing_fakes.dart';
 import 'fake_kapy_ai.dart';
+import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
 /// Where Kapy AI sits in the app: the button, the shortcut, the panel beside
@@ -60,6 +69,7 @@ Future<void> _pump(
   TargetPlatform platform = TargetPlatform.macOS,
   bool sidebar = false,
   FolderStore? folders,
+  Account? account,
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -80,6 +90,7 @@ Future<void> _pump(
       shortcuts: shortcuts,
       kapyAi: ai,
       folders: folders,
+      account: account,
     ),
   );
   await tester.pumpAndSettle();
@@ -152,6 +163,70 @@ void main() {
   tearDown(() {
     kapyAiAvailable = wasAvailable;
     ai.dispose();
+  });
+
+  group('Kapy AI Cloud without Pro, in the app', () {
+    /// A signed-out account with billing, and the panel open on a question
+    /// Kapy AI Cloud won't answer.
+    Future<Finder> lockedCard(WidgetTester tester) async {
+      final state = SyncState(store);
+      final account = Account(
+        auth: FakeAuth(),
+        syncApi: (_) => FakeApi(FakeServer()),
+        keys: KeyStore(InMemorySecureStore()),
+        notes: notes,
+        state: state,
+        store: store,
+        tags: TagStore(store),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          state: state,
+          storage: MemoryDocStorage(),
+        ),
+      )..billing = billingFor(FakeSession(), FakeBillingApi());
+      addTearDown(account.dispose);
+      final at = DateTime(2026, 11, 26, 9, 41);
+      ai.set(
+        current: KapyChat(
+          id: 'c',
+          title: 'Lisbon?',
+          createdAt: at,
+          updatedAt: at,
+          model: KapyModel.cloud,
+          messages: [
+            KapyMessage(id: 'q', role: KapyRole.user, text: 'Lisbon?', at: at),
+          ],
+        ),
+        pending: const KapyCloudLocked(signIn: true, upgrade: true),
+      );
+      notes.create(body: 'Trip budget\n900 flights');
+      await _pump(tester, account: account);
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      return find.byKey(const ValueKey('kapy-ai-notice'));
+    }
+
+    testWidgets('Sign in opens Settings at Account & sync', (tester) async {
+      final notice = await lockedCard(tester);
+      await tester.tap(
+        find.descendant(of: notice, matching: find.text('Sign in')),
+      );
+      await tester.pumpAndSettle();
+      final settings = tester.widget<SettingsDialog>(
+        find.byType(SettingsDialog),
+      );
+      expect(settings.section, SettingsSection.account);
+    });
+
+    testWidgets('Upgrade opens the Pro sheet', (tester) async {
+      final notice = await lockedCard(tester);
+      await tester.tap(
+        find.descendant(of: notice, matching: find.text('Upgrade')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ProSheet), findsOneWidget);
+    });
   });
 
   group('on the page', () {

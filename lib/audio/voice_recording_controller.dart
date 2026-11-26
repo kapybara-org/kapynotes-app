@@ -172,6 +172,19 @@ class VoiceRecordingController extends ChangeNotifier {
   bool get shouldConfirmCancel =>
       (_session?.elapsed ?? Duration.zero) >= confirmCancelAfter;
 
+  /// Whether there is a microphone to record from, asked before [start] so
+  /// that a computer with none says "No microphone found" rather than
+  /// recording silence. Only a definite no blocks: a backend that cannot
+  /// tell, or fails to ask, answers yes, and [start] finds out for itself.
+  Future<bool> hasMicrophone() async {
+    try {
+      return await _recorder.hasMicrophone();
+    } catch (error) {
+      debugPrint('KapyNotes: could not look for a microphone: $error');
+      return true;
+    }
+  }
+
   /// Begins recording into [noteId]. Returns false when the microphone was
   /// refused, which the caller turns into the one piece of UI this needs.
   Future<bool> start({required String noteId}) async {

@@ -1018,11 +1018,13 @@ class _CommandMenuState extends State<CommandMenu> {
                   key: ValueKey('command-scope-${scope.name}'),
                   behavior: HitTestBehavior.opaque,
                   onTap: () => _setScope(scope),
-                  child: SizedBox(
-                    height: AppControlMetrics.iconButtonExtent,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: AppControlMetrics.iconButtonExtent,
+                    ),
                     child: Center(
                       child: Container(
-                        height: 30,
+                        constraints: const BoxConstraints(minHeight: 30),
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
@@ -1030,7 +1032,7 @@ class _CommandMenuState extends State<CommandMenu> {
                           border: scope == _scope
                               ? null
                               : Border.all(color: palette.controlBorder),
-                          borderRadius: BorderRadius.circular(15),
+                          borderRadius: BorderRadius.circular(999),
                         ),
                         child: Text(
                           scope.label,
