@@ -120,7 +120,6 @@ void main() {
     expect(result.peaks, hasLength(100));
   });
 
-  // Not on Windows yet: just_audio_windows gives no length from load (KAP-398).
   testWidgets('the recording plays back', (tester) async {
     expect(await controller.start(noteId: 'n1'), isTrue);
     await Future<void>.delayed(const Duration(seconds: 2));
@@ -145,7 +144,7 @@ void main() {
 
     await player.pause();
     await player.stop();
-  }, skip: Platform.isWindows);
+  });
 
   testWidgets('a recording under a second is thrown away, not kept', (
     tester,
