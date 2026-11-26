@@ -1,17 +1,25 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../audio/voice_export.dart';
 import '../audio/voice_player.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note_attachment.dart';
+import '../data/voice_prefs.dart' show speechLanguages;
+import '../speech/moments.dart';
 import '../speech/speech_errors.dart';
 import '../speech/summarizer.dart';
 import '../speech/summary_instructions.dart';
 import '../sync/sync_api.dart';
+import 'context_menu.dart';
 import 'editor/voice_chip.dart';
+import 'settings_rows.dart' show SettingsPie, SettingsSegmented;
+import 'tag_colours.dart';
+import 'tonal_button.dart';
 
 /// What the dialog can offer beyond playback, decided by the caller.
 ///
@@ -48,8 +56,9 @@ class VoiceNoteActions {
   /// Writes the recording back to the note.
   ///
   /// One callback rather than one per edit, because everything the dialog
-  /// changes — a speaker's name, a post it just wrote, a post being thrown
-  /// away — is the same operation: this ref replaces the one on the note.
+  /// changes — its title, a speaker's name, a post it just wrote, a post being
+  /// thrown away — is the same operation: this ref replaces the one on the
+  /// note.
   final void Function(NoteVoiceRef next)? onChanged;
 
   /// Turns the transcript into whatever [instruction] asks for.
@@ -154,9 +163,9 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
   /// long as the dialog is open.
   ///
   /// The dialog is a route: it is built once with a ref and is not rebuilt
-  /// when the note changes underneath. Naming a speaker or writing a post
-  /// has to show up immediately, so the edit is made here and handed to
-  /// [VoiceNoteActions.onChanged] to persist.
+  /// when the note changes underneath. Renaming it, naming a speaker or
+  /// writing a post has to show up immediately, so the edit is made here and
+  /// handed to [VoiceNoteActions.onChanged] to persist.
   late NoteVoiceRef _live;
 
   /// The rewrite being written, if one is. Only ever one at a time: they
@@ -164,13 +173,51 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
   VoiceTakeKind? _rewriting;
   String? _rewriteError;
 
+  /// The transcript as rows, and when each summary point was said, worked
+  /// out once per transcript and summary rather than on every build: a long
+  /// recording runs to hundreds of paragraphs.
+  VoiceTranscript? _laidOut;
+  List<_TranscriptRow> _rows = const [];
+  List<GlobalKey> _rowKeys = const [];
+  VoiceSummary? _timed;
+  VoiceTranscript? _timedFrom;
+  List<Duration?> _moments = const [];
+
+  /// The row the play head is in, lit while this recording is loaded.
+  int? _playingRow;
+  final ScrollController _transcriptScroll = ScrollController();
+
+  /// Search in the transcript: each match is a row and where in its text.
+  bool _searching = false;
+  final TextEditingController _query = TextEditingController();
+  List<({int row, int start})> _matches = const [];
+  int _match = 0;
+  int _needle = 0;
+
   @override
   void initState() {
     super.initState();
     _live = widget.ref;
-    // Opens on whichever tab has something to read. Not remembered between
+    // Opens on whichever side has something to read. Not remembered between
     // openings: a rule you can predict beats one that is merely sticky.
     _onSummary = widget.ref.summary != null;
+    final player = widget.player;
+    if (player == null) return;
+    if (widget.ref.transcript case final transcript?) {
+      player.setPauses(widget.ref.hash, pausesIn(transcript.segments));
+    }
+    player.addListener(_followPlayer);
+    player.positionListenable.addListener(_followPlayer);
+    _playingRow = _rowPlaying();
+  }
+
+  @override
+  void dispose() {
+    widget.player?.removeListener(_followPlayer);
+    widget.player?.positionListenable.removeListener(_followPlayer);
+    _transcriptScroll.dispose();
+    _query.dispose();
+    super.dispose();
   }
 
   NoteVoiceRef get _ref => _live;
@@ -181,49 +228,203 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     widget.actions.onChanged?.call(next);
   }
 
-  /// The text **Insert into note** puts in, one line per point or paragraph.
-  String? get _insertableText {
-    if (_onSummary) {
-      final summary = _ref.summary;
-      if (summary == null) return null;
-      return summary.points.map((point) => '• $point').join('\n');
-    }
+  List<_TranscriptRow> _layout() {
     final transcript = _ref.transcript;
-    if (transcript == null || transcript.segments.isEmpty) return null;
-    return groupTranscriptParagraphs(transcript.segments)
-        .map((paragraph) => paragraph.map((s) => s.t).join(' ').trim())
-        .where((line) => line.isNotEmpty)
-        .join('\n');
+    if (identical(transcript, _laidOut) && _rowKeys.length == _rows.length) {
+      return _rows;
+    }
+    _laidOut = transcript;
+    final rows = <_TranscriptRow>[];
+    if (transcript != null) {
+      // One speaker is a memo somebody recorded alone. Labelling every
+      // paragraph "Speaker 1" would be the app telling them something they
+      // already know, so a transcript with nobody to tell apart has no
+      // labels at all.
+      final named = transcript.speakerIds.length > 1;
+      int? previous;
+      for (final paragraph in groupTranscriptParagraphs(transcript.segments)) {
+        final speaker = named ? paragraph.first.speaker : null;
+        rows.add(
+          _TranscriptRow(
+            paragraph: paragraph,
+            text: paragraph.map((segment) => segment.t).join(' ').trim(),
+            speaker: speaker,
+            startsTurn: speaker != null && speaker != previous,
+          ),
+        );
+        previous = speaker;
+      }
+    }
+    _rows = rows;
+    _rowKeys = [for (final _ in rows) GlobalKey()];
+    return rows;
   }
+
+  List<Duration?> _summaryMoments() {
+    final summary = _ref.summary;
+    if (summary == null) return const [];
+    final transcript = _ref.transcript;
+    if (identical(summary, _timed) && identical(transcript, _timedFrom)) {
+      return _moments;
+    }
+    final paragraphs = [for (final row in _layout()) row.paragraph];
+    _timed = summary;
+    _timedFrom = transcript;
+    _moments = [
+      for (final point in summary.points) momentFor(point, paragraphs),
+    ];
+    return _moments;
+  }
+
+  /// The row the play head is in, or null when this recording is not the
+  /// one loaded.
+  int? _rowPlaying() {
+    final player = widget.player;
+    if (player == null || player.activeHash != _ref.hash) return null;
+    final at = player.position.inMilliseconds;
+    int? found;
+    for (final (index, row) in _layout().indexed) {
+      if (row.paragraph.first.s > at) break;
+      found = index;
+    }
+    return found;
+  }
+
+  /// Lights the row being played, and keeps it in view while it plays.
+  void _followPlayer() {
+    if (!mounted) return;
+    final row = _rowPlaying();
+    if (row == _playingRow) return;
+    setState(() => _playingRow = row);
+    if (row != null && !_onSummary && widget.player!.isPlaying(_ref.hash)) {
+      _reveal(row);
+    }
+  }
+
+  /// Scrolls [row] into view when it is not wholly in view already. A row
+  /// the list has not built yet is jumped near first, by its share of the
+  /// list, and found exactly on the next frame.
+  void _reveal(int row, {bool near = false}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_transcriptScroll.hasClients) return;
+      if (row >= _rowKeys.length) return;
+      final position = _transcriptScroll.position;
+      final box = _rowKeys[row].currentContext?.findRenderObject();
+      if (box is! RenderBox) {
+        if (near) return;
+        position.jumpTo(
+          (position.maxScrollExtent * row / _rowKeys.length).clamp(
+            0.0,
+            position.maxScrollExtent,
+          ),
+        );
+        _reveal(row, near: true);
+        return;
+      }
+      final viewport = RenderAbstractViewport.of(box);
+      final top = viewport.getOffsetToReveal(box, 0).offset;
+      final bottom = viewport.getOffsetToReveal(box, 1).offset;
+      if (position.pixels >= bottom && position.pixels <= top) return;
+      unawaited(
+        position.animateTo(
+          (top - position.viewportDimension * 0.2).clamp(
+            0.0,
+            position.maxScrollExtent,
+          ),
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    });
+  }
+
+  void _search(String text) {
+    final needle = text.trim().toLowerCase();
+    final found = <({int row, int start})>[];
+    if (needle.isNotEmpty) {
+      for (final (index, row) in _layout().indexed) {
+        final said = row.text.toLowerCase();
+        // A letter whose lower case is longer would put the highlight in
+        // the wrong place, so such a paragraph is left out.
+        if (said.length != row.text.length) continue;
+        for (var at = said.indexOf(needle); at >= 0;) {
+          found.add((row: index, start: at));
+          at = said.indexOf(needle, at + needle.length);
+        }
+      }
+    }
+    setState(() {
+      _matches = found;
+      _match = 0;
+      _needle = needle.length;
+    });
+    if (found.isNotEmpty) _reveal(found.first.row);
+  }
+
+  void _step(int by) {
+    if (_matches.isEmpty) return;
+    setState(() => _match = (_match + by) % _matches.length);
+    _reveal(_matches[_match].row);
+  }
+
+  void _closeSearch() {
+    _query.clear();
+    setState(() {
+      _searching = false;
+      _matches = const [];
+      _needle = 0;
+    });
+  }
+
+  /// The summary as bullet lines, or the transcript as paragraphs: what
+  /// Insert puts in the note and Copy puts on the clipboard.
+  String? _textOf({required bool summary}) {
+    if (summary) {
+      return _ref.summary?.points.map((point) => '• $point').join('\n');
+    }
+    final lines = [
+      for (final row in _layout())
+        if (row.text.isNotEmpty) row.text,
+    ];
+    return lines.isEmpty ? null : lines.join('\n');
+  }
+
+  String get _title => _ref.summary?.title ?? 'Voice note';
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final insertable = _textOf(summary: _onSummary);
+    final insert = widget.actions.onInsert;
     final body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _Header(
-          title: _ref.summary?.title ?? 'Voice note',
+          title: _title,
           subtitle: _subtitle(),
+          onMore: (anchor) => unawaited(_showMore(anchor)),
           onClose: () => Navigator.of(context).maybePop(),
         ),
         VoiceNotePlayerRow(ref: _ref, player: widget.player),
-        _Tabs(
+        _SwitchRow(
           onSummary: _onSummary,
-          hasSummary: _ref.summary != null,
-          onChanged: (value) => setState(() => _onSummary = value),
-        ),
-        Expanded(child: _content(palette)),
-        _Footer(
-          onInsert: _insertableText == null || widget.actions.onInsert == null
+          onChanged: (summary) {
+            if (summary) _closeSearch();
+            setState(() => _onSummary = summary);
+          },
+          onSearch: _onSummary || _layout().isEmpty || _searching
+              ? null
+              : () => setState(() => _searching = true),
+          insertLabel: _onSummary ? 'Insert summary' : 'Insert transcript',
+          onInsert: insertable == null || insert == null
               ? null
               : () {
-                  widget.actions.onInsert!(_insertableText!);
+                  insert(insertable);
                   Navigator.of(context).maybePop();
                 },
-          onMenu: _showOverflow,
         ),
+        Expanded(child: _content(palette)),
       ],
     );
 
@@ -241,15 +442,35 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     }
     return Dialog(
       backgroundColor: palette.surfaceBackground,
-      child: SizedBox(width: 560, height: 640, child: body),
+      child: SizedBox(width: 620, height: 700, child: body),
     );
   }
 
+  /// "Wed 19 Nov · 8:55 · 2:03": the day and time it was recorded, with the
+  /// year only when it is not this one, then how long it runs.
   String _subtitle() {
-    final at = widget.recordedAt;
     final duration = formatVoiceDuration(_ref.duration);
+    final at = widget.recordedAt;
     if (at == null) return duration;
-    return '${_formatDate(at)} · $duration';
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final year = at.year == DateTime.now().year ? '' : ' ${at.year}';
+    final minute = at.minute.toString().padLeft(2, '0');
+    return '${weekdays[at.weekday - 1]} ${at.day} ${months[at.month - 1]}'
+        '$year · ${at.hour}:$minute · $duration';
   }
 
   Widget _content(CalcPalette palette) {
@@ -315,27 +536,39 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
 
   Widget _summary(CalcPalette palette) {
     final summary = _ref.summary!;
+    final moments = _summaryMoments();
     final takes = _ref.takes.reversed.toList(growable: false);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      padding: const EdgeInsets.fromLTRB(22, 14, 22, 20),
       children: [
-        for (final point in summary.points)
+        for (final (index, point) in summary.points.indexed)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('•  ', style: TextStyle(color: palette.textSecondary)),
+                SizedBox(
+                  width: 8,
+                  child: Text(
+                    '•',
+                    style: _reading.copyWith(color: palette.textTertiary),
+                  ),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
                   child: SelectableText(
                     point,
-                    style: TextStyle(color: palette.textPrimary, height: 1.4),
+                    style: _reading.copyWith(color: palette.textPrimary),
                   ),
                 ),
+                if (moments[index] case final at?) ...[
+                  const SizedBox(width: 10),
+                  _MomentTime(at: at, onPlay: () => unawaited(_seekTo(at))),
+                ],
               ],
             ),
           ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 2),
         // Says where the summary came from, and — in the same breath — that
         // how it is written is something the reader chose and can change.
         // The setting is here rather than only in Settings because this is
@@ -354,6 +587,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
             if (widget.actions.onSaveSummaryInstruction != null)
               _QuietButton(
                 label: 'Instructions',
+                icon: KapyIcons.slidersRounded,
                 onPressed: () => unawaited(_editSummaryInstruction()),
               ),
           ],
@@ -421,12 +655,14 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     );
   }
 
+  void _say(String message) => ScaffoldMessenger.maybeOf(
+    context,
+  )?.showSnackBar(SnackBar(content: Text(message)));
+
   Future<void> _copy(String text) async {
     await Clipboard.setData(ClipboardData(text: text));
     if (!mounted) return;
-    ScaffoldMessenger.maybeOf(
-      context,
-    )?.showSnackBar(const SnackBar(content: Text('Copied')));
+    _say('Copied');
   }
 
   /// Writes one take, and keeps it.
@@ -551,39 +787,22 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
 
   Widget _transcript(CalcPalette palette) {
     final transcript = _ref.transcript!;
-    final paragraphs = groupTranscriptParagraphs(transcript.segments);
+    final rows = _layout();
     final speakers = transcript.speakerIds;
-    // One speaker is a memo somebody recorded alone. Labelling every
-    // paragraph "Speaker 1" would be the app telling them something they
-    // already know, in the place they came to read their own words — so a
-    // transcript with nobody to tell apart looks exactly as it always has.
-    final named = speakers.length > 1;
-
-    // Precomputed rather than worked out per row: a long recording runs to
-    // hundreds of paragraphs and the builder must stay cheap.
-    var previous = -1;
-    final rows = <_TranscriptRow>[];
-    for (final paragraph in paragraphs) {
-      final speaker = paragraph.first.speaker;
-      rows.add(
-        _TranscriptRow(
-          paragraph: paragraph,
-          speaker: named ? speaker : null,
-          startsTurn: named && speaker != null && speaker != previous,
-        ),
-      );
-      previous = speaker ?? -1;
-    }
+    final rename = widget.actions.onChanged == null
+        ? null
+        : (int speaker) => unawaited(_renameSpeaker(speaker));
 
     final list = ListView.builder(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      controller: _transcriptScroll,
+      padding: const EdgeInsets.fromLTRB(14, 6, 14, 20),
       itemCount: rows.length + 1,
       itemBuilder: (context, index) {
         if (index == rows.length) {
           return Padding(
-            padding: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
             child: Text(
-              'Transcribed · ${transcript.lang}',
+              'Transcribed · ${_languageName(transcript.lang)}',
               style: TextStyle(
                 fontSize: AppTypeScale.caption,
                 color: palette.textTertiary,
@@ -592,53 +811,63 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
           );
         }
         final row = rows[index];
-        return Padding(
-          padding: EdgeInsets.only(bottom: 12, top: row.startsTurn ? 4 : 0),
+        final lit = index == _playingRow;
+        final start = Duration(milliseconds: row.paragraph.first.s);
+        return Container(
+          key: _rowKeys[index],
+          margin: EdgeInsets.only(
+            top: row.startsTurn && index > 0 ? 4 : 0,
+            bottom: 4,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: lit ? palette.accent.withValues(alpha: 0.13) : null,
+            borderRadius: BorderRadius.circular(8),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (row.startsTurn)
                 Padding(
-                  padding: const EdgeInsets.only(left: 48, bottom: 4),
+                  padding: const EdgeInsets.only(left: 46, bottom: 3),
                   child: _SpeakerLabel(
                     name: transcript.nameFor(row.speaker!),
                     color: speakerColor(palette, row.speaker!),
-                    onPressed: widget.actions.onChanged == null
+                    onPressed: rename == null
                         ? null
-                        : () => unawaited(_renameSpeaker(row.speaker!)),
+                        : () => rename(row.speaker!),
                   ),
                 ),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    width: 48,
+                    width: 46,
                     child: Text(
-                      formatVoiceDuration(
-                        Duration(milliseconds: row.paragraph.first.s),
-                      ),
+                      formatVoiceDuration(start),
                       style: TextStyle(
                         fontSize: AppTypeScale.caption,
-                        color: palette.textTertiary,
+                        height: 20 / AppTypeScale.caption,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                        fontWeight: AppWeight.font(
+                          lit ? AppWeight.page : AppWeight.body,
+                        ),
+                        fontVariations: AppWeight.wght(
+                          lit ? AppWeight.page : AppWeight.body,
+                        ),
+                        color: lit ? palette.accentText : palette.textTertiary,
                       ),
                     ),
                   ),
                   Expanded(
                     // SelectableText's own onTap, not a GestureDetector
                     // around it: the selection recognisers inside are deeper
-                    // in the arena and win every tap, so the wrapper this
-                    // used to have was never called once. Selecting a quote
-                    // out of the transcript still works; this is only the
-                    // tap.
-                    child: SelectableText(
-                      row.paragraph
-                          .map((segment) => segment.t)
-                          .join(' ')
-                          .trim(),
-                      onTap: () => unawaited(
-                        _seekTo(Duration(milliseconds: row.paragraph.first.s)),
-                      ),
-                      style: TextStyle(color: palette.textPrimary, height: 1.5),
+                    // in the arena and win every tap. Selecting a quote out
+                    // of the transcript still works; this is only the tap.
+                    child: SelectableText.rich(
+                      _marked(row.text, index, palette),
+                      onTap: () => unawaited(_seekTo(start)),
+                      style: _reading.copyWith(color: palette.textPrimary),
                     ),
                   ),
                 ],
@@ -649,19 +878,52 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
       },
     );
 
-    if (!named) return list;
     return Column(
       children: [
-        _SpeakerBar(
-          transcript: transcript,
-          speakers: speakers,
-          onRename: widget.actions.onChanged == null
-              ? null
-              : (speaker) => unawaited(_renameSpeaker(speaker)),
-        ),
+        if (_searching)
+          _SearchBar(
+            controller: _query,
+            matches: _matches.length,
+            current: _match,
+            searched: _needle > 0,
+            onChanged: _search,
+            onStep: _step,
+            onClose: _closeSearch,
+          ),
+        if (speakers.length > 1)
+          _SpeakerBar(
+            transcript: transcript,
+            speakers: speakers,
+            onRename: rename,
+          ),
         Expanded(child: list),
       ],
     );
+  }
+
+  /// [text] with this row's search matches marked, the current one more so.
+  TextSpan _marked(String text, int row, CalcPalette palette) {
+    if (_needle == 0) return TextSpan(text: text);
+    final spans = <TextSpan>[];
+    var from = 0;
+    for (final (index, match) in _matches.indexed) {
+      if (match.row != row || match.start < from) continue;
+      spans
+        ..add(TextSpan(text: text.substring(from, match.start)))
+        ..add(
+          TextSpan(
+            text: text.substring(match.start, match.start + _needle),
+            style: TextStyle(
+              backgroundColor: palette.accent.withValues(
+                alpha: index == _match ? 0.55 : 0.25,
+              ),
+            ),
+          ),
+        );
+      from = match.start + _needle;
+    }
+    spans.add(TextSpan(text: text.substring(from)));
+    return TextSpan(children: spans);
   }
 
   Future<void> _renameSpeaker(int speaker) async {
@@ -676,35 +938,100 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     _apply(_ref.copyWith(transcript: transcript.renaming(speaker, name)));
   }
 
-  Future<void> _showOverflow() async {
+  /// More: a menu under the button on a computer, a sheet on a phone.
+  Future<void> _showMore(BuildContext anchor) async {
     final actions = widget.actions;
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (actions.onTranscribeAgain != null)
-              ListTile(
-                title: const Text('Transcribe again'),
-                onTap: () => Navigator.of(context).pop('again'),
-              ),
-            if (_onSummary && actions.onRegenerateSummary != null)
-              ListTile(
-                title: const Text('Regenerate summary'),
-                onTap: () => Navigator.of(context).pop('regenerate'),
-              ),
-            if (actions.onDelete != null)
-              ListTile(
-                title: const Text('Delete voice note'),
-                onTap: () => Navigator.of(context).pop('delete'),
-              ),
-          ],
-        ),
-      ),
+    final player = widget.player;
+    final summary = _ref.summary;
+    final phone = AppPlatform.isMobile;
+    final KapyMenu menu = (
+      heading: null,
+      groups: [
+        [
+          if (summary != null && actions.onChanged != null)
+            const KapyMenuAction(
+              value: 'rename',
+              label: 'Rename',
+              icon: KapyIcons.pencilEditRounded,
+            ),
+          if (summary != null)
+            const KapyMenuAction(
+              value: 'copy-summary',
+              label: 'Copy summary',
+              icon: KapyIcons.copyRounded,
+            ),
+          if (_textOf(summary: false) != null)
+            const KapyMenuAction(
+              value: 'copy-transcript',
+              label: 'Copy transcript',
+              icon: KapyIcons.copyRounded,
+            ),
+          if (player != null)
+            const KapyMenuAction(
+              value: 'audio',
+              label: 'Save audio…',
+              icon: KapyIcons.downloadRounded,
+            ),
+        ],
+        [
+          if (player != null && _ref.transcript != null)
+            KapyMenuAction(
+              value: 'skip',
+              label: 'Skip pauses',
+              icon: KapyIcons.forwardRounded,
+              checked: player.skipPauses,
+            ),
+        ],
+        [
+          if (actions.onTranscribeAgain != null)
+            const KapyMenuAction(
+              value: 'again',
+              label: 'Transcribe again',
+              icon: KapyIcons.refreshOutlined,
+            ),
+          if (summary != null && actions.onRegenerateSummary != null)
+            const KapyMenuAction(
+              value: 'regenerate',
+              label: 'Regenerate summary',
+              icon: KapyIcons.refreshOutlined,
+            ),
+        ],
+        [
+          if (actions.onDelete != null)
+            const KapyMenuAction(
+              value: 'delete',
+              label: 'Delete voice note',
+              icon: KapyIcons.deleteOutlined,
+              destructive: true,
+            ),
+        ],
+      ],
     );
+    if (menu.groups.every((group) => group.isEmpty)) return;
+
+    final String? choice;
+    if (phone) {
+      choice = await _showMoreSheet(menu);
+    } else {
+      final button = anchor.findRenderObject()! as RenderBox;
+      choice = await showKapyContextMenu<String>(
+        context: context,
+        globalPosition: button.localToGlobal(Offset(0, button.size.height + 4)),
+        items: kapyMenuItems(menu, key: (value) => 'voice-more-$value'),
+      );
+    }
     if (!mounted) return;
     switch (choice) {
+      case 'rename':
+        await _rename();
+      case 'copy-summary':
+        await _copy(_textOf(summary: true)!);
+      case 'copy-transcript':
+        await _copy(_textOf(summary: false)!);
+      case 'audio':
+        await _exportAudio();
+      case 'skip':
+        player!.setSkipPauses(!player.skipPauses);
       case 'again':
         actions.onTranscribeAgain?.call();
       case 'regenerate':
@@ -714,6 +1041,100 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
           actions.onDelete?.call();
           if (mounted) Navigator.of(context).maybePop();
         }
+    }
+  }
+
+  Future<String?> _showMoreSheet(KapyMenu menu) => showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    barrierColor: Theme.of(context).drawerTheme.scrimColor,
+    builder: (sheetContext) {
+      final palette = sheetContext.palette;
+      final groups = menu.groups.where((group) => group.isNotEmpty).toList();
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: palette.surfaceBackground,
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(AppRadii.dialog),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
+                  child: Text(
+                    _title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: AppTypeScale.body,
+                      fontWeight: AppWeight.font(AppWeight.button),
+                      fontVariations: AppWeight.wght(AppWeight.button),
+                      color: palette.textPrimary,
+                    ),
+                  ),
+                ),
+                for (final (index, group) in groups.indexed) ...[
+                  if (index > 0)
+                    Divider(height: 9, indent: 20, color: palette.separator),
+                  for (final action in group)
+                    InkWell(
+                      key: ValueKey('voice-more-${action.value}'),
+                      onTap: () => Navigator.of(sheetContext).pop(action.value),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        child: KapyMenuActionRow(action, touch: true),
+                      ),
+                    ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
+  /// Names the recording. Kept as the summary's title, under a mark that
+  /// stops a summary written again from replacing it.
+  Future<void> _rename() async {
+    final summary = _ref.summary;
+    if (summary == null) return;
+    final asked = await showRenameDialog(context, current: summary.title);
+    final title = asked?.trim();
+    if (!mounted || title == null || title.isEmpty || title == summary.title) {
+      return;
+    }
+    _apply(_ref.copyWith(summary: summary.withTitle(title)));
+  }
+
+  Future<void> _exportAudio() async {
+    final player = widget.player;
+    if (player == null) return;
+    final outcome = await exportVoiceAudio(
+      locate: () => player.fileFor(_ref.hash),
+      title: _title,
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case VoiceExportOutcome.done || VoiceExportOutcome.cancelled:
+        return;
+      case VoiceExportOutcome.notDownloaded:
+        _say(
+          "The audio isn't on this device yet. Try again once you're online.",
+        );
+      case VoiceExportOutcome.failed:
+        _say("Couldn't save the audio. Try again.");
     }
   }
 
@@ -764,37 +1185,51 @@ List<List<TranscriptSegment>> groupTranscriptParagraphs(
   return paragraphs;
 }
 
-String _formatDate(DateTime at) {
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return '${at.day} ${months[at.month - 1]} ${at.year}';
-}
+const TextStyle _reading = TextStyle(fontSize: 13.5, height: 20 / 13.5);
+
+/// "English" for "en": a transcript's language by name where the app has
+/// one, its code otherwise.
+String _languageName(String code) =>
+    speechLanguages[code.split(RegExp('[-_]')).first.toLowerCase()] ?? code;
 
 class _Header extends StatelessWidget {
-  const _Header({required this.title, required this.subtitle, this.onClose});
+  const _Header({
+    required this.title,
+    required this.subtitle,
+    required this.onMore,
+    required this.onClose,
+  });
 
   final String title;
   final String subtitle;
-  final VoidCallback? onClose;
+
+  /// Handed the button, which the menu opens under.
+  final void Function(BuildContext button) onMore;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final extent = AppPlatform.hasPointer ? 28.0 : 40.0;
+    Widget button(KapyIconData icon, String tooltip, VoidCallback onPressed) =>
+        IconButton(
+          icon: KapyIcon(icon, size: 18),
+          tooltip: tooltip,
+          color: palette.textSecondary,
+          padding: EdgeInsets.zero,
+          constraints: BoxConstraints.tightFor(width: extent, height: extent),
+          style: IconButton.styleFrom(
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          onPressed: onPressed,
+        );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 8, 8),
+      padding: const EdgeInsets.fromLTRB(22, 18, 14, 2),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
             child: Column(
@@ -805,35 +1240,43 @@ class _Header extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: AppWeight.font(AppWeight.body),
-                    fontVariations: AppWeight.wght(AppWeight.body),
+                    fontSize: 17,
+                    height: 22 / 17,
+                    fontWeight: AppWeight.font(AppWeight.page),
+                    fontVariations: AppWeight.wght(AppWeight.page),
                     color: palette.textPrimary,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   subtitle,
                   style: TextStyle(
-                    fontSize: AppTypeScale.small,
+                    fontSize: AppTypeScale.caption,
                     color: palette.textSecondary,
                   ),
                 ),
               ],
             ),
           ),
-          IconButton(
-            icon: const KapyIcon(KapyIcons.closeRounded, size: 18),
-            tooltip: 'Close',
-            onPressed: onClose,
+          Builder(
+            builder: (context) => button(
+              KapyIcons.moreHorizontalRounded,
+              'More',
+              () => onMore(context),
+            ),
           ),
+          const SizedBox(width: 2),
+          button(KapyIcons.closeRounded, 'Close', onClose),
         ],
       ),
     );
   }
 }
 
-/// Play, scrub, elapsed/total, and the speed cycle.
+/// Play, the waveform to scrub, elapsed / total, and the speed.
+///
+/// On a computer it is one row. On a phone the waveform takes the row beside
+/// the button, and the time and speed go under it.
 class VoiceNotePlayerRow extends StatefulWidget {
   const VoiceNotePlayerRow({super.key, required this.ref, this.player});
 
@@ -847,10 +1290,9 @@ class VoiceNotePlayerRow extends StatefulWidget {
 class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
   static const List<double> _speeds = [1, 1.5, 2];
 
-  /// Where the thumb has been dragged to on a recording that is not playing.
-  ///
-  /// A slider needs somewhere to put the value while the finger is down, and
-  /// on an untouched recording there is no play head to put it in yet.
+  /// Where the waveform has been dragged to on a recording that is not
+  /// loaded. It only starts on release, so a drag does not restart playback
+  /// on every frame of itself.
   double? _scrubbing;
 
   @override
@@ -877,63 +1319,118 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
           valueListenable: player.positionListenable,
           builder: (context, head, _) {
             final position = active ? head : Duration.zero;
+            final scrubbing = _scrubbing;
+            final fraction =
+                scrubbing ??
+                (active && total.inMilliseconds > 0
+                    ? (position.inMilliseconds / total.inMilliseconds).clamp(
+                        0.0,
+                        1.0,
+                      )
+                    : null);
+            final shown = scrubbing == null ? position : total * scrubbing;
+            final touch = !AppPlatform.hasPointer;
+            final size = touch ? 44.0 : 36.0;
+
+            final play = IconButton(
+              icon: VoicePlayGlyph(
+                playing: playing,
+                opening: opening,
+                failure: failure,
+                size: touch ? 18 : 16,
+                color: palette.tonalForeground,
+              ),
+              tooltip: voicePlayButtonLabel(
+                playing: playing,
+                opening: opening,
+                failure: failure,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints.tightFor(width: size, height: size),
+              style: IconButton.styleFrom(
+                backgroundColor: palette.tonalBackground,
+                shape: const CircleBorder(),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: _toggle,
+            );
+            final scrubber = _Scrubber(
+              peaks: widget.ref.peaks,
+              fraction: fraction,
+              value: formatVoiceDuration(shown),
+              onTap: (at) {
+                if (active) {
+                  unawaited(player.seek(total * at));
+                } else {
+                  unawaited(_start(from: total * at));
+                }
+              },
+              onDrag: (at) {
+                if (active) {
+                  unawaited(player.seek(total * at));
+                } else {
+                  setState(() => _scrubbing = at);
+                }
+              },
+              onDragEnd: () {
+                final at = _scrubbing;
+                if (at == null) return;
+                setState(() => _scrubbing = null);
+                unawaited(_start(from: total * at));
+              },
+            );
+            final time = Text(
+              '${formatVoiceDuration(shown)} / ${formatVoiceDuration(total)}',
+              style: TextStyle(
+                fontSize: AppTypeScale.caption,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                color: palette.textSecondary,
+              ),
+            );
+            final speed = _SpeedPill(
+              speed: player.speed,
+              onPressed: () => unawaited(
+                player.setSpeed(
+                  _speeds[(_speeds.indexOf(player.speed) + 1) % _speeds.length],
+                ),
+              ),
+            );
+
+            if (!touch) {
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(22, 10, 22, 8),
+                child: Row(
+                  children: [
+                    play,
+                    const SizedBox(width: 12),
+                    Expanded(child: scrubber),
+                    const SizedBox(width: 12),
+                    time,
+                    const SizedBox(width: 12),
+                    speed,
+                  ],
+                ),
+              );
+            }
             return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Row(
+              padding: const EdgeInsets.fromLTRB(22, 10, 22, 8),
+              child: Column(
                 children: [
-                  IconButton(
-                    icon: VoicePlayGlyph(
-                      playing: playing,
-                      opening: opening,
-                      failure: failure,
-                    ),
-                    tooltip: voicePlayButtonLabel(
-                      playing: playing,
-                      opening: opening,
-                      failure: failure,
-                    ),
-                    onPressed: _toggle,
+                  Row(
+                    children: [
+                      play,
+                      const SizedBox(width: 12),
+                      Expanded(child: scrubber),
+                    ],
                   ),
-                  Expanded(
-                    child: Slider(
-                      value:
-                          _scrubbing ??
-                          (total.inMilliseconds == 0
-                              ? 0
-                              : (position.inMilliseconds / total.inMilliseconds)
-                                    .clamp(0.0, 1.0)),
-                      // Scrubbing a recording nobody has started is a request to
-                      // hear it from there, which is worth more than a disabled
-                      // slider. It only becomes one on release, so a drag does not
-                      // restart playback on every frame of itself.
-                      onChanged: active
-                          ? (value) => player.seek(total * value)
-                          : (value) => setState(() => _scrubbing = value),
-                      onChangeEnd: active
-                          ? null
-                          : (value) {
-                              setState(() => _scrubbing = null);
-                              unawaited(_start(from: total * value));
-                            },
-                    ),
-                  ),
-                  Text(
-                    '${formatVoiceDuration(_scrubbing == null ? position : total * _scrubbing!)}'
-                    ' / ${formatVoiceDuration(total)}',
-                    style: TextStyle(
-                      fontSize: AppTypeScale.caption,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      final next =
-                          _speeds[(_speeds.indexOf(player.speed) + 1) %
-                              _speeds.length];
-                      player.setSpeed(next);
-                    },
-                    child: Text('${_trim(player.speed)}×'),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      SizedBox(width: size + 12),
+                      time,
+                      const Spacer(),
+                      speed,
+                    ],
                   ),
                 ],
               ),
@@ -943,9 +1440,6 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
       },
     );
   }
-
-  static String _trim(double speed) =>
-      speed == speed.roundToDouble() ? speed.toStringAsFixed(0) : '$speed';
 
   Future<void> _toggle() async {
     final player = widget.player;
@@ -964,57 +1458,361 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
   }
 }
 
-class _Tabs extends StatelessWidget {
-  const _Tabs({
-    required this.onSummary,
-    required this.hasSummary,
-    required this.onChanged,
+/// The chip's waveform, played part tinted, with the head as a line. A tap
+/// or a drag says where, as a share of the recording.
+class _Scrubber extends StatelessWidget {
+  const _Scrubber({
+    required this.peaks,
+    required this.fraction,
+    required this.value,
+    required this.onTap,
+    required this.onDrag,
+    required this.onDragEnd,
   });
 
-  final bool onSummary;
-  final bool hasSummary;
-  final ValueChanged<bool> onChanged;
+  final Uint8List? peaks;
+  final double? fraction;
+  final String value;
+  final ValueChanged<double> onTap;
+  final ValueChanged<double> onDrag;
+  final VoidCallback onDragEnd;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    Widget tab(String label, bool selected, VoidCallback onTap) => Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                width: 2,
-                color: selected ? palette.textPrimary : Colors.transparent,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        double at(Offset point) => (point.dx / width).clamp(0.0, 1.0);
+        return Semantics(
+          slider: true,
+          label: 'Position',
+          value: value,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapUp: (details) => onTap(at(details.localPosition)),
+            onHorizontalDragStart: (details) =>
+                onDrag(at(details.localPosition)),
+            onHorizontalDragUpdate: (details) =>
+                onDrag(at(details.localPosition)),
+            onHorizontalDragEnd: (_) => onDragEnd(),
+            child: CustomPaint(
+              size: Size(width, 36),
+              painter: VoiceWaveformPainter(
+                peaks: peaks,
+                progress: fraction,
+                played: palette.accent,
+                unplayed: palette.switchTrackOff,
+                bars: (width / 4).floor().clamp(12, 100),
               ),
+              foregroundPainter: fraction == null
+                  ? null
+                  : _HeadPainter(fraction!, palette.textPrimary),
             ),
           ),
-          child: Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: selected ? palette.textPrimary : palette.textSecondary,
+        );
+      },
+    );
+  }
+}
+
+class _HeadPainter extends CustomPainter {
+  _HeadPainter(this.fraction, this.color);
+
+  final double fraction;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final x = (size.width * fraction).clamp(1.0, size.width - 1);
+    canvas.drawLine(
+      Offset(x, 0),
+      Offset(x, size.height),
+      Paint()
+        ..color = color
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HeadPainter old) =>
+      old.fraction != fraction || old.color != color;
+}
+
+/// 1× → 1.5× → 2×.
+class _SpeedPill extends StatelessWidget {
+  const _SpeedPill({required this.speed, required this.onPressed});
+
+  final double speed;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final label = speed == speed.roundToDouble()
+        ? speed.toStringAsFixed(0)
+        : '$speed';
+    return Tooltip(
+      message: 'Playback speed',
+      child: Material(
+        color: palette.wellBackground,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(7),
+          side: BorderSide(color: palette.controlBorder),
+        ),
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: Container(
+            height: AppPlatform.hasPointer ? 24 : 30,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            alignment: Alignment.center,
+            child: Text(
+              '$label×',
+              style: TextStyle(
+                fontSize: AppTypeScale.caption,
+                fontWeight: AppWeight.font(AppWeight.button),
+                fontVariations: AppWeight.wght(AppWeight.button),
+                color: palette.textSecondary,
+              ),
             ),
           ),
         ),
       ),
     );
+  }
+}
 
+/// Summary | Transcript, then search on the transcript side and Insert,
+/// which says what it puts in the note.
+class _SwitchRow extends StatelessWidget {
+  const _SwitchRow({
+    required this.onSummary,
+    required this.onChanged,
+    required this.insertLabel,
+    this.onSearch,
+    this.onInsert,
+  });
+
+  final bool onSummary;
+  final ValueChanged<bool> onChanged;
+  final String insertLabel;
+  final VoidCallback? onSearch;
+  final VoidCallback? onInsert;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final pointer = AppPlatform.hasPointer;
+    final segmented = SettingsSegmented<bool>(
+      options: const [true, false],
+      selected: onSummary,
+      labelFor: (summary) => summary ? 'Summary' : 'Transcript',
+      keyFor: (summary) =>
+          ValueKey(summary ? 'voice-summary' : 'voice-transcript'),
+      onSelected: onChanged,
+    );
+    final extent = pointer ? 28.0 : 40.0;
+    final colour = onInsert == null ? palette.textTertiary : palette.accentText;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.fromLTRB(22, 6, 16, 2),
       child: Row(
         children: [
-          tab('Summary', onSummary, () => onChanged(true)),
-          tab('Transcript', !onSummary, () => onChanged(false)),
+          // On a phone the track shares its width between the two, so it is
+          // given one; beside a pointer it fits its labels.
+          if (pointer) segmented else SizedBox(width: 176, child: segmented),
+          const Spacer(),
+          if (onSearch != null)
+            IconButton(
+              icon: const KapyIcon(KapyIcons.searchRounded, size: 18),
+              tooltip: 'Search transcript',
+              color: palette.textSecondary,
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints.tightFor(
+                width: extent,
+                height: extent,
+              ),
+              style: IconButton.styleFrom(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              onPressed: onSearch,
+            ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Semantics(
+                button: true,
+                enabled: onInsert != null,
+                child: InkWell(
+                  onTap: onInsert,
+                  borderRadius: BorderRadius.circular(7),
+                  child: Container(
+                    height: pointer ? 26 : 36,
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    alignment: Alignment.center,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        KapyIcon(
+                          KapyIcons.noteAddRounded,
+                          size: 16,
+                          color: colour,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          insertLabel,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: AppWeight.font(AppWeight.button),
+                            fontVariations: AppWeight.wght(AppWeight.button),
+                            color: colour,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
+/// When a summary point was said, plain and muted, and a tap plays it.
+class _MomentTime extends StatelessWidget {
+  const _MomentTime({required this.at, required this.onPlay});
+
+  final Duration at;
+  final VoidCallback onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final time = formatVoiceDuration(at);
+    return Tooltip(
+      message: 'Play from $time',
+      child: InkWell(
+        onTap: onPlay,
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            time,
+            style: TextStyle(
+              fontSize: AppTypeScale.caption,
+              height: 20 / AppTypeScale.caption,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              color: context.palette.textTertiary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Find in the transcript: the words, how many there are, and steps
+/// through them. Return goes to the next one and Escape closes it.
+class _SearchBar extends StatelessWidget {
+  const _SearchBar({
+    required this.controller,
+    required this.matches,
+    required this.current,
+    required this.searched,
+    required this.onChanged,
+    required this.onStep,
+    required this.onClose,
+  });
+
+  final TextEditingController controller;
+  final int matches;
+  final int current;
+  final bool searched;
+  final ValueChanged<String> onChanged;
+  final ValueChanged<int> onStep;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    Widget step(KapyIconData icon, String tooltip, int by) => IconButton(
+      icon: KapyIcon(icon, size: 16),
+      tooltip: tooltip,
+      color: palette.textSecondary,
+      visualDensity: VisualDensity.compact,
+      onPressed: matches == 0 ? null : () => onStep(by),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(22, 8, 14, 4),
+      child: CallbackShortcuts(
+        bindings: {const SingleActivator(LogicalKeyboardKey.escape): onClose},
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: controller,
+                autofocus: true,
+                onChanged: onChanged,
+                onSubmitted: (_) => onStep(1),
+                style: TextStyle(
+                  fontSize: AppTypeScale.small,
+                  color: palette.textPrimary,
+                ),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Find in transcript',
+                  prefixIcon: KapyIcon(
+                    KapyIcons.searchRounded,
+                    size: 16,
+                    color: palette.textTertiary,
+                  ),
+                  prefixIconConstraints: const BoxConstraints.tightFor(
+                    width: 32,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+            if (searched) ...[
+              const SizedBox(width: 8),
+              Text(
+                matches == 0 ? 'No matches' : '${current + 1} of $matches',
+                style: TextStyle(
+                  fontSize: AppTypeScale.caption,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  color: palette.textTertiary,
+                ),
+              ),
+            ],
+            step(KapyIcons.chevronUpRounded, 'Previous match', -1),
+            step(KapyIcons.chevronDownRounded, 'Next match', 1),
+            IconButton(
+              icon: const KapyIcon(KapyIcons.closeRounded, size: 16),
+              tooltip: 'Close search',
+              color: palette.textSecondary,
+              visualDensity: VisualDensity.compact,
+              onPressed: onClose,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Why there is nothing to read yet, where the words would be.
 class _Empty extends StatelessWidget {
   const _Empty({
     required this.message,
@@ -1033,38 +1831,39 @@ class _Empty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    return Center(
+    return Align(
+      alignment: Alignment.topLeft,
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.fromLTRB(22, 14, 22, 14),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: palette.textSecondary),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (busy) ...[const _BusyPie(), const SizedBox(width: 8)],
+                Flexible(
+                  child: Text(
+                    message,
+                    style: _reading.copyWith(color: palette.textSecondary),
+                  ),
+                ),
+              ],
             ),
-            if (busy) ...[
-              const SizedBox(height: 16),
-              const SizedBox(
-                width: 160,
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
-            ],
-            if (caption != null) ...[
-              const SizedBox(height: 8),
+            if (caption case final caption?) ...[
+              const SizedBox(height: 4),
               Text(
-                caption!,
-                textAlign: TextAlign.center,
+                caption,
                 style: TextStyle(
                   fontSize: AppTypeScale.caption,
                   color: palette.textTertiary,
                 ),
               ),
             ],
-            if (actionLabel != null && onAction != null) ...[
-              const SizedBox(height: 12),
-              TextButton(onPressed: onAction, child: Text(actionLabel!)),
+            if (actionLabel case final label? when onAction != null) ...[
+              const SizedBox(height: 10),
+              TonalButton(label: label, onPressed: onAction),
             ],
           ],
         ),
@@ -1073,35 +1872,53 @@ class _Empty extends StatelessWidget {
   }
 }
 
-class _Footer extends StatelessWidget {
-  const _Footer({this.onInsert, this.onMenu});
+/// The app's 14 px clock face, filling round while the work goes on. Still,
+/// a quarter full, when the system asks for less motion.
+class _BusyPie extends StatefulWidget {
+  const _BusyPie();
 
-  final VoidCallback? onInsert;
-  final VoidCallback? onMenu;
+  @override
+  State<_BusyPie> createState() => _BusyPieState();
+}
+
+class _BusyPieState extends State<_BusyPie>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _turn = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _turn.stop();
+    } else if (!_turn.isAnimating) {
+      unawaited(_turn.repeat());
+    }
+  }
+
+  @override
+  void dispose() {
+    _turn.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-      child: Row(
-        children: [
-          TextButton(
-            onPressed: onInsert,
-            child: const Text('Insert into note'),
-          ),
-          const Spacer(),
-          IconButton(
-            icon: const KapyIcon(KapyIcons.moreVerticalRounded, size: 20),
-            tooltip: 'More',
-            onPressed: onMenu,
-          ),
-        ],
-      ),
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return const SettingsPie(fraction: 0.25);
+    }
+    // Short of full: a full face is the allowance pie's "used up".
+    return AnimatedBuilder(
+      animation: _turn,
+      builder: (context, _) => SettingsPie(fraction: _turn.value * 0.95),
     );
   }
 }
 
-/// One paragraph of the transcript, and whether it opens somebody's turn.
+/// One paragraph of the transcript, its text, and whether it opens
+/// somebody's turn.
 ///
 /// Worked out once for the whole transcript rather than in the builder: a
 /// long recording runs to hundreds of these and a list that recomputes who
@@ -1109,30 +1926,24 @@ class _Footer extends StatelessWidget {
 class _TranscriptRow {
   const _TranscriptRow({
     required this.paragraph,
+    required this.text,
     required this.speaker,
     required this.startsTurn,
   });
 
   final List<TranscriptSegment> paragraph;
+  final String text;
   final int? speaker;
   final bool startsTurn;
 }
 
-/// A colour per speaker, from the palette the app already has.
+/// A colour per speaker: two from the tag wheel that tell apart in every
+/// theme, taken in turn.
 ///
-/// Reuses the chip colours rather than inventing new ones, so a transcript
-/// looks like the rest of the app in both themes and nobody has to pick five
-/// more colours that work on paper and in the dark.
-Color speakerColor(CalcPalette palette, int speaker) {
-  final wheel = [
-    palette.chipNumber,
-    palette.chipCurrency,
-    palette.chipUnit,
-    palette.chipBoolean,
-    palette.chipOther,
-  ];
-  return wheel[speaker % wheel.length];
-}
+/// Not the chip colours, which Riverbank sets all to one sage, so the dots
+/// could not tell Me from Arjun.
+Color speakerColor(CalcPalette palette, int speaker) =>
+    (speaker.isEven ? TagColour.teal : TagColour.mustard).dot(palette);
 
 /// Says how many people are in the recording, and offers their names.
 ///
@@ -1152,63 +1963,50 @@ class _SpeakerBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final quiet = TextStyle(
+      fontSize: AppTypeScale.caption,
+      color: palette.textTertiary,
+    );
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+      margin: const EdgeInsets.symmetric(horizontal: 22),
+      padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
       decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: palette.separator)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text(
-            '${speakers.length} speakers',
-            style: TextStyle(
-              fontSize: AppTypeScale.caption,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
-              color: palette.textSecondary,
+          Text('${speakers.length} speakers', style: quiet),
+          for (final speaker in speakers)
+            _SpeakerLabel(
+              name: transcript.nameFor(speaker),
+              color: speakerColor(palette, speaker),
+              boxed: true,
+              onPressed: onRename == null ? null : () => onRename!(speaker),
             ),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final speaker in speakers)
-                _SpeakerLabel(
-                  name: transcript.nameFor(speaker),
-                  color: speakerColor(palette, speaker),
-                  onPressed: onRename == null ? null : () => onRename!(speaker),
-                ),
-            ],
-          ),
-          if (onRename != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Tap a name to change it.',
-              style: TextStyle(
-                fontSize: AppTypeScale.caption,
-                color: palette.textTertiary,
-              ),
-            ),
-          ],
+          if (onRename != null) Text('Tap a name to change it.', style: quiet),
         ],
       ),
     );
   }
 }
 
-/// A speaker's name, with the dot that ties it to their paragraphs.
+/// A speaker's name, with the dot that ties it to their paragraphs: in a
+/// box in the speaker row, bare over a paragraph.
 class _SpeakerLabel extends StatelessWidget {
   const _SpeakerLabel({
     required this.name,
     required this.color,
+    this.boxed = false,
     this.onPressed,
   });
 
   final String name;
   final Color color;
+  final bool boxed;
   final VoidCallback? onPressed;
 
   @override
@@ -1227,34 +2025,41 @@ class _SpeakerLabel extends StatelessWidget {
           name,
           style: TextStyle(
             fontSize: AppTypeScale.caption,
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.button),
+            fontVariations: AppWeight.wght(AppWeight.button),
             color: palette.textSecondary,
           ),
         ),
       ],
     );
-    if (onPressed == null) return label;
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(boxed ? 6 : AppRadii.compact),
+      side: boxed ? BorderSide(color: palette.controlBorder) : BorderSide.none,
+    );
+    final padded = Container(
+      height: boxed ? 22 : null,
+      padding: EdgeInsets.symmetric(horizontal: boxed ? 8 : 4, vertical: 2),
+      decoration: ShapeDecoration(
+        shape: shape,
+        color: boxed ? palette.wellBackground : null,
+      ),
+      child: label,
+    );
+    if (onPressed == null) return padded;
     return Semantics(
       button: true,
       label: 'Rename $name',
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: label,
-        ),
-      ),
+      child: InkWell(onTap: onPressed, customBorder: shape, child: padded),
     );
   }
 }
 
 /// A quiet text action, for things beside a caption rather than under it.
 class _QuietButton extends StatelessWidget {
-  const _QuietButton({required this.label, this.onPressed});
+  const _QuietButton({required this.label, this.icon, this.onPressed});
 
   final String label;
+  final KapyIconData? icon;
   final VoidCallback? onPressed;
 
   @override
@@ -1265,14 +2070,23 @@ class _QuietButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppRadii.compact),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: AppTypeScale.caption,
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
-            color: palette.textSecondary,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon case final icon?) ...[
+              KapyIcon(icon, size: 15, color: palette.textSecondary),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: AppTypeScale.caption,
+                fontWeight: AppWeight.font(AppWeight.body),
+                fontVariations: AppWeight.wght(AppWeight.body),
+                color: palette.textSecondary,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -1547,5 +2361,37 @@ Future<String?> showInstructionSheet(
         ],
       );
     },
+  );
+}
+
+/// Asks for the recording's name, starting from the one it has.
+Future<String?> showRenameDialog(
+  BuildContext context, {
+  required String current,
+}) {
+  final controller = TextEditingController(text: current)
+    ..selection = TextSelection(baseOffset: 0, extentOffset: current.length);
+  return showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Rename recording'),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        maxLength: 80,
+        decoration: const InputDecoration(counterText: ''),
+        onSubmitted: (value) => Navigator.of(context).pop(value),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(controller.text),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
   );
 }

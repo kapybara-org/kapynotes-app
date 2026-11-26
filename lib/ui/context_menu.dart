@@ -251,6 +251,7 @@ class KapyMenuAction {
     this.hint,
     this.destructive = false,
     this.enabled = true,
+    this.checked,
   });
 
   final String value;
@@ -259,6 +260,10 @@ class KapyMenuAction {
   final String? hint;
   final bool destructive;
   final bool enabled;
+
+  /// Set for a line that turns something on or off, such as Skip pauses:
+  /// a tick at its end while it is on.
+  final bool? checked;
 }
 
 /// A note's actions menu: a heading that names what it acts on, where that
@@ -343,7 +348,7 @@ class KapyMenuActionRow extends StatelessWidget {
         : action.destructive
         ? Theme.of(context).colorScheme.error
         : palette.textPrimary;
-    return Row(
+    final row = Row(
       children: [
         KapyIcon(
           action.icon,
@@ -377,7 +382,19 @@ class KapyMenuActionRow extends StatelessWidget {
             ),
           ),
         ],
+        if (action.checked == true) ...[
+          SizedBox(width: touch ? 18 : 10),
+          KapyIcon(
+            KapyIcons.checkRounded,
+            size: touch
+                ? AppControlMetrics.iconAction
+                : AppControlMetrics.iconControl,
+            color: palette.textSecondary,
+          ),
+        ],
       ],
     );
+    if (action.checked == null) return row;
+    return Semantics(checked: action.checked, child: row);
   }
 }
