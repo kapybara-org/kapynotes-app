@@ -692,17 +692,26 @@ void main() {
     });
 
     testWidgets("keeps above the list's foot where it centres on the window "
-        'over the list, and not where it keeps beside the list', (
-      tester,
-    ) async {
-      for (final (width, bottom) in [
-        (820.0, 800.0 - 24),
-        (600.0, 800.0 - 80),
+        'over the list, and not where it keeps beside the list or the list '
+        'is slid shut', (tester) async {
+      for (final (width, list, panel, centre, bottom) in [
+        (820.0, 336.0, 0.0, 616.0, 800.0 - 24),
+        (600.0, 336.0, 0.0, 300.0, 800.0 - 80),
+        (600.0, 0.0, 300.0, 300.0, 800.0 - 24),
       ]) {
-        opened(await window(tester, width: width, list: listOf(336), foot: 64));
+        opened(
+          await window(
+            tester,
+            width: width,
+            list: listOf(list),
+            foot: 64,
+            panel: panel,
+          ),
+        );
         await tester.pumpAndSettle();
 
-        expect(tester.getRect(surface).bottom, bottom, reason: '$width');
+        expect(tester.getCenter(surface).dx, centre, reason: '$width $list');
+        expect(tester.getRect(surface).bottom, bottom, reason: '$width $list');
       }
     });
 

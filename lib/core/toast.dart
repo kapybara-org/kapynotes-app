@@ -360,10 +360,11 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
         final above = media.size.height - rect.top + 16;
         final outer = clearance.context
             .findAncestorStateOfType<_ToastClearanceState>();
-        if (outer?.widget.beside ?? false) {
-          inside = math.max(inside, above);
-        } else {
+        if (outer == null || !outer.widget.beside) {
           clear = math.max(clear, above);
+        } else if (outer.context.findRenderObject() case final RenderBox list
+            when list.hasSize && list.size.width > 0) {
+          inside = math.max(inside, above);
         }
       } else if (AppPlatform.hasPointer && rect.width > 0) {
         if (rect.center.dx < width / 2) {
