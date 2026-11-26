@@ -197,6 +197,52 @@ void main() {
     expect(goldenPrefs.noteCards, isFalse);
   });
 
+  testPress('a kind of media in the notes filter is unticked and ticked '
+      'again when pressed, and All media ticks every kind (KAP-365)', (
+    tester,
+  ) async {
+    await pumpWindow(tester);
+    await press(tester, find.semantics.byLabel(RegExp('^Notes filter')));
+    SemanticsNode row(String kind) =>
+        tester.getSemantics(find.byKey(ValueKey('media-filter-$kind')));
+    Future<void> tick(String kind) {
+      final id = row(kind).id;
+      return press(tester, find.semantics.byPredicate((node) => node.id == id));
+    }
+
+    expect(
+      row('video'),
+      isSemantics(
+        label: 'Video',
+        hasCheckedState: true,
+        isChecked: true,
+        hasTapAction: true,
+      ),
+    );
+    await tick('video');
+    expect(row('video'), isSemantics(isChecked: false, hasTapAction: true));
+    expect(
+      row('all'),
+      isSemantics(
+        label: 'All media',
+        hasCheckedState: true,
+        isChecked: false,
+        hasTapAction: true,
+      ),
+    );
+    await tick('video');
+    expect(row('video'), isSemantics(isChecked: true));
+    expect(row('all'), isSemantics(isChecked: true));
+
+    await tick('voice');
+    await tick('image');
+    expect(row('voice'), isSemantics(isChecked: false));
+    await tick('all');
+    for (final kind in ['all', 'voice', 'video', 'image']) {
+      expect(row(kind), isSemantics(isChecked: true), reason: kind);
+    }
+  });
+
   testPress('View all is pressed by its name', (tester) async {
     await pumpWindow(tester);
     for (final id in [for (var i = 0; i < 5; i++) goldenNotes.create().id]) {

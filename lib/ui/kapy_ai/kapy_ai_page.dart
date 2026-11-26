@@ -521,6 +521,7 @@ class _Target extends StatelessWidget {
     enabled: onTap != null,
     label: label,
     excludeSemantics: true,
+    onTap: onTap,
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,

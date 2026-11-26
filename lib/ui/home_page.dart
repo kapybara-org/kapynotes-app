@@ -30,6 +30,7 @@ import '../core/quick_capture.dart';
 import '../core/status_bar.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
+import '../core/type_ahead.dart';
 import '../data/engine_provider.dart';
 import '../data/attachment_limits.dart';
 import '../data/auto_titles.dart';
@@ -144,8 +145,8 @@ const double kCrampedPageHeight = 240;
 bool isCrampedPage(Size size, double keyboardInset) =>
     keyboardInset > 0 && size.height - keyboardInset < kCrampedPageHeight;
 
-/// What the toast says once notes are gone: [deleted] of the reader's own,
-/// gone for good, and [removed] that somebody else shares, which only left
+/// What the toast says as notes go: [deleted] of the reader's own, which
+/// go for good, and [removed] that somebody else shares, which only leave
 /// the reader's notes.
 String forgottenMessage({required int deleted, required int removed}) {
   if (deleted == 0) return 'Removed from your notes';
@@ -1930,9 +1931,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Opens the tab closed last again, in front.
+  /// Opens the tab closed last again, in front and in its place on the row,
+  /// and takes down the toast that offered it back.
   void _reopenTab() {
     if (!_workspace.canReopen) return;
+    Toast.withdraw(_reopenTab);
     _changeTabs(_workspace.openNoteIds, _workspace.reopen);
   }
 
@@ -2674,12 +2677,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
-  /// Throws one note away for good.
+  /// Throws one note away, for good once its toast's Undo has gone: see
+  /// [_forget].
   ///
-  /// Guarded by a question, because nothing here can undo it: the note leaves
-  /// this device and, through the tombstone, every other one it syncs to. A
-  /// note somebody else shares with this account only leaves its own notes.
-  /// The question offers not to be asked again, and Settings asks it again.
+  /// The note leaves this device and, through the tombstone, every other one
+  /// it syncs to. A note somebody else shares with this account only leaves
+  /// its own notes. A question goes first; it offers not to be asked again,
+  /// and Settings asks it again.
   Future<void> _deleteNote(String id) async {
     final note = widget.notes.byId(id);
     if (note == null || !_canRemoveNote(note)) return;
@@ -2690,7 +2694,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final confirmed = await _confirmDelete(
         title: owner == null ? 'Delete note?' : 'Remove from your notes?',
         body: owner == null
-            ? 'Permanently deletes $name from every synced device.'
+            ? 'Deletes $name from every synced device.'
             : 'Removes $name from your notes, and from your other devices '
                   'once they are up to date. $owner and '
                   "everyone it's shared with keep it.",
@@ -2700,11 +2704,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!confirmed || !mounted) return;
     }
     _forget([id]);
-    if (owner == null) {
-      _announceDeleted(1);
-    } else {
-      Toast.show(context, 'Removed from your notes', icon: deleteIcon);
-    }
   }
 
   /// Who owns [note]'s shared space, when that is somebody else. Only they
@@ -2724,12 +2723,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         'Notes shared with you are removed from your notes, and from your '
         'other devices once they are up to date. Their owners keep them.';
     if (theirs == 0) {
-      return 'Permanently deletes ${_noteCount(ids.length).toLowerCase()} '
-          'from every synced device.';
+      return 'Deletes ${_noteCount(ids.length).toLowerCase()} from every '
+          'synced device.';
     }
     if (theirs == ids.length) return shared;
-    return 'Permanently deletes your own notes from every synced device. '
-        '$shared';
+    return 'Deletes your own notes from every synced device. $shared';
   }
 
   /// Empties the archive.
@@ -2747,12 +2745,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
-    _announceForgotten(ids.length, removed);
   }
 
   /// Throws picked notes away. One goes as its row's Delete does, asking
   /// only if the reader still wants to be asked; several always ask, with
-  /// how many, because nothing brings them back.
+  /// how many.
   Future<void> _deletePicked(List<String> picked) async {
     if (picked.length == 1) return _deleteNote(picked.single);
     final ids = picked
@@ -2773,25 +2770,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!confirmed || !mounted) return;
     _forget(ids);
     _picks.clear();
-    _announceForgotten(ids.length, removed);
   }
 
-  /// How many of [ids] somebody else shares with this account. Counted
-  /// before they go: once forgotten, a note is no longer here to ask.
+  /// How many of [ids] somebody else shares with this account.
   int _sharedByOthers(List<String> ids) =>
       ids.where((id) => _sharedBy(widget.notes.byId(id)) != null).length;
 
-  void _announceForgotten(int total, int removed) => Toast.show(
-    context,
-    forgottenMessage(deleted: total - removed, removed: removed),
-    icon: deleteIcon,
-  );
-
-  /// The part every delete shares: take the notes out, drop whatever the
-  /// selection and the editor were holding onto, and reclaim the pictures and
-  /// recordings nothing refers to any more.
+  /// The part every delete shares: take the notes out of every list, drop
+  /// whatever the selection and the editor were holding onto, and say so,
+  /// with Undo. They go for good once the toast does, with the pictures and
+  /// recordings nothing else refers to. Until then nothing of them has
+  /// changed, so Undo puts them back as they were, the open one open again
+  /// on a desktop's page, and the app being killed keeps them. Leaving the
+  /// app ends the toast as its time running out would: see
+  /// [Toast.giveUpUndo].
   void _forget(List<String> ids) {
     final removing = ids.toSet();
+    final removed = _sharedByOthers(ids);
     _letGo(removing);
     final losingSelected = removing.contains(_selectedId);
     final index = losingSelected
@@ -2800,7 +2795,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final othersOpen =
         !_usesCompactLayout &&
         (_workspace.isSplit || _workspace.tabs.length > 1);
-    widget.notes.deleteAll(removing);
+    final reopen =
+        losingSelected && !_usesCompactLayout && (_specialMode || !othersOpen)
+        ? _selectedId
+        : null;
+    final notes = widget.notes..holdDelete(removing);
     _picks.drop(removing);
     setState(() {
       if (losingSelected && _specialMode) {
@@ -2812,17 +2811,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else if (losingSelected) {
       _openInPlaceOf(index, othersOpen: othersOpen);
     }
-    // The notes are gone, so their attachments have no owner. See
-    // [NotesStore.sweepBlobs] for why this is the only place that counts.
-    unawaited(widget.notes.sweepBlobs());
-  }
-
-  void _announceDeleted(int count) {
-    if (!mounted) return;
+    final inItsPlace = _selectedId;
     Toast.show(
       context,
-      count == 1 ? 'Note deleted' : '$count notes deleted',
+      forgottenMessage(deleted: ids.length - removed, removed: removed),
       icon: deleteIcon,
+      action: 'Undo',
+      onAction: () {
+        notes.undoDelete(removing);
+        if (reopen == null || !mounted || _selectedId != inItsPlace) return;
+        setState(() => _setSelectedId(reopen));
+        widget.prefs.lastOpenedNoteId = reopen;
+      },
+      onGone: () {
+        notes.deleteAll(removing);
+        // The notes are gone, so their attachments have no owner. See
+        // [NotesStore.sweepBlobs] for why this is the only place that counts.
+        unawaited(notes.sweepBlobs());
+      },
     );
   }
 
@@ -3655,6 +3661,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         (_selectedId != null && _selectedId == _untouchedWelcomeId)) {
       return;
     }
+    TypeAhead.hold();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _editorFocusSuppressed) return;
       _selectedEditor?.focusAtEnd();
@@ -3798,6 +3805,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     bool field = false,
     bool again = false,
   }) async {
+    TypeAhead.hold();
     final shown = _tasksMode ? null : _shownNote(_selectedId);
     _findOnBack = null;
     if (!again) _findWords.clear();
@@ -3934,6 +3942,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       unawaited(tasks.add(text));
       return;
     }
+    TypeAhead.hold();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _taskAddFocus.requestFocus();
     });
@@ -4287,7 +4296,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 : null,
             onDeleteNote: _removeOpenNote,
             onToggleKapyAi: _kapyAi == null ? null : _toggleKapyAi,
-            autofocus: _selectedId == null || !widget.prefs.readyToTypeOnOpen,
             child: content,
           ),
         );
@@ -6726,7 +6734,6 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onDeleteNote,
     required this.onToggleKapyAi,
     required this.shortcuts,
-    required this.autofocus,
   });
 
   final Widget child;
@@ -6803,7 +6810,6 @@ class _DesktopShortcuts extends StatelessWidget {
   /// Null where Kapy AI is not built in, which leaves its chord unbound.
   final VoidCallback? onToggleKapyAi;
   final ShortcutPrefs shortcuts;
-  final bool autofocus;
 
   ShortcutBinding get _find => ShortcutBinding(
     logicalKey: LogicalKeyboardKey.keyF,
@@ -6888,7 +6894,7 @@ class _DesktopShortcuts extends StatelessWidget {
       },
       child: FocusScope(
         node: focusNode,
-        autofocus: autofocus,
+        autofocus: true,
         onKeyEvent: _pairKey,
         child: child,
       ),
