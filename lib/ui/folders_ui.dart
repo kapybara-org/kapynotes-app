@@ -1597,10 +1597,11 @@ class FolderPage extends StatelessWidget {
   final Widget controls;
   final bool cards;
 
-  /// [notes] in the notes list's groups: by day, unless it is set otherwise.
-  /// The page counts only what they list, so by day it leaves out a note
-  /// given a later day until its day, in its line and on its cards alike.
-  final List<NoteGroup> Function(List<Note> notes) group;
+  /// [notes] in the notes list's groups: by day, unless it is set otherwise,
+  /// with [context] the page's own, where the notes' tags are known. The page
+  /// counts only what they list, so by day it leaves out a note given a later
+  /// day until its day, in its line and on its cards alike.
+  final List<NoteGroup> Function(BuildContext context, List<Note> notes) group;
 
   /// A note's card, or its row in the list view, giving only its time under
   /// a heading that names its day ([clockOnly]).
@@ -1684,13 +1685,15 @@ class FolderPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(child: page),
-              Container(
-                width: _panelWidth,
-                decoration: BoxDecoration(
-                  color: palette.surfaceBackground,
-                  border: Border(left: BorderSide(color: palette.separator)),
+              ToastClearance.beside(
+                child: Container(
+                  width: _panelWidth,
+                  decoration: BoxDecoration(
+                    color: palette.surfaceBackground,
+                    border: Border(left: BorderSide(color: palette.separator)),
+                  ),
+                  child: panel,
                 ),
-                child: panel,
               ),
             ],
           );
@@ -1705,26 +1708,28 @@ class FolderPage extends StatelessWidget {
               right: 12,
               bottom: 12,
               width: _panelWidth,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: palette.wellBackground,
-                  border: Border.all(color: palette.separator),
-                  borderRadius: radius,
-                  boxShadow: [
-                    BoxShadow(
-                      color: palette.shadowAt(0x99),
-                      offset: const Offset(0, 24),
-                      blurRadius: 48,
-                      spreadRadius: -16,
-                    ),
-                    BoxShadow(
-                      color: palette.shadowAt(0x59),
-                      offset: const Offset(0, 2),
-                      blurRadius: 8,
-                    ),
-                  ],
+              child: ToastClearance.beside(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: palette.wellBackground,
+                    border: Border.all(color: palette.separator),
+                    borderRadius: radius,
+                    boxShadow: [
+                      BoxShadow(
+                        color: palette.shadowAt(0x99),
+                        offset: const Offset(0, 24),
+                        blurRadius: 48,
+                        spreadRadius: -16,
+                      ),
+                      BoxShadow(
+                        color: palette.shadowAt(0x59),
+                        offset: const Offset(0, 2),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(borderRadius: radius, child: panel),
                 ),
-                child: ClipRRect(borderRadius: radius, child: panel),
               ),
             ),
           ],
@@ -1736,7 +1741,7 @@ class FolderPage extends StatelessWidget {
   Widget _page(BuildContext context, Folder folder, List<Note> loose) {
     final palette = context.palette;
     final folders = tree.childrenOf(folderId);
-    final groups = group(tree.notesIn(notes, folderId, deep: true));
+    final groups = group(context, tree.notesIn(notes, folderId, deep: true));
     final listed = [for (final each in groups) ...each.notes];
     final empty =
         folders.isEmpty && tree.notesIn(filed, folderId, deep: true).isEmpty;

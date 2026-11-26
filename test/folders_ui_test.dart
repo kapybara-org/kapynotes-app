@@ -392,6 +392,33 @@ void main() {
       counts(listed: true);
     });
 
+    testWidgets("grouped by tag, a folder's page heads its notes with their "
+        'first tags, as the list beside the rail does', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final call = goldenNotes.create(body: 'Call with Arjun');
+      final roadmap = goldenNotes.create(body: 'Roadmap');
+      goldenFolders.file([call.id, roadmap.id], work.id);
+      goldenTags.addTag(call.id, goldenTags.create('Acme')!.id);
+      goldenPrefs.notesGrouping = NotesGrouping.byTag;
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+      await tapKey(tester, 'folder-${work.id}');
+
+      Finder group(String label) =>
+          onPage(find.byKey(ValueKey('folder-group-$label')));
+      expect(group('Acme'), findsOneWidget);
+      expect(group('No tag'), findsOneWidget);
+      expect(
+        tester.getRect(onPage(rowOf(call.id))).top,
+        lessThan(tester.getRect(group('No tag')).top),
+      );
+      expect(
+        tester.getRect(onPage(rowOf(roadmap.id))).top,
+        greaterThan(tester.getRect(group('No tag')).top),
+      );
+    });
+
     testWidgets('a folder whose only note waits for a later day holds no '
         'notes on its page and its card, and never says it is empty', (
       tester,
@@ -1426,6 +1453,47 @@ void main() {
       expect(over.width, 320);
       expect(over.right, whole.right - 12);
       expect(over.top, whole.top + 12);
+    });
+
+    testWidgets('a notice centres on the page between the list and Add '
+        'notes, at its right or over its right edge', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final dentist = goldenNotes.create(body: 'Dentist');
+      goldenNotes.create(body: 'Pricing ideas');
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      await tester.tap(tick(dentist.id));
+      await tester.pumpAndSettle();
+      await tester.tap(addButton);
+      await tester.pumpAndSettle();
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      expect(notice, findsOneWidget);
+
+      // At 1080 the page keeps 668 beside the list, too little for Add notes
+      // to stand beside it, and 336 between the list and Add notes over it.
+      for (final width in [1440.0, 1080.0]) {
+        tester.view.physicalSize = Size(width, 900);
+        await tester.pumpAndSettle();
+        final list = tester.getRect(find.byType(Sidebar)).right;
+        final add = tester.getRect(panel).left;
+        expect(
+          tester.getCenter(notice).dx,
+          closeTo((list + add) / 2, 1),
+          reason: '$width',
+        );
+        expect(
+          tester.getRect(notice).left,
+          greaterThanOrEqualTo(list + 16),
+          reason: '$width',
+        );
+        expect(
+          tester.getRect(notice).right,
+          lessThanOrEqualTo(add - 16),
+          reason: '$width',
+        );
+      }
+      expect(tester.getRect(panel).right, tester.getRect(page()).right - 12);
     });
 
     testWidgets('a note dragged from the list and held over Folders turns '

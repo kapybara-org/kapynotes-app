@@ -551,7 +551,12 @@ class Sidebar extends StatelessWidget {
               ),
             ),
             if (folders?.onShown case final onShown?)
-              NotesFoldersSwitch(folders: _foldersTab, onChanged: onShown),
+              ToastClearance(
+                child: NotesFoldersSwitch(
+                  folders: _foldersTab,
+                  onChanged: onShown,
+                ),
+              ),
           ],
         ),
       ),
