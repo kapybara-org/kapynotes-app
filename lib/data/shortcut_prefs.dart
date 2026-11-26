@@ -407,6 +407,15 @@ class ShortcutPrefs extends ChangeNotifier {
           alt: useMeta,
           shift: !useMeta,
         ),
+        // Then Shift+Option+Cmd+X and Alt+Shift+X, one modifier away from
+        // strikethrough.
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyX,
+          physicalKey: PhysicalKeyboardKey.keyX,
+          meta: useMeta,
+          alt: true,
+          shift: true,
+        ),
       ],
       // Option+Cmd+N and Ctrl+Shift+N: Finder's New Smart Folder, Explorer's
       // New folder, a browser's private window.
@@ -499,11 +508,10 @@ class ShortcutPrefs extends ChangeNotifier {
 
   /// Link answers only while words are selected, and leaves its chord to
   /// Search everywhere else, so the two may share one.
-  static bool sharesChord(ShortcutAction a, ShortcutAction? b) =>
-      {a, b}.containsAll(const {
-        ShortcutAction.findNotes,
-        ShortcutAction.formatLink,
-      });
+  static bool sharesChord(ShortcutAction a, ShortcutAction? b) => {
+    a,
+    b,
+  }.containsAll(const {ShortcutAction.findNotes, ShortcutAction.formatLink});
 
   void update(ShortcutAction action, ShortcutBinding binding) {
     if (_bindings[action] == binding) return;
@@ -550,8 +558,9 @@ class ShortcutPrefs extends ChangeNotifier {
       // app loses the chord: its own shortcut there simply stops working. The
       // bar is therefore "nothing else uses it", not "nothing here does".
       //
-      // macOS: Shift+Option+Cmd, which nothing we checked binds to X — no
-      // system shortcut, no Services item, no app menu. Option+Cmd alone was
+      // macOS: Shift+Option+Cmd, which no system shortcut, Services item or
+      // common app menu binds to L (RStudio's Unfold Selected and Lightroom
+      // Classic's select command are the ones found). Option+Cmd alone was
       // the previous pair and is crowded: +X is Xcode's Pull, and +N is
       // Finder's New Smart Folder, IntelliJ's Inline and Arc's Little Arc,
       // which Arc also holds system-wide. Control stays out because
@@ -564,17 +573,21 @@ class ShortcutPrefs extends ChangeNotifier {
       // whenever a Polish or German user typed a character in that layer.
       // Ctrl+Shift is where apps keep their own shortcuts: Ctrl+Shift+X was
       // VS Code's Extensions, Slack's strikethrough and Teams' compose box.
-      // What claims Alt+Shift+X is narrow — Word's Mark Index Entry,
-      // Photoshop's Exclusion blend mode, Eclipse's Run As.
+      // What claims Alt+Shift+L is narrow: Eclipse's Extract Local Variable
+      // and a handful of tools' own bindings.
       //
       // Untested: Left Alt+Shift on its own is Windows' switch-language chord,
       // and fires on release. Whether a letter RegisterHotKey swallows still
       // cancels it has not been tried on a machine with two input languages.
       //
-      // X sits bottom-left, so the whole chord is one comfortable left hand.
+      // L because no shortcut inside the app uses it on any platform. A
+      // system-wide chord one modifier away from one of the app's own is a
+      // slip waiting to happen: X, its letter until 1.35.x, sat beside
+      // strikethrough, and reaching for that with Alt or Option instead of
+      // Ctrl or Cmd hid the window mid-sentence.
       ShortcutAction.openApp => ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.keyX,
-        physicalKey: PhysicalKeyboardKey.keyX,
+        logicalKey: LogicalKeyboardKey.keyL,
+        physicalKey: PhysicalKeyboardKey.keyL,
         meta: useMeta,
         alt: true,
         shift: true,
@@ -642,11 +655,26 @@ class ShortcutPrefs extends ChangeNotifier {
       // Option+Cmd and a number on a Mac, beside the Cmd and a number that
       // focus the panes. Alt and a number elsewhere: Ctrl+Alt is AltGr on
       // international layouts, where it types ² and ³.
-      ShortcutAction.showNotes => _section(LogicalKeyboardKey.digit1, PhysicalKeyboardKey.digit1),
-      ShortcutAction.showTasks => _section(LogicalKeyboardKey.digit2, PhysicalKeyboardKey.digit2),
-      ShortcutAction.showDrawings => _section(LogicalKeyboardKey.digit3, PhysicalKeyboardKey.digit3),
-      ShortcutAction.showShared => _section(LogicalKeyboardKey.digit4, PhysicalKeyboardKey.digit4),
-      ShortcutAction.showArchive => _section(LogicalKeyboardKey.digit5, PhysicalKeyboardKey.digit5),
+      ShortcutAction.showNotes => _section(
+        LogicalKeyboardKey.digit1,
+        PhysicalKeyboardKey.digit1,
+      ),
+      ShortcutAction.showTasks => _section(
+        LogicalKeyboardKey.digit2,
+        PhysicalKeyboardKey.digit2,
+      ),
+      ShortcutAction.showDrawings => _section(
+        LogicalKeyboardKey.digit3,
+        PhysicalKeyboardKey.digit3,
+      ),
+      ShortcutAction.showShared => _section(
+        LogicalKeyboardKey.digit4,
+        PhysicalKeyboardKey.digit4,
+      ),
+      ShortcutAction.showArchive => _section(
+        LogicalKeyboardKey.digit5,
+        PhysicalKeyboardKey.digit5,
+      ),
       // Control on both platforms, and the one pair of defaults that does not
       // follow [useMeta]. Cmd+Tab is the macOS application switcher: the window
       // server takes it before any app is told a key moved, so a Cmd default

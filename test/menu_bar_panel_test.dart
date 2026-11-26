@@ -633,9 +633,9 @@ void main() {
         find.descendant(of: footer, matching: find.byType(Keycap)),
         findsNothing,
       );
-      // Shift+Option+Command+X, written in the order a Mac's menus use.
+      // Shift+Option+Command+L, written in the order a Mac's menus use.
       expect(
-        find.descendant(of: footer, matching: find.text('⌥⇧⌘X')),
+        find.descendant(of: footer, matching: find.text('⌥⇧⌘L')),
         findsOneWidget,
       );
     });
@@ -658,18 +658,18 @@ void main() {
         find.descendant(of: footer, matching: find.text('⌃⌘J')),
         findsOneWidget,
       );
-      expect(find.text('⌥⇧⌘X'), findsNothing);
+      expect(find.text('⌥⇧⌘L'), findsNothing);
     });
 
     testWidgets('it names no shortcut another app holds', (tester) async {
       await pumpPanel(tester);
       expect(find.text('Open this from anywhere with'), findsOneWidget);
-      expect(find.text('⌥⇧⌘X'), findsOneWidget);
+      expect(find.text('⌥⇧⌘L'), findsOneWidget);
 
       taken.add(ShortcutAction.openApp);
       await pumpPanel(tester, opening: 1);
       expect(find.byKey(const ValueKey('menu-bar-open-app')), findsOneWidget);
-      expect(find.text('⌥⇧⌘X'), findsNothing);
+      expect(find.text('⌥⇧⌘L'), findsNothing);
       expect(find.text('Open this from anywhere with'), findsOneWidget);
 
       taken
@@ -678,7 +678,7 @@ void main() {
       await pumpPanel(tester, opening: 2);
       expect(find.byKey(const ValueKey('menu-bar-empty')), findsOneWidget);
       expect(find.text('Open this from anywhere with'), findsNothing);
-      expect(find.text('⌥⇧⌘X'), findsOneWidget);
+      expect(find.text('⌥⇧⌘L'), findsOneWidget);
     });
 
     testWidgets('the footer opens the window and Find', (tester) async {

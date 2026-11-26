@@ -619,12 +619,12 @@ void main() {
 
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     final mac = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
-    expect(mac.displayLabel, 'Cmd + Option + Shift + X');
+    expect(mac.displayLabel, 'Cmd + Option + Shift + L');
     expect(mac.control, isFalse, reason: 'Control+Option is VoiceOver');
 
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     final windows = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
-    expect(windows.displayLabel, 'Alt + Shift + X');
+    expect(windows.displayLabel, 'Alt + Shift + L');
     expect(
       windows.control,
       isFalse,
@@ -854,6 +854,114 @@ void main() {
     },
   );
 
+  // The summon chord is heard system-wide, so one of the app's own chords a
+  // single modifier away from it is a slip that hides the window: Alt+Shift+X
+  // sat beside strikethrough's Ctrl+Shift+X, and ⇧⌥⌘X beside its ⇧⌘X.
+  test('no default sits on or one modifier from the summon shortcut', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    Set<String> held(ShortcutBinding binding) => {
+      if (binding.meta) 'meta',
+      if (binding.control) 'control',
+      if (binding.alt) 'alt',
+      if (binding.shift) 'shift',
+    };
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final summon = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
+      for (final action in ShortcutAction.values) {
+        if (action == ShortcutAction.openApp) continue;
+        final binding = ShortcutPrefs.defaultFor(action);
+        if (binding.logicalKey != summon.logicalKey) continue;
+        final a = held(summon);
+        final b = held(binding);
+        final apart = a.difference(b).union(b.difference(a)).length;
+        final swapped = apart == 2 && a.length == b.length;
+        expect(
+          apart > 1 && !swapped,
+          isTrue,
+          reason:
+              '${action.name} is ${binding.displayLabel} beside summon\'s '
+              '${summon.displayLabel} on ${platform.name}',
+        );
+      }
+    }
+  });
+
+  test('an install still on the X summon shortcut moves to L once', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final useMeta = platform == TargetPlatform.macOS;
+      final store = _MemoryStore();
+      store.data['shortcuts.v1'] = {
+        'openApp': ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyX,
+          physicalKey: PhysicalKeyboardKey.keyX,
+          meta: useMeta,
+          alt: true,
+          shift: true,
+        ).toJson(),
+      };
+
+      ShortcutPrefs(store).load();
+
+      final reloaded = ShortcutPrefs(store)..load();
+      expect(
+        reloaded.bindingFor(ShortcutAction.openApp)!.displayLabel,
+        useMeta ? 'Cmd + Option + Shift + L' : 'Alt + Shift + L',
+        reason: platform.name,
+      );
+    }
+  });
+
+  test('a summon shortcut the person chose stays where they put it', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    const chosen = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyK,
+      physicalKey: PhysicalKeyboardKey.keyK,
+      alt: true,
+      shift: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'openApp': chosen.toJson()};
+
+    expect(
+      (ShortcutPrefs(store)..load()).bindingFor(ShortcutAction.openApp),
+      chosen,
+    );
+  });
+
+  test('the X summon shortcut stays where L is already taken', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    const oldSummon = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyX,
+      physicalKey: PhysicalKeyboardKey.keyX,
+      alt: true,
+      shift: true,
+    );
+    final boldOnL = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {
+      'openApp': oldSummon.toJson(),
+      'formatBold': boldOnL.toJson(),
+    };
+
+    final prefs = ShortcutPrefs(store)..load();
+
+    expect(prefs.bindingFor(ShortcutAction.openApp), oldSummon);
+    expect(prefs.bindingFor(ShortcutAction.formatBold), boldOnL);
+  });
+
   test(
     'an install still on the 1Password-shadowed shortcut is moved across',
     () {
@@ -874,14 +982,14 @@ void main() {
       final prefs = ShortcutPrefs(store)..load();
       expect(
         prefs.bindingFor(ShortcutAction.openApp)!.displayLabel,
-        'Cmd + Option + Shift + X',
+        'Cmd + Option + Shift + L',
       );
 
       // Written back, so the move survives a restart.
       final reloaded = ShortcutPrefs(store)..load();
       expect(
         reloaded.bindingFor(ShortcutAction.openApp)!.displayLabel,
-        'Cmd + Option + Shift + X',
+        'Cmd + Option + Shift + L',
       );
     },
   );
@@ -986,7 +1094,7 @@ void main() {
       shift: true,
     );
 
-    expect(prefs.bindingFor(ShortcutAction.openApp)!.keyLabel, 'X');
+    expect(prefs.bindingFor(ShortcutAction.openApp)!.keyLabel, 'L');
     expect(prefs.conflictFor(ShortcutAction.findNotes, replacement), isNull);
 
     prefs.update(ShortcutAction.findNotes, replacement);
