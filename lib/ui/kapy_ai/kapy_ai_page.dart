@@ -45,7 +45,6 @@ class KapyAiPage extends StatefulWidget {
 
 /// Text that names, describes or waits: #968E7F in the crisp pass, which the
 /// palette has no colour for yet.
-const _quiet = Color(0xFF968E7F);
 
 class _KapyAiPageState extends State<KapyAiPage> {
   final _search = TextEditingController();
@@ -183,14 +182,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
       'Kapy AI',
       maxLines: 1,
       textScaler: scaler.clamp(maxScaleFactor: 1.3),
-      style: TextStyle(
-        fontFamily: 'Shantell Sans',
-        fontSize: 26,
-        height: 32 / 26,
-        fontWeight: AppWeight.font(AppWeight.regular),
-        fontVariations: AppWeight.wght(AppWeight.regular),
-        color: palette.textPrimary,
-      ),
+      style: kapyText(26, 32, palette.textHeading, weight: FontWeight.w600),
     );
     final label = kapyText(
       15,
@@ -292,7 +284,11 @@ class _KapyAiPageState extends State<KapyAiPage> {
     ),
     child: Row(
       children: [
-        const KapyIcon(KapyIcons.searchRounded, size: 16, color: _quiet),
+        KapyIcon(
+          KapyIcons.searchRounded,
+          size: 16,
+          color: palette.textTertiary,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: TextField(
@@ -305,7 +301,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
             style: kapyText(15, 20, palette.textPrimary),
             decoration: InputDecoration.collapsed(
               hintText: 'Search chats',
-              hintStyle: kapyText(15, 20, _quiet),
+              hintStyle: kapyText(15, 20, palette.textTertiary),
             ),
           ),
         ),
@@ -317,7 +313,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
     final now = widget.now();
     final groups = kapyChatGroups(_ai.chats, query: _search.text, now: now);
     final searching = _search.text.trim().isNotEmpty;
-    final meta = kapyText(13, 16, _quiet);
+    final meta = kapyText(13, 16, palette.textTertiary);
     return ListView(
       key: const ValueKey('kapy-ai-page-chats'),
       padding: EdgeInsets.zero,
@@ -327,7 +323,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
             child: Text(
               searching ? 'No chats match' : 'No chats yet',
-              style: kapyText(13, 18, _quiet),
+              style: kapyText(13, 18, palette.textTertiary),
             ),
           ),
         for (final (i, MapEntry(key: label, value: rows))
@@ -336,7 +332,12 @@ class _KapyAiPageState extends State<KapyAiPage> {
             padding: EdgeInsets.fromLTRB(20, i == 0 ? 18 : 14, 20, 6),
             child: Text(
               label,
-              style: kapyText(13, 18, _quiet, weight: FontWeight.w600),
+              style: kapyText(
+                13,
+                18,
+                palette.textTertiary,
+                weight: FontWeight.w600,
+              ),
             ),
           ),
           for (final chat in rows)
@@ -382,7 +383,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
                 : _ai.isPro
                 ? 'Kept on this $kapyDeviceWord. Sign in to sync them'
                 : 'Kept on this $kapyDeviceWord. Pro syncs them',
-            style: kapyText(12, 16, _quiet),
+            style: kapyText(12, 16, palette.textTertiary),
           ),
         ),
       ],
@@ -436,7 +437,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
                 style: kapyText(15, 20, palette.textPrimary),
                 decoration: InputDecoration.collapsed(
                   hintText: 'Ask Kapy AI',
-                  hintStyle: kapyText(15, 20, _quiet),
+                  hintStyle: kapyText(15, 20, palette.textTertiary),
                 ),
               ),
               const SizedBox(height: 4),
@@ -466,7 +467,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
                       padding: const EdgeInsets.only(right: 8),
                       child: Text(
                         'Still answering',
-                        style: kapyText(12, 16, _quiet),
+                        style: kapyText(12, 16, palette.textTertiary),
                       ),
                     ),
                   _Target(
@@ -486,7 +487,9 @@ class _KapyAiPageState extends State<KapyAiPage> {
                         child: KapyIcon(
                           KapyIcons.sendRounded,
                           size: 16,
-                          color: canSend ? palette.totalPillText : _quiet,
+                          color: canSend
+                              ? palette.totalPillText
+                              : palette.textTertiary,
                         ),
                       ),
                     ),

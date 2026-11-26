@@ -7,10 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 /// Everything else that sets a fontWeight takes the ladder: chromeStyle,
 /// ladder(), or AppWeight.font with AppWeight.wght beside it.
 const Map<String, (int, String)> ladderExceptions = {
-  'lib/core/theme.dart|fontWeight: FontWeight.w300,': (
-    3,
-    'The display cut, under 400, which AppWeight.axisOf leaves alone.',
-  ),
   'lib/ui/instant_capture.dart|fontWeight: FontWeight.w300,': (
     1,
     "Quick capture's light 300 in the system mono face, under 400, which "
@@ -25,16 +21,9 @@ const Map<String, (int, String)> ladderExceptions = {
     1,
     'The writing: a paragraph style keeps the Writing font body weight.',
   ),
-  'lib/ui/editor/editor_formatting.dart|'
-      'fontWeight: strong ? FontWeight.w600 : FontWeight.w400,': (
+  'lib/ui/editor/editor_formatting.dart|fontWeight: EditorMetrics.titleWeight,': (
     1,
-    "The note title in Newsreader's static cut, which has no wght axis.",
-  ),
-  'lib/ui/editor/editor_formatting.dart|'
-      'fontWeight: strong ? FontWeight.w600 : EditorMetrics.titleWeight,': (
-    1,
-    'The note title in the Writing font the person chose; the writing '
-        "keeps its own weights, not the interface ladder's.",
+    'The note title, 26 semibold, in the writing face.',
   ),
   'lib/ui/editor/editor_formatting.dart|fontWeight: FontWeight.w600,': (
     1,

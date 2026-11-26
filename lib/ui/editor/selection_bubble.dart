@@ -643,13 +643,12 @@ class _BlockMenu extends StatelessWidget {
                 label: 'Turn into',
                 excludeSemantics: true,
                 child: Text(
-                  'TURN INTO',
+                  'Turn into',
                   style: TextStyle(
-                    color: palette.textTertiary,
-                    fontSize: AppTypeScale.badge,
+                    color: palette.textSecondary,
+                    fontSize: AppTypeScale.caption,
                     fontWeight: AppWeight.font(AppWeight.regular),
                     fontVariations: AppWeight.wght(AppWeight.regular),
-                    letterSpacing: 0.44,
                   ),
                 ),
               ),

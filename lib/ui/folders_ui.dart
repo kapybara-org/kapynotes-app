@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../core/editor_font.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/folders.dart';
@@ -148,7 +147,7 @@ class NotesFoldersSwitch extends StatelessWidget {
     final palette = context.palette;
     Widget segment(bool forFolders) {
       final on = forFolders == folders;
-      final colour = on ? palette.tonalForeground : palette.textSecondary;
+      final colour = on ? palette.textPrimary : palette.textSecondary;
       final face = Semantics(
         button: true,
         selected: on,
@@ -163,8 +162,8 @@ class NotesFoldersSwitch extends StatelessWidget {
             child: Container(
               decoration: on
                   ? BoxDecoration(
-                      color: palette.tonalBackground,
-                      borderRadius: BorderRadius.circular(8),
+                      color: palette.controlBackground,
+                      borderRadius: BorderRadius.circular(AppRadii.control),
                     )
                   : null,
               child: Row(
@@ -174,13 +173,13 @@ class NotesFoldersSwitch extends StatelessWidget {
                     forFolders
                         ? KapyIcons.folderOutlined
                         : KapyIcons.noteOutlined,
-                    size: 16,
+                    size: 14,
                     color: colour,
                   ),
                   const SizedBox(width: 8),
                   Text(
                     forFolders ? 'Folders' : 'Notes',
-                    style: _figtree(13, 16, FontWeight.w500, colour),
+                    style: _figtree(13, 16, FontWeight.w400, colour),
                   ),
                 ],
               ),
@@ -197,31 +196,18 @@ class NotesFoldersSwitch extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ColoredBox(
-            color: palette.separator,
-            child: SizedBox(height: AppHairline.of(context)),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            key: const ValueKey('notes-folders-switch'),
-            height: AppControlMetrics.scaleBar(context, 40),
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: palette.raisedBackground ?? palette.cardBackground,
-              border: Border.all(
-                color: palette.raisedBorder ?? palette.controlBorder,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [segment(false), segment(true)],
-            ),
-          ),
-        ],
+      child: Container(
+        key: const ValueKey('notes-folders-switch'),
+        height: 32,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: palette.cardBackground,
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [segment(false), segment(true)],
+        ),
       ),
     );
   }
@@ -554,21 +540,13 @@ class _FolderRowState extends State<_FolderRow> {
               right: hovering ? 4 : 8,
             ),
             decoration: BoxDecoration(
-              color: dropping
-                  ? palette.tonalBackground
-                  : selected
+              color: dropping || selected
                   ? palette.selectedBackground
                   : hovering
                   ? palette.hover
                   : null,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
-            foregroundDecoration: dropping
-                ? BoxDecoration(
-                    border: Border.all(color: palette.selectedBorder),
-                    borderRadius: BorderRadius.circular(8),
-                  )
-                : null,
             child: Row(
               children: [
                 if (onTab == null || line.empty)
@@ -589,9 +567,7 @@ class _FolderRowState extends State<_FolderRow> {
                 KapyIcon(
                   KapyIcons.folderOutlined,
                   size: phone ? 20 : 16,
-                  color: dropping
-                      ? palette.tonalForeground
-                      : palette.textSecondary,
+                  color: palette.textSecondary,
                 ),
                 SizedBox(width: phone ? 10 : 8),
                 Expanded(
@@ -603,11 +579,7 @@ class _FolderRowState extends State<_FolderRow> {
                       phone ? 16 : 13,
                       phone ? 22 : 16,
                       FontWeight.w400,
-                      dropping
-                          ? palette.tonalForeground
-                          : selected
-                          ? palette.textPrimary
-                          : palette.textSecondary,
+                      palette.textPrimary,
                       axis: selected ? AppWeight.regular : AppWeight.regular,
                     ),
                   ),
@@ -645,8 +617,8 @@ class _FolderRowState extends State<_FolderRow> {
                             _figtree(
                               12,
                               16,
-                              FontWeight.w500,
-                              palette.textTertiary,
+                              FontWeight.w400,
+                              palette.textQuiet,
                             ).copyWith(
                               fontFeatures: const [
                                 FontFeature.tabularFigures(),
@@ -679,13 +651,8 @@ class NewFolderButton extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Material(
-        color: palette.raisedBackground ?? palette.cardBackground,
-        shape: RoundedRectangleBorder(
-          borderRadius: radius,
-          side: BorderSide(
-            color: palette.raisedBorder ?? palette.controlBorder,
-          ),
-        ),
+        color: palette.cardBackground,
+        shape: RoundedRectangleBorder(borderRadius: radius),
         child: InkWell(
           key: const ValueKey('folders-new'),
           borderRadius: radius,
@@ -707,7 +674,7 @@ class NewFolderButton extends StatelessWidget {
                   style: _figtree(
                     13,
                     18,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     palette.textSecondary,
                   ),
                 ),
@@ -2172,7 +2139,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                 style: _figtree(
                   phone ? 13 : 12,
                   phone ? 18 : 16,
-                  FontWeight.w500,
+                  FontWeight.w400,
                   palette.textSecondary,
                 ),
               ),
@@ -2393,7 +2360,6 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
     });
     final date = widget.dateOf(note);
     if (widget.phone) {
-      const face = WritingFont.handwritten;
       return MergeSemantics(
         child: Semantics(
           checked: on,
@@ -2414,14 +2380,11 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                       note.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: chromeStyle(
-                        size: 17,
-                        line: 24,
-                        weight: AppWeight.axisOf(FontWeight.w400),
-                        color: palette.textPrimary,
-                        family: face.fontFamily,
-                        fallback: face.fontFamilyFallback,
-                        extra: face.faceVariations,
+                      style: _figtree(
+                        AppTypeScale.row,
+                        22,
+                        FontWeight.w400,
+                        palette.textPrimary,
                       ),
                     ),
                   ),
@@ -2482,7 +2445,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                             style: _figtree(
                               13,
                               16,
-                              FontWeight.w500,
+                              FontWeight.w400,
                               palette.textPrimary,
                             ),
                           ),
@@ -2552,7 +2515,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                   style: _figtree(
                     phone ? 16 : 13,
                     phone ? 20 : 18,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     ready ? palette.tonalForeground : palette.textTertiary,
                   ),
                 ),
@@ -2612,16 +2575,11 @@ class _FolderCardState extends State<_FolderCard> {
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
               color: widget.dropping
-                  ? palette.tonalBackground
+                  ? palette.selectedBackground
                   : _hovering
-                  ? Color.alphaBlend(palette.hover, palette.controlBackground)
-                  : palette.controlBackground,
-              border: Border.all(
-                color: widget.dropping
-                    ? palette.selectedBorder
-                    : palette.controlBorder,
-              ),
-              borderRadius: BorderRadius.circular(12),
+                  ? palette.hover
+                  : palette.cardBackground,
+              borderRadius: BorderRadius.circular(AppRadii.card),
             ),
             child: Row(
               children: [
@@ -2637,9 +2595,9 @@ class _FolderCardState extends State<_FolderCard> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: _figtree(
-                      14,
+                      AppTypeScale.row,
                       19,
-                      FontWeight.w600,
+                      FontWeight.w400,
                       palette.textPrimary,
                     ),
                   ),
@@ -2652,7 +2610,7 @@ class _FolderCardState extends State<_FolderCard> {
                       12,
                       16,
                       FontWeight.w400,
-                      palette.textTertiary,
+                      palette.textQuiet,
                     ),
                   ),
                 ],

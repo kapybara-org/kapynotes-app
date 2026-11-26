@@ -696,14 +696,13 @@ class EditorMetrics {
   /// [padding] gives the column what it has.
   static const double columnWidth = 680;
 
-  /// The note's first line, its title: under twice the writing's size and a
-  /// step lighter than a heading's weight, so it names the note without
-  /// shouting over it. The meta row sits under it, 10 below the title and 24
+  /// The note's first line, its title: 26 semibold, the one title on the
+  /// page, so it names the note without shouting over it. The meta row sits under it, 10 below the title and 24
   /// above the body. On a tablet it keeps a second line's room for the tags;
   /// a phone's facts and tags share one line, as M07 draws them.
-  static double get titleFontSize => AppPlatform.isMobile ? 28 : 30;
-  static double get titleRow => AppPlatform.isMobile ? 36 : 38;
-  static const FontWeight titleWeight = FontWeight.w500;
+  static const double titleFontSize = 26;
+  static const double titleRow = 32;
+  static const FontWeight titleWeight = FontWeight.w600;
   static const double metaGap = 10;
   static double get metaRow => AppPlatform.isMobile ? 16 + 8 + 22 : 16;
   static const double metaBottom = 24;
@@ -1062,8 +1061,7 @@ class AppTypeScale {
   static bool get _touch => !AppPlatform.hasPointer;
   static bool get _windows => AppPlatform.isWindows;
 
-  /// The smallest legible annotation: an uppercase section label, the key
-  /// chip in a tonal button. 10.5 is a real size on a Mac but too fine on a
+  /// The smallest legible annotation: the key chip in a tonal button. 10.5 is a real size on a Mac but too fine on a
   /// typical Windows display and unreadable on a phone held at arm's length,
   /// so each gets a larger floor suited to its viewing distance and
   /// rasterisation.
@@ -1081,15 +1079,6 @@ class AppTypeScale {
       : _windows
       ? 12
       : 11;
-
-  /// The capitals over a group of an editor menu's rows, such as TURN INTO in
-  /// the selection bubble. Smaller than [micro], because spaced capitals
-  /// read larger than lower case at the same size.
-  static double get badge => _touch
-      ? 11
-      : _windows
-      ? 11
-      : 10;
 
   /// Metadata, list snippets, the helper line under a control.
   static double get caption => _touch
@@ -1216,9 +1205,13 @@ class AppWeight {
   static const double regular = 400;
   static const double semibold = 600;
 
-  /// A Flutter weight on this ladder: w600 and up is a title, the rest reads.
-  static double axisOf(FontWeight weight) =>
-      weight.value >= 600 ? semibold : regular;
+  /// A Flutter weight on this ladder: w600 and up is a title, 400 to 599
+  /// reads, and anything under 400 (a display cut) is left alone.
+  static double axisOf(FontWeight weight) {
+    final value = weight.value;
+    if (value < 400) return value.toDouble();
+    return value >= 600 ? semibold : regular;
+  }
 
   /// Nearest named weight, for a face with no `wght` axis.
   static FontWeight named(double axis) {
@@ -2285,11 +2278,14 @@ class _Tones {
 /// toward the text only as far as that takes.
 CalcPalette _fromTones(_Tones t) {
   final dark = ThemeData.estimateBrightnessForColor(t.pane) == Brightness.dark;
-  final grounds = [t.window, t.pane, t.card, t.selected];
+  final grounds = [t.window, t.pane, t.card, t.selected, t.raised];
   Color read(Color ink) => _legible(ink, grounds, toward: t.text);
-  final secondary = read(t.secondary);
+  final secondary = _legible(t.secondary, [
+    ...grounds,
+    t.divider,
+  ], toward: t.text);
   final tertiary = read(t.tertiary);
-  final quiet = read(t.quiet);
+  final quiet = _legible(t.quiet, [t.window, t.pane, t.card], toward: t.text);
   final accentText = read(t.accentText);
   final accent = _legible(
     t.accent,

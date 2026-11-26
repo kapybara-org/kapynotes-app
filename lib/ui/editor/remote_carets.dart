@@ -173,7 +173,6 @@ class _RemoteCaretLayerState extends State<RemoteCaretLayer> {
             fontVariations: AppWeight.wght(AppWeight.regular),
             color: const Color(0xFFFFFFFF),
             height: 1.25,
-            letterSpacing: 0.1,
             decoration: TextDecoration.none,
           ),
         ),

@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/writing_streak.dart';
 import 'package:kapy_notes/sync/auth_api.dart';
-import 'package:kapy_notes/ui/editor/note_header.dart';
 import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -76,7 +75,7 @@ void main() {
 
   for (final notesCount in [1, 37, 999]) {
     testWidgets('Notes $notesCount starts at the 20 pt inset and Tasks sits '
-        '12 pt after its count, as M01 draws it', (tester) async {
+        '16 pt after its count, as the board draws it', (tester) async {
       await pumpHeader(tester, notesCount: notesCount, width: 375);
 
       final notes = tester.getRect(notesTitle);
@@ -85,58 +84,30 @@ void main() {
       );
       expect(notes.left, 20);
       expect(count.right, notes.right);
-      expect(tester.getRect(tasksTitle).left - count.right, 12);
+      expect(tester.getRect(tasksTitle).left - count.right, 16);
       expect(tester.getSize(find.byType(PhoneHomeHeader)).height, 48);
       expect(tester.takeException(), isNull);
     });
   }
 
-  testWidgets('the title on screen is in ink with its count and the clay '
-      'underline; the other waits in grey', (tester) async {
+  testWidgets('the title on screen is bright with its count and no '
+      'underline; the other waits quieter', (tester) async {
     await pumpHeader(tester);
 
-    expect(ink(tester, notesTitle, 'Notes'), palette().textPrimary);
+    expect(ink(tester, notesTitle, 'Notes'), palette().textHeading);
     expect(
       find.descendant(of: notesTitle, matching: find.text('37')),
       findsOne,
     );
-    expect(
-      find.descendant(
-        of: notesTitle,
-        matching: find.byType(NoteTitleUnderline),
-      ),
-      findsOneWidget,
-    );
-    expect(ink(tester, tasksTitle, 'Tasks'), palette().textTertiary);
-    expect(
-      find.descendant(
-        of: tasksTitle,
-        matching: find.byType(NoteTitleUnderline),
-      ),
-      findsNothing,
-    );
+    expect(ink(tester, tasksTitle, 'Tasks'), palette().textQuiet);
 
     final tasksLeft = tester.getRect(tasksTitle).left;
     await pumpHeader(tester, tasks: true);
-    expect(ink(tester, tasksTitle, 'Tasks'), palette().textPrimary);
+    expect(ink(tester, tasksTitle, 'Tasks'), palette().textHeading);
     expect(find.descendant(of: tasksTitle, matching: find.text('6')), findsOne);
-    expect(
-      find.descendant(
-        of: tasksTitle,
-        matching: find.byType(NoteTitleUnderline),
-      ),
-      findsOneWidget,
-    );
-    expect(ink(tester, notesTitle, 'Notes'), palette().textTertiary);
+    expect(ink(tester, notesTitle, 'Notes'), palette().textQuiet);
     expect(
       find.descendant(of: notesTitle, matching: find.text('6')),
-      findsNothing,
-    );
-    expect(
-      find.descendant(
-        of: notesTitle,
-        matching: find.byType(NoteTitleUnderline),
-      ),
       findsNothing,
     );
     expect(
@@ -190,7 +161,7 @@ void main() {
       of: streakMark,
       matching: findKapyIcon(KapyIcons.fireOutlined),
     );
-    expect(tester.widget<KapyIcon>(flame).color, palette().clay);
+    expect(tester.widget<KapyIcon>(flame).color, palette().accent);
     expect(
       find.descendant(of: streakMark, matching: find.text('1 day')),
       findsOne,

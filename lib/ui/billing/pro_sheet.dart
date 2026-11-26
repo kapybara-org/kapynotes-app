@@ -658,7 +658,6 @@ class _Hero extends StatelessWidget {
             fontSize: AppTypeScale.control,
             fontWeight: AppWeight.font(AppWeight.regular),
             fontVariations: AppWeight.wght(AppWeight.regular),
-            letterSpacing: 0.1,
             color: accent,
           ),
         ),
@@ -891,7 +890,6 @@ class _SectionLabel extends StatelessWidget {
       fontSize: AppTypeScale.caption,
       fontWeight: AppWeight.font(AppWeight.regular),
       fontVariations: AppWeight.wght(AppWeight.regular),
-      letterSpacing: 0.15,
       color: context.palette.textTertiary,
     ),
   );

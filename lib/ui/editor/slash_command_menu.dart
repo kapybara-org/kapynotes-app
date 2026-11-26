@@ -707,8 +707,8 @@ class _CommandList extends StatelessWidget {
                           child: Text(
                             command.group.label,
                             style: TextStyle(
-                              color: palette.textTertiary,
-                              fontSize: AppTypeScale.badge,
+                              color: palette.textSecondary,
+                              fontSize: AppTypeScale.caption,
                               fontWeight: AppWeight.font(AppWeight.regular),
                               fontVariations: AppWeight.wght(AppWeight.regular),
                             ),

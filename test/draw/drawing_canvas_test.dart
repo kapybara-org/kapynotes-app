@@ -249,14 +249,14 @@ void main() {
         .widget<TextField>(find.byKey(const ValueKey('drawing-title')))
         .style!;
 
-    testWidgets('the title is set in Newsreader, as a note\'s is, with the '
+    testWidgets('the title is set in the interface face, as a note\'s is, with the '
         'default writing font', (tester) async {
       await _pump(tester);
       final style = titleStyle(tester);
       expect(style.fontFamily, AppFonts.ui);
       expect(style.fontSize, EditorMetrics.titleFontSize);
       expect(style.fontSize! * style.height!, EditorMetrics.titleRow);
-      expect(style.fontWeight, FontWeight.w400);
+      expect(style.fontWeight, FontWeight.w600);
       expect(style.color, KapyTheme.lightPalette.textPrimary);
     });
 

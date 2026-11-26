@@ -841,13 +841,7 @@ class HighlightingController extends TextEditingController {
         );
       }
       if (start < titleEnd) {
-        segmentStyle = noteTitleStyle(
-          segmentStyle,
-          writingFont: _writingFont,
-          strong:
-              marked(MarkdownStyle.strong) ||
-              activeFormats.any((f) => f.format == NoteFormat.bold),
-        );
+        segmentStyle = noteTitleStyle(segmentStyle, writingFont: _writingFont);
       }
       final done = checked || marked(MarkdownStyle.doneTask);
       // A spelling mark must not replace KapyNotes' syntax, rich formatting,

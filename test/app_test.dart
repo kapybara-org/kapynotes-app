@@ -2223,7 +2223,7 @@ void main() {
       matching: find.byKey(const ValueKey('compact-switch-indicator')),
     );
     expect(prefs.dailySeparatorsEnabled, isTrue);
-    expect(tester.getSize(compactSwitch), const Size(38, 22));
+    expect(tester.getSize(compactSwitch), const Size(36, 16));
 
     final readyToType = find.byKey(
       const ValueKey('ready-to-type-on-open-toggle'),
@@ -5966,17 +5966,16 @@ void main() {
   });
 
   testWidgets(
-    'the search field is a 4% fill with no border, and its shortcut plain '
-    'Geist Mono in T3 that leaves the placeholder room',
+    'the search field is a control fill with no border, and its shortcut '
+    'shows on hover, plain Geist Mono in T3',
     (tester) async {
       await pumpApp(tester);
 
       final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
       final search = find.byKey(const ValueKey('sidebar-search-box'));
-      final field = tester.getRect(search);
       final palette = tester.element(search).palette;
       final box = tester.widget<Container>(search).decoration! as BoxDecoration;
-      expect(box.color, palette.fillRest);
+      expect(box.color, palette.controlBackground);
       expect(box.border, isNull);
       expect(box.boxShadow, isNull);
       expect(box.borderRadius, BorderRadius.circular(AppRadii.control));
@@ -5987,6 +5986,12 @@ void main() {
       final searchKeycap = find.byKey(
         const ValueKey('sidebar-search-shortcut'),
       );
+      expect(searchKeycap, findsNothing);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.addPointer(location: tester.getCenter(search));
+      await tester.pump();
+      final field = tester.getRect(search);
       final keycap = tester.getRect(searchKeycap);
       final hint = tester.widget<Text>(searchKeycap);
       expect(hint.data, binding.keycapLabel);
@@ -10348,10 +10353,10 @@ void main() {
         final palette = tester.element(title).palette;
 
         final heading = tester.widget<Text>(title).style!;
-        expect(heading.fontFamily, WritingFont.handwritten.fontFamily);
+        expect(heading.fontFamily, AppFonts.ui);
         expect(heading.fontSize, 26);
         expect(heading.height, 32 / 26);
-        expect(heading.color, palette.textPrimary);
+        expect(heading.color, palette.textHeading);
         final count = tester
             .widget<Text>(
               find.descendant(
@@ -10362,14 +10367,14 @@ void main() {
             .style!;
         expect(count.fontFamily, AppFonts.ui);
         expect(count.fontSize, 13);
-        expect(count.color, palette.textTertiary);
+        expect(count.color, palette.textQuiet);
 
         for (final label in ['Pinned', 'Recent']) {
           final style = tester.widget<Text>(find.text(label)).style!;
           expect(style.fontFamily, AppFonts.ui, reason: label);
           expect(style.fontSize, 13, reason: label);
           expect(style.height, 18 / 13, reason: label);
-          expect(style.color, palette.textTertiary, reason: label);
+          expect(style.color, palette.textSecondary, reason: label);
         }
       });
 
@@ -11812,7 +11817,7 @@ void main() {
       expect(top(older), lessThan(top(row('Renewal notes'))));
 
       final title = tester.widget<Text>(find.text('Call with Arjun'));
-      expect(title.style?.fontFamily, WritingFont.handwritten.fontFamily);
+      expect(title.style?.fontFamily, AppFonts.ui);
       final dots = find.descendant(
         of: row('Call with Arjun'),
         matching: find.byType(TagDots),
@@ -11885,8 +11890,8 @@ void main() {
       }
     });
 
-    testWidgets("a day's heading is the serif name, then its date 8 after "
-        'it in small quiet sans, as Tasks draws Today', (tester) async {
+    testWidgets("a day's heading is the section label, then its date 6 after "
+        'it a grey quieter', (tester) async {
       final nine = DateTime(2026, 11, 19, 9).millisecondsSinceEpoch;
       store.data['notes.v1'] = [
         {
@@ -11907,13 +11912,13 @@ void main() {
       );
       final date = find.descendant(of: heading, matching: find.text('Thu 19'));
       expect(today.style?.fontFamily, AppFonts.ui);
-      expect(today.style?.fontSize, 19);
-      expect(today.style?.color, palette.textPrimary);
+      expect(today.style?.fontSize, 13);
+      expect(today.style?.color, palette.textSecondary);
       final style = tester.widget<Text>(date).style;
       expect(style?.fontFamily, AppFonts.ui);
       expect(style?.fontSize, 13);
-      expect(style?.height, 16 / 13);
-      expect(style?.color, palette.textTertiary);
+      expect(style?.height, 18 / 13);
+      expect(style?.color, palette.textQuiet);
       expect(
         tester.getTopLeft(date).dx -
             tester
@@ -11921,7 +11926,7 @@ void main() {
                   find.descendant(of: heading, matching: find.text('Today')),
                 )
                 .dx,
-        8,
+        6,
       );
     });
 
@@ -11956,14 +11961,14 @@ void main() {
       final rects = [for (var i = 0; i < 2; i++) tester.getRect(lines.at(i))];
       for (var i = 0; i < 2; i++) {
         final line = tester.widget<Divider>(lines.at(i));
-        expect(rects[i].left + line.indent!, 20);
-        expect(rects[i].width - line.indent! - line.endIndent!, 393 - 40);
+        expect(rects[i].left + line.indent!, 38);
+        expect(rects[i].right - line.endIndent!, 393 - 20);
       }
       expect(rects[0].top, tester.getRect(row('Morning pages')).bottom);
       expect(rects[1].top, tester.getRect(row('Call with Arjun')).bottom);
       expect(
         tester.widget<Divider>(lines.first).color,
-        tester.element(lines.first).palette.separator,
+        tester.element(lines.first).palette.pageBorder,
       );
     });
 

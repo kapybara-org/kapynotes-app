@@ -58,14 +58,14 @@ void main() {
     }
   });
 
-  test('the default writing font titles a note in Newsreader', () {
+  test('the default writing font titles a note in the interface face', () {
     final base = EditorMetrics.textStyle(lightInk, WritingFont.clean);
     final title = noteTitleStyle(base, writingFont: WritingFont.clean);
     expect(title.fontFamily, AppFonts.ui);
-    expect(title.fontWeight, FontWeight.w400);
-    expect(title.fontFamilyFallback!.first, base.fontFamily);
-    expect(title.fontSize, EditorMetrics.titleFontSize);
-    expect(title.fontSize! / base.fontSize!, inInclusiveRange(1.75, 2));
+    expect(title.fontWeight, FontWeight.w600);
+    expect(title.fontFamilyFallback!.first, AppFonts.uiFallback.first);
+    expect(title.fontSize, 26);
+    expect(title.fontSize! / base.fontSize!, inInclusiveRange(1.5, 1.8));
   });
 
   test("a writing font the person picked titles the note too", () {
@@ -85,7 +85,7 @@ void main() {
     for (final level in [1, 2, 3, 4]) {
       expect(
         EditorMetrics.headingFontSize(level),
-        lessThan(EditorMetrics.titleFontSize * 0.8),
+        lessThan(EditorMetrics.titleFontSize),
       );
     }
   });
@@ -109,32 +109,32 @@ void main() {
       return width;
     }
 
-    // No spaces: those Newsreader has, and draws itself.
+    // No spaces: the fallback face has those, and draws them itself.
     const greek = 'Λισαβόνα';
-    expect(width(greek, title), width(greek, writing));
     expect(
       width(greek, title),
       isNot(greek.length * title.fontSize!),
       reason: 'the test font draws every glyph a square em wide',
     );
-    expect(width('Lisbon trip', title), isNot(width('Lisbon trip', writing)));
   });
 
-  test("Newsreader's licence is on the licences page", () async {
+  test('Inter and Shantell stay on the licences page, and the retired faces go', () async {
     final entries = await fontLicenseEntries().toList();
-    final newsreader = entries.where((e) => e.packages.contains('Newsreader'));
-    expect(newsreader, isNotEmpty);
+    final names = entries.expand((e) => e.packages).toList();
+    expect(names, containsAll(['Inter', 'Shantell Sans', 'Geist Mono']));
+    expect(names, isNot(contains('Figtree')));
+    expect(names, isNot(contains('Newsreader')));
+    final inter = entries.where((e) => e.packages.contains('Inter'));
     expect(
-      newsreader.first.paragraphs.map((p) => p.text).join(' '),
+      inter.first.paragraphs.map((p) => p.text).join(' '),
       contains('SIL Open Font License'),
     );
   });
 
-  test('the interface type scale has no half pixels', () {
+  test('the interface type scale stays on whole and half points', () {
     for (final size in [
       AppTypeScale.micro,
       AppTypeScale.keycap,
-      AppTypeScale.badge,
       AppTypeScale.caption,
       AppTypeScale.small,
       AppTypeScale.body,
@@ -146,7 +146,7 @@ void main() {
       AppTypeScale.wordmark,
       AppTypeScale.display,
     ]) {
-      expect(size % 1, 0);
+      expect(size * 2 % 1, 0);
     }
   });
 }

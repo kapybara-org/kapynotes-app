@@ -758,7 +758,7 @@ class TasksScreenState extends State<TasksScreen> {
               child: _ticked.isEmpty
                   ? Text(
                       'Nothing on the list.',
-                      style: taskText(13, 18, ink.quiet),
+                      style: handAccent(context.palette),
                     )
                   : null,
             ),
@@ -1914,7 +1914,7 @@ class _Box extends StatelessWidget {
               border: done
                   ? null
                   : Border.all(color: palette.checkboxBorder, width: 1.5),
-              borderRadius: BorderRadius.circular(AppRadii.control),
+              shape: BoxShape.circle,
             ),
             child: done
                 ? KapyIcon(

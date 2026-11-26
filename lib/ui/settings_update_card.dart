@@ -159,10 +159,10 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
     );
     Widget card(Widget child, {double padding = _pad}) => KapyControlSurface(
       key: const ValueKey('settings-update-card'),
-      radius: AppRadii.surface,
+      radius: AppRadii.group,
       padding: EdgeInsets.all(padding),
       color: palette.cardBackground,
-      borderColor: palette.controlBorder,
+      borderColor: Colors.transparent,
       child: child,
     );
     final room = widget.maxHeight;

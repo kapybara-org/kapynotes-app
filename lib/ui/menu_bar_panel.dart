@@ -546,8 +546,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: dark
-                          ? const Color(0x17E2DCCF)
-                          : const Color(0x1A2A2620),
+                          ? palette.textPrimary.withAlpha(0x17)
+                          : palette.textPrimary.withAlpha(0x1A),
                     ),
                   ),
                   child: Column(
@@ -1328,7 +1328,7 @@ class _TaskRow extends StatelessWidget {
             height: 15,
             decoration: BoxDecoration(
               color: done ? sage : null,
-              borderRadius: BorderRadius.circular(4),
+              shape: BoxShape.circle,
               border: done
                   ? null
                   : Border.all(color: palette.checkboxBorder, width: 1.5),
@@ -1398,14 +1398,13 @@ class _TaskRow extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(8, 2, 8, 0),
                 child: Text(
-                  'DO NOW',
+                  'Do now',
                   style: TextStyle(
-                    fontSize: 10.5,
-                    height: 13 / 10.5,
+                    fontSize: 12,
+                    height: 15 / 12,
                     fontWeight: AppWeight.font(AppWeight.regular),
                     fontVariations: AppWeight.wght(AppWeight.regular),
-                    letterSpacing: 0.63,
-                    color: palette.accentText,
+                    color: palette.textSecondary,
                   ),
                 ),
               ),

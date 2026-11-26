@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -138,9 +139,9 @@ void main() {
   }
 
   for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
-    testWidgets('${platform.name}: at D03\'s list, 336 wide in its 1440 pt '
-        'window, the bar reads "My notes 37  ✧ + New note ▯", and 1 pt '
-        'narrower the count and the word fold', (tester) async {
+    testWidgets('${platform.name}: at the default list width the bar reads '
+        '"My notes 37" with New note and its chord, and 1 pt narrower the '
+        'count and the word fold', (tester) async {
       AppPlatform.debugTargetPlatformOverride = platform;
       expect(SidebarWindowBar.fullWidth, LayoutPrefs.defaultSidebarWidth);
       Future<void> bar(double width) => tester.pumpWidget(
@@ -181,7 +182,11 @@ void main() {
         find.descendant(of: newNote, matching: find.text('New note')),
         findsOneWidget,
       );
-      expect(tester.widget<TonalButton>(newNote).shortcut, isNull);
+      expect(
+        tester.widget<TonalButton>(newNote).shortcut,
+        platform == TargetPlatform.macOS ? isNotNull : isNull,
+        reason: 'the larger Windows title leaves the chord no room',
+      );
       expect(tester.getRect(ask).right, tester.getRect(newNote).left);
       expect(tester.getRect(newNote).right, tester.getRect(hide).left);
       expect(SidebarWindowBar.fullWidth - tester.getRect(hide).right, 16);
@@ -253,18 +258,12 @@ void main() {
         ),
       ),
     );
-    final bar = tester.widget<Container>(
-      find
-          .descendant(
-            of: find.byType(SidebarWindowBar),
-            matching: find.byType(Container),
-          )
-          .first,
+    final title = tester.widget<Text>(
+      find.byKey(const ValueKey('sidebar-space-title')),
     );
-    expect(
-      (bar.foregroundDecoration as BoxDecoration?)?.border,
-      Border(bottom: BorderSide(color: KapyTheme.lightPalette.railBorder)),
-    );
+    expect(title.style?.fontSize, AppTypeScale.spaceTitle);
+    expect(title.style?.fontWeight, FontWeight.w600);
+    expect(title.style?.color, KapyTheme.lightPalette.textHeading);
   });
 
   testWidgets("the search field's keycap is T3, which Riverbank dark keeps "
@@ -287,9 +286,15 @@ void main() {
         ),
       ),
     );
-    final keycap = tester.widget<Text>(
-      find.byKey(const ValueKey('sidebar-search-shortcut')),
+    final shortcut = find.byKey(const ValueKey('sidebar-search-shortcut'));
+    expect(shortcut, findsNothing, reason: 'the keycap waits for the pointer');
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(
+      location: tester.getCenter(find.byKey(const ValueKey('sidebar-search-box'))),
     );
+    await tester.pump();
+    final keycap = tester.widget<Text>(shortcut);
     expect(keycap.style!.color, palette.textTertiary);
   });
 
@@ -313,17 +318,19 @@ void main() {
     );
     final search = find.byKey(const ValueKey('sidebar-search-box'));
     final box = tester.widget<Container>(search);
-    expect(tester.getSize(search).height, 32);
+    expect(tester.getSize(search).height, 30);
     expect(box.padding, const EdgeInsets.symmetric(horizontal: 10));
     expect(
       (box.decoration! as BoxDecoration).borderRadius,
-      BorderRadius.circular(9),
+      BorderRadius.circular(AppRadii.control),
     );
+    expect((box.decoration! as BoxDecoration).color, palette.controlBackground);
+    expect((box.decoration! as BoxDecoration).border, isNull);
     final icon = tester.widget<KapyIcon>(
       find.descendant(of: search, matching: find.byType(KapyIcon)),
     );
     expect(icon.size, 14);
-    expect(icon.color, palette.textTertiary);
+    expect(icon.color, palette.textSecondary);
     expect(
       tester.getTopLeft(find.byType(KapyIcon)).dx -
           tester.getTopLeft(search).dx,

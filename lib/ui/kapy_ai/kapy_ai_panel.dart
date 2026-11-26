@@ -517,13 +517,11 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                           palette.textPrimary,
                           weight: FontWeight.w500,
                         )
-                      : TextStyle(
-                          fontFamily: 'Shantell Sans',
-                          fontSize: 17,
-                          height: 22 / 17,
-                          fontWeight: AppWeight.font(AppWeight.regular),
-                          fontVariations: AppWeight.wght(AppWeight.regular),
-                          color: palette.textPrimary,
+                      : kapyText(
+                          AppTypeScale.title,
+                          20,
+                          palette.textHeading,
+                          weight: FontWeight.w600,
                         ),
                 ),
               ),
@@ -975,9 +973,7 @@ Future<void> showKapyAiSheet(
     enableDrag: false,
     backgroundColor: Colors.transparent,
     elevation: 0,
-    barrierColor: palette.brightness == Brightness.dark
-        ? const Color(0xA30C0B09)
-        : palette.scrim,
+    barrierColor: palette.scrim,
     builder: (_) =>
         _KapyAiSheet(rest: rest, statusBar: statusBar, panel: panel),
   );

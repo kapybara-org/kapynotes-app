@@ -6,49 +6,13 @@ import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/system_contrast.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/tag_colours.dart';
-import 'package:kapy_notes/ui/theme_cards.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// Themes r2 (KAP-144; the Captain's handoffs/KAPY-14/themes-r2.md and Paper
-/// p-N-0). The five themes it adds take its tables as they are. Riverbank
-/// keeps the values it shipped with, which riverbank_fidelity_test.dart holds
-/// it to, so here it only has to read as well as the others.
+/// The design system (KAP-415; the Captain's
+/// handoffs/design-system/tokens.md). Riverbank is the references' neutral
+/// ladder with the brand orange as its accent, and the other five themes are
+/// that ladder moved a little, each keeping its own tag colours.
 void main() {
-  final roles = <String, Color Function(CalcPalette)>{
-    'canvas': (p) => p.sidebarBackground,
-    'rail': (p) => p.railBackground,
-    'page': (p) => p.editorBackground,
-    'raised': (p) => p.controlBackground,
-    'card': (p) => p.cardBackground,
-    'key': (p) => p.keycapBackground,
-    'keyEdge': (p) => p.keycapBorder,
-    'border': (p) => p.controlBorder,
-    'hair': (p) => p.pageBorder,
-    'menuEdge': (p) => p.separator,
-    'divider': (p) => p.textDivider,
-    'switchOff': (p) => p.switchTrackOff,
-    'text': (p) => p.textPrimary,
-    'head': (p) => p.textHeading,
-    'subhead': (p) => p.textSubheading,
-    'cardTitle': (p) => p.cardTitle,
-    'muted': (p) => p.textMuted,
-    'sec': (p) => p.textSecondary,
-    'faint': (p) => p.textTertiary,
-    'dim': (p) => p.lineCommand,
-    'dim2': (p) => p.checkboxBorder,
-    'box': (p) => p.quoteBar,
-    'accent': (p) => p.accent,
-    'link': (p) => p.accentText,
-    'chipText': (p) => p.chipNumber,
-    'tb': (p) => p.tonalBackground,
-    'tf': (p) => p.tonalForeground,
-    'tkBg': (p) => p.tonalKeyBackground,
-    'tkText': (p) => p.tonalKeyText,
-    'onAccent': (p) => p.onAccent,
-    'clay': (p) => p.clay,
-    'codeBg': (p) => p.codeChip,
-  };
-
   final sides = [
     for (final theme in AppTheme.values)
       for (final side in Brightness.values)
@@ -56,37 +20,122 @@ void main() {
           (theme, side),
   ];
 
-  group('the spec tables', () {
-    for (final MapEntry(key: (theme, side), value: want) in _spec.entries) {
-      test('${theme.label} ${side.name} takes every role', () {
-        final palette = KapyTheme.palette(theme, side);
-        expect(palette.brightness, side);
-        for (final MapEntry(key: role, value: colour) in want.roles.entries) {
-          expect(roles[role]!(palette), Color(colour), reason: role);
-        }
-        expect(palette.tagDots.take(7), [for (final c in want.dots) Color(c)]);
-      });
+  group('the ladder', () {
+    test("Riverbank dark takes the references' tokens", () {
+      final p = KapyTheme.palette(AppTheme.riverbank, Brightness.dark);
+      for (final (colour, want, role) in [
+        (p.sidebarBackground, 0xFF0D0D0D, 'window'),
+        (p.editorBackground, 0xFF0F0E0E, 'note pane'),
+        (p.cardBackground, 0xFF131313, 'card'),
+        (p.controlBackground, 0xFF20201F, 'button fill'),
+        (p.selectedBackground, 0xFF191918, 'selected row'),
+        (p.hover, 0xFF191918, 'hover'),
+        (p.pageBorder, 0xFF202020, 'hairline'),
+        (p.paneEdge, 0xFF252524, 'pane divider'),
+        (p.switchTrackOff, 0xFF2A2A28, 'switch off'),
+        (p.checkboxBorder, 0xFF4D4D4D, 'checkbox ring'),
+        (p.resultPillBackground, 0xFF1E1E1E, 'grey chip'),
+        (p.textPrimary, 0xFFDBDBDB, 'text'),
+        (p.textHeading, 0xFFDADADA, 'title'),
+        (p.textSecondary, 0xFF969696, 'secondary'),
+        (p.textDescription, 0xFF969696, 'description'),
+        (p.textTertiary, 0xFF878787, 'tertiary'),
+        (p.textDivider, 0xFF494948, 'dots and chevrons'),
+        (p.accent, 0xFFE8772E, 'accent'),
+        (p.onAccent, 0xFF1A0E06, 'ink on the accent'),
+        (p.accentText, 0xFFE8772E, 'orange words'),
+        (p.switchThumb, 0xFFFFFFFF, 'the knob stays white'),
+      ]) {
+        expect(colour, Color(want), reason: role);
+      }
+      // #7C7C7B reads at 4.45:1 on a card, so it is lifted just past 4.5.
+      expect(
+        _contrast(p.textQuiet, p.cardBackground),
+        greaterThanOrEqualTo(4.5),
+      );
+      expect(_contrast(p.textQuiet, p.cardBackground), lessThan(5.0));
+      expect(
+        p.selection,
+        const Color(0xFFE8772E).withAlpha(0x4D),
+        reason: 'the selection is the accent at 30%',
+      );
+    });
 
-      test('${theme.label} ${side.name} with Increase contrast on', () {
-        final plain = KapyTheme.palette(theme, side);
-        final palette = plain.withIncreasedContrast();
-        expect(palette.increasedContrast, isTrue);
-        for (final MapEntry(key: role, value: colour)
-            in _increased[(theme, side)]!.entries) {
-          expect(roles[role]!(palette), Color(colour), reason: role);
-        }
-        // A tag looks the same, just easier to read; the grounds stay put.
-        expect(palette.tagDots, plain.tagDots);
-        expect(palette.editorBackground, plain.editorBackground);
-        expect(palette.cardBackground, plain.cardBackground);
+    test('Riverbank light is the brand orange on neutral greys', () {
+      final p = KapyTheme.palette(AppTheme.riverbank, Brightness.light);
+      expect(p.editorBackground, const Color(0xFFFFFFFF));
+      expect(p.accent, const Color(0xFFD9692A));
+      expect(p.onAccent, const Color(0xFF1A0E06));
+      expect(p.selection, const Color(0xFFD9692A).withAlpha(0x40));
+      for (final (ink, low, high, what) in [
+        (p.textPrimary, 12.5, 15.0, 'text'),
+        (p.textSecondary, 5.8, 6.8, 'secondary'),
+        (p.textTertiary, 5.0, 6.0, 'tertiary'),
+      ]) {
+        final ratio = _contrast(ink, p.editorBackground);
+        expect(ratio, inInclusiveRange(low, high), reason: what);
+      }
+    });
+
+    for (final (theme, side) in sides) {
+      test('${theme.label} ${side.name} is the ladder, with neutral '
+          'text and an orange accent', () {
+        final p = KapyTheme.palette(theme, side);
+        final base = KapyTheme.palette(AppTheme.riverbank, side);
+        expect(p.brightness, side);
+        expect(p.textPrimary, base.textPrimary);
+        expect(p.textHeading, base.textHeading);
+        expect(p.onAccent, base.onAccent);
+        final hue = HSLColor.fromColor(p.accent).hue;
+        expect(hue, inInclusiveRange(15, 30), reason: 'orange, never blue');
+        expect(p.totalPillBackground, p.accent);
+        expect(p.selectedBorder, p.accent);
+        expect(
+          _contrast(p.cardBackground, p.sidebarBackground),
+          lessThan(1.25),
+          reason: 'surfaces sit a step or two apart',
+        );
+        expect(p.tagDots, hasLength(TagColour.values.length));
       });
     }
+
+    test('the five other themes differ from Riverbank in their surfaces', () {
+      for (final theme in AppTheme.values.where(
+        (t) => t != AppTheme.riverbank,
+      )) {
+        final p = KapyTheme.palette(theme, Brightness.dark);
+        expect(
+          p.editorBackground,
+          isNot(KapyTheme.darkPalette.editorBackground),
+          reason: theme.label,
+        );
+      }
+      expect(
+        KapyTheme.palette(AppTheme.midnight, Brightness.dark).sidebarBackground,
+        const Color(0xFF000000),
+      );
+    });
 
     test('Midnight by day is Riverbank light', () {
       expect(
         KapyTheme.palette(AppTheme.midnight, Brightness.light),
         same(KapyTheme.lightPalette),
       );
+    });
+
+    test('Increase contrast strengthens the words and keeps the grounds', () {
+      for (final (theme, side) in sides) {
+        final plain = KapyTheme.palette(theme, side);
+        final p = plain.withIncreasedContrast();
+        expect(p.increasedContrast, isTrue);
+        expect(p.tagDots, plain.tagDots);
+        expect(p.editorBackground, plain.editorBackground);
+        expect(p.cardBackground, plain.cardBackground);
+        expect(
+          _contrast(p.textQuiet, p.cardBackground),
+          greaterThan(_contrast(plain.textQuiet, plain.cardBackground)),
+        );
+      }
     });
   });
 
@@ -103,6 +152,10 @@ void main() {
           (p.textTertiary, p.editorBackground, 'faint on the page'),
           (p.textTertiary, p.cardBackground, 'faint on a card'),
           (p.accentText, p.editorBackground, 'a link'),
+          (p.accentText, p.sidebarBackground, 'a link in the sidebar'),
+          (p.textQuiet, p.sidebarBackground, 'quiet words in the sidebar'),
+          (p.textQuiet, p.cardBackground, 'quiet words on a card'),
+          (p.textSecondary, p.selectedBackground, 'secondary on a row'),
         ]) {
           expect(
             _contrast(ink, ground),
@@ -110,10 +163,14 @@ void main() {
             reason: what,
           );
         }
-        expect(
-          _contrast(p.accent, p.editorBackground),
-          greaterThanOrEqualTo(3),
-        );
+        for (final ground in [
+          p.sidebarBackground,
+          p.editorBackground,
+          p.cardBackground,
+        ]) {
+          expect(_contrast(p.accent, ground), greaterThanOrEqualTo(3));
+        }
+        expect(_contrast(p.onAccent, p.accent), greaterThanOrEqualTo(4.5));
 
         final ic = p.withIncreasedContrast();
         // 14:1 as the spec rounds it: Dusk dark is 13.98.
@@ -341,100 +398,6 @@ void main() {
       expect(contrast.value, isFalse);
     });
   });
-
-  group('the previews in Settings', () {
-    Future<void> pumpCards(WidgetTester tester, ThemeData theme) =>
-        tester.pumpWidget(
-          MaterialApp(
-            theme: theme,
-            home: Scaffold(
-              body: SizedBox(
-                width: 640,
-                child: ThemeCards(
-                  selected: AppTheme.riverbank,
-                  onSelected: (_) {},
-                ),
-              ),
-            ),
-          ),
-        );
-
-    // [theme]'s card draws the list's notes, mustard, plain and sage, one
-    // after another, and the totals' sage and rust side by side, none of
-    // them outlined, as D13 draws them.
-    void expectTints(
-      WidgetTester tester,
-      AppTheme theme,
-      List<int> tints, {
-      bool exact = false,
-    }) {
-      final faces = [
-        for (final box in tester.widgetList<DecoratedBox>(
-          find.descendant(
-            of: find.byKey(ValueKey('theme-${theme.name}')),
-            matching: find.byType(DecoratedBox),
-          ),
-        ))
-          if (box.decoration case final BoxDecoration face) face,
-      ];
-      Matcher colour(int tint) =>
-          exact ? equals(Color(tint)) : isSameColorAs(Color(tint));
-      final [mustard, plain, sage, rust] = tints;
-      for (final run in [
-        [mustard, plain, sage],
-        [sage, rust],
-      ]) {
-        final starts = [
-          for (var i = 0; i + run.length <= faces.length; i++)
-            if (run.indexed.every(
-              (step) => colour(step.$2).matches(faces[i + step.$1].color, {}),
-            ))
-              i,
-        ];
-        final reason = '${theme.name}, ${run.map(Color.new).join(', ')}';
-        expect(starts, hasLength(1), reason: reason);
-        expect(
-          [for (final (k, _) in run.indexed) faces[starts.single + k].border],
-          everyElement(isNull),
-          reason: reason,
-        );
-      }
-    }
-
-    // D13's tints on each dark side: the list's notes, tagged mustard, plain
-    // and tagged sage, then the totals' rust. Riverbank's are D13's own
-    // constants; the rest are mixed, so they match to within rounding.
-    const d13 = {
-      AppTheme.riverbank: [0xFF393425, 0xFF2F2D29, 0xFF25332A, 0xFF372B26],
-      AppTheme.graphite: [0xFF342F23, 0xFF212121, 0xFF252F28, 0xFF352924],
-      AppTheme.midnight: [0xFF28210E, 0xFF0F0F0F, 0xFF132017, 0xFF271710],
-      AppTheme.dusk: [0xFF322F30, 0xFF20202C, 0xFF292F35, 0xFF332A31],
-      AppTheme.lamplight: [0xFF3D3018, 0xFF261D13, 0xFF312F1B, 0xFF3C2618],
-      AppTheme.fjord: [0xFF30362C, 0xFF182729, 0xFF213632, 0xFF30302D],
-    };
-
-    testWidgets('each dark side is tinted as D13 draws it', (tester) async {
-      await pumpCards(tester, KapyTheme.dark());
-      for (final MapEntry(key: theme, value: tints) in d13.entries) {
-        expectTints(tester, theme, tints, exact: theme == AppTheme.riverbank);
-      }
-    });
-
-    // Riverbank's light side, which D13 doesn't draw: its mustard, sage and
-    // rust dots at 15% on its page, and the control fill on its card for the
-    // plain note.
-    testWidgets('a light side mixes its tag dots into its page', (
-      tester,
-    ) async {
-      await pumpCards(tester, KapyTheme.light());
-      expectTints(tester, AppTheme.riverbank, const [
-        0xFFEFE8D5,
-        0xFFEAE6DC,
-        0xFFE1E9DD,
-        0xFFF1E4D9,
-      ]);
-    });
-  });
 }
 
 double _contrast(Color a, Color b) {
@@ -464,550 +427,3 @@ double _deltaE(Color a, Color b) {
         math.pow(p[2] - q[2], 2),
   );
 }
-
-const _spec =
-    <(AppTheme, Brightness), ({Map<String, int> roles, List<int> dots})>{
-      (AppTheme.graphite, Brightness.dark): (
-        roles: {
-          'canvas': 0xFF151515,
-          'rail': 0xFF111111,
-          'page': 0xFF1B1B1B,
-          'raised': 0xFF252525,
-          'card': 0xFF212121,
-          'key': 0xFF242424,
-          'keyEdge': 0xFF2F2F2F,
-          'border': 0xFF2A2A2A,
-          'hair': 0xFF272727,
-          'menuEdge': 0xFF2E2E2E,
-          'divider': 0xFF505050,
-          'switchOff': 0xFF333333,
-          'text': 0xFFE6E6E6,
-          'head': 0xFFDEDEDE,
-          'subhead': 0xFFD7D7D7,
-          'cardTitle': 0xFFDDDDDD,
-          'muted': 0xFFBEBEBE,
-          'sec': 0xFFA3A3A3,
-          'faint': 0xFF979797,
-          'dim': 0xFF5A5A5A,
-          'dim2': 0xFF555555,
-          'box': 0xFF4B4B4B,
-          'accent': 0xFFC2C2C2,
-          'link': 0xFFB3C2D6,
-          'chipText': 0xFFCBD2DC,
-          'tb': 0xFF2D2D2D,
-          'tf': 0xFFE2E2E2,
-          'tkBg': 0xFF4B4B4B,
-          'tkText': 0xFFD0D0D0,
-          'onAccent': 0xFF151515,
-          'clay': 0xFFD58B63,
-          'codeBg': 0xFF292929,
-        },
-        dots: [
-          0xFFC2A04E,
-          0xFFC77B55,
-          0xFF8F9B55,
-          0xFF4F9A9B,
-          0xFF5FA071,
-          0xFF6F8FD0,
-          0xFF9C7FB8,
-        ],
-      ),
-      (AppTheme.graphite, Brightness.light): (
-        roles: {
-          'canvas': 0xFFF2F2F2,
-          'rail': 0xFFEBEBEB,
-          'page': 0xFFFFFFFF,
-          'raised': 0xFFF0F0F0,
-          'card': 0xFFF7F7F7,
-          'key': 0xFFF6F6F6,
-          'keyEdge': 0xFFE9E9E9,
-          'border': 0xFFEFEFEF,
-          'hair': 0xFFF2F2F2,
-          'menuEdge': 0xFFEAEAEA,
-          'divider': 0xFFC5C5C5,
-          'switchOff': 0xFFE4E4E4,
-          'text': 0xFF1E1E1E,
-          'head': 0xFF262626,
-          'subhead': 0xFF2C2C2C,
-          'cardTitle': 0xFF272727,
-          'muted': 0xFF434343,
-          'sec': 0xFF5C5C5C,
-          'faint': 0xFF686868,
-          'dim': 0xFFADADAD,
-          'dim2': 0xFFB5B5B5,
-          'box': 0xFFC0C0C0,
-          'accent': 0xFF3A3A3A,
-          'link': 0xFF2F5D99,
-          'chipText': 0xFF2B4260,
-          'tb': 0xFFE8E8E8,
-          'tf': 0xFF262626,
-          'tkBg': 0xFFC5C5C5,
-          'tkText': 0xFF313131,
-          'onAccent': 0xFFFFFFFF,
-          'clay': 0xFFB5552E,
-          'codeBg': 0xFFEFEFEF,
-        },
-        dots: [
-          0xFF8F7420,
-          0xFFB0582F,
-          0xFF6A7530,
-          0xFF2C7778,
-          0xFF3E7F50,
-          0xFF4A68A6,
-          0xFF7A579B,
-        ],
-      ),
-      (AppTheme.midnight, Brightness.dark): (
-        roles: {
-          'canvas': 0xFF000000,
-          'rail': 0xFF000000,
-          'page': 0xFF000000,
-          'raised': 0xFF151515,
-          'card': 0xFF0F0F0F,
-          'key': 0xFF151515,
-          'keyEdge': 0xFF2E2E2E,
-          'border': 0xFF2A2A2A,
-          'hair': 0xFF1F1F1F,
-          'menuEdge': 0xFF2E2E2E,
-          'divider': 0xFF3C3B39,
-          'switchOff': 0xFF1C1B1A,
-          'text': 0xFFE6E2DA,
-          'head': 0xFFDEDAD2,
-          'subhead': 0xFFD8D4CB,
-          'cardTitle': 0xFFDDD9D1,
-          'muted': 0xFFC1BCB4,
-          'sec': 0xFFA8A39A,
-          'faint': 0xFF9A958C,
-          'dim': 0xFF4F4C48,
-          'dim2': 0xFF484641,
-          'box': 0xFF3C3A37,
-          'accent': 0xFF8BA374,
-          'link': 0xFFA6BC8E,
-          'chipText': 0xFFB4C99D,
-          'tb': 0xFF1B2416,
-          'tf': 0xFFC2D6AC,
-          'tkBg': 0xFF313D29,
-          'tkText': 0xFFA4BA8D,
-          'onAccent': 0xFF000000,
-          'clay': 0xFFCF7A57,
-          'codeBg': 0xFF10100F,
-        },
-        dots: [
-          0xFFC9A447,
-          0xFFC4734F,
-          0xFF8F9B55,
-          0xFF4F9A9B,
-          0xFF5FA071,
-          0xFF6D88BE,
-          0xFF9C77B4,
-        ],
-      ),
-      (AppTheme.dusk, Brightness.dark): (
-        roles: {
-          'canvas': 0xFF15151F,
-          'rail': 0xFF111119,
-          'page': 0xFF1A1A26,
-          'raised': 0xFF232330,
-          'card': 0xFF20202C,
-          'key': 0xFF21212D,
-          'keyEdge': 0xFF2B2B37,
-          'border': 0xFF262633,
-          'hair': 0xFF242430,
-          'menuEdge': 0xFF2A2A36,
-          'divider': 0xFF464653,
-          'switchOff': 0xFF2E2E3B,
-          'text': 0xFFC4C2D2,
-          'head': 0xFFBFBDCE,
-          'subhead': 0xFFBBB9CA,
-          'cardTitle': 0xFFBEBCCD,
-          'muted': 0xFFACAABC,
-          'sec': 0xFF9C9AAE,
-          'faint': 0xFF9391A6,
-          'dim': 0xFF595869,
-          'dim2': 0xFF535263,
-          'box': 0xFF4A4959,
-          'accent': 0xFF9B92C9,
-          'link': 0xFFB2AADA,
-          'chipText': 0xFFBEB7E2,
-          'tb': 0xFF2A2840,
-          'tf': 0xFFC9C3EA,
-          'tkBg': 0xFF413D5B,
-          'tkText': 0xFFB0A8D8,
-          'onAccent': 0xFF15151F,
-          'clay': 0xFFC08A78,
-          'codeBg': 0xFF262632,
-        },
-        dots: [
-          0xFFBBA468,
-          0xFFBE8670,
-          0xFF949A6E,
-          0xFF6D9FA3,
-          0xFF7FA488,
-          0xFF8494C2,
-          0xFFA88BBE,
-        ],
-      ),
-      (AppTheme.dusk, Brightness.light): (
-        roles: {
-          'canvas': 0xFFECEBF2,
-          'rail': 0xFFE5E4EC,
-          'page': 0xFFF4F3F8,
-          'raised': 0xFFE8E7EF,
-          'card': 0xFFEFEEF4,
-          'key': 0xFFECEBF1,
-          'keyEdge': 0xFFE2E1E7,
-          'border': 0xFFE6E5EB,
-          'hair': 0xFFE9E8EE,
-          'menuEdge': 0xFFE3E2E8,
-          'divider': 0xFFC4C3CB,
-          'switchOff': 0xFFDEDDE3,
-          'text': 0xFF3B3A4A,
-          'head': 0xFF3F3E4E,
-          'subhead': 0xFF424051,
-          'cardTitle': 0xFF3F3E4E,
-          'muted': 0xFF4C4B5B,
-          'sec': 0xFF585667,
-          'faint': 0xFF626072,
-          'dim': 0xFFA4A2AE,
-          'dim2': 0xFFABAAB5,
-          'box': 0xFFB7B5C0,
-          'accent': 0xFF5E569A,
-          'link': 0xFF5E569A,
-          'chipText': 0xFF4F4789,
-          'tb': 0xFFE2DFF0,
-          'tf': 0xFF3F3878,
-          'tkBg': 0xFFC8C4DF,
-          'tkText': 0xFF50498B,
-          'onAccent': 0xFFF4F3F8,
-          'clay': 0xFFA65A3A,
-          'codeBg': 0xFFE7E6EC,
-        },
-        dots: [
-          0xFF866F25,
-          0xFFA55A3A,
-          0xFF666F35,
-          0xFF2E6F70,
-          0xFF3F7A50,
-          0xFF3F5FA7,
-          0xFF755C93,
-        ],
-      ),
-      (AppTheme.lamplight, Brightness.dark): (
-        roles: {
-          'canvas': 0xFF1A130C,
-          'rail': 0xFF150F09,
-          'page': 0xFF20180F,
-          'raised': 0xFF2A2016,
-          'card': 0xFF261D13,
-          'key': 0xFF292015,
-          'keyEdge': 0xFF342A1D,
-          'border': 0xFF2F2519,
-          'hair': 0xFF2C2217,
-          'menuEdge': 0xFF33291C,
-          'divider': 0xFF554734,
-          'switchOff': 0xFF382D20,
-          'text': 0xFFEBCB9E,
-          'head': 0xFFE6C69A,
-          'subhead': 0xFFE2C296,
-          'cardTitle': 0xFFE6C699,
-          'muted': 0xFFD4B488,
-          'sec': 0xFFC4A47A,
-          'faint': 0xFFAC8E68,
-          'dim': 0xFF6C583F,
-          'dim2': 0xFF65523B,
-          'box': 0xFF5A4934,
-          'accent': 0xFFC89550,
-          'link': 0xFFDDB173,
-          'chipText': 0xFFE4BD82,
-          'tb': 0xFF3A2A16,
-          'tf': 0xFFEBC891,
-          'tkBg': 0xFF563F22,
-          'tkText': 0xFFD8AC6D,
-          'onAccent': 0xFF1A130C,
-          'clay': 0xFFD9804F,
-          'codeBg': 0xFF2E2519,
-        },
-        dots: [
-          0xFFE2B94E,
-          0xFFD9784A,
-          0xFF5F7A45,
-          0xFFCDB89A,
-          0xFF93AE5C,
-          0xFF9A7458,
-          0xFFD2808A,
-        ],
-      ),
-      (AppTheme.lamplight, Brightness.light): (
-        roles: {
-          'canvas': 0xFFEFE4CF,
-          'rail': 0xFFE8DCC4,
-          'page': 0xFFF7EEDC,
-          'raised': 0xFFECE0C8,
-          'card': 0xFFF2E7D2,
-          'key': 0xFFEFE6D4,
-          'keyEdge': 0xFFE4DAC9,
-          'border': 0xFFE9E0CE,
-          'hair': 0xFFECE3D1,
-          'menuEdge': 0xFFE5DCCA,
-          'divider': 0xFFC6BBAA,
-          'switchOff': 0xFFE0D6C5,
-          'text': 0xFF3A2A1A,
-          'head': 0xFF3F2E1D,
-          'subhead': 0xFF433220,
-          'cardTitle': 0xFF402F1D,
-          'muted': 0xFF533E28,
-          'sec': 0xFF634B32,
-          'faint': 0xFF6E5640,
-          'dim': 0xFFAC9A86,
-          'dim2': 0xFFB3A28E,
-          'box': 0xFFBDAE9A,
-          'accent': 0xFF8A5A1E,
-          'link': 0xFF8A5A1E,
-          'chipText': 0xFF744B18,
-          'tb': 0xFFEBD9B6,
-          'tf': 0xFF5E3C12,
-          'tkBg': 0xFFD8C098,
-          'tkText': 0xFF6D4717,
-          'onAccent': 0xFFF7EEDC,
-          'clay': 0xFFA84A22,
-          'codeBg': 0xFFEAE0CE,
-        },
-        dots: [
-          0xFF8A6A12,
-          0xFFA84A22,
-          0xFF4C6230,
-          0xFFA86A40,
-          0xFF5C7A24,
-          0xFF6B4A30,
-          0xFF9A4A5A,
-        ],
-      ),
-      (AppTheme.fjord, Brightness.dark): (
-        roles: {
-          'canvas': 0xFF0F1A1C,
-          'rail': 0xFF0C1517,
-          'page': 0xFF132124,
-          'raised': 0xFF1B2B2E,
-          'card': 0xFF182729,
-          'key': 0xFF1B292C,
-          'keyEdge': 0xFF273537,
-          'border': 0xFF223032,
-          'hair': 0xFF1F2D2F,
-          'menuEdge': 0xFF263436,
-          'divider': 0xFF475556,
-          'switchOff': 0xFF2B393B,
-          'text': 0xFFDCE8E6,
-          'head': 0xFFD4E1DF,
-          'subhead': 0xFFCEDCDA,
-          'cardTitle': 0xFFD3E1DE,
-          'muted': 0xFFB6C8C6,
-          'sec': 0xFF9DB3B0,
-          'faint': 0xFF86A09C,
-          'dim': 0xFF526766,
-          'dim2': 0xFF4D6160,
-          'box': 0xFF435656,
-          'accent': 0xFF5FB3A6,
-          'link': 0xFF7FC9BD,
-          'chipText': 0xFF9BD6CC,
-          'tb': 0xFF1D3A38,
-          'tf': 0xFFB6E3DB,
-          'tkBg': 0xFF2A524E,
-          'tkText': 0xFF86C9BE,
-          'onAccent': 0xFF0F1A1C,
-          'clay': 0xFFE08E6D,
-          'codeBg': 0xFF212F32,
-        },
-        dots: [
-          0xFFD3B05A,
-          0xFFD7865F,
-          0xFF9AA765,
-          0xFF4FB0B8,
-          0xFF6FB07E,
-          0xFF7E9BD3,
-          0xFFB08CC9,
-        ],
-      ),
-      (AppTheme.fjord, Brightness.light): (
-        roles: {
-          'canvas': 0xFFEDF4F3,
-          'rail': 0xFFE5EFEE,
-          'page': 0xFFFAFDFC,
-          'raised': 0xFFE8F1F0,
-          'card': 0xFFF2F8F7,
-          'key': 0xFFF1F4F3,
-          'keyEdge': 0xFFE3E9E7,
-          'border': 0xFFEAEEED,
-          'hair': 0xFFEDF1F0,
-          'menuEdge': 0xFFE5EAE9,
-          'divider': 0xFFBFC8C6,
-          'switchOff': 0xFFDFE4E3,
-          'text': 0xFF18302E,
-          'head': 0xFF1D3634,
-          'subhead': 0xFF223B39,
-          'cardTitle': 0xFF1E3734,
-          'muted': 0xFF314D4A,
-          'sec': 0xFF42605C,
-          'faint': 0xFF506C68,
-          'dim': 0xFF9DADAB,
-          'dim2': 0xFFA5B5B2,
-          'box': 0xFFB3C0BE,
-          'accent': 0xFF1F7A70,
-          'link': 0xFF1D6C64,
-          'chipText': 0xFF195E57,
-          'tb': 0xFFD7EDE9,
-          'tf': 0xFF145049,
-          'tkBg': 0xFFB2D6D1,
-          'tkText': 0xFF196159,
-          'onAccent': 0xFFFFFFFF,
-          'clay': 0xFFB5552E,
-          'codeBg': 0xFFEAEFEE,
-        },
-        dots: [
-          0xFF87701C,
-          0xFFAF5530,
-          0xFF5E6E28,
-          0xFF14737A,
-          0xFF2F7D45,
-          0xFF3F62A6,
-          0xFF76509A,
-        ],
-      ),
-    };
-
-const _increased = <(AppTheme, Brightness), Map<String, int>>{
-  (AppTheme.graphite, Brightness.dark): {
-    'text': 0xFFF5F5F5,
-    'head': 0xFFF5F5F5,
-    'subhead': 0xFFEFEFEF,
-    'sec': 0xFFCCCCCC,
-    'muted': 0xFFD7D7D7,
-    'faint': 0xFFC1C1C1,
-    'border': 0xFF777777,
-    'hair': 0xFF4B4B4B,
-    'divider': 0xFF7D7D7D,
-    'box': 0xFF888888,
-    'link': 0xFFCAD4E2,
-    'accent': 0xFFCDCDCD,
-    'tf': 0xFFEFEFEF,
-  },
-  (AppTheme.graphite, Brightness.light): {
-    'text': 0xFF0C0C0C,
-    'head': 0xFF0C0C0C,
-    'subhead': 0xFF121212,
-    'sec': 0xFF343434,
-    'muted': 0xFF2A2A2A,
-    'faint': 0xFF3F3F3F,
-    'border': 0xFF818181,
-    'hair': 0xFFCACACA,
-    'divider': 0xFF929292,
-    'box': 0xFF868686,
-    'link': 0xFF21416B,
-    'accent': 0xFF303030,
-    'tf': 0xFF151515,
-  },
-  (AppTheme.midnight, Brightness.dark): {
-    'text': 0xFFF5F3F0,
-    'head': 0xFFF5F3F0,
-    'subhead': 0xFFEFEEEA,
-    'sec': 0xFFCFCBC5,
-    'muted': 0xFFD8D5CF,
-    'faint': 0xFFC3BFB9,
-    'border': 0xFF676665,
-    'hair': 0xFF363535,
-    'divider': 0xFF6E6D6C,
-    'box': 0xFF7B7A78,
-    'link': 0xFFC1D0B0,
-    'accent': 0xFFA0B48D,
-    'tf': 0xFFDDE8D1,
-  },
-  (AppTheme.dusk, Brightness.dark): {
-    'text': 0xFFE7E7ED,
-    'head': 0xFFE7E7ED,
-    'subhead': 0xFFE4E3EA,
-    'sec': 0xFFC2C1CE,
-    'muted': 0xFFC7C5D2,
-    'faint': 0xFFB9B8C6,
-    'border': 0xFF70707A,
-    'hair': 0xFF474752,
-    'divider': 0xFF767680,
-    'box': 0xFF81818A,
-    'link': 0xFFC9C4E5,
-    'accent': 0xFFADA6D3,
-    'tf': 0xFFE1DEF3,
-  },
-  (AppTheme.dusk, Brightness.light): {
-    'text': 0xFF18171E,
-    'head': 0xFF18171E,
-    'subhead': 0xFF1A1A20,
-    'sec': 0xFF383743,
-    'muted': 0xFF353440,
-    'faint': 0xFF413F4C,
-    'border': 0xFF828187,
-    'hair': 0xFFC4C3C8,
-    'divider': 0xFF919096,
-    'box': 0xFF86858B,
-    'link': 0xFF423C6C,
-    'accent': 0xFF4D477E,
-    'tf': 0xFF231F42,
-  },
-  (AppTheme.lamplight, Brightness.dark): {
-    'text': 0xFFF7EAD8,
-    'head': 0xFFF7EAD8,
-    'subhead': 0xFFF3E7D5,
-    'sec': 0xFFDEC7A9,
-    'muted': 0xFFE4CCAC,
-    'faint': 0xFFCEB79A,
-    'border': 0xFF7A7063,
-    'hair': 0xFF4F463B,
-    'divider': 0xFF817769,
-    'box': 0xFF8C8174,
-    'link': 0xFFE7C89D,
-    'accent': 0xFFD2A870,
-    'tf': 0xFFF4E1C3,
-  },
-  (AppTheme.lamplight, Brightness.light): {
-    'text': 0xFF17110A,
-    'head': 0xFF17110A,
-    'subhead': 0xFF1B140D,
-    'sec': 0xFF3D2E1E,
-    'muted': 0xFF382A1B,
-    'faint': 0xFF473728,
-    'border': 0xFF837B6F,
-    'hair': 0xFFC6BDAE,
-    'divider': 0xFF928B7E,
-    'box': 0xFF878073,
-    'link': 0xFF613F15,
-    'accent': 0xFF714A19,
-    'tf': 0xFF34210A,
-  },
-  (AppTheme.fjord, Brightness.dark): {
-    'text': 0xFFF1F6F5,
-    'head': 0xFFF1F6F5,
-    'subhead': 0xFFEBF1F0,
-    'sec': 0xFFC7D5D3,
-    'muted': 0xFFD1DDDB,
-    'faint': 0xFFB6C7C4,
-    'border': 0xFF707A7C,
-    'hair': 0xFF445052,
-    'divider': 0xFF778182,
-    'box': 0xFF828C8D,
-    'link': 0xFFA5D9D1,
-    'accent': 0xFF7CC1B6,
-    'tf': 0xFFD7F0EB,
-  },
-  (AppTheme.fjord, Brightness.light): {
-    'text': 0xFF0A1312,
-    'head': 0xFF0A1312,
-    'subhead': 0xFF0E1817,
-    'sec': 0xFF263A37,
-    'muted': 0xFF1F3331,
-    'faint': 0xFF314441,
-    'border': 0xFF7D8382,
-    'hair': 0xFFC5CAC9,
-    'divider': 0xFF8E9493,
-    'box': 0xFF828887,
-    'link': 0xFF144C46,
-    'accent': 0xFF19645C,
-    'tf': 0xFF0B2C28,
-  },
-};

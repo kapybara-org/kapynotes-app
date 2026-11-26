@@ -111,8 +111,8 @@ class _FolderTile extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: palette.fillRest,
-              borderRadius: BorderRadius.circular(9),
+              color: palette.cardBackground,
+              borderRadius: BorderRadius.circular(AppRadii.card),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,24 +123,11 @@ class _FolderTile extends StatelessWidget {
                     Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        Container(
-                          width: 32,
-                          height: 32,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: palette.selectedBackground,
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          child: KapyIcon(
-                            icon,
-                            size: 18,
-                            color: palette.textPrimary,
-                          ),
-                        ),
+                        KapyIcon(icon, size: 18, color: palette.textSecondary),
                         if (invitations > 0)
                           Positioned(
-                            top: -5,
-                            right: -5,
+                            top: -8,
+                            right: -10,
                             child: Container(
                               key: const ValueKey('folders-shared-invitations'),
                               height: 16,
@@ -150,8 +137,12 @@ class _FolderTile extends StatelessWidget {
                               ),
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
-                                color: palette.clay,
-                                borderRadius: BorderRadius.circular(8),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.errorContainer,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadii.pill,
+                                ),
                               ),
                               child: Text(
                                 invitations > 99 ? '99+' : '$invitations',
@@ -159,8 +150,8 @@ class _FolderTile extends StatelessWidget {
                                 style: chromeStyle(
                                   size: 11,
                                   line: 12,
-                                  weight: 600,
-                                  color: palette.paperColor,
+                                  weight: AppWeight.regular,
+                                  color: Theme.of(context).colorScheme.error,
                                   tabular: true,
                                 ),
                               ),
@@ -175,7 +166,7 @@ class _FolderTile extends StatelessWidget {
                         size: 13,
                         line: 16,
                         weight: 400,
-                        color: palette.textTertiary,
+                        color: palette.textQuiet,
                         tabular: true,
                       ),
                     ),
@@ -187,9 +178,9 @@ class _FolderTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: chromeStyle(
-                    size: 16,
+                    size: AppTypeScale.row,
                     line: 22,
-                    weight: 500,
+                    weight: AppWeight.regular,
                     color: palette.textPrimary,
                   ),
                 ),
@@ -202,7 +193,7 @@ class _FolderTile extends StatelessWidget {
                     size: 13,
                     line: 16,
                     weight: 400,
-                    color: palette.textMuted,
+                    color: palette.textSecondary,
                   ),
                 ),
               ],

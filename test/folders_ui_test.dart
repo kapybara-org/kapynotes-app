@@ -295,7 +295,7 @@ void main() {
           matching: find.text('Work'),
         ),
       );
-      expect(name.style!.fontWeight, FontWeight.w500);
+      expect(name.style!.fontWeight, FontWeight.w400);
 
       await tapKey(tester, 'folder-card-${clients.id}');
       expect(pageTitle(tester), 'Clients');
@@ -1423,16 +1423,16 @@ void main() {
       expect(tester.getSize(rowOf(filed.id)).height, 32);
 
       final bar = find.byKey(const ValueKey('notes-folders-switch'));
-      expect(tester.getSize(bar).height, 40);
-      // D01's track: #2A2722 with a 1 px #312D27 line, in Riverbank dark.
+      expect(tester.getSize(bar).height, 32);
       final track = tester.widget<Container>(bar).decoration! as BoxDecoration;
-      expect(track.color, const Color(0xFF2A2722));
-      expect(track.border, Border.all(color: const Color(0xFF312D27)));
+      expect(track.color, tester.element(bar).palette.cardBackground);
+      expect(track.border, isNull);
+      expect(track.borderRadius, BorderRadius.circular(9));
       expect(
         tester
             .getSize(find.byKey(const ValueKey('notes-switch-folders')))
             .height,
-        32,
+        26,
       );
     });
 

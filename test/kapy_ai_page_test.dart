@@ -34,7 +34,7 @@ List<KapyChat> get _chats => [
 FakeKapyAi _ai({bool pro = true}) =>
     FakeKapyAi(pro: pro, chatList: _chats)..set(model: KapyModel.cloud);
 
-const _account = SizedBox.square(
+final _account = SizedBox.square(
   key: ValueKey('account'),
   dimension: 32,
   child: DecoratedBox(

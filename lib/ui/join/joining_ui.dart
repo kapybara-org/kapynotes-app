@@ -60,7 +60,6 @@ class JoinLabel extends StatelessWidget {
       fontSize: AppTypeScale.caption,
       fontWeight: AppWeight.font(AppWeight.regular),
       fontVariations: AppWeight.wght(AppWeight.regular),
-      letterSpacing: 0.2,
       color: palette.textSecondary,
     );
     final count = this.count;

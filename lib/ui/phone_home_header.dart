@@ -3,15 +3,14 @@ import 'package:material_ui/material_ui.dart';
 import '../core/theme.dart';
 import '../data/writing_streak.dart';
 import '../sync/auth_api.dart';
-import 'editor/note_header.dart' show NoteTitleUnderline;
 import 'spaces_rail.dart' show AccountAvatar, StreakMark;
 import 'tasks/task_marks.dart';
 
 /// Home's header on a phone: the Notes and Tasks titles, the one on screen
-/// in ink with its count and the note title's clay underline, then the
-/// writing streak and the avatar that opens Settings.
+/// bright with its count, then the writing streak and the avatar that opens
+/// Settings.
 ///
-/// Notes keeps its count's room while Tasks is on screen, so Tasks sits 12
+/// Notes keeps its count's room while Tasks is on screen, so Tasks sits 16
 /// after the count on both pages and stays put when you swipe between them.
 class PhoneHomeHeader extends StatelessWidget {
   const PhoneHomeHeader({
@@ -58,7 +57,7 @@ class PhoneHomeHeader extends StatelessWidget {
         height: 48,
         padding: const EdgeInsets.only(left: 20, right: 20 - _reach),
         child: Row(
-          spacing: 12,
+          spacing: 16,
           children: [
             _Title(
               key: const ValueKey('home-title-notes'),
@@ -108,8 +107,8 @@ class PhoneHomeHeader extends StatelessWidget {
   }
 }
 
-/// One of Home's titles. The one on screen is in ink with its count and
-/// underlined; the other waits in grey, keeping its count's room unseen.
+/// One of Home's titles. The one on screen is bright with its count; the
+/// other waits a grey quieter, keeping its count's room unseen.
 class _Title extends StatelessWidget {
   const _Title({
     super.key,
@@ -123,10 +122,6 @@ class _Title extends StatelessWidget {
   final int count;
   final bool selected;
   final VoidCallback onPressed;
-
-  /// Paper's 40 × 4 mark: a 2 pt stroke over 38, drawn by the note title's
-  /// own underline.
-  static const _mark = Rect.fromLTWH(2.6, -24.6, 34.8, 26.7);
 
   @override
   Widget build(BuildContext context) {
@@ -142,49 +137,37 @@ class _Title extends StatelessWidget {
         onTap: onPressed,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
-          child: Column(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            spacing: 2,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            spacing: 6,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                spacing: 6,
-                children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: uiStyle(
-                      26,
-                      32,
-                      FontWeight.w600,
-                      selected ? palette.textPrimary : palette.textTertiary,
-                    ),
-                  ),
-                  Visibility.maintain(
-                    visible: selected,
-                    child: Text(
-                      '$count',
-                      maxLines: 1,
-                      softWrap: false,
-                      style: uiStyle(
-                        13,
-                        16,
-                        FontWeight.w400,
-                        palette.textTertiary,
-                        tabular: true,
-                      ),
-                    ),
-                  ),
-                ],
+              Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                style: uiStyle(
+                  AppTypeScale.spaceTitle,
+                  32,
+                  FontWeight.w600,
+                  selected ? palette.textHeading : palette.textQuiet,
+                ),
               ),
-              SizedBox(
-                width: 40,
-                height: 4,
-                child: selected ? const NoteTitleUnderline(word: _mark) : null,
+              Visibility.maintain(
+                visible: selected,
+                child: Text(
+                  '$count',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: uiStyle(
+                    13,
+                    16,
+                    FontWeight.w400,
+                    palette.textQuiet,
+                    tabular: true,
+                  ),
+                ),
               ),
             ],
           ),

@@ -193,15 +193,7 @@ class _Label extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.fromLTRB(8, 8, 8, 3),
-    child: Text(
-      text.toUpperCase(),
-      style: kapyText(
-        11,
-        14,
-        context.palette.textTertiary,
-        weight: FontWeight.w500,
-      ).copyWith(letterSpacing: 0.44),
-    ),
+    child: Text(text, style: kapyText(12, 16, context.palette.textSecondary)),
   );
 }
 

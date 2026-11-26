@@ -613,7 +613,7 @@ void main() {
         expect(_panel, findsOneWidget);
         expect(sheet, findsNothing);
         final style = titleStyle(tester);
-        expect(style?.fontFamily, 'Figtree');
+        expect(style?.fontFamily, AppFonts.ui);
         expect(style?.fontSize, 13);
         expect(
           icon(tester).paths,

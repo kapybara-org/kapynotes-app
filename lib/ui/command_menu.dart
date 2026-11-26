@@ -162,7 +162,6 @@ Future<CommandChoice?> showCommandMenu(
   Future<void> Function(TaskItem item, {required bool done})? onSetTaskDone,
 }) {
   final palette = context.palette;
-  final dark = palette.brightness == Brightness.dark;
   Widget build(BuildContext context) {
     final menu = CommandMenu(
       notes: notes,
@@ -218,7 +217,7 @@ Future<CommandChoice?> showCommandMenu(
   }
   return showDialog<CommandChoice>(
     context: context,
-    barrierColor: dark ? const Color(0x990C0B09) : const Color(0x402A2620),
+    barrierColor: context.palette.scrim,
     routeSettings: const TypingPopupSettings(),
     builder: build,
   );
@@ -848,16 +847,12 @@ class _CommandMenuState extends State<CommandMenu> {
               borderRadius: BorderRadius.circular(AppRadii.surface),
               boxShadow: [
                 BoxShadow(
-                  color: dark
-                      ? const Color(0x80000000)
-                      : const Color(0x332A2620),
+                  color: palette.shadow.withValues(alpha: dark ? 0.5 : 0.2),
                   offset: const Offset(0, 24),
                   blurRadius: 64,
                 ),
                 BoxShadow(
-                  color: dark
-                      ? const Color(0x4D000000)
-                      : const Color(0x1F2A2620),
+                  color: palette.shadow.withValues(alpha: dark ? 0.3 : 0.12),
                   offset: const Offset(0, 2),
                   blurRadius: 6,
                 ),
@@ -1240,7 +1235,7 @@ class _CommandMenuState extends State<CommandMenu> {
                               color: done ? sage : palette.checkboxBorder,
                               width: 1.5,
                             ),
-                            borderRadius: BorderRadius.circular(6),
+                            shape: BoxShape.circle,
                           ),
                           child: done
                               ? KapyIcon(

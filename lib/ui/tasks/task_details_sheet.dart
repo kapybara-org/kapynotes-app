@@ -635,7 +635,7 @@ class _PhoneTaskBox extends StatelessWidget {
                     color: done ? sage : palette.checkboxBorder,
                     width: 1.5,
                   ),
-                  borderRadius: BorderRadius.circular(5),
+                  shape: BoxShape.circle,
                 ),
                 child: done
                     ? KapyIcon(
