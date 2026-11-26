@@ -3517,6 +3517,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ? 'kapy-ai-toggle'
           : kapyAccountRowId(ai.accounts.first.kind),
     ),
+    onSignIn: widget.account == null
+        ? null
+        : () => _showSettings(section: SettingsSection.account),
+    onUpgrade: switch (widget.account?.billing) {
+      final billing? => () => unawaited(
+        showProSheet(context, billing: billing),
+      ),
+      null => null,
+    },
     onClose: onClose,
     now: widget.notes.now,
   );
