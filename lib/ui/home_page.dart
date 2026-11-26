@@ -289,7 +289,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const String _pendingImageNoteKey = 'pendingImageNote.v1';
 
-  final FocusNode _desktopShortcutFocus = FocusNode(
+  final FocusScopeNode _desktopShortcutFocus = FocusScopeNode(
     debugLabel: 'desktop-shortcuts',
   );
   final NoteSwitcher _noteSwitcher = NoteSwitcher();
@@ -1715,7 +1715,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // the real keyboard focus agree, while further Tabs still reach the
       // same held-key session.
       if (selectionPreview && _noteSwitcher.isActive) {
-        _desktopShortcutFocus.requestFocus();
+        _desktopShortcutFocus.requestScopeFocus();
       }
     }
     final paneBefore = _workspace.activePane;
@@ -6630,7 +6630,7 @@ class _DesktopShortcuts extends StatelessWidget {
   });
 
   final Widget child;
-  final FocusNode focusNode;
+  final FocusScopeNode focusNode;
   final VoidCallback onNewNote;
 
   /// The pair's keys, unless they belong to a field being typed in.
@@ -6786,8 +6786,8 @@ class _DesktopShortcuts extends StatelessWidget {
         ?shortcuts.bindingFor(ShortcutAction.toggleKapyAi)?.activator:
             ?onToggleKapyAi,
       },
-      child: Focus(
-        focusNode: focusNode,
+      child: FocusScope(
+        node: focusNode,
         autofocus: autofocus,
         onKeyEvent: _pairKey,
         child: child,
