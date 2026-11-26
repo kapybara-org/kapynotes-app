@@ -912,6 +912,11 @@ void main() {
       };
 
       ShortcutPrefs(store).load();
+      expect(
+        (store.data['shortcuts.v1']! as Map)['openApp'],
+        ShortcutPrefs.defaultFor(ShortcutAction.openApp).toJson(),
+        reason: platform.name,
+      );
 
       final reloaded = ShortcutPrefs(store)..load();
       expect(
@@ -960,6 +965,35 @@ void main() {
 
     expect(prefs.bindingFor(ShortcutAction.openApp), oldSummon);
     expect(prefs.bindingFor(ShortcutAction.formatBold), boldOnL);
+  });
+
+  test('the X summon shortcut picked again in Settings outlasts a restart', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    const oldSummon = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyX,
+      physicalKey: PhysicalKeyboardKey.keyX,
+      alt: true,
+      shift: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'openApp': oldSummon.toJson()};
+    final moved = ShortcutPrefs(store)..load();
+    expect(moved.bindingFor(ShortcutAction.openApp)!.keyLabel, 'L');
+
+    moved.update(ShortcutAction.openApp, oldSummon);
+
+    final reloaded = ShortcutPrefs(store)..load();
+    expect(
+      reloaded.bindingFor(ShortcutAction.openApp)!.displayLabel,
+      'Alt + Shift + X',
+    );
+
+    reloaded.update(
+      ShortcutAction.openApp,
+      ShortcutPrefs.defaultFor(ShortcutAction.openApp),
+    );
+    expect((store.data['shortcuts.v1']! as Map)['repicked'], isEmpty);
   });
 
   test(

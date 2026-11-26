@@ -330,11 +330,19 @@ class ShortcutPrefs extends ChangeNotifier {
   /// written down, in a word rather than as an absence.
   static const String _unbound = 'unbound';
 
+  /// Where the saved map lists the actions the person put back on a default
+  /// since retired. No action has this name.
+  static const String _repickedKey = 'repicked';
+
   final LocalStore _store;
 
   /// Only the actions that have a key. An action missing from here is one the
   /// user cleared, which is why [bindingFor] can answer null.
   late Map<ShortcutAction, ShortcutBinding> _bindings;
+
+  /// Actions on a retired default because the person picked it again, which
+  /// [load] must not mistake for an install that never moved off it.
+  Set<ShortcutAction> _repicked = {};
 
   void load() {
     final raw = _store.data[_key];
@@ -346,6 +354,11 @@ class ShortcutPrefs extends ChangeNotifier {
               ShortcutBinding.fromJson(_saved(saved, action)) ??
               defaultFor(action),
     };
+    final repicked = saved[_repickedKey];
+    _repicked = {
+      for (final action in ShortcutAction.values)
+        if (repicked is List && repicked.contains(action.name)) action,
+    };
 
     // Changing the default alone would only reach new installs. Anyone still
     // carrying a superseded binding never chose it — it was simply what
@@ -354,7 +367,9 @@ class ShortcutPrefs extends ChangeNotifier {
     var migrated = false;
     for (final action in ShortcutAction.values) {
       final current = _bindings[action];
-      if (current == null || !_supersededDefaults(action).contains(current)) {
+      if (current == null ||
+          _repicked.contains(action) ||
+          !_supersededDefaults(action).contains(current)) {
         continue;
       }
       final replacement = defaultFor(action);
@@ -516,6 +531,11 @@ class ShortcutPrefs extends ChangeNotifier {
   void update(ShortcutAction action, ShortcutBinding binding) {
     if (_bindings[action] == binding) return;
     _bindings[action] = binding;
+    if (_supersededDefaults(action).contains(binding)) {
+      _repicked.add(action);
+    } else {
+      _repicked.remove(action);
+    }
     _persist();
   }
 
@@ -530,6 +550,7 @@ class ShortcutPrefs extends ChangeNotifier {
     _bindings = {
       for (final action in ShortcutAction.values) action: defaultFor(action),
     };
+    _repicked = {};
     _persist();
   }
 
@@ -537,6 +558,7 @@ class ShortcutPrefs extends ChangeNotifier {
     _store.putNow(_key, {
       for (final action in ShortcutAction.values)
         action.name: _bindings[action]?.toJson() ?? _unbound,
+      _repickedKey: [for (final action in _repicked) action.name],
     });
     notifyListeners();
   }
