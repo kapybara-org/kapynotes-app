@@ -11,6 +11,9 @@ import '../core/theme.dart';
 /// item in. That motion is useful for a Material overflow menu, but a context
 /// menu should feel attached to the click that summoned it. This route keeps
 /// its final geometry from the first frame and only fades it in quickly.
+///
+/// [onClosed] is told where the menu sat as it closes, for a list or a field
+/// its choice opens to take its place.
 Future<T?> showKapyContextMenu<T>({
   required BuildContext context,
   required Offset globalPosition,
@@ -18,11 +21,12 @@ Future<T?> showKapyContextMenu<T>({
   Rect? preferredGlobalBounds,
   bool requestFocus = true,
   bool useRootNavigator = false,
-}) {
+  ValueSetter<MenuSpot>? onClosed,
+}) async {
   assert(items.isNotEmpty);
   final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
   final overlay = navigator.overlay?.context.findRenderObject() as RenderBox?;
-  if (overlay == null) return Future<T?>.value();
+  if (overlay == null) return null;
 
   Rect? preferredBounds;
   if (preferredGlobalBounds case final bounds?) {
@@ -32,19 +36,30 @@ Future<T?> showKapyContextMenu<T>({
     );
   }
 
-  return navigator.push<T>(
-    _KapyContextMenuRoute<T>(
-      position: overlay.globalToLocal(globalPosition),
-      preferredBounds: preferredBounds,
-      items: items,
-      capturedThemes: InheritedTheme.capture(
-        from: context,
-        to: navigator.context,
-      ),
-      barrierLabel: MaterialLocalizations.of(context).menuDismissLabel,
-      requestFocus: requestFocus,
+  final route = _KapyContextMenuRoute<T>(
+    position: overlay.globalToLocal(globalPosition),
+    preferredBounds: preferredBounds,
+    items: items,
+    capturedThemes: InheritedTheme.capture(
+      from: context,
+      to: navigator.context,
     ),
+    barrierLabel: MaterialLocalizations.of(context).menuDismissLabel,
+    requestFocus: requestFocus,
   );
+  final choice = await navigator.push<T>(route);
+  final menu = route.surface.currentContext?.findRenderObject() as RenderBox?;
+  if (onClosed != null && menu != null && menu.hasSize) {
+    final bounds = menu.localToGlobal(Offset.zero) & menu.size;
+    onClosed((
+      bounds: bounds,
+      corner: Alignment(
+        globalPosition.dx > bounds.center.dx ? 1 : -1,
+        globalPosition.dy > bounds.center.dy ? 1 : -1,
+      ),
+    ));
+  }
+  return choice;
 }
 
 /// The shared compact surface for popup-route and editable-text menus.
@@ -106,6 +121,9 @@ class _KapyContextMenuRoute<T> extends PopupRoute<T> {
   final List<PopupMenuEntry<T>> items;
   final CapturedThemes capturedThemes;
 
+  /// The menu, which says where it sat as it closes.
+  final surface = GlobalKey();
+
   @override
   final String barrierLabel;
 
@@ -140,19 +158,22 @@ class _KapyContextMenuRoute<T> extends PopupRoute<T> {
           preferredBounds: preferredBounds,
           mediaPadding: mediaPadding,
         ),
-        child: capturedThemes.wrap(
-          KapyContextMenuSurface(
-            key: const ValueKey('kapy-context-menu'),
-            padding:
-                PopupMenuTheme.of(context).menuPadding ??
-                const EdgeInsets.symmetric(vertical: 4),
-            child: Semantics(
-              role: SemanticsRole.menu,
-              scopesRoute: true,
-              namesRoute: true,
-              explicitChildNodes: true,
-              label: MaterialLocalizations.of(context).popupMenuLabel,
-              child: SingleChildScrollView(child: ListBody(children: items)),
+        child: KeyedSubtree(
+          key: surface,
+          child: capturedThemes.wrap(
+            KapyContextMenuSurface(
+              key: const ValueKey('kapy-context-menu'),
+              padding:
+                  PopupMenuTheme.of(context).menuPadding ??
+                  const EdgeInsets.symmetric(vertical: 4),
+              child: Semantics(
+                role: SemanticsRole.menu,
+                scopesRoute: true,
+                namesRoute: true,
+                explicitChildNodes: true,
+                label: MaterialLocalizations.of(context).popupMenuLabel,
+                child: SingleChildScrollView(child: ListBody(children: items)),
+              ),
             ),
           ),
         ),
@@ -183,7 +204,6 @@ class _KapyContextMenuLayout extends SingleChildLayoutDelegate {
     required this.mediaPadding,
   });
 
-  static const _screenGap = 8.0;
   static const _preferredGap = 4.0;
 
   final Offset position;
@@ -192,23 +212,11 @@ class _KapyContextMenuLayout extends SingleChildLayoutDelegate {
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
-      BoxConstraints.loose(constraints.biggest).deflate(
-        EdgeInsets.fromLTRB(
-          _screenGap + mediaPadding.left,
-          _screenGap + mediaPadding.top,
-          _screenGap + mediaPadding.right,
-          _screenGap + mediaPadding.bottom,
-        ),
-      );
+      BoxConstraints.loose(constraints.biggest).deflate(_clear(mediaPadding));
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {
-    final safe = Rect.fromLTRB(
-      _screenGap + mediaPadding.left,
-      _screenGap + mediaPadding.top,
-      size.width - _screenGap - mediaPadding.right,
-      size.height - _screenGap - mediaPadding.bottom,
-    );
+    final safe = _clear(mediaPadding).deflateRect(Offset.zero & size);
     final preferred = preferredBounds?.intersect(safe);
 
     double x;
@@ -239,6 +247,49 @@ class _KapyContextMenuLayout extends SingleChildLayoutDelegate {
       position != oldDelegate.position ||
       preferredBounds != oldDelegate.preferredBounds ||
       mediaPadding != oldDelegate.mediaPadding;
+}
+
+/// What a menu, and a list or a field its choice opens, keep clear of: the
+/// screen's insets, and 8 more inside the window.
+EdgeInsets _clear(EdgeInsets mediaPadding) =>
+    mediaPadding + const EdgeInsets.all(8);
+
+/// Where a menu sat, and the corner it hung from: the one at the point it
+/// opened at. A list or a field one of its choices opens hangs from the same
+/// corner, so it opens where the menu was.
+typedef MenuSpot = ({Rect bounds, Alignment corner});
+
+/// The spot for a list with no menu before it: [point], with the list
+/// growing right and down from there.
+MenuSpot spotAt(Offset point) =>
+    (bounds: point & Size.zero, corner: Alignment.topLeft);
+
+/// Lays a list or a field out from its [spot], growing away from the spot's
+/// corner, and keeps it inside the window as a menu is kept.
+class PopoverAtSpot extends SingleChildLayoutDelegate {
+  const PopoverAtSpot(this.spot, {required this.mediaPadding});
+
+  final MenuSpot spot;
+  final EdgeInsets mediaPadding;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
+      BoxConstraints.loose(constraints.biggest).deflate(_clear(mediaPadding));
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final safe = _clear(mediaPadding).deflateRect(Offset.zero & size);
+    final (:bounds, :corner) = spot;
+    final at = corner.withinRect(bounds) - corner.alongSize(childSize);
+    return Offset(
+      at.dx.clamp(safe.left, safe.right - childSize.width).toDouble(),
+      at.dy.clamp(safe.top, safe.bottom - childSize.height).toDouble(),
+    );
+  }
+
+  @override
+  bool shouldRelayout(PopoverAtSpot oldDelegate) =>
+      spot != oldDelegate.spot || mediaPadding != oldDelegate.mediaPadding;
 }
 
 /// One line of a note's actions menu, wherever it opens: a note's row in the
