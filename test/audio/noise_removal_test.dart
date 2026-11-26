@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -196,6 +197,34 @@ void main() {
       expect(await copies.existing(hash), isNull);
       expect(decoder.written!.existsSync(), isFalse);
       expect(dir.listSync().whereType<File>(), isEmpty);
+    });
+
+    test('a cancel during the save leaves no copy', () async {
+      final started = Completer<void>();
+      final release = Completer<void>();
+      Future<void> slowEncode(File pcm, File destination) async {
+        started.complete();
+        await release.future;
+        await pcm.copy(destination.path);
+      }
+
+      final run = clean(
+        NoiseRemover(copies: copies, decoder: decoder, encode: slowEncode),
+      );
+      await started.future;
+      run.cancel();
+      release.complete();
+      await expectLater(
+        run.done,
+        throwsA(
+          isA<NoiseRemovalException>().having(
+            (e) => e.failure,
+            'failure',
+            NoiseRemovalFailure.cancelled,
+          ),
+        ),
+      );
+      expect(await copies.existing(hash), isNull);
     });
 
     test('says the model is the problem when it is', () async {

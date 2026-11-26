@@ -122,6 +122,15 @@ class NoiseRemover {
       run._progress.value = _cleaningShare;
       await destination.parent.create(recursive: true);
       await _encode(cleaned, destination);
+      if (run._cancelled) {
+        try {
+          if (await destination.exists()) await destination.delete();
+        } on FileSystemException {
+          // Cancel said nothing would be left; a file that will not delete
+          // still must not be reported as a finished copy.
+        }
+        run._check();
+      }
       run._progress.value = 1;
       return destination;
     } on NoiseRemovalException {
