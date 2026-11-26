@@ -16,6 +16,7 @@ import 'core/deep_links.dart';
 import 'core/desktop_integration.dart';
 import 'core/focus_hold.dart';
 import 'core/font_licenses.dart';
+import 'core/linux_wheel.dart';
 import 'core/platform.dart';
 import 'core/quick_capture.dart';
 import 'core/window_placement.dart';
@@ -40,6 +41,7 @@ import 'sync/sync_api.dart';
 import 'sync/sync_state.dart';
 
 Future<void> main([List<String> args = const []]) async {
+  if (AppPlatform.isLinux) LinuxBinding();
   WidgetsFlutterBinding.ensureInitialized();
   QuickCapture.startedWith(args);
   registerFontLicenses();

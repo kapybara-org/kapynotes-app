@@ -249,10 +249,11 @@ class _SelectionBubbleOverlay extends StatelessWidget {
   );
 }
 
-/// Under the selection's last line, as D05 draws it, or over its first where
-/// there is no room below, across no further than the note's own pane. Text ▾
-/// opens away from the selection when there is room, so the selection stays
-/// in view, and otherwise toward the side with more, kept on screen.
+/// Over the selection's first line, or under its last where there is no room
+/// above, within the note's own pane. Writing and reading go on below a
+/// selection, the next line is where the next click goes, so the bubble keeps
+/// off it. Text ▾ opens away from the selection when there is room, so the
+/// selection stays in view, and otherwise toward the side with more.
 class _BubbleLayout extends MultiChildLayoutDelegate {
   _BubbleLayout({
     required this.above,
@@ -280,20 +281,23 @@ class _BubbleLayout extends MultiChildLayoutDelegate {
         math.max(0, size.height - _margin * 2),
       ),
     );
-    final top = safeArea.top + _margin;
-    final bottom = size.height - safeArea.bottom - _margin;
+    final top = math.max(safeArea.top, within.top) + _margin;
+    final bottom =
+        math.min(size.height - safeArea.bottom, within.bottom) - _margin;
     final left = math.max(0.0, within.left) + _margin;
     final right = math.min(size.width, within.right) - _margin;
     final bubbleSize = layoutChild(bubble, loose);
-    final fitsBelow = below.bottom + _gap + bubbleSize.height <= bottom;
-    final line = fitsBelow ? below : above;
-    final y = fitsBelow
-        ? below.bottom + _gap
-        : _clamp(
+    final placedAbove =
+        above.top - _gap - bubbleSize.height >= top ||
+        below.bottom + _gap + bubbleSize.height > bottom;
+    final line = placedAbove ? above : below;
+    final y = placedAbove
+        ? _clamp(
             above.top - _gap - bubbleSize.height,
             top,
             bottom - bubbleSize.height,
-          );
+          )
+        : below.bottom + _gap;
     final x = _clamp(
       line.center.dx - bubbleSize.width / 2,
       left,
@@ -305,9 +309,9 @@ class _BubbleLayout extends MultiChildLayoutDelegate {
     final menuSize = layoutChild(menu, loose);
     final roomAbove = y - _menuGap - top;
     final roomBelow = bottom - (y + bubbleSize.height + _menuGap);
-    final upward = fitsBelow
-        ? menuSize.height > roomBelow && roomAbove > roomBelow
-        : menuSize.height <= roomAbove || roomAbove > roomBelow;
+    final upward = placedAbove
+        ? menuSize.height <= roomAbove || roomAbove > roomBelow
+        : menuSize.height > roomBelow && roomAbove > roomBelow;
     positionChild(
       menu,
       Offset(
@@ -556,6 +560,7 @@ class _LinkField extends StatelessWidget {
                 contentPadding: EdgeInsets.zero,
               ),
               onSubmitted: (_) => controller._submitLink(),
+              onTapOutside: (_) => controller.hide(),
             ),
           ),
         ),

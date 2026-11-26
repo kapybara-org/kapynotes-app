@@ -32,6 +32,10 @@ class _MemoryStore extends LocalStore {
   void put(String key, Object? value) => data[key] = value;
 }
 
+/// What the note gives up of the window, as a sidebar opening beside it or
+/// the window shrinking under it does.
+final _taken = ValueNotifier(EdgeInsets.zero);
+
 Widget _editor(
   String body, {
   bool markdown = true,
@@ -41,8 +45,12 @@ Widget _editor(
   return MaterialApp(
     theme: KapyTheme.dark(),
     home: Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.only(top: 120),
+      body: ValueListenableBuilder(
+        valueListenable: _taken,
+        builder: (context, taken, child) => Padding(
+          padding: taken.copyWith(top: taken.top + 120),
+          child: child,
+        ),
         child: NoteEditor(
           key: ValueKey(body),
           noteId: 'bubble',
@@ -185,6 +193,7 @@ void main() {
     _pressed.clear();
     _links.clear();
     _linkClosed = 0;
+    _taken.value = EdgeInsets.zero;
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
   });
   tearDown(() {
@@ -199,33 +208,34 @@ void main() {
   }
 
   group('the bubble', () {
-    testWidgets('sits under the selection, as D05 draws it, and over it '
-        'near the bottom edge', (tester) async {
+    testWidgets('sits over the selection, clear of the lines under it, and '
+        'under it near the top edge', (tester) async {
       window(tester);
       await tester.pumpWidget(_app());
       await _show(tester);
-      expect(tester.getRect(_bubble).top, 300 + 22 + 8);
+      expect(tester.getRect(_bubble).bottom, 300 - 8);
       expect(tester.getRect(_bubble).height, 40);
 
-      // Under the selection's last line, centred on it.
+      // Over the selection's first line, centred on it.
       await _show(
         tester,
         above: const Rect.fromLTWH(60, 200, 300, 22),
-        below: const Rect.fromLTWH(160, 230, 100, 22),
+        below: const Rect.fromLTWH(60, 230, 100, 22),
       );
-      expect(tester.getRect(_bubble).top, 230 + 22 + 8);
-      expect(
-        tester.getRect(_bubble).center.dx,
-        closeTo(210, 0.5),
-      );
+      expect(tester.getRect(_bubble).bottom, 200 - 8);
+      expect(tester.getRect(_bubble).center.dx, closeTo(210, 0.5));
 
-      // With no room under it, over its first line.
+      // Near the bottom edge, over it still.
       await _show(tester, above: const Rect.fromLTWH(60, 420, 160, 22));
       expect(tester.getRect(_bubble).bottom, 420 - 8);
 
-      // Near the top edge, under it still.
-      await _show(tester, above: const Rect.fromLTWH(60, 20, 160, 22));
-      expect(tester.getRect(_bubble).top, 20 + 22 + 8);
+      // With no room over it, under its last line.
+      await _show(
+        tester,
+        above: const Rect.fromLTWH(60, 20, 160, 22),
+        below: const Rect.fromLTWH(60, 50, 100, 22),
+      );
+      expect(tester.getRect(_bubble).top, 50 + 22 + 8);
     });
 
     testWidgets('Text ▾ opens downward under a bubble that sits under the '
@@ -245,7 +255,11 @@ void main() {
         'fit below and there is more room above', (tester) async {
       window(tester);
       await tester.pumpWidget(_app());
-      await _show(tester, above: const Rect.fromLTWH(60, 320, 160, 22));
+      await _show(
+        tester,
+        above: const Rect.fromLTWH(60, 20, 160, 22),
+        below: const Rect.fromLTWH(60, 320, 160, 22),
+      );
       expect(tester.getRect(_bubble).top, 320 + 22 + 8);
       _standalone.toggleBlocks();
       await tester.pumpAndSettle();
@@ -267,6 +281,15 @@ void main() {
         within: pane,
       );
       expect(tester.getRect(_bubble).left, pane.left + 8);
+
+      // Over a selection at the top of the pane it would cover what sits
+      // above the note, so it goes under.
+      await _show(
+        tester,
+        above: const Rect.fromLTWH(130, 130, 40, 22),
+        within: const Rect.fromLTRB(120, 100, 520, 480),
+      );
+      expect(tester.getRect(_bubble).top, 130 + 22 + 8);
 
       _standalone.toggleBlocks();
       await tester.pumpAndSettle();
@@ -460,6 +483,105 @@ void main() {
       controller.selection = const TextSelection.collapsed(offset: 3);
       await tester.pumpAndSettle();
       expect(_bubble, findsNothing);
+    });
+
+    testWidgets('sits over the selection, clear of the line written under '
+        'it', (tester) async {
+      const body = 'Title\nfirst line\nsecond line\nthe words to format\nnext';
+      await tester.pumpWidget(_editor(body));
+      await tester.pumpAndSettle();
+      await _select(tester, 'words');
+      final editable = NoteDriver(tester);
+      final selected = editable.boxesFor(_controller(tester).selection).first;
+      expect(
+        tester.getRect(_bubble).bottom,
+        moreOrLessEquals(
+          editable.toGlobal(Offset(0, selected.top)).dy - 8,
+          epsilon: 0.01,
+        ),
+      );
+    });
+
+    testWidgets('follows its selection when the note moves over, as it does '
+        'when the sidebar opens', (tester) async {
+      tester.view.physicalSize = const Size(1200, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        _editor('Title\nThese are a few of the words we want to format'),
+      );
+      await tester.pumpAndSettle();
+      await _select(tester, 'format');
+      final editable = NoteDriver(tester);
+      double selectedAt() => editable
+          .toGlobal(
+            editable
+                .boxesFor(_controller(tester).selection)
+                .first
+                .toRect()
+                .center,
+          )
+          .dx;
+      final before = selectedAt();
+      expect(tester.getRect(_bubble).center.dx, closeTo(before, 0.5));
+
+      _taken.value = const EdgeInsets.only(left: 280);
+      await tester.pumpAndSettle();
+      expect(selectedAt(), isNot(closeTo(before, 1)));
+      expect(tester.getRect(_bubble).center.dx, closeTo(selectedAt(), 0.5));
+      expect(_controller(tester).selection.isCollapsed, isFalse);
+    });
+
+    testWidgets('goes when the window shrinks the selection out of sight', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final body = [
+        'Title',
+        for (var line = 1; line <= 12; line++) 'Line $line',
+        'the last words',
+      ].join('\n');
+      await tester.pumpWidget(_editor(body));
+      await tester.pumpAndSettle();
+      await _select(tester, 'last');
+      expect(_bubble, findsOneWidget);
+
+      _taken.value = const EdgeInsets.only(bottom: 560);
+      await tester.pumpAndSettle();
+      expect(_bubble, findsNothing);
+      expect(_controller(tester).selection.isCollapsed, isFalse);
+    });
+
+    testWidgets('a click outside the note closes the link field, and a trip '
+        'to another app for the address does not', (tester) async {
+      const body = 'Some words to format';
+      await tester.pumpWidget(_editor(body));
+      await tester.pumpAndSettle();
+      await _select(tester, 'words');
+      await _chord(tester, ShortcutAction.formatLink);
+      final field = find.byKey(const ValueKey('selection-link-field'));
+      expect(field, findsOneWidget);
+
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+        await tester.pumpAndSettle();
+      }
+      expect(field, findsOneWidget);
+
+      final away = await tester.startGesture(
+        const Offset(20, 20),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(milliseconds: 80));
+      await away.up();
+      await tester.pumpAndSettle();
+      expect(_bubble, findsNothing);
+      expect(_controller(tester).text, body);
     });
 
     testWidgets(
