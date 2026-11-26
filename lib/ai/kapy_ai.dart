@@ -319,12 +319,31 @@ class KapyAccountError extends KapyPending {
   final List<KapyModel> fallbacks;
 }
 
+/// Kapy AI Cloud won't answer for this person yet: Sign in when nobody is
+/// signed in or the session ended, Upgrade without Pro, and Use your own
+/// account either way.
+class KapyCloudLocked extends KapyPending {
+  const KapyCloudLocked({
+    required this.signIn,
+    required this.upgrade,
+    this.fallbacks = const [],
+  });
+  final bool signIn;
+  final bool upgrade;
+  final List<KapyModel> fallbacks;
+}
+
 /// Anything else that stopped an answer, with the models that could answer
-/// instead for the person to choose from.
+/// instead for the person to choose from. Try again only when [retry].
 class KapyFailed extends KapyPending {
-  const KapyFailed(this.message, {this.fallbacks = const []});
+  const KapyFailed(
+    this.message, {
+    this.fallbacks = const [],
+    this.retry = true,
+  });
   final String message;
   final List<KapyModel> fallbacks;
+  final bool retry;
 }
 
 /// Kapy AI: chats, models, accounts and answers.

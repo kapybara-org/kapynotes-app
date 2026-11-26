@@ -128,6 +128,12 @@ typedef _Remote = ({int start, TextEditingValue value});
 /// How long the caret is shown, and then hidden, as it blinks.
 const _blinkHalfPeriod = Duration(milliseconds: 500);
 
+/// How long the caret blinks on Linux after the last key or move before it
+/// stays on, as GTK's own fields do (its gtk-cursor-blink-timeout). Each blink
+/// draws the whole window again, which a machine without a graphics card
+/// pays for on the processor, so an idle window should draw nothing.
+const _linuxBlinkTimeout = Duration(seconds: 10);
+
 bool get _apple => switch (defaultTargetPlatform) {
   TargetPlatform.iOS || TargetPlatform.macOS => true,
   _ => false,
@@ -167,7 +173,9 @@ class NoteFieldState extends State<NoteField>
   bool _afterFrameScheduled = false;
   bool _revealScheduled = false;
 
-  /// The caret's opacity as it blinks, and what times the blink.
+  /// The caret's opacity as it blinks, and what times the blink. The timer
+  /// stays set, cancelled, while the caret rests on Linux, so that the next
+  /// key or move starts the blink again.
   late final AnimationController _blink = AnimationController(vsync: this)
     ..addListener(_mark);
   Timer? _blinkTimer;
@@ -808,7 +816,14 @@ class NoteFieldState extends State<NoteField>
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       _blink.animateWith(_CaretBlink()).whenComplete(_blinkTick);
     } else {
-      _blinkTimer = Timer.periodic(_blinkHalfPeriod, (_) => _blinkTick());
+      _blinkTimer = Timer.periodic(_blinkHalfPeriod, (timer) {
+        _blinkTick();
+        if (defaultTargetPlatform == TargetPlatform.linux &&
+            _blinkHalfPeriod * timer.tick >= _linuxBlinkTimeout) {
+          timer.cancel();
+          _blink.value = 1;
+        }
+      });
     }
   }
 
