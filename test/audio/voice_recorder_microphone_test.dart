@@ -50,23 +50,33 @@ void main() {
     return recorder.hasMicrophone();
   }
 
-  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
-    test('${platform.name} with no input device has no microphone', () async {
-      expect(await hasMicrophone(platform, _FakeRecordPlatform([])), isFalse);
-    });
+  test('a Mac with no input device has no microphone', () async {
+    expect(
+      await hasMicrophone(TargetPlatform.macOS, _FakeRecordPlatform([])),
+      isFalse,
+    );
+  });
 
-    test('${platform.name} with one has a microphone', () async {
-      final fake = _FakeRecordPlatform([
-        const InputDevice(id: 'built-in', label: 'MacBook Pro Microphone'),
-      ]);
-      expect(await hasMicrophone(platform, fake), isTrue);
-    });
-  }
+  test('a Mac with one has a microphone', () async {
+    final fake = _FakeRecordPlatform([
+      const InputDevice(id: 'built-in', label: 'MacBook Pro Microphone'),
+    ]);
+    expect(await hasMicrophone(TargetPlatform.macOS, fake), isTrue);
+  });
 
-  test('a phone is not asked: it always has one', () async {
+  test('Windows and the phones are not asked, and record as before', () async {
     final fake = _FakeRecordPlatform([]);
-    expect(await hasMicrophone(TargetPlatform.android, fake), isTrue);
-    expect(await hasMicrophone(TargetPlatform.iOS, fake), isTrue);
+    for (final platform in [
+      TargetPlatform.windows,
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+    ]) {
+      expect(
+        await hasMicrophone(platform, fake),
+        isTrue,
+        reason: platform.name,
+      );
+    }
     expect(fake.asked, 0);
   });
 }

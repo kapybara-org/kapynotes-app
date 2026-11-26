@@ -64,7 +64,9 @@ class LinuxVoiceRecorder implements VoiceRecorderBackend {
   Future<bool> hasPermission() async => true;
 
   /// Asks the sound server, through the ffmpeg that would record, what it
-  /// can record from. With no sound server, or no ffmpeg, there is nothing.
+  /// can record from. Anything short of a definite "nothing" records as
+  /// before, and [start] finds out for itself: no ffmpeg to ask, or an
+  /// answer this does not recognise.
   @override
   Future<bool> hasMicrophone() async {
     try {
@@ -73,23 +75,32 @@ class LinuxVoiceRecorder implements VoiceRecorderBackend {
         '-sources',
         'pulse',
       ]);
-      return listsMicrophone('${result.stdout}');
+      return listsMicrophone('${result.stdout}') ?? true;
     } on ProcessException {
-      return false;
+      return true;
     }
   }
 
-  /// Whether `ffmpeg -sources pulse` lists a source that is not a monitor.
+  /// Whether what `ffmpeg -sources pulse` printed lists a microphone, or
+  /// null when it does not say either way.
   ///
-  /// A sound server with no microphone still lists its outputs' monitors,
-  /// `auto_null.monitor` on a computer with no sound card at all, and its
-  /// default source is then one of them. Recording that records silence, so
-  /// a monitor is no microphone.
+  /// Two answers are a definite no. A sound server with no microphone still
+  /// lists its outputs' monitors, `auto_null.monitor` on a computer with no
+  /// sound card at all, and its default source is then one of them, so a
+  /// list of nothing but monitors records silence. And a listing that could
+  /// not reach a sound server means capture, which goes to the same server
+  /// through the same library, cannot either.
   @visibleForTesting
-  static bool listsMicrophone(String sources) => RegExp(
-    r'^[* ] (\S+) \[',
-    multiLine: true,
-  ).allMatches(sources).any((source) => !source.group(1)!.endsWith('.monitor'));
+  static bool? listsMicrophone(String output) {
+    if (!output.contains('Auto-detected sources for pulse:')) return null;
+    if (output.contains('Cannot list sources')) return false;
+    final sources = RegExp(
+      r'^[* ] (\S+) \[',
+      multiLine: true,
+    ).allMatches(output).map((source) => source.group(1)!).toList();
+    if (sources.isEmpty) return null;
+    return sources.any((name) => !name.endsWith('.monitor'));
+  }
 
   @override
   Future<void> start(String path) async {

@@ -173,8 +173,8 @@ class VoiceRecordingController extends ChangeNotifier {
 
   /// Whether there is a microphone to record from, asked before [start] so
   /// that a computer with none says "No microphone found" rather than
-  /// recording silence. A backend that cannot tell answers yes, and [start]
-  /// finds out for itself.
+  /// recording silence. Only a definite no blocks: a backend that cannot
+  /// tell, or fails to ask, answers yes, and [start] finds out for itself.
   Future<bool> hasMicrophone() async {
     try {
       return await _recorder.hasMicrophone();

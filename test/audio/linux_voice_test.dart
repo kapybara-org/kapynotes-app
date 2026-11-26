@@ -49,12 +49,26 @@ Auto-detected sources for pulse:
     });
 
     test('is not there when there is no sound server to ask', () {
-      expect(LinuxVoiceRecorder.listsMicrophone(''), isFalse);
+      expect(
+        LinuxVoiceRecorder.listsMicrophone(
+          'Auto-detected sources for pulse:\n'
+          'Cannot list sources: Generic error in an external library\n',
+        ),
+        isFalse,
+      );
+    });
+
+    test('is not ruled out by an answer that says neither', () {
+      expect(LinuxVoiceRecorder.listsMicrophone(''), isNull);
       expect(
         LinuxVoiceRecorder.listsMicrophone(
           'Auto-detected sources for pulse:\n',
         ),
-        isFalse,
+        isNull,
+      );
+      expect(
+        LinuxVoiceRecorder.listsMicrophone('Unknown input format: pulse\n'),
+        isNull,
       );
     });
   });
@@ -76,6 +90,21 @@ Auto-detected sources for pulse:
   });
 
   group('recording', () {
+    test('finds the microphone first, then records sound from it', () async {
+      expect(await controller.hasMicrophone(), isTrue);
+
+      expect(await controller.start(noteId: 'n1'), isTrue);
+      await Future<void>.delayed(const Duration(seconds: 2));
+      final result = await controller.stop();
+
+      expect(result, isNotNull);
+      expect(
+        result!.peaks.reduce((a, b) => a > b ? a : b),
+        greaterThan(0),
+        reason: 'the recording is silent',
+      );
+    }, skip: skip);
+
     test('stops into an .m4a whose header has its length', () async {
       expect(await controller.start(noteId: 'n1'), isTrue);
       await Future<void>.delayed(const Duration(seconds: 3));

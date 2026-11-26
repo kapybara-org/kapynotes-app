@@ -78,10 +78,12 @@ class VoiceRecorder implements VoiceRecorderBackend {
   @override
   Future<bool> hasPermission() => _live.hasPermission();
 
-  /// A phone always has one, so only a computer is asked.
+  /// Only a Mac is asked, and only an empty list is a no. A phone always has
+  /// one. Windows records as before until its listing has been proven on a
+  /// machine that has one (KAP-381).
   @override
   Future<bool> hasMicrophone() async =>
-      AppPlatform.isMobile || (await _live.listInputDevices()).isNotEmpty;
+      !AppPlatform.isMacOS || (await _live.listInputDevices()).isNotEmpty;
 
   @override
   Future<void> start(String path) async {
