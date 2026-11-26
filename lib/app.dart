@@ -819,10 +819,17 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             result = JoiningScope(account: widget.account, child: result);
 
             final media = MediaQuery.of(context);
+            final negativeInset = media.viewInsets.bottom < 0;
             return MediaQuery(
               data: media.copyWith(
                 textScaler: widget.prefs.appTextSize.applyTo(media.textScaler),
                 highContrast: asks,
+                viewInsets: negativeInset
+                    ? media.viewInsets.copyWith(bottom: 0)
+                    : null,
+                padding: negativeInset
+                    ? media.padding.copyWith(bottom: media.viewPadding.bottom)
+                    : null,
               ),
               child: result,
             );

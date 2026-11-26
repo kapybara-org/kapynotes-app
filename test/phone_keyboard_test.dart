@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -299,6 +301,35 @@ void main() {
         expect(field().focusNode.hasFocus, isTrue);
         expect(field().controller.selection.isCollapsed, isTrue);
         expect(tester.testTextInput.isVisible, isTrue);
+      });
+
+      testWidgets('a frame with a negative keyboard inset leaves a note’s '
+          'page as it was (KAP-327)', (tester) async {
+        notes.create(body: 'Call with Arjun\nSend the deck');
+        await _pump(tester, platform);
+        await _home(tester);
+        await _tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+
+        Future<Rect> fieldWith({required double keyboard}) async {
+          tester.view.viewPadding = const FakeViewPadding(bottom: 34);
+          tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
+          tester.view.padding = FakeViewPadding(
+            bottom: math.max(0.0, 34 - keyboard),
+          );
+          await tester.pump();
+          return tester.getRect(find.byType(NoteField));
+        }
+
+        final settled = await fieldWith(keyboard: 0);
+        final bogus = await fieldWith(keyboard: -102714);
+        expect(
+          MediaQuery.viewInsetsOf(
+            tester.element(find.byType(Navigator).first),
+          ).bottom,
+          0,
+        );
+        expect(tester.takeException(), isNull);
+        expect(bogus, settled);
       });
     });
   }

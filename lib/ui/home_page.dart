@@ -3971,15 +3971,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
   }
 
-  /// How many notes match the filter, for the bar over the list, whatever
-  /// the search has narrowed the list to.
-  int get _matchingCount => _filtered(
-    _archiveMode
-        ? widget.notes.archivedNotes
-        : _hiddenMode
-        ? widget.notes.hiddenNotes
-        : widget.notes.notes,
-  ).length;
+  /// How many notes the list shows as the filter narrows it, for the bar
+  /// over the list, whatever the search has narrowed the list to. By day,
+  /// Notes leaves out a note for a later day until its day.
+  int get _matchingCount {
+    final notes = _filtered(
+      _archiveMode
+          ? widget.notes.archivedNotes
+          : _hiddenMode
+          ? widget.notes.hiddenNotes
+          : widget.notes.notes,
+    );
+    return _space == LibrarySpace.notes &&
+            widget.prefs.notesGrouping == NotesGrouping.byDate
+        ? _listedByDay(notes).length
+        : notes.length;
+  }
 
   /// Opens [space] from the rail with nothing narrowed, the way the tabs it
   /// replaces did. Choosing the space already open is how the list goes back
@@ -5661,22 +5668,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ? widget.folders!.tree.byId(_phoneFolder!)
       : null;
 
-  /// The notes a phone lists under Home's header, which counts them. A note
-  /// for a later day stays off until its day, though a pinned one stays with
-  /// Pinned.
-  List<Note> get _phoneHomeNotes {
-    if (_space != LibrarySpace.notes || _specialMode || widget.days == null) {
-      return _visibleNotes;
-    }
+  /// [notes] as a list by day shows them, and so as the count over it
+  /// counts them: a note for a later day stays off until its day, though a
+  /// pinned one stays with Pinned. Archived and Hidden Notes list them all.
+  List<Note> _listedByDay(List<Note> notes) {
+    if (_specialMode || widget.days == null) return notes;
     final today = dayShown(widget.notes.now(), widget.prefs.displayTime);
     final pinned = widget.notes.pinnedNoteIds;
     return [
-      for (final note in _visibleNotes)
+      for (final note in notes)
         if (pinned.contains(note.id) ||
             !waitsForLaterDay(_ownDayOf(note), today))
           note,
     ];
   }
+
+  /// The notes a phone lists under Home's header, which counts them.
+  List<Note> get _phoneHomeNotes => _space == LibrarySpace.notes
+      ? _listedByDay(_visibleNotes)
+      : _visibleNotes;
 
   Widget _phoneHomeHeader() => PhoneHomeHeader(
     tasks: _tasksMode,
@@ -5745,7 +5755,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ? PhoneListTitle(title: 'Folders', trailing: _phoneAccount())
           : PhoneListTitle(
               title: folder?.name ?? _listTitle,
-              count: folder != null ? notes.length : _matchingCount,
+              count: folder != null
+                  ? _listedByDay(notes).length
+                  : _matchingCount,
               onBack: page ? _showFolders : null,
               trailing: page ? _phoneAccount() : null,
             ),
