@@ -812,11 +812,16 @@ void main() {
           onOpen: () {},
           onPlayPause: () {},
           onSeekFraction: (_) {},
+          onRemove: () {},
         ),
       );
       await tester.pumpAndSettle();
       final palette = colours(tester);
+      Color? arrow() => tester
+          .widget<KapyIcon>(findKapyIcon(KapyIcons.chevronRightRounded))
+          .color;
       expect(surface(tester).color, palette.controlBackground);
+      expect(arrow(), palette.textTertiary);
 
       final mouse = await tester.createGesture(
         kind: PointerDeviceKind.mouse,
@@ -831,9 +836,11 @@ void main() {
         (surface(tester).border! as Border).top.color,
         palette.keycapBorder,
       );
+      expect(arrow(), palette.textSecondary);
       await mouse.moveTo(const Offset(700, 500));
       await tester.pump();
       expect(surface(tester).color, palette.controlBackground);
+      expect(arrow(), palette.textTertiary);
 
       final press = await tester.startGesture(
         tester.getCenter(find.text('Voice note')),
@@ -844,7 +851,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(surface(tester).color, palette.controlBackground);
 
-      for (final control in [findKapyIcon(KapyIcons.playRounded), waveform()]) {
+      for (final control in [
+        findKapyIcon(KapyIcons.playRounded),
+        waveform(),
+        find.byKey(const ValueKey('remove-voice-note')),
+      ]) {
         final hold = await tester.startGesture(tester.getCenter(control));
         await tester.pump(const Duration(milliseconds: 200));
         expect(surface(tester).color, palette.controlBackground);
@@ -881,6 +892,74 @@ void main() {
         findsOneWidget,
       );
       semantics.dispose();
+    });
+
+    testWidgets('offers Remove to a screen reader', (tester) async {
+      final semantics = tester.ensureSemantics();
+      var removed = 0;
+      await tester.pumpWidget(
+        harness(
+          recording(),
+          state: VoiceChipState.waiting,
+          onOpen: () {},
+          onRemove: () => removed++,
+        ),
+      );
+      final node = tester.getSemantics(
+        find.bySemanticsLabel('Voice note, 2:14, Waiting for connection'),
+      );
+      final remove = CustomSemanticsAction.getIdentifier(
+        const CustomSemanticsAction(label: 'Remove voice note'),
+      );
+      expect(node.getSemanticsData().customSemanticsActionIds, [remove]);
+      node.owner!.performAction(node.id, SemanticsAction.customAction, remove);
+      expect(removed, 1);
+      semantics.dispose();
+    });
+
+    testWidgets('keeps to its column at the largest text sizes', (
+      tester,
+    ) async {
+      for (final (platform, widths) in [
+        (TargetPlatform.macOS, [347.0, 309.0, 232.0]),
+        (TargetPlatform.iOS, [173.0, 143.0, 107.0]),
+      ]) {
+        on(platform);
+        for (final width in widths) {
+          final cards = [
+            harness(
+              recording(peaks: peaks, summary: summary),
+              state: VoiceChipState.done,
+              width: width,
+              onRemove: () {},
+            ),
+            for (final state in statuses.keys)
+              harness(
+                recording(peaks: peaks),
+                state: state,
+                width: width,
+                onRemove: () {},
+              ),
+            for (final state in [VoiceChipState.idle, VoiceChipState.waiting])
+              harness(
+                recording(durationMs: 723000, peaks: peaks),
+                state: state,
+                playing: true,
+                progress: 0.9,
+                width: width,
+                onRemove: () {},
+              ),
+          ];
+          for (final card in cards) {
+            await tester.pumpWidget(card);
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: '$platform at $width',
+            );
+          }
+        }
+      }
     });
 
     testWidgets('carries no × in a note that can only be read', (tester) async {

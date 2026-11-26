@@ -442,25 +442,36 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
       );
     }
     return ExcludeSemantics(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
-        children: [
-          Row(mainAxisSize: MainAxisSize.min, children: [name, arrow]),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 2),
-              child: Text(
-                status,
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.end,
-                style: statusStyle,
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(child: name),
+                  arrow,
+                ],
               ),
             ),
-          ),
-        ],
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 2),
+                child: Text(
+                  status,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: statusStyle,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -469,8 +480,10 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
   ///
   /// The waveform's target runs from under the name to the card's bottom
   /// edge, a larger one than its bars. While the recording plays the length
-  /// reads as the time so far and the total. On a phone the length keeps the
-  /// room that takes, so starting playback never narrows the waveform.
+  /// reads as the time so far and the total. The waveform leaves room for
+  /// that, and with a pointer for the dot before a status too, so it is as
+  /// wide in every state and starting playback never narrows it. Where the
+  /// card is too narrow for 160 and that room, the waveform gives way.
   Widget _playerLine(
     BuildContext context,
     _CardMetrics metrics,
@@ -488,6 +501,7 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
       palette.textSecondary,
     ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
     final total = formatVoiceDuration(chip.ref.duration);
+    const separator = ' · ';
     final length = ValueListenableBuilder<double?>(
       valueListenable: chip.progress,
       builder: (context, progress, _) => Text(
@@ -540,7 +554,7 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
                   children: [
                     length,
                     if (status != null) ...[
-                      Text(' · ', style: statusStyle),
+                      Text(separator, style: statusStyle),
                       Flexible(
                         child: Text(
                           status,
@@ -556,13 +570,45 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
         ),
       ),
     );
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (touch) Flexible(child: waveform) else waveform,
-        const SizedBox(width: _waveGap),
-        if (touch) words else Expanded(child: words),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final room = math.max(0.0, constraints.maxWidth - _waveGap);
+        if (touch) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Flexible(child: waveform),
+              const SizedBox(width: _waveGap),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: room),
+                child: words,
+              ),
+            ],
+          );
+        }
+        final reserved = TextPainter(
+          text: TextSpan(
+            style: DefaultTextStyle.of(context).style,
+            children: [
+              TextSpan(text: '$total / $total', style: lengthStyle),
+              TextSpan(text: separator, style: statusStyle),
+            ],
+          ),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final wave = math.min(_waveWidth, math.max(0.0, room - reserved.width));
+        reserved.dispose();
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: wave, child: waveform),
+            const SizedBox(width: _waveGap),
+            Expanded(child: words),
+          ],
+        );
+      },
     );
   }
 
