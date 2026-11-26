@@ -34,14 +34,6 @@ class Toast {
   /// up its Undo. A new toast shows, so a menu's own notice replaces it.
   static void hide(bool hidden) => _hidden.value = hidden;
 
-  /// Takes down the toast showing if its button runs [onAction]: an offer of
-  /// something since done another way.
-  static void withdraw(VoidCallback onAction) {
-    if (_current == null || _currentAction != onAction) return;
-    _generation++;
-    _dismiss();
-  }
-
   /// Builds the toast on screen again once the frame has laid out what it
   /// keeps clear of, which has just come or gone: a clearance changes
   /// mid-build or as it goes, too soon to rebuild anything then.
@@ -141,6 +133,14 @@ class Toast {
       duration: null,
     );
     return ToastProgress._(overlay, generation);
+  }
+
+  /// Takes down the toast showing if its button runs [onAction]: an offer of
+  /// something since done another way.
+  static void withdraw(VoidCallback onAction) {
+    if (_current == null || _currentAction != onAction) return;
+    _generation++;
+    _dismiss();
   }
 
   static int _showOn(

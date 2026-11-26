@@ -78,6 +78,25 @@ void main() {
     expect(find.text('Removed Priya'), findsNothing);
   });
 
+  testWidgets('withdraw takes down only the toast that offers that action', (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(_harness((value) => context = value));
+    void reopen() {}
+    void undo() {}
+
+    Toast.show(context, 'Removed Priya', action: 'Undo', onAction: undo);
+    await tester.pump();
+    Toast.withdraw(reopen);
+    await tester.pump();
+    expect(find.text('Removed Priya'), findsOneWidget);
+
+    Toast.withdraw(undo);
+    await tester.pump();
+    expect(find.text('Removed Priya'), findsNothing);
+  });
+
   testWidgets('a waiting toast can complete before its first frame', (
     tester,
   ) async {
