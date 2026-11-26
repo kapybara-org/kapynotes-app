@@ -32,12 +32,12 @@ void main() {
     (
       'signed-out',
       const KapyCloudLocked(signIn: true, upgrade: true),
-      ['Sign in', 'Upgrade', 'Use your own key'],
+      ['Sign in', 'Upgrade', 'Use your own account'],
     ),
     (
       'no-pro',
       const KapyCloudLocked(signIn: false, upgrade: true),
-      ['Upgrade', 'Use your own key'],
+      ['Upgrade', 'Use your own account'],
     ),
     ('offline', const KapyOffline(), ['Try again']),
   ]) {
@@ -90,7 +90,7 @@ void main() {
         inSheet: phone,
         noteTitle: (_) => 'Call with Arjun',
         onOpenNote: (_) {},
-        onManageAccounts: () => tapped.add('Use your own key'),
+        onManageAccounts: () => tapped.add('Use your own account'),
         onSignIn: () => tapped.add('Sign in'),
         onUpgrade: () => tapped.add('Upgrade'),
         onClose: () {},
@@ -115,7 +115,7 @@ void main() {
 
       final notice = find.byKey(const ValueKey('kapy-ai-notice'));
       expect(notice, findsOneWidget);
-      for (final label in ['Sign in', 'Upgrade', 'Use your own key']) {
+      for (final label in ['Sign in', 'Upgrade', 'Use your own account']) {
         expect(
           find.descendant(of: notice, matching: find.text(label)),
           offers.contains(label) ? findsOneWidget : findsNothing,

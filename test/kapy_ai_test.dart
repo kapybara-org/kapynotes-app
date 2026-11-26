@@ -1172,13 +1172,13 @@ void main() {
             fallbacks: const [FakeKapyAi.appleIntelligence],
           ),
           ai: FakeKapyAi(),
-          onManage: () => taps.add('own key'),
+          onManage: () => taps.add('own account'),
           onSignIn: wired ? () => taps.add('sign in') : null,
           onUpgrade: wired ? () => taps.add('upgrade') : null,
         );
       }
 
-      testWidgets('signed out: Sign in, Upgrade and their own key', (
+      testWidgets('signed out: Sign in, Upgrade and their own account', (
         tester,
       ) async {
         final ai = await locked(tester, signIn: true, upgrade: true);
@@ -1186,21 +1186,21 @@ void main() {
         expect(find.text('Kapy AI Cloud is part of Pro'), findsOneWidget);
         expect(
           find.text(
-            'Sign in if you have Pro, or upgrade. You can also use your own '
-            'key.',
+            'Sign in if you have Pro, or upgrade. You can also use your own AI '
+            'account.',
           ),
           findsOneWidget,
         );
         expect(find.text('Try again'), findsNothing);
         await tester.tap(find.text('Sign in'));
         await tester.tap(find.text('Upgrade'));
-        await tester.tap(find.text('Use your own key'));
-        expect(taps, ['sign in', 'upgrade', 'own key']);
+        await tester.tap(find.text('Use your own account'));
+        expect(taps, ['sign in', 'upgrade', 'own account']);
         await tester.tap(find.text('Use Apple Intelligence'));
         expect(ai.calls, ['answerWith:apple']);
       });
 
-      testWidgets('signed in without Pro: Upgrade and their own key', (
+      testWidgets('signed in without Pro: Upgrade and their own account', (
         tester,
       ) async {
         final ai = await locked(tester, signIn: false, upgrade: true);
@@ -1208,15 +1208,16 @@ void main() {
         expect(find.text('Kapy AI Cloud is part of Pro'), findsOneWidget);
         expect(
           find.text(
-            'Upgrade to get answers from it. You can also use your own key.',
+            'Upgrade to get answers from it. You can also use your own AI '
+            'account.',
           ),
           findsOneWidget,
         );
         expect(find.text('Sign in'), findsNothing);
         expect(find.text('Try again'), findsNothing);
         await tester.tap(find.text('Upgrade'));
-        await tester.tap(find.text('Use your own key'));
-        expect(taps, ['upgrade', 'own key']);
+        await tester.tap(find.text('Use your own account'));
+        expect(taps, ['upgrade', 'own account']);
         expect(ai.calls, isEmpty);
       });
 
@@ -1231,7 +1232,7 @@ void main() {
           findsOneWidget,
         );
         expect(
-          find.textContaining('Sign in again, or use your own key.'),
+          find.textContaining('Sign in again, or use your own AI account.'),
           findsOneWidget,
         );
         expect(find.text('Upgrade'), findsNothing);
@@ -1240,13 +1241,13 @@ void main() {
         expect(taps, ['sign in']);
       });
 
-      testWidgets('a build with no account offers only their own key', (
+      testWidgets('a build with no account offers only their own account', (
         tester,
       ) async {
         await locked(tester, signIn: true, upgrade: true, wired: false);
 
         expect(
-          find.text('Use your own key to get answers here.'),
+          find.text('Use your own AI account to get answers here.'),
           findsOneWidget,
         );
         expect(find.text('Sign in'), findsNothing);

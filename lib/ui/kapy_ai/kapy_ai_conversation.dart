@@ -854,7 +854,7 @@ class KapyAiNotice extends StatelessWidget {
 
   /// Kapy AI Cloud won't answer yet: what the person can do about it, and
   /// [offers] of what answers instead. Signing in and upgrading come first,
-  /// then their own key, which works on any plan.
+  /// then their own AI account, which works on any plan.
   (KapyIconData, String, List<String>, List<KapyAiButton>) _locked(
     KapyCloudLocked locked,
     List<KapyAiButton> offers,
@@ -864,20 +864,22 @@ class KapyAiNotice extends StatelessWidget {
     final (title, line) = switch ((signIn != null, upgrade != null)) {
       (true, true) => (
         'Kapy AI Cloud is part of Pro',
-        'Sign in if you have Pro, or upgrade. You can also use your own key.',
+        'Sign in if you have Pro, or upgrade. You can also use your own AI '
+            'account.',
       ),
       (false, true) => (
         'Kapy AI Cloud is part of Pro',
-        'Upgrade to get answers from it. You can also use your own key.',
+        'Upgrade to get answers from it. You can also use your own AI '
+            'account.',
       ),
       (true, false) => (
         'Sign in to use Kapy AI Cloud',
         'You’re signed out on this $kapyDeviceWord. Sign in again, or use '
-            'your own key.',
+            'your own AI account.',
       ),
       (false, false) => (
         'Kapy AI Cloud is part of Pro',
-        'Use your own key to get answers here.',
+        'Use your own AI account to get answers here.',
       ),
     };
     return (
@@ -889,7 +891,7 @@ class KapyAiNotice extends StatelessWidget {
           KapyAiButton('Sign in', filled: true, onPressed: signIn),
         if (upgrade != null)
           KapyAiButton('Upgrade', filled: signIn == null, onPressed: upgrade),
-        KapyAiButton('Use your own key', onPressed: onManageAccounts),
+        KapyAiButton('Use your own account', onPressed: onManageAccounts),
         ...offers,
       ],
     );

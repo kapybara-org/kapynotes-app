@@ -320,8 +320,8 @@ class KapyAccountError extends KapyPending {
 }
 
 /// Kapy AI Cloud won't answer for this person yet: Sign in when nobody is
-/// signed in or the session ended, Upgrade without Pro, and Use your own key
-/// either way.
+/// signed in or the session ended, Upgrade without Pro, and Use your own
+/// account either way.
 class KapyCloudLocked extends KapyPending {
   const KapyCloudLocked({
     required this.signIn,
