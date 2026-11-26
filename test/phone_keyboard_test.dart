@@ -322,6 +322,12 @@ void main() {
 
         final settled = await fieldWith(keyboard: 0);
         final bogus = await fieldWith(keyboard: -102714);
+        expect(
+          MediaQuery.viewInsetsOf(
+            tester.element(find.byType(Navigator).first),
+          ).bottom,
+          0,
+        );
         expect(tester.takeException(), isNull);
         expect(bogus, settled);
       });
