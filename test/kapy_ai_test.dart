@@ -1103,6 +1103,39 @@ void main() {
       expect(ai.calls, ['proceed', 'answerWith:apple']);
     });
 
+    for (final (platform, word) in [
+      (TargetPlatform.android, 'phone'),
+      (TargetPlatform.windows, 'computer'),
+      (TargetPlatform.linux, 'computer'),
+    ]) {
+      testWidgets('on ${platform.name}, the limit and offline cards name this '
+          '$word, not "On this device" (KAP-402)', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await hold(
+          tester,
+          KapyLimitReached(
+            resetsAt: DateTime(2026, 12),
+            fallback: FakeKapyAi.gemma,
+          ),
+        );
+        expect(
+          find.textContaining(
+            'Until then, this $word and your accounts still answer.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining('On this device'), findsNothing);
+
+        await hold(tester, const KapyOffline(fallback: FakeKapyAi.gemma));
+        expect(
+          find.textContaining('This $word answers offline.'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('On this device'), findsNothing);
+      });
+    }
+
     testWidgets('a signed-out Codex: Check again looks, then answers', (
       tester,
     ) async {
