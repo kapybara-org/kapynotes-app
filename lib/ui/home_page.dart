@@ -266,7 +266,7 @@ class HomePage extends StatefulWidget {
 
   /// Injectable media boundaries keep launch tests independent of a physical
   /// camera and let the real page remember which note owns an interrupted
-  /// Android photo-library result.
+  /// Android camera or photo-library result.
   final ImageFileAcquirer? imageAcquirer;
   final LostImageRetriever? lostImageRetriever;
   final HiddenNotesGate hiddenNotesGate;
@@ -817,7 +817,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!AppPlatform.isAndroid) return await acquireNoteImages(context);
       return await acquireNoteImages(
         context,
-        chooseFromLibrary: () => _pickImagesFromAndroidLibrary(noteId),
+        takePhoto: () => _pickImagesOnAndroid(noteId, takeNotePhoto),
+        chooseFromLibrary: () =>
+            _pickImagesOnAndroid(noteId, pickExistingImageFiles),
       );
     } finally {
       if (protectsHiddenSession) _hiddenSystemUiDepth--;
@@ -849,13 +851,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Remembers the target note only for the moment Android leaves Flutter for
-  /// its system photo picker. This durable marker is needed where the operating
-  /// system may reclaim the Activity while another one is choosing photos.
-  Future<List<XFile>> _pickImagesFromAndroidLibrary(String noteId) async {
+  /// its camera or system photo picker. This durable marker is needed where the
+  /// operating system may reclaim the Activity while another one is open.
+  Future<List<XFile>> _pickImagesOnAndroid(
+    String noteId,
+    Future<List<XFile>> Function() pick,
+  ) async {
     widget.store.put(_pendingImageNoteKey, noteId);
     await widget.store.flush();
     try {
-      return await pickExistingImageFiles();
+      return await pick();
     } finally {
       widget.store.put(_pendingImageNoteKey, null);
       unawaited(widget.store.flush());
