@@ -60,6 +60,7 @@ void main() {
   Future<void> launch(
     WidgetTester tester, {
     bool folders = false,
+    bool renewalInAcme = false,
     List<String> unfiled = const [],
   }) async {
     final store = _MemoryStore();
@@ -112,7 +113,7 @@ void main() {
       final personal = folderStore.create('Personal')!;
       folderStore.file([trip, reading], personal.id);
       folderStore.file([offsite], work.id);
-      folderStore.file([call], acme.id);
+      folderStore.file([call, if (renewalInAcme) renewal], acme.id);
       prefs.setFolderOpen(work.id, true);
       prefs.setFolderOpen(clients.id, true);
       for (final (title, hour) in [('Shelf plan', 8), ('Deck flow', 9)]) {
@@ -403,6 +404,24 @@ void main() {
       await tap(find.byKey(const ValueKey('page-back')));
     }
   });
+  testWidgets("a folder's page counts what it lists: Renewal notes, in Acme "
+      "for the day after tomorrow, is out of Clients' title until its day, "
+      'and the tree still counts it (KAP-352)', (tester) async {
+    await launch(tester, folders: true, renewalInAcme: true);
+    Future<void> tap(Finder finder) async {
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+    }
+
+    await tap(find.byKey(const ValueKey('bar-folders')));
+    await shot(tester, 'kap352-folders');
+    await tap(find.text('Clients'));
+    expect(row('Call with Arjun'), findsOneWidget);
+    expect(row('Renewal notes'), findsNothing);
+    expect(tester.widget<PhoneListTitle>(find.byType(PhoneListTitle)).count, 1);
+    await shot(tester, 'kap352-clients');
+  });
+
   testWidgets('Archive opens from the filter, and Back comes Home with the '
       'app still open (KAP-305)', (tester) async {
     await launch(tester);

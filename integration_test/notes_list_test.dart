@@ -48,7 +48,7 @@ import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor_panes.dart' show NoteDragFeedback;
-import 'package:kapy_notes/ui/folders_ui.dart' show TreeNoteFace;
+import 'package:kapy_notes/ui/folders_ui.dart' show FolderPage, TreeNoteFace;
 import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
@@ -911,6 +911,34 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Every note is in a folder'), findsOneWidget);
     await boardShot(tester, 'folders-d6-every-note-filed');
+  });
+
+  testWidgets("KAP-352: grouped by day, Clients counts only what it lists, so "
+      "Friday's Renewal notes is out of its line and Acme's card, and grouped "
+      'by tag it is listed and counted', (tester) async {
+    await board(tester);
+    final clients = folderNamed('Clients', folderNamed('Work').id);
+    final acme = folderNamed('Acme', clients.id);
+    await showFolder(tester, clients);
+    Finder onCard(String text) => find.descendant(
+      of: find.byKey(ValueKey('folder-card-${acme.id}')),
+      matching: find.text(text),
+    );
+    Finder onPage(String title) =>
+        find.descendant(of: find.byType(FolderPage), matching: row(title));
+
+    expect(find.text('1 note and 1 folder, in Work'), findsOneWidget);
+    expect(onCard('1 note'), findsOneWidget);
+    expect(onPage('Call with Arjun'), findsOneWidget);
+    expect(onPage('Renewal notes'), findsNothing);
+    await boardShot(tester, 'kap352-clients-by-day');
+
+    prefs.notesGrouping = NotesGrouping.byTag;
+    await tester.pumpAndSettle();
+    expect(find.text('2 notes and 1 folder, in Work'), findsOneWidget);
+    expect(onCard('2 notes'), findsOneWidget);
+    expect(onPage('Renewal notes'), findsOneWidget);
+    await boardShot(tester, 'kap352-clients-by-tag');
   });
 
   testWidgets('a note in the tree lights its whole row under the pointer', (
