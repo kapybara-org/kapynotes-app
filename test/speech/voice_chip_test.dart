@@ -722,9 +722,16 @@ void main() {
       for (final platform in [TargetPlatform.macOS, TargetPlatform.iOS]) {
         on(platform);
         await tester.pumpWidget(harness(recording(), width: 350));
+        final middle = tester.getSize(waveform()).height / 2;
         expect(
           tester.renderObject(waveform()),
           paintsExactlyCountTimes(#drawLine, 32),
+          reason: '$platform',
+        );
+        expect(
+          tester.renderObject(waveform()),
+          paints
+            ..line(p1: Offset(2.5, middle - 1), p2: Offset(2.5, middle + 1)),
           reason: '$platform',
         );
       }
