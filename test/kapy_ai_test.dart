@@ -85,6 +85,8 @@ KapyAiPanel _panel(
   KapyAiPanelController controller, {
   VoidCallback? onClose,
   VoidCallback? onManage,
+  VoidCallback? onSignIn,
+  VoidCallback? onUpgrade,
   Map<String, String> titles = const {'n1': 'Trip budget'},
   void Function(String)? onOpenNote,
   bool compact = false,
@@ -97,6 +99,8 @@ KapyAiPanel _panel(
   noteTitle: (id) => titles[id],
   onOpenNote: onOpenNote ?? (_) {},
   onManageAccounts: onManage ?? () {},
+  onSignIn: onSignIn,
+  onUpgrade: onUpgrade,
   onClose: onClose ?? controller.close,
   now: () => _now,
 );
@@ -867,6 +871,8 @@ void main() {
       KapyPending pending, {
       FakeKapyAi? ai,
       VoidCallback? onManage,
+      VoidCallback? onSignIn,
+      VoidCallback? onUpgrade,
     }) async {
       final fake = ai ?? FakeKapyAi(pro: true);
       fake.set(
@@ -881,7 +887,15 @@ void main() {
       final controller = KapyAiPanelController()..open();
       addTearDown(controller.dispose);
       await tester.pumpWidget(
-        _harness(_panel(fake, controller, onManage: onManage)),
+        _harness(
+          _panel(
+            fake,
+            controller,
+            onManage: onManage,
+            onSignIn: onSignIn,
+            onUpgrade: onUpgrade,
+          ),
+        ),
       );
       return fake;
     }
@@ -1139,6 +1153,134 @@ void main() {
       expect(find.text('Check the key in Settings.'), findsOneWidget);
       await tester.tap(find.text('Open Settings'));
       expect(managed, 1);
+    });
+
+    group('Kapy AI Cloud without Pro', () {
+      late List<String> taps;
+      Future<FakeKapyAi> locked(
+        WidgetTester tester, {
+        required bool signIn,
+        required bool upgrade,
+        bool wired = true,
+      }) {
+        taps = [];
+        return hold(
+          tester,
+          KapyCloudLocked(
+            signIn: signIn,
+            upgrade: upgrade,
+            fallbacks: const [FakeKapyAi.appleIntelligence],
+          ),
+          ai: FakeKapyAi(),
+          onManage: () => taps.add('own key'),
+          onSignIn: wired ? () => taps.add('sign in') : null,
+          onUpgrade: wired ? () => taps.add('upgrade') : null,
+        );
+      }
+
+      testWidgets('signed out: Sign in, Upgrade and their own key', (
+        tester,
+      ) async {
+        final ai = await locked(tester, signIn: true, upgrade: true);
+
+        expect(find.text('Kapy AI Cloud is part of Pro'), findsOneWidget);
+        expect(
+          find.text(
+            'Sign in if you have Pro, or upgrade. You can also use your own '
+            'key.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Try again'), findsNothing);
+        await tester.tap(find.text('Sign in'));
+        await tester.tap(find.text('Upgrade'));
+        await tester.tap(find.text('Use your own key'));
+        expect(taps, ['sign in', 'upgrade', 'own key']);
+        await tester.tap(find.text('Use Apple Intelligence'));
+        expect(ai.calls, ['answerWith:apple']);
+      });
+
+      testWidgets('signed in without Pro: Upgrade and their own key', (
+        tester,
+      ) async {
+        final ai = await locked(tester, signIn: false, upgrade: true);
+
+        expect(find.text('Kapy AI Cloud is part of Pro'), findsOneWidget);
+        expect(
+          find.text(
+            'Upgrade to get answers from it. You can also use your own key.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Sign in'), findsNothing);
+        expect(find.text('Try again'), findsNothing);
+        await tester.tap(find.text('Upgrade'));
+        await tester.tap(find.text('Use your own key'));
+        expect(taps, ['upgrade', 'own key']);
+        expect(ai.calls, isEmpty);
+      });
+
+      testWidgets('a Pro account signed out here: Sign in again', (
+        tester,
+      ) async {
+        await locked(tester, signIn: true, upgrade: false);
+
+        expect(find.text('Sign in to use Kapy AI Cloud'), findsOneWidget);
+        expect(
+          find.textContaining('signed out on this', findRichText: true),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('Sign in again, or use your own key.'),
+          findsOneWidget,
+        );
+        expect(find.text('Upgrade'), findsNothing);
+        expect(find.text('Try again'), findsNothing);
+        await tester.tap(find.text('Sign in'));
+        expect(taps, ['sign in']);
+      });
+
+      testWidgets('a build with no account offers only their own key', (
+        tester,
+      ) async {
+        await locked(tester, signIn: true, upgrade: true, wired: false);
+
+        expect(
+          find.text('Use your own key to get answers here.'),
+          findsOneWidget,
+        );
+        expect(find.text('Sign in'), findsNothing);
+        expect(find.text('Upgrade'), findsNothing);
+        expect(find.text('Try again'), findsNothing);
+      });
+    });
+
+    testWidgets('a dropped connection can be tried again', (tester) async {
+      final ai = await hold(tester, const KapyOffline());
+
+      expect(find.text('You’re offline'), findsOneWidget);
+      expect(find.text('Upgrade'), findsNothing);
+      await tester.tap(find.text('Try again'));
+      expect(ai.calls, ['proceed']);
+    });
+
+    testWidgets('a failure a retry can’t fix is not tried again', (
+      tester,
+    ) async {
+      await hold(
+        tester,
+        const KapyFailed(
+          'Update Kapy Notes to use Kapy AI Cloud.',
+          retry: false,
+        ),
+      );
+
+      expect(
+        find.text('Update Kapy Notes to use Kapy AI Cloud.'),
+        findsOneWidget,
+      );
+      expect(find.text('Try again'), findsNothing);
+      expect(find.text('Pick another'), findsOneWidget);
     });
 
     testWidgets('a failure shows its message and can be tried again', (
