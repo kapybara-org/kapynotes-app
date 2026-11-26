@@ -80,7 +80,7 @@ class _MemoryStore extends LocalStore {
 }
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   kapyAiAvailable = true;
 
   const mouse = PointerDeviceKind.mouse;
@@ -971,6 +971,10 @@ void main() {
   /// Right-clicks [title]'s row near its end, light then dark, and takes its
   /// menu as [name]-menu and Move to folder…'s list as [name]-picker, which
   /// hangs from the menu's top right corner inside the window. Esc closes it.
+  /// The menu's route cancels the right-click it opens under, and the live
+  /// binding passes that cancel on only while device pointer events reach the
+  /// app (KAPY-45). Without it the row keeps the press, and the dark pass's
+  /// right-click opens nothing.
   Future<void> moveToFolderShots(
     WidgetTester tester,
     String title,
@@ -983,12 +987,17 @@ void main() {
     for (final mode in [AppearanceMode.light, AppearanceMode.dark]) {
       prefs.appearance = mode;
       await tester.pumpAndSettle();
-      await tester.tapAt(
-        tester.getRect(row(title)).centerRight - const Offset(16, 0),
-        buttons: kSecondaryButton,
-        kind: mouse,
-      );
-      await tester.pumpAndSettle();
+      binding.shouldPropagateDevicePointerEvents = true;
+      try {
+        await tester.tapAt(
+          tester.getRect(row(title)).centerRight - const Offset(16, 0),
+          buttons: kSecondaryButton,
+          kind: mouse,
+        );
+        await tester.pumpAndSettle();
+      } finally {
+        binding.shouldPropagateDevicePointerEvents = false;
+      }
       final sat = tester.getRect(menu);
       expect(tester.takeException(), isNull, reason: name);
       await screenshot('notes-list-$name-menu-${mode.name}');
