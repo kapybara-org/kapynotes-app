@@ -71,7 +71,7 @@ class PagePath {
   _ => (icon: KapyIcons.cloudRounded, label: 'Saved', tooltip: null),
 };
 
-TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
+TextStyle _chrome(double size, double line, FontWeight weight, Color color) =>
     chromeStyle(
       size: size,
       line: line,
@@ -563,9 +563,9 @@ class _PathState extends State<_Path> {
     final keyName = light ? 'note-path' : 'page-path';
     final cap = form == _PathForm.full || light ? 200.0 : 160.0;
     final above = light
-        ? _figtree(12, 16, FontWeight.w400, palette.textTertiary)
-        : _figtree(13, 16, FontWeight.w400, palette.textTertiary);
-    final here = _figtree(13, 16, FontWeight.w500, palette.textPrimary);
+        ? _chrome(12, 16, FontWeight.w400, palette.textTertiary)
+        : _chrome(13, 16, FontWeight.w400, palette.textTertiary);
+    final here = _chrome(13, 16, FontWeight.w500, palette.textPrimary);
     final last = levels.lastOrNull;
     final base = DefaultTextStyle.of(context).style;
     final painter = TextPainter(
@@ -728,8 +728,8 @@ class _PathState extends State<_Path> {
                 : BorderSide(color: palette.controlBorder),
           ),
           textStyle: light
-              ? _figtree(12, 16, FontWeight.w600, palette.textSecondary)
-              : _figtree(13, 16, FontWeight.w600, palette.textSecondary),
+              ? _chrome(12, 16, FontWeight.w600, palette.textSecondary)
+              : _chrome(13, 16, FontWeight.w600, palette.textSecondary),
         ),
         child: const Text('…', semanticsLabel: 'Folders in between'),
       ),
@@ -773,7 +773,7 @@ class _PathState extends State<_Path> {
                         place.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _figtree(
+                        style: _chrome(
                           13,
                           16,
                           FontWeight.w400,
@@ -862,7 +862,7 @@ class _Saved extends StatelessWidget {
         Text(
           saved.label,
           maxLines: 1,
-          style: _figtree(12, 16, FontWeight.w500, palette.textTertiary),
+          style: _chrome(12, 16, FontWeight.w500, palette.textTertiary),
         ),
       ],
     );

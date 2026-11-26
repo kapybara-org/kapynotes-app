@@ -94,10 +94,8 @@ void main() {
     // A quiet button is a fill with no border, and focus rings it in orange.
     expect(outlined.side!.resolve({}), BorderSide.none);
     expect(outlined.backgroundColor!.resolve({}), palette.controlBackground);
-    expect(
-      outlined.side!.resolve({WidgetState.focused})!.color,
-      palette.accent,
-    );
+    // Keyboard focus is the shared accent ring, not a second border.
+    expect(outlined.side!.resolve({WidgetState.focused}), BorderSide.none);
     expect(outlined.minimumSize!.resolve({})!.height, 36);
     expect(
       theme.textButtonTheme.style!.foregroundColor!.resolve({}),

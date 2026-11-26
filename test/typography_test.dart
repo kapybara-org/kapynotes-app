@@ -95,10 +95,6 @@ void main() {
   ) async {
     final base = EditorMetrics.textStyle(lightInk, WritingFont.clean);
     final title = noteTitleStyle(base, writingFont: WritingFont.clean);
-    final writing = title.copyWith(
-      fontFamily: base.fontFamily,
-      fontFamilyFallback: base.fontFamilyFallback,
-    );
     double width(String text, TextStyle style) {
       final painter = TextPainter(
         text: TextSpan(text: text, style: style),
@@ -118,18 +114,21 @@ void main() {
     );
   });
 
-  test('Inter and Shantell stay on the licences page, and the retired faces go', () async {
-    final entries = await fontLicenseEntries().toList();
-    final names = entries.expand((e) => e.packages).toList();
-    expect(names, containsAll(['Inter', 'Shantell Sans', 'Geist Mono']));
-    expect(names, isNot(contains('Figtree')));
-    expect(names, isNot(contains('Newsreader')));
-    final inter = entries.where((e) => e.packages.contains('Inter'));
-    expect(
-      inter.first.paragraphs.map((p) => p.text).join(' '),
-      contains('SIL Open Font License'),
-    );
-  });
+  test(
+    'Inter and Shantell stay on the licences page, and the retired faces go',
+    () async {
+      final entries = await fontLicenseEntries().toList();
+      final names = entries.expand((e) => e.packages).toList();
+      expect(names, containsAll(['Inter', 'Shantell Sans', 'Geist Mono']));
+      expect(names, isNot(contains('Figtree')));
+      expect(names, isNot(contains('Newsreader')));
+      final inter = entries.where((e) => e.packages.contains('Inter'));
+      expect(
+        inter.first.paragraphs.map((p) => p.text).join(' '),
+        contains('SIL Open Font License'),
+      );
+    },
+  );
 
   test('the interface type scale stays on whole and half points', () {
     for (final size in [

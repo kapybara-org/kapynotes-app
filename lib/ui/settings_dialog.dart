@@ -4887,17 +4887,22 @@ class _ChangedCount extends StatelessWidget {
     );
     return Padding(
       key: const ValueKey('settings-changed-count'),
-      padding: const EdgeInsets.fromLTRB(8, 12, 8, 0),
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 4),
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              'Changed from default',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: style,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Changed from default',
+                maxLines: 1,
+                softWrap: false,
+                style: style,
+              ),
             ),
           ),
+          const SizedBox(width: 8),
           Text('$count', style: style),
         ],
       ),

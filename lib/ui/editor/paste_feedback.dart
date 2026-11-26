@@ -233,7 +233,7 @@ class _PasteChipLayout extends MultiChildLayoutDelegate {
       oldDelegate.caret != caret;
 }
 
-/// Figtree on Paper's 16px line.
+/// Chrome type on a 16px line.
 TextStyle _type(double size, FontWeight weight, Color color) => TextStyle(
   fontSize: size,
   height: 16 / size,

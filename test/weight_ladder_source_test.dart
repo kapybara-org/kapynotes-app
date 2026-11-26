@@ -21,10 +21,8 @@ const Map<String, (int, String)> ladderExceptions = {
     1,
     'The writing: a paragraph style keeps the Writing font body weight.',
   ),
-  'lib/ui/editor/editor_formatting.dart|fontWeight: EditorMetrics.titleWeight,': (
-    1,
-    'The note title, 26 semibold, in the writing face.',
-  ),
+  'lib/ui/editor/editor_formatting.dart|fontWeight: EditorMetrics.titleWeight,':
+      (1, 'The note title, 26 semibold, in the writing face.'),
   'lib/ui/editor/editor_formatting.dart|fontWeight: FontWeight.w600,': (
     1,
     'The writing: a Markdown heading in the Writing font.',
@@ -245,8 +243,8 @@ final style = TextStyle(
     expect(
       ladderViolations({
         'lib/ui/planted.dart': '''
-final style = _figtree(13, 18, FontWeight.w500, palette.textPrimary);
-TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
+final style = _chrome(13, 18, FontWeight.w500, palette.textPrimary);
+TextStyle _chrome(double size, double line, FontWeight weight, Color color) =>
     chromeStyle(
       size: size,
       line: line,

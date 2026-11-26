@@ -69,11 +69,11 @@ struct QuickActionSmall: View {
       QuickActionDisc(action: action, fill: widgetPrimary, ink: widgetOnPrimary)
       Spacer(minLength: 0)
       Text(action.title)
-        .font(Figtree.semibold(17))
+        .font(WidgetFace.semibold(17))
         .foregroundStyle(widgetText)
         .frame(height: 22)
       Text(QuickAction.lastNote)
-        .font(Figtree.regular(13))
+        .font(WidgetFace.regular(13))
         .foregroundStyle(widgetTextSecondary)
         .frame(height: 18)
     }
@@ -113,10 +113,10 @@ struct QuickActionRectangular: View {
         .frame(width: 24, height: 24)
       VStack(alignment: .leading, spacing: 0) {
         Text(action.title)
-          .font(Figtree.semibold(16))
+          .font(WidgetFace.semibold(16))
           .frame(height: 20)
         Text(QuickAction.lastNote)
-          .font(Figtree.regular(13))
+          .font(WidgetFace.regular(13))
           .foregroundStyle(.secondary)
           .frame(height: 18)
       }

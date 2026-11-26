@@ -19,7 +19,7 @@ import 'sidebar.dart' show SidebarEmpty;
 import 'tag_ui.dart' show TagPopover, notesCount;
 import 'tonal_button.dart';
 
-TextStyle _figtree(
+TextStyle _chrome(
   double size,
   double line,
   FontWeight weight,
@@ -179,7 +179,7 @@ class NotesFoldersSwitch extends StatelessWidget {
                   const SizedBox(width: 8),
                   Text(
                     forFolders ? 'Folders' : 'Notes',
-                    style: _figtree(13, 16, FontWeight.w400, colour),
+                    style: _chrome(13, 16, FontWeight.w400, colour),
                   ),
                 ],
               ),
@@ -575,7 +575,7 @@ class _FolderRowState extends State<_FolderRow> {
                     folder.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: _figtree(
+                    style: _chrome(
                       phone ? 16 : 13,
                       phone ? 22 : 16,
                       FontWeight.w400,
@@ -614,7 +614,7 @@ class _FolderRowState extends State<_FolderRow> {
                       child: Text(
                         '${line.count}',
                         style:
-                            _figtree(
+                            _chrome(
                               12,
                               16,
                               FontWeight.w400,
@@ -671,7 +671,7 @@ class NewFolderButton extends StatelessWidget {
                 const SizedBox(width: 8),
                 Text(
                   'New folder',
-                  style: _figtree(
+                  style: _chrome(
                     13,
                     18,
                     FontWeight.w400,
@@ -777,7 +777,7 @@ class _FolderNameFieldState extends State<_FolderNameField> {
                             setState(() => _refusal = refusal);
                           }
                         },
-                        style: _figtree(
+                        style: _chrome(
                           13,
                           16,
                           FontWeight.w400,
@@ -785,7 +785,7 @@ class _FolderNameFieldState extends State<_FolderNameField> {
                         ),
                         decoration: InputDecoration.collapsed(
                           hintText: 'Folder name',
-                          hintStyle: _figtree(
+                          hintStyle: _chrome(
                             13,
                             16,
                             FontWeight.w400,
@@ -803,7 +803,7 @@ class _FolderNameFieldState extends State<_FolderNameField> {
                   child: Text(
                     folderRefusalText(refusal),
                     key: const ValueKey('folder-name-refused'),
-                    style: _figtree(12, 16, FontWeight.w400, error),
+                    style: _chrome(12, 16, FontWeight.w400, error),
                   ),
                 ),
             ],
@@ -863,7 +863,7 @@ class TreeNoteFace extends StatelessWidget {
               note.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: _figtree(
+              style: _chrome(
                 13,
                 16,
                 FontWeight.w400,
@@ -1378,7 +1378,7 @@ class _FolderPickerState extends State<_FolderPicker> {
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _figtree(
+                      style: _chrome(
                         13,
                         16,
                         FontWeight.w400,
@@ -1488,7 +1488,7 @@ class _FolderPickerState extends State<_FolderPicker> {
                           });
                           _reveal(0);
                         },
-                        style: _figtree(
+                        style: _chrome(
                           13,
                           16,
                           FontWeight.w400,
@@ -1498,7 +1498,7 @@ class _FolderPickerState extends State<_FolderPicker> {
                           hintText: widget.moving == null
                               ? 'Find or create a folder'
                               : 'Find a folder',
-                          hintStyle: _figtree(
+                          hintStyle: _chrome(
                             13,
                             16,
                             FontWeight.w400,
@@ -1528,7 +1528,7 @@ class _FolderPickerState extends State<_FolderPicker> {
                 child: Text(
                   folderRefusalText(refusal),
                   key: const ValueKey('folder-picker-problem'),
-                  style: _figtree(
+                  style: _chrome(
                     12,
                     16,
                     FontWeight.w400,
@@ -1843,7 +1843,7 @@ class FolderPage extends StatelessWidget {
             (_) => Text(
               holds,
               key: const ValueKey('folder-page-holds'),
-              style: _figtree(13, 18, FontWeight.w400, palette.textTertiary),
+              style: _chrome(13, 18, FontWeight.w400, palette.textTertiary),
             ),
           );
         }
@@ -1853,7 +1853,7 @@ class FolderPage extends StatelessWidget {
             (_) => Text(
               'Nothing in this folder yet.',
               key: const ValueKey('folder-page-empty'),
-              style: _figtree(14, 20, FontWeight.w400, palette.textSecondary),
+              style: _chrome(14, 20, FontWeight.w400, palette.textSecondary),
             ),
           );
           gap(4);
@@ -1864,7 +1864,7 @@ class FolderPage extends StatelessWidget {
                   : addNotes
                   ? 'Tick notes on the right and add them, or drag notes here.'
                   : 'Use Add notes, or drag notes here.',
-              style: _figtree(13, 18, FontWeight.w400, palette.textTertiary),
+              style: _chrome(13, 18, FontWeight.w400, palette.textTertiary),
             ),
           );
         }
@@ -2113,7 +2113,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
       '${notes.length} not in a folder',
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: _figtree(
+      style: _chrome(
         phone ? 13 : 12,
         phone ? 18 : 16,
         FontWeight.w400,
@@ -2136,7 +2136,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                   : const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Text(
                 'Select all',
-                style: _figtree(
+                style: _chrome(
                   phone ? 13 : 12,
                   phone ? 18 : 16,
                   FontWeight.w400,
@@ -2152,7 +2152,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
         'Add notes to ${widget.folder.name}',
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: _figtree(
+        style: _chrome(
           phone ? 17 : 14,
           phone ? 22 : 20,
           FontWeight.w600,
@@ -2295,7 +2295,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
   Widget _field(BuildContext context) {
     final palette = context.palette;
     final phone = widget.phone;
-    final words = _figtree(
+    final words = _chrome(
       phone ? 16 : 13,
       phone ? 20 : 18,
       FontWeight.w400,
@@ -2380,7 +2380,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                       note.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _figtree(
+                      style: _chrome(
                         AppTypeScale.row,
                         22,
                         FontWeight.w400,
@@ -2442,7 +2442,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                             note.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: _figtree(
+                            style: _chrome(
                               13,
                               16,
                               FontWeight.w400,
@@ -2454,7 +2454,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style:
-                                _figtree(
+                                _chrome(
                                   12,
                                   16,
                                   FontWeight.w400,
@@ -2512,7 +2512,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
               child: Center(
                 child: Text(
                   ready ? 'Add ${notesCount(ticked.length)}' : 'Add notes',
-                  style: _figtree(
+                  style: _chrome(
                     phone ? 16 : 13,
                     phone ? 20 : 18,
                     FontWeight.w400,
@@ -2594,7 +2594,7 @@ class _FolderCardState extends State<_FolderCard> {
                     widget.folder.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: _figtree(
+                    style: _chrome(
                       AppTypeScale.row,
                       19,
                       FontWeight.w400,
@@ -2606,12 +2606,7 @@ class _FolderCardState extends State<_FolderCard> {
                   const SizedBox(width: 10),
                   Text(
                     notesCount(count),
-                    style: _figtree(
-                      12,
-                      16,
-                      FontWeight.w400,
-                      palette.textQuiet,
-                    ),
+                    style: _chrome(12, 16, FontWeight.w400, palette.textQuiet),
                   ),
                 ],
               ],

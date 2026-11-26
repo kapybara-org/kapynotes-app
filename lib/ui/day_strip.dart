@@ -13,7 +13,7 @@ import 'notes_grouping.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart' show PopoverAtPoint;
 
-TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
+TextStyle _chrome(double size, double line, FontWeight weight, Color color) =>
     chromeStyle(
       size: size,
       line: line,
@@ -351,7 +351,7 @@ class _DayStripState extends State<DayStrip> {
     final painter = TextPainter(
       text: TextSpan(
         text: label,
-        style: _figtree(13, 16, FontWeight.w400, context.palette.textPrimary),
+        style: _chrome(13, 16, FontWeight.w400, context.palette.textPrimary),
       ),
       textDirection: TextDirection.ltr,
       textScaler: MediaQuery.textScalerOf(context),
@@ -618,7 +618,7 @@ class _DayStripState extends State<DayStrip> {
                   ? BorderSide(color: palette.controlBorder)
                   : BorderSide.none,
             ),
-            textStyle: _figtree(13, 18, FontWeight.w400, palette.textPrimary),
+            textStyle: _chrome(13, 18, FontWeight.w400, palette.textPrimary),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -733,7 +733,7 @@ class _DayState extends State<_Day> {
                 Text(
                   SidebarTimestamp.shortWeekday(day),
                   maxLines: 1,
-                  style: _figtree(
+                  style: _chrome(
                     13,
                     16,
                     widget.today ? FontWeight.w600 : FontWeight.w400,
@@ -743,7 +743,7 @@ class _DayState extends State<_Day> {
                 Text(
                   '${day.day}',
                   maxLines: 1,
-                  style: _figtree(
+                  style: _chrome(
                     17,
                     22,
                     widget.today ? FontWeight.w600 : FontWeight.w400,
@@ -775,7 +775,7 @@ class _DayState extends State<_Day> {
                   child: Text(
                     SidebarTimestamp.weekdayAndDay(day),
                     maxLines: 1,
-                    style: _figtree(
+                    style: _chrome(
                       13,
                       16,
                       widget.today || filled
@@ -814,7 +814,7 @@ class _DayState extends State<_Day> {
         overlayColor: Colors.transparent,
         splashFactory: NoSplash.splashFactory,
         shape: const RoundedRectangleBorder(),
-        textStyle: _figtree(13, 16, FontWeight.w400, palette.textPrimary),
+        textStyle: _chrome(13, 16, FontWeight.w400, palette.textPrimary),
       ),
       child: Semantics(
         selected: widget.picked,
@@ -983,8 +983,8 @@ class _DayPickerState extends State<DayPicker> {
           ),
           textStyle: WidgetStatePropertyAll(
             (sheet
-                    ? _figtree(17, 22, weight, color)
-                    : _figtree(13, 16, weight, color))
+                    ? _chrome(17, 22, weight, color)
+                    : _chrome(13, 16, weight, color))
                 .copyWith(fontFeatures: _figures),
           ),
         ),
@@ -1016,7 +1016,7 @@ class _DayPickerState extends State<DayPicker> {
                       ? monthName
                       : '$monthName ${month.year}',
                   key: const ValueKey('day-month-name'),
-                  style: _figtree(15, 20, FontWeight.w600, palette.textPrimary),
+                  style: _chrome(15, 20, FontWeight.w600, palette.textPrimary),
                 ),
               ),
               TextButton(
@@ -1027,7 +1027,7 @@ class _DayPickerState extends State<DayPicker> {
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   backgroundColor: palette.controlBackground,
                   foregroundColor: palette.textPrimary,
-                  textStyle: _figtree(
+                  textStyle: _chrome(
                     14,
                     18,
                     FontWeight.w400,
@@ -1046,7 +1046,7 @@ class _DayPickerState extends State<DayPicker> {
               Expanded(
                 child: Text(
                   '$monthName ${month.year}',
-                  style: _figtree(13, 16, FontWeight.w400, palette.textPrimary),
+                  style: _chrome(13, 16, FontWeight.w400, palette.textPrimary),
                 ),
               ),
               CompactIconButton(
@@ -1082,8 +1082,8 @@ class _DayPickerState extends State<DayPicker> {
                   weekdays[(widget.firstWeekday + column) % 7],
                   textAlign: TextAlign.center,
                   style: sheet
-                      ? _figtree(13, 16, FontWeight.w400, palette.textTertiary)
-                      : _figtree(11, 12, FontWeight.w400, palette.textTertiary),
+                      ? _chrome(13, 16, FontWeight.w400, palette.textTertiary)
+                      : _chrome(11, 12, FontWeight.w400, palette.textTertiary),
                 ),
               ),
           ]),
@@ -1176,7 +1176,7 @@ Future<DateTime?> showDayPicker(
           children: [
             Text(
               'Move to another day',
-              style: _figtree(
+              style: _chrome(
                 17,
                 22,
                 FontWeight.w600,
