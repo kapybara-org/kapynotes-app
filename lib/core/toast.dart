@@ -17,8 +17,9 @@ class Toast {
   static OverlayEntry? _current;
   static int _generation = 0;
 
-  /// What a toast keeps above, such as a phone's bar and its +, or the
-  /// format bar over the keyboard: whichever reaches highest.
+  /// What a toast keeps clear of: above a phone's bar and its +, or the
+  /// format bar over the keyboard, whichever reaches highest, and on a
+  /// desktop beside the notes list and Kapy AI's panel.
   static final Set<_ToastClearanceState> _clearances = {};
 
   /// The height a [ToastClearance.room] opens while a toast shows: the
@@ -52,6 +53,13 @@ class Toast {
   /// the width of its bar and +; from 720 pt, two panes and no bar, the card
   /// stops here, centred.
   static const double _cardMaxWidth = 480;
+
+  /// The least room between what a desktop's toast keeps beside that it
+  /// centres in: as much as the notes list always leaves the page beside it,
+  /// so beside the list a toast always centres on the page. Where there is
+  /// less, as beside the list or Kapy AI over a narrow window's page, it
+  /// centres on the window instead.
+  static const double _minRoomBeside = 320;
 
   /// The action's height, which a phone's card lines its icon and first
   /// line up with, and which its words keep to at least, so every card is
@@ -325,18 +333,56 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
   }
 
   /// Where the toast keeps: above the highest of what it keeps clear of,
-  /// such as a phone's bar or the format bar, or, as the second value, in
-  /// the room a sheet opens for it at its foot, by that room's bottom.
-  (double, double?) _clear(MediaQueryData media) {
+  /// such as a phone's bar or the format bar, or in the room a sheet opens
+  /// for it at its foot, by that room's bottom; and on a desktop, from left
+  /// to right, the page between what it keeps beside: right of one on the
+  /// window's left, as the notes list is, and left of one on its right, as
+  /// Kapy AI's panel and a folder's Add notes are. The list slid shut keeps
+  /// it nowhere. What it keeps clear of inside what it keeps beside, as the
+  /// list's Notes and Folders switch, it keeps above only where it centres
+  /// on the window over it.
+  ({double clear, double? room, double left, double right}) _clear(
+    MediaQueryData media,
+  ) {
+    final width = media.size.width;
     var clear = 0.0;
-    for (final below in Toast._clearances) {
-      final box = below.context.findRenderObject();
+    var inside = 0.0;
+    var left = 0.0;
+    var right = width;
+    for (final clearance in Toast._clearances) {
+      final box = clearance.context.findRenderObject();
       if (box is! RenderBox || !box.hasSize || !box.attached) continue;
-      final top = box.localToGlobal(Offset.zero).dy;
-      if (below.widget.room) return (0, top + box.size.height);
-      clear = math.max(clear, media.size.height - top + 16);
+      final rect = box.localToGlobal(Offset.zero) & box.size;
+      if (clearance.widget.room) {
+        return (clear: 0, room: rect.bottom, left: 0, right: width);
+      }
+      if (!clearance.widget.beside) {
+        final above = media.size.height - rect.top + 16;
+        final outer = clearance.context
+            .findAncestorStateOfType<_ToastClearanceState>();
+        if (outer == null || !outer.widget.beside) {
+          clear = math.max(clear, above);
+        } else if (outer.context.findRenderObject() case final RenderBox list
+            when list.hasSize && list.size.width > 0) {
+          inside = math.max(inside, above);
+        }
+      } else if (AppPlatform.hasPointer && rect.width > 0) {
+        if (rect.center.dx < width / 2) {
+          left = math.max(left, rect.right);
+        } else {
+          right = math.min(right, rect.left);
+        }
+      }
     }
-    return (clear, null);
+    if (right - left < Toast._minRoomBeside) {
+      return (
+        clear: math.max(clear, inside),
+        room: null,
+        left: 0,
+        right: width,
+      );
+    }
+    return (clear: clear, room: null, left: left, right: right);
   }
 
   @override
@@ -359,16 +405,17 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     );
 
     final media = MediaQuery.of(context);
-    final (clear, room) = _clear(media);
+    final place = _clear(media);
+    final (:clear, :room, :left, :right) = place;
     // What it keeps clear of was laid out a frame ago, so once this frame is,
     // a toast whose clearance moved under it, as a format bar does with the
-    // keyboard, takes its new place. A sheet's room opens to the card's
-    // height once the card has one.
+    // keyboard and the notes list as it slides open, takes its new place. A
+    // sheet's room opens to the card's height once the card has one.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final card = _card.currentContext?.size?.height;
       if (card != null) Toast._room.value = card + 16;
-      if (_clear(MediaQuery.of(context)) != (clear, room)) setState(() {});
+      if (_clear(MediaQuery.of(context)) != place) setState(() {});
     });
     final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       fontSize: AppTypeScale.body,
@@ -502,8 +549,8 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                   math.max(media.padding.bottom, media.viewInsets.bottom),
             )
           : 0,
-      left: 16,
-      right: 16,
+      left: left + 16,
+      right: media.size.width - right + 16,
       child: Offstage(
         offstage: _hidden,
         child: _placed(
@@ -523,13 +570,7 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
                     key: _card,
                     constraints: BoxConstraints(
                       minHeight: desktop ? 40 : 0,
-                      maxWidth: math.max(
-                        0,
-                        math.min(
-                          desktop ? 400 : Toast._cardMaxWidth,
-                          media.size.width - 32,
-                        ),
-                      ),
+                      maxWidth: desktop ? 400 : Toast._cardMaxWidth,
                     ),
                     child: RepaintBoundary(
                       key: const ValueKey('toast-repaint-boundary'),
@@ -613,14 +654,32 @@ class _InRoom extends SingleChildLayoutDelegate {
 /// [ToastClearance.room] instead opens room for the toast at a sheet's foot
 /// while one shows, under its last controls, and the toast sits in it.
 ///
+/// [ToastClearance.beside] keeps a desktop's toasts beside [child] instead,
+/// as the notes list, Kapy AI's panel and a folder's Add notes do, so a
+/// toast centres on the page between them and follows the list as it slides
+/// open or shut. A dialog or a menu over them takes it back to the middle of
+/// the window, and so does a page too narrow between them, where a toast
+/// also keeps above a [ToastClearance] inside [child], as the list's Notes
+/// and Folders switch.
+///
 /// It lets go as its route starts to leave, so a toast still showing goes
 /// straight to its next place rather than follow a closing sheet.
 class ToastClearance extends StatefulWidget {
-  const ToastClearance({super.key, required Widget this.child}) : room = false;
+  const ToastClearance({super.key, required Widget this.child})
+    : room = false,
+      beside = false;
 
-  const ToastClearance.room({super.key}) : room = true, child = null;
+  const ToastClearance.room({super.key})
+    : room = true,
+      beside = false,
+      child = null;
+
+  const ToastClearance.beside({super.key, required Widget this.child})
+    : room = false,
+      beside = true;
 
   final bool room;
+  final bool beside;
   final Widget? child;
 
   @override
@@ -682,13 +741,22 @@ class _ToastClearanceState extends State<ToastClearance> {
   }
 
   @override
-  Widget build(BuildContext context) =>
-      widget.child ??
-      AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOutCubic,
-        height: _height,
-      );
+  Widget build(BuildContext context) => switch (widget.child) {
+    final child? when widget.beside =>
+      NotificationListener<SizeChangedLayoutNotification>(
+        onNotification: (_) {
+          if (Toast._clearances.contains(this)) Toast._clearancesChanged();
+          return true;
+        },
+        child: SizeChangedLayoutNotifier(child: child),
+      ),
+    final child? => child,
+    null => AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      curve: Curves.easeOutCubic,
+      height: _height,
+    ),
+  };
 }
 
 /// Wraps a navigator nested in a page, so a [ToastClearance] inside it also

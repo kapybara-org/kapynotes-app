@@ -40,7 +40,7 @@ wanted() {
   [[ -z ${PHONE_TESTS:-} || " $PHONE_TESTS " == *" $1 "* ]]
 }
 
-tests=(phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_time_line phone_video)
+tests=(phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet kapy_ai_notice phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_time_line phone_video)
 phone_tests=" ${tests[*]} phone_recording_away phone_bar_android "
 picked=
 set -f

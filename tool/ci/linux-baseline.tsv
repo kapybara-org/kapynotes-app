@@ -4,7 +4,6 @@
 test/app_test.dart	a window that cannot blur keeps its opaque paint
 test/app_test.dart	results have a shortcut like the notes list
 test/app_test.dart	shows and records every editable desktop shortcut
-test/app_test.dart	spaces rail New note sits in the bar over the search, with its keycap
 test/app_test.dart	transparency off is the slider at its Off end
 test/app_test.dart	transparency thins the whole window, and persists
 test/billing/note_limit_ui_test.dart	a day tapped over the limit gives the open note no day

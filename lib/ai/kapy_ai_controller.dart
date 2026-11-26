@@ -77,6 +77,7 @@ class KapyAiController extends KapyAi {
        _notes = notes,
        _device = device,
        _billing = billing,
+       _token = token ?? (() => null),
        _now = now ?? DateTime.now,
        _sandboxed = (environment ?? Platform.environment).containsKey(
          appSandboxVariable,
@@ -88,7 +89,7 @@ class KapyAiController extends KapyAi {
     final web = client ?? http.Client();
     _cloud = KapyCloudClient(
       baseUrl: apiBaseUrl ?? Uri.parse(kApiBaseUrl),
-      token: token ?? () => null,
+      token: _token,
       client: web,
     );
     _openRouter = OpenRouterAccount(
@@ -96,6 +97,7 @@ class KapyAiController extends KapyAi {
       client: web,
     );
     _wasPro = isPro;
+    _wasSignedIn = _signedIn;
     _device.addListener(_onDevice);
     _notes.addListener(_linkSources.clear);
     _billing?.addListener(_onBilling);
@@ -107,6 +109,7 @@ class KapyAiController extends KapyAi {
   final NotesStore _notes;
   final DeviceModel _device;
   final Billing? _billing;
+  final String? Function() _token;
   final DateTime Function() _now;
   final bool _sandboxed;
   final ToolHelper _toolHelper;
@@ -136,6 +139,7 @@ class KapyAiController extends KapyAi {
 
   final Map<KapyAccountKind, LocalToolCheck> _checks = {};
   late bool _wasPro;
+  late bool _wasSignedIn;
   bool _disposed = false;
 
   void _notify() {
@@ -182,10 +186,19 @@ class KapyAiController extends KapyAi {
   @override
   bool get isPro => _billing?.hasPro ?? false;
 
+  bool get _signedIn => _token() != null;
+
   void _onBilling() {
-    if (isPro == _wasPro) return;
+    if (isPro == _wasPro && _signedIn == _wasSignedIn) return;
+    if (isPro != _wasPro && _started != null) unawaited(_refreshUsage());
     _wasPro = isPro;
-    if (_started != null) unawaited(_refreshUsage());
+    _wasSignedIn = _signedIn;
+    // Signed in or upgraded from the card: the held question goes ahead, or
+    // the card asks only for what is still missing.
+    if (_pending is KapyCloudLocked) {
+      _pending = null;
+      unawaited(_answer());
+    }
     _notify();
   }
 
@@ -701,8 +714,16 @@ class KapyAiController extends KapyAi {
         model: using,
         fallbacks: _alternativesTo(using),
       );
+    } on AnswerSignInNeeded {
+      failed = _cloudLocked(using, signIn: true);
+    } on AnswerProNeeded {
+      failed = _cloudLocked(using, upgrade: true);
     } on AnswerFailed catch (failure) {
-      failed = KapyFailed(failure.message, fallbacks: _alternativesTo(using));
+      failed = KapyFailed(
+        failure.message,
+        fallbacks: _alternativesTo(using),
+        retry: failure.retry,
+      );
     } catch (error) {
       debugPrint('KapyNotes: Kapy AI could not answer: ${error.runtimeType}');
       failed = const KapyFailed('Something went wrong. Try again.');
@@ -741,12 +762,7 @@ class KapyAiController extends KapyAi {
           : KapyAccountConsent(account);
     }
     if (model.kind == KapyModelKind.cloud) {
-      if (!isPro) {
-        return KapyFailed(
-          'Kapy AI Cloud is part of Pro.',
-          fallbacks: _alternativesTo(model),
-        );
-      }
+      if (!isPro) return _cloudLocked(model);
       return _store.cloudConsent ? null : const KapyCloudConsent();
     }
     final state = _device.state;
@@ -767,6 +783,19 @@ class KapyAiController extends KapyAi {
       ),
     };
   }
+
+  /// Kapy AI Cloud refused [model]'s question: [signIn] when the server said
+  /// the session ended, [upgrade] when it said there's no Pro, and either
+  /// whenever this device already knows it.
+  KapyCloudLocked _cloudLocked(
+    KapyModel model, {
+    bool signIn = false,
+    bool upgrade = false,
+  }) => KapyCloudLocked(
+    signIn: signIn || !_signedIn,
+    upgrade: upgrade || !isPro,
+    fallbacks: _alternativesTo(model),
+  );
 
   /// What could answer instead of [using], as choices for the person to make.
   /// Never applied on their behalf: each still asks for its own consent.
@@ -843,7 +872,7 @@ class KapyAiController extends KapyAi {
         }
       case KapyAccountError() || KapyOffline() || KapyFailed():
         await _answer();
-      case KapyDownloading() || KapyLimitReached() || null:
+      case KapyDownloading() || KapyLimitReached() || KapyCloudLocked() || null:
         return;
     }
   }

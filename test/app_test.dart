@@ -22,6 +22,7 @@ import 'package:kapy_notes/core/quick_capture.dart';
 import 'package:kapy_notes/core/status_bar.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -12279,6 +12280,120 @@ void main() {
       // None of it touched the list a wide window shows.
       expect(prefs.sidebarVisible, isTrue);
     });
+
+    // Parity item 63: at 820 a notice centred on the window sat over the
+    // list's Notes and Folders switch.
+    testWidgets('a notice centres on the page beside the list, clear of it, '
+        'and on the window once the list is hidden', (tester) async {
+      await notes.load();
+      notes.create(body: 'Narrow note');
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      for (final width in [720.0, 820.0, 1280.0]) {
+        await pumpApp(tester, size: Size(width, 760));
+        await pickPageAction(tester, 'pin');
+
+        expect(
+          tester.getCenter(notice).dx,
+          tester.getCenter(find.byType(PagePane)).dx,
+          reason: '$width',
+        );
+        expect(
+          tester.getRect(notice).left,
+          greaterThan(tester.getRect(find.byType(Sidebar)).right),
+          reason: '$width',
+        );
+      }
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(notice).dx, 640);
+    });
+
+    testWidgets('a notice keeps beside the list open over the page where '
+        'that leaves it room, and on the window where not', (tester) async {
+      await notes.load();
+      notes.create(body: 'Narrow note');
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      await pumpApp(tester, size: const Size(700, 720));
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      await tester.pumpAndSettle();
+      expect(barrier, findsOneWidget);
+      Toast.show(tester.element(find.byType(Sidebar)), 'Note pinned');
+      await tester.pumpAndSettle();
+      // 288 beside a list 336 wide.
+      expect(tester.getCenter(notice).dx, 350);
+
+      prefs.sidebarWidth = 150;
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byType(Sidebar)).right, 226);
+      expect(tester.getCenter(notice).dx, (226 + 700) / 2);
+    });
+
+    // KAPY-35 on #358: a notice centred on the window over the list sat on
+    // the list's Notes and Folders switch.
+    testWidgets('a notice centred on the window over the list keeps above '
+        "the list's Notes and Folders switch", (tester) async {
+      await notes.load();
+      notes.create(body: 'Narrow note');
+      final folders = FolderStore(store);
+      await folders.load();
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      final folderSwitch = find.byKey(const ValueKey('notes-folders-switch'));
+      await pumpApp(tester, size: const Size(600, 720), folders: folders);
+      Toast.show(tester.element(find.byType(PagePane)), 'Note pinned');
+      await tester.pumpAndSettle();
+      final low = tester.getRect(notice).bottom;
+
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(notice).dx, 300);
+      expect(
+        tester.getRect(notice).bottom,
+        lessThanOrEqualTo(tester.getRect(folderSwitch).top - 16),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(notice).bottom, low);
+    });
+
+    testWidgets('a notice beside the list keeps low as the list slides open, '
+        'its Notes and Folders switch beside it', (tester) async {
+      await notes.load();
+      notes.create(body: 'Narrow note');
+      final folders = FolderStore(store);
+      await folders.load();
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      await pumpApp(
+        tester,
+        size: const Size(820, 720),
+        folders: folders,
+        sidebarVisible: false,
+      );
+      Toast.show(tester.element(find.byType(PagePane)), 'Note pinned');
+      await tester.pumpAndSettle();
+      final low = tester.getRect(notice).bottom;
+
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      for (var frame = 1; frame <= 12; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(tester.getRect(notice).bottom, low, reason: 'frame $frame');
+      }
+      await tester.pumpAndSettle();
+      expect(tester.getRect(notice).bottom, low);
+      expect(
+        low,
+        greaterThan(
+          tester
+              .getRect(find.byKey(const ValueKey('notes-folders-switch')))
+              .top,
+        ),
+      );
+      expect(
+        tester.getCenter(notice).dx,
+        tester.getCenter(find.byType(PagePane)).dx,
+      );
+    });
   });
 
   group('window chrome', () {
@@ -13031,6 +13146,45 @@ void main() {
       expect(find.text('Upcoming'), findsNothing);
     });
 
+    testWidgets("a phone's Drawings lists a drawing for a later day under "
+        'Recent and counts it, as it does every drawing', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final days = NoteDayStore(store);
+      await days.load();
+      final folders = FolderStore(store);
+      await folders.load();
+      final shelf = notes.create(drawing: true);
+      notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+      final deck = notes.create(drawing: true);
+      notes.updateDrawing(deck.id, NoteDrawing.empty, title: 'Deck flow');
+      final now = notes.now();
+      days.setDay(shelf.id, DateTime(now.year, now.month, now.day + 2));
+      await pumpApp(
+        tester,
+        size: const Size(390, 844),
+        folders: folders,
+        days: days,
+      );
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('bar-folders')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('folders-drawings-tile')));
+      await tester.pumpAndSettle();
+
+      Finder listed(String title) =>
+          find.descendant(of: find.byType(Sidebar), matching: find.text(title));
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(listed('Deck flow'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(PhoneListTitle),
+          matching: find.text('2'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('⋮ gives the open note another day, and Remove day takes it '
         'off', (tester) async {
       final days = NoteDayStore(store);
@@ -13112,6 +13266,49 @@ void main() {
         findsOneWidget,
       );
       expect(count(), before);
+    });
+
+    testWidgets("a drawing for a later day stays off the desktop's Drawings "
+        'and out of its count until its day, though pinned it stays and '
+        'counts, and A to Z lists and counts it', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final shelf = notes.create(drawing: true);
+      notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+      final deck = notes.create(drawing: true);
+      notes.updateDrawing(deck.id, NoteDrawing.empty, title: 'Deck flow');
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      int count() =>
+          tester.widget<SidebarWindowBar>(find.byType(SidebarWindowBar)).count;
+      Finder listed(String title) =>
+          find.descendant(of: find.byType(Sidebar), matching: find.text(title));
+      expect(count(), 2);
+
+      final now = notes.now();
+      days.setDay(shelf.id, DateTime(now.year, now.month, now.day + 2));
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsNothing);
+      expect(listed('Deck flow'), findsOneWidget);
+      expect(count(), 1, reason: 'the count is what the list shows');
+
+      prefs.notesGrouping = NotesGrouping.aToZ;
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(count(), 2);
+
+      prefs.notesGrouping = NotesGrouping.byDate;
+      notes.togglePinned(shelf.id);
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(count(), 2);
+
+      notes.togglePinned(shelf.id);
+      days.setDay(shelf.id, DateTime(now.year, now.month, now.day));
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(count(), 2);
     });
 
     testWidgets('Archived Notes lists and counts an archived note for a '
@@ -14253,6 +14450,32 @@ void main() {
       });
     }
   });
+
+  testWidgets(
+    'on Linux a window left with a note open draws nothing more, its caret '
+    'showing, 10 seconds after the last key',
+    (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await notes.load();
+      notes.create(body: 'Groceries');
+      await pumpApp(tester);
+
+      await tester.enterNote('Coffee: 12.40\nOats: 3.99\ntotal');
+      final driver = NoteDriver(tester);
+      expect(driver.state.layout.marks.caretColor, isNotNull);
+      await tester.binding.delayed(const Duration(milliseconds: 500));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
+      expect(driver.state.layout.marks.caretColor, isNotNull);
+      await tester.binding.delayed(const Duration(minutes: 5));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      expect(tester.binding.transientCallbackCount, 0);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.linux),
+  );
 }
 
 /// Android 14's text scale, which grows large type less than small: the
