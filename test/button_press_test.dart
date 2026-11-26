@@ -202,7 +202,7 @@ void main() {
     tester,
   ) async {
     await pumpWindow(tester);
-    await press(tester, find.semantics.byLabel(RegExp('^Notes filter')));
+    await press(tester, labelled('View'));
     SemanticsNode row(String kind) =>
         tester.getSemantics(find.byKey(ValueKey('media-filter-$kind')));
     Future<void> tick(String kind) {

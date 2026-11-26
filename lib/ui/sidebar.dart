@@ -441,132 +441,138 @@ class Sidebar extends StatelessWidget {
 
     // Solid, rather than the GlassSurface the toolbar and footer use: the
     // notes list stays put whatever the window is doing behind it. See
-    // [CalcPalette.sidebarColor].
-    return ColoredBox(
-      color: phone ? palette.paperColor : palette.sidebarColor,
-      // Colour runs to the window edges; content stays clear of the status
-      // bar, home indicator and any display cutout.
-      child: SafeArea(
-        right: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            windowBar,
-            SidebarSearchField(
-              onSearch: onSearch,
-              query: query,
-              onClear: onClearQuery,
-              shortcut: searchShortcut,
-              placeholder: searchPlaceholder,
-              phone: phone,
-              trailing: switch ([
-                if (!phone && !_foldersTab) ?controls,
-                if (phone && controls != null && onFiltersToggled != null)
-                  PhoneFiltersButton(
-                    key: const ValueKey('phone-filters'),
-                    active: filtersActive,
-                    onPressed: onFiltersToggled!,
+    // [CalcPalette.sidebarColor]. One traversal group, so Tab takes the
+    // list's controls together, before the note's toolbar.
+    return FocusTraversalGroup(
+      child: ColoredBox(
+        color: phone ? palette.paperColor : palette.sidebarColor,
+        // Colour runs to the window edges; content stays clear of the status
+        // bar, home indicator and any display cutout.
+        child: SafeArea(
+          right: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              windowBar,
+              SidebarSearchField(
+                onSearch: onSearch,
+                query: query,
+                onClear: onClearQuery,
+                shortcut: searchShortcut,
+                placeholder: searchPlaceholder,
+                phone: phone,
+                trailing: switch ([
+                  if (!phone && !_foldersTab) ?controls,
+                  if (phone && controls != null && onFiltersToggled != null)
+                    PhoneFiltersButton(
+                      key: const ValueKey('phone-filters'),
+                      active: filtersActive,
+                      onPressed: onFiltersToggled!,
+                    ),
+                  if (onAddNotes case final onAddNotes? when phone)
+                    searchButton(
+                      const ValueKey('phone-add-notes'),
+                      'Add notes',
+                      KapyIcons.noteAddRounded,
+                      onAddNotes,
+                    ),
+                  if (folders?.newFolder case final newFolder?
+                      when phone && _foldersTab)
+                    searchButton(
+                      const ValueKey('phone-new-folder'),
+                      'New folder',
+                      KapyIcons.folderAddOutlined,
+                      () => newFolder.value++,
+                    ),
+                ]) {
+                  [] => null,
+                  [final button] => button,
+                  final buttons => Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: buttons,
                   ),
-                if (onAddNotes case final onAddNotes? when phone)
-                  searchButton(
-                    const ValueKey('phone-add-notes'),
-                    'Add notes',
-                    KapyIcons.noteAddRounded,
-                    onAddNotes,
-                  ),
-                if (folders?.newFolder case final newFolder?
-                    when phone && _foldersTab)
-                  searchButton(
-                    const ValueKey('phone-new-folder'),
-                    'New folder',
-                    KapyIcons.folderAddOutlined,
-                    () => newFolder.value++,
-                  ),
-              ]) {
-                [] => null,
-                [final button] => button,
-                final buttons => Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: buttons,
-                ),
-              },
-            ),
-            if (folders?.newFolder case final newFolder?
-                when !phone && _foldersTab)
-              NewFolderButton(onPressed: () => newFolder.value++),
-            if (filterChip case final chip? when !phone && !_foldersTab)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Align(alignment: Alignment.centerLeft, child: chip),
+                },
               ),
-            if (controls != null && phone && !_foldersTab)
-              if (onFiltersToggled != null)
-                // A phone keeps the filter row out of the way until the
-                // button asks for it, and the list slides up to take its
-                // room while it is put away.
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.topCenter,
-                  child: filtersOpen
-                      ? Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: controls,
-                        )
-                      : const SizedBox(width: double.infinity),
-                )
-              else
+              if (folders?.newFolder case final newFolder?
+                  when !phone && _foldersTab)
+                NewFolderButton(onPressed: () => newFolder.value++),
+              if (filterChip case final chip? when !phone && !_foldersTab)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: controls,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Align(alignment: Alignment.centerLeft, child: chip),
                 ),
-            if (_picking || (archiveMode && notes.isNotEmpty))
-              _pickBar(context),
-            Expanded(
-              child: _BelowInvitations(
-                invitations:
-                    !_specialMode &&
-                        sharing != null &&
-                        sharing!.invites.isNotEmpty &&
-                        _onSharedTab
-                    ? _Invitations(
-                        sharing: sharing!,
-                        onJoined: onTabChanged == null
-                            ? null
-                            : () => onTabChanged!(SidebarTab.shared),
-                      )
-                    : null,
-                child: _NoteListKeys(
-                  onMoveSelected: _moveSelected,
-                  onEnterSelected: onEnterSelected,
-                  onOpenSelectedInNewTab: onOpenSelectedInNewTab,
-                  onArchiveSelected: _archiveSelected,
-                  onDeleteSelected: _deleteSelected,
-                  onPickAll: picks == null || notes.isEmpty
-                      ? null
-                      : () => picks!.all(_order),
-                  onExtendPick: picks == null || notes.isEmpty
-                      ? null
-                      : (delta) =>
-                            picks!.step(_order, delta, open: _highlighted?.id),
-                  onStopPicking: _picking ? picks!.clear : null,
-                  archiveShortcut: archiveShortcut,
-                  child: _foldersTab
-                      ? _buildFolders(context)
-                      : notes.isEmpty
-                      ? _buildEmpty(context)
-                      : _sweeps(_buildBesideRail(context)),
+              if (controls != null && phone && !_foldersTab)
+                if (onFiltersToggled != null)
+                  // A phone keeps the filter row out of the way until the
+                  // button asks for it, and the list slides up to take its
+                  // room while it is put away.
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: filtersOpen
+                        ? Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: controls,
+                          )
+                        : const SizedBox(width: double.infinity),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: controls,
+                  ),
+              if (_picking || (archiveMode && notes.isNotEmpty))
+                _pickBar(context),
+              Expanded(
+                child: _BelowInvitations(
+                  invitations:
+                      !_specialMode &&
+                          sharing != null &&
+                          sharing!.invites.isNotEmpty &&
+                          _onSharedTab
+                      ? _Invitations(
+                          sharing: sharing!,
+                          onJoined: onTabChanged == null
+                              ? null
+                              : () => onTabChanged!(SidebarTab.shared),
+                        )
+                      : null,
+                  child: _NoteListKeys(
+                    onMoveSelected: _moveSelected,
+                    onEnterSelected: onEnterSelected,
+                    onOpenSelectedInNewTab: onOpenSelectedInNewTab,
+                    onArchiveSelected: _archiveSelected,
+                    onDeleteSelected: _deleteSelected,
+                    onPickAll: picks == null || notes.isEmpty
+                        ? null
+                        : () => picks!.all(_order),
+                    onExtendPick: picks == null || notes.isEmpty
+                        ? null
+                        : (delta) => picks!.step(
+                            _order,
+                            delta,
+                            open: _highlighted?.id,
+                          ),
+                    onStopPicking: _picking ? picks!.clear : null,
+                    archiveShortcut: archiveShortcut,
+                    child: _foldersTab
+                        ? _buildFolders(context)
+                        : notes.isEmpty
+                        ? _buildEmpty(context)
+                        : _sweeps(_buildBesideRail(context)),
+                  ),
                 ),
               ),
-            ),
-            if (folders?.onShown case final onShown?)
-              ToastClearance(
-                child: NotesFoldersSwitch(
-                  folders: _foldersTab,
-                  onChanged: onShown,
+              if (folders?.onShown case final onShown?)
+                ToastClearance(
+                  child: NotesFoldersSwitch(
+                    folders: _foldersTab,
+                    onChanged: onShown,
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
