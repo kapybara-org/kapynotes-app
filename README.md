@@ -691,7 +691,7 @@ The spec described an Electron build. These changed for Flutter:
   sidebar, `⇧⌘⌫` / `Ctrl+Shift+Delete` archive the note. Two more are
   registered with the OS and answer from inside any other app — which also
   means every other app loses them while this one runs, so they sit on chords
-  little else uses: `⇧⌥⌘X` / `Alt+Shift+X` summons the window, `⇧⌥⌘N` /
+  little else uses: `⇧⌥⌘L` / `Alt+Shift+L` summons the window, `⇧⌥⌘N` /
   `Alt+Shift+N` summons it onto a blank note. All of them are rebindable in
   Settings › Shortcuts.
 - Closing the window quits on Windows and Linux and leaves the process

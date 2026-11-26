@@ -30,6 +30,7 @@ import '../core/quick_capture.dart';
 import '../core/status_bar.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
+import '../core/type_ahead.dart';
 import '../data/engine_provider.dart';
 import '../data/attachment_limits.dart';
 import '../data/auto_titles.dart';
@@ -1785,9 +1786,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Opens an empty pane beside the focused note, for the next note chosen.
+  /// The note's editor lets go of the keyboard first: More hands it back to
+  /// that editor as it closes, which would focus the note's pane again.
   void _splitEditor() {
     if (_usesCompactLayout || _specialMode || !_workspace.canSplit) return;
     final previous = _selectedId;
+    _selectedEditor?.releaseKeyboard();
     setState(() {
       _workspace.split();
       _adoptWorkspaceSelection(previous);
@@ -3660,6 +3664,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         (_selectedId != null && _selectedId == _untouchedWelcomeId)) {
       return;
     }
+    TypeAhead.hold();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _editorFocusSuppressed) return;
       _selectedEditor?.focusAtEnd();
@@ -3784,6 +3789,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     bool field = false,
     bool again = false,
   }) async {
+    TypeAhead.hold();
     final shown = _tasksMode ? null : _shownNote(_selectedId);
     _findOnBack = null;
     if (!again) _findWords.clear();
@@ -3866,9 +3872,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         unawaited(
           moveNotesToFolder(
             context,
-            Offset(
-              (window.width - TagPopover.defaultWidth) / 2,
-              commandMenuTop(window),
+            spotAt(
+              Offset(
+                (window.width - TagPopover.defaultWidth) / 2,
+                commandMenuTop(window),
+              ),
             ),
             widget.folders!,
             [note.id],
@@ -3918,6 +3926,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       unawaited(tasks.add(text));
       return;
     }
+    TypeAhead.hold();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _taskAddFocus.requestFocus();
     });
@@ -4893,7 +4902,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Does what the page's More menu names: the window's own actions, then
   /// the folder's in front or the open note's. [at] is where a list or a
   /// field it opens goes.
-  void _runPageAction(String action, Note? note, Offset at) {
+  void _runPageAction(String action, Note? note, MenuSpot at) {
     switch (action) {
       case 'split':
         _splitEditor();
@@ -5139,14 +5148,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A folder card's menu on its folder's page.
   Future<void> _showFolderMenu(Folder folder, Offset at) async {
-    final action = await showFolderMenu(context, at, folder, newInside: false);
+    var spot = spotAt(at);
+    final action = await showFolderMenu(
+      context,
+      at,
+      folder,
+      newInside: false,
+      onClosed: (placed) => spot = placed,
+    );
     if (action == null || !mounted) return;
-    await _runFolderAction(action, folder, at);
+    await _runFolderAction(action, folder, spot);
   }
 
   /// Does a folder's action from its card or, while it is in front, from the
   /// page's More. [at] is where a list or a field it opens goes.
-  Future<void> _runFolderAction(String action, Folder folder, Offset at) =>
+  Future<void> _runFolderAction(String action, Folder folder, MenuSpot at) =>
       runFolderAction(
         context,
         action,
