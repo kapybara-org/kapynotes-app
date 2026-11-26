@@ -327,25 +327,28 @@ void main() {
       expect(_panel, findsNothing);
     });
 
-    testWidgets('a click elsewhere in it leaves the field focused', (
-      tester,
-    ) async {
-      notes.create(body: 'Trip budget');
-      await _pump(tester);
-      await _toggleWithKeys(tester);
-      await tester.tap(find.byKey(const ValueKey('kapy-ai-field')));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'a click elsewhere in it leaves the panel focused, and Esc then '
+      'closes it',
+      (tester) async {
+        notes.create(body: 'Trip budget');
+        await _pump(tester);
+        await _toggleWithKeys(tester);
+        await tester.tap(find.byKey(const ValueKey('kapy-ai-field')));
+        await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.descendant(of: _panel, matching: find.text('Kapy AI')).first,
-      );
-      await tester.pumpAndSettle();
+        await tester.tap(
+          find.descendant(of: _panel, matching: find.text('Kapy AI')).first,
+        );
+        await tester.pumpAndSettle();
 
-      expect(
-        FocusManager.instance.primaryFocus?.debugLabel,
-        'kapy-ai-composer',
-      );
-    });
+        expect(FocusManager.instance.primaryFocus?.debugLabel, 'kapy-ai-panel');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(_panel, findsNothing);
+      },
+      variant: TargetPlatformVariant.desktop(),
+    );
 
     testWidgets('Esc closes it from the field and from anywhere in it, but '
         'not while an input method is composing', (tester) async {
