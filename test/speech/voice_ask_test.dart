@@ -608,6 +608,17 @@ void main() {
         ]) {
           expect(find.byKey(ValueKey(key)), findsOneWidget, reason: key);
         }
+        Rect at(String key) => tester.getRect(find.byKey(ValueKey(key)));
+        expect(
+          at('voice-ask-again').left - at('voice-ask-copy').right,
+          lessThan(16),
+          reason: 'Try again sits with Insert and Copy',
+        );
+        expect(
+          at('voice-ask-remove').left - at('voice-ask-again').right,
+          greaterThan(100),
+          reason: 'the bin stands apart, on the right',
+        );
         expect(_hint(tester), 'Ask about this recording');
 
         await tester.tap(find.byKey(const ValueKey('voice-ask-again')));

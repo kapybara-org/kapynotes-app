@@ -855,7 +855,6 @@ class _VoiceAskState extends State<VoiceAsk> {
                   color: palette.textTertiary,
                   onPressed: () => copy(take.text),
                 ),
-              const Spacer(),
               KapyAiIconButton(
                 key: const ValueKey('voice-ask-again'),
                 icon: KapyIcons.refreshRounded,
@@ -866,6 +865,7 @@ class _VoiceAskState extends State<VoiceAsk> {
                 color: palette.textTertiary,
                 onPressed: () => unawaited(_write(take.kind, take.instruction)),
               ),
+              const Spacer(),
               if (remove != null)
                 KapyAiIconButton(
                   key: const ValueKey('voice-ask-remove'),
