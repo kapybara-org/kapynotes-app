@@ -49,8 +49,8 @@ const voiceStarters = [
   'Your own words…',
 ];
 
-/// What an X post is called above its text and in Earlier. KAPY-35 may make
-/// it "Post for X", while the starter keeps its own label.
+/// What an X post is called above its text and in Earlier, the same words
+/// as its starter.
 const xPostHeading = 'Create X Post';
 
 const voiceTitle = 'Pricing page plan with Arjun';
