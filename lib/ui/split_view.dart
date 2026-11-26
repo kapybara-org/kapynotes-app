@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/theme.dart';
+import '../core/toast.dart';
 
 /// The notes list and the page: side by side, with a divider the user can
 /// drag, where the window has room for both, and the list over the page where
@@ -119,18 +120,20 @@ class _SplitViewState extends State<SplitView> {
                   // Slides open and shut, but comes and goes at once with the
                   // room for it, rather than squeezing the body as it goes.
                   if (!overlay)
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 160),
-                      curve: Curves.easeOutCubic,
-                      width: beside ? width : 0,
-                      child: ClipRect(
-                        child: OverflowBox(
-                          alignment: Alignment.topLeft,
-                          minWidth: width,
-                          maxWidth: width,
-                          minHeight: listHeight,
-                          maxHeight: listHeight,
-                          child: widget.sidebar,
+                    ToastClearance.beside(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        curve: Curves.easeOutCubic,
+                        width: beside ? width : 0,
+                        child: ClipRect(
+                          child: OverflowBox(
+                            alignment: Alignment.topLeft,
+                            minWidth: width,
+                            maxWidth: width,
+                            minHeight: listHeight,
+                            maxHeight: listHeight,
+                            child: widget.sidebar,
+                          ),
                         ),
                       ),
                     ),
@@ -199,25 +202,27 @@ class _SplitViewState extends State<SplitView> {
                 top: 0,
                 bottom: 0,
                 width: width,
-                child: Actions(
-                  actions: {
-                    DismissIntent: CallbackAction<DismissIntent>(
-                      onInvoke: (_) => widget.onHide(),
-                    ),
-                  },
-                  child: Focus(
-                    focusNode: _overlayFocus,
-                    child: DecoratedBox(
-                      position: DecorationPosition.foreground,
-                      decoration: BoxDecoration(
-                        border: Border(
-                          right: BorderSide(
-                            color: palette.separator,
-                            width: AppHairline.of(context),
+                child: ToastClearance.beside(
+                  child: Actions(
+                    actions: {
+                      DismissIntent: CallbackAction<DismissIntent>(
+                        onInvoke: (_) => widget.onHide(),
+                      ),
+                    },
+                    child: Focus(
+                      focusNode: _overlayFocus,
+                      child: DecoratedBox(
+                        position: DecorationPosition.foreground,
+                        decoration: BoxDecoration(
+                          border: Border(
+                            right: BorderSide(
+                              color: palette.separator,
+                              width: AppHairline.of(context),
+                            ),
                           ),
                         ),
+                        child: widget.sidebar,
                       ),
-                      child: widget.sidebar,
                     ),
                   ),
                 ),

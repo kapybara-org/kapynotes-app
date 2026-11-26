@@ -1099,6 +1099,30 @@ void main() {
     );
   });
 
+  // Mon 31 picked, so its notes are the tabs and the notice offers Undo, in a
+  // window then narrowed to 820, where the list beside the page leaves it
+  // 408. The notice centres on the page, clear of the list's Notes and
+  // Folders switch, which it covered when it centred on the window.
+  testWidgets('desktop dark narrow, a notice beside the notes list', (
+    tester,
+  ) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1280, 800),
+      brightness: Brightness.dark,
+      withWeek: true,
+    );
+    await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(820, 800);
+    await tester.pumpAndSettle();
+    expect(find.text("Opened yesterday's 3 notes"), findsOneWidget);
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_narrow_notice.png'),
+    );
+  });
+
   testWidgets('desktop dark compact header hover', (tester) async {
     await pumpForGolden(
       tester,

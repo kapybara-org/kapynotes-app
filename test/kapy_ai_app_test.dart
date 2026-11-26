@@ -5,6 +5,7 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -19,6 +20,7 @@ import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_settings.dart';
+import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
@@ -261,6 +263,43 @@ void main() {
 
       expect(find.byKey(const ValueKey('kapy-ai-overlay')), findsOneWidget);
       expect(_panel, findsOneWidget);
+    });
+
+    final notice = find.byKey(const ValueKey('toast-surface'));
+
+    testWidgets('a notice centres on the page between the notes list and the '
+        'panel beside it', (tester) async {
+      notes.create(body: 'Trip budget');
+      await _pump(tester, sidebar: true);
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      Toast.show(tester.element(_panel), 'Copied');
+      await tester.pumpAndSettle();
+
+      expect(
+        tester.getCenter(notice).dx,
+        tester.getCenter(find.byType(PagePane)).dx,
+      );
+      expect(
+        tester.getRect(notice).right,
+        lessThan(tester.getRect(_panel).left),
+      );
+    });
+
+    testWidgets('a notice keeps left of the panel over a narrow page', (
+      tester,
+    ) async {
+      notes.create(body: 'Trip budget');
+      await _pump(tester, size: const Size(1100, 760));
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      Toast.show(tester.element(_panel), 'Copied');
+      await tester.pumpAndSettle();
+
+      final overlay = tester.getRect(
+        find.byKey(const ValueKey('kapy-ai-overlay')),
+      );
+      expect(tester.getCenter(notice).dx, overlay.left / 2);
     });
 
     testWidgets('a hidden note never gets a chip', (tester) async {
