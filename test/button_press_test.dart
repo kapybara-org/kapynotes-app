@@ -114,7 +114,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.tap(find.byKey(const ValueKey('notes-view')));
     await tester.pumpAndSettle();
     expect(unpressable(), isEmpty, reason: 'with the notes filter open');
     expect(unnamed(), isEmpty, reason: 'with the notes filter open');
@@ -135,7 +135,7 @@ void main() {
     expect(unpressable(), isEmpty, reason: 'in drawings');
     expect(unnamed(), isEmpty, reason: 'in drawings');
 
-    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.tap(find.byKey(const ValueKey('notes-view')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
     await tester.pumpAndSettle();
@@ -161,7 +161,7 @@ void main() {
     expect(spaceTitle(tester), 'My notes');
   });
 
-  testPress('a tonal button makes a note when pressed', (tester) async {
+  testPress("the list's + makes a note when pressed", (tester) async {
     await pumpWindow(tester);
     final before = goldenNotes.notes.length;
     await press(tester, labelled('New note'));
@@ -188,13 +188,13 @@ void main() {
   testPress('the list controls are pressed by their names', (tester) async {
     await pumpWindow(tester);
 
+    await press(tester, labelled('View'));
+    expect(find.byKey(const ValueKey('notes-filter-menu')), findsOneWidget);
+    await press(tester, labelled('Grid'));
+    expect(goldenPrefs.noteCards, isTrue);
+    await press(tester, labelled('View'));
     await press(tester, labelled('List'));
     expect(goldenPrefs.noteCards, isFalse);
-    await press(tester, labelled('Cards'));
-    expect(goldenPrefs.noteCards, isTrue);
-
-    await press(tester, find.semantics.byLabel(RegExp('^Notes filter')));
-    expect(find.byKey(const ValueKey('notes-filter-menu')), findsOneWidget);
   });
 
   testPress('View all is pressed by its name', (tester) async {

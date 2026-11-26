@@ -167,22 +167,10 @@ class NotesFoldersSwitch extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     )
                   : null,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  KapyIcon(
-                    forFolders
-                        ? KapyIcons.folderOutlined
-                        : KapyIcons.noteOutlined,
-                    size: 16,
-                    color: colour,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    forFolders ? 'Folders' : 'Notes',
-                    style: _figtree(13, 16, FontWeight.w500, colour),
-                  ),
-                ],
+              alignment: Alignment.center,
+              child: Text(
+                forFolders ? 'Folders' : 'Notes',
+                style: _figtree(13, 16, FontWeight.w500, colour),
               ),
             ),
           ),
@@ -205,17 +193,9 @@ class NotesFoldersSwitch extends StatelessWidget {
             child: SizedBox(height: AppHairline.of(context)),
           ),
           const SizedBox(height: 12),
-          Container(
+          SizedBox(
             key: const ValueKey('notes-folders-switch'),
-            height: AppControlMetrics.scaleBar(context, 40),
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: palette.raisedBackground ?? palette.cardBackground,
-              border: Border.all(
-                color: palette.raisedBorder ?? palette.controlBorder,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
+            height: AppControlMetrics.scaleBar(context, 32),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [segment(false), segment(true)],
