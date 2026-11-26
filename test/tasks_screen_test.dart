@@ -625,11 +625,13 @@ void main() {
         expect(inPair('right', 'Pick'), findsOneWidget);
         expect(find.text('or'), findsOneWidget);
         expect(find.text('2 of 4 seen'), findsOneWidget);
+        expect(find.byKey(const ValueKey('tasks-pair-explain')), findsOneWidget);
         expect(
           find.text(
             'Nothing comes off your list. Earlier picks wait in Up next.',
           ),
-          findsOneWidget,
+          findsNothing,
+          reason: 'the line under the question says it until the first pick',
         );
         expect(
           find.text('Stop choosing and start Send the report'),
@@ -658,6 +660,10 @@ void main() {
       expect(inPair('left', 'Most important so far'), findsOneWidget);
       expect(inPair('right', 'Call the garage'), findsOneWidget);
       expect(find.text('3 of 4 seen'), findsOneWidget);
+      expect(
+        find.text('Nothing comes off your list. Earlier picks wait in Up next.'),
+        findsOneWidget,
+      );
       expect(box('Book flights'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('tasks-pair-right')));
@@ -701,7 +707,7 @@ void main() {
     testWidgets('on the last pair Stop choosing goes, the count says Last one '
         'and the foot says the pick becomes Do now', (tester) async {
       await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
-      await pumpScreen(tester);
+      await pumpScreen(tester, explainPair: false);
       expect(find.byKey(const ValueKey('tasks-start')), findsNothing);
       expect(find.text('Your pick becomes Do now.'), findsOneWidget);
       expect(find.text('Last one'), findsOneWidget);
@@ -1248,7 +1254,7 @@ void main() {
         find.text(
           'Nothing comes off your list. Earlier picks wait in Up next.',
         ),
-        findsOneWidget,
+        findsNothing,
       );
       final left = tester.getRect(
         find.byKey(const ValueKey('tasks-pair-left')),

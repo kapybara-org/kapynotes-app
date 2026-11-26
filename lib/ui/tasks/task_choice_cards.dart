@@ -320,6 +320,9 @@ class _TaskPairCardState extends State<TaskPairCard> {
         style: taskText(12, 16, ink.quiet),
       ),
     );
+    // While the line under the question explains the round, it says what
+    // the foot would, so the foot waits for the first pick and the smallest
+    // phone keeps Stop choosing above its tab bar.
     final foot = Text(
       last
           ? 'Your pick becomes Do now.'
@@ -420,13 +423,13 @@ class _TaskPairCardState extends State<TaskPairCard> {
               else
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  spacing: 4,
+                  spacing: phone ? 0 : 4,
                   children: [left, or, right],
                 ),
               if (beside)
                 Row(
                   children: [
-                    Expanded(child: foot),
+                    Expanded(child: explain ? const SizedBox.shrink() : foot),
                     if (start != null) ...[
                       const SizedBox(width: 12),
                       Flexible(
@@ -445,7 +448,7 @@ class _TaskPairCardState extends State<TaskPairCard> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   spacing: 10,
-                  children: [foot, ?start],
+                  children: [if (!explain) foot, ?start],
                 ),
             ],
           );
