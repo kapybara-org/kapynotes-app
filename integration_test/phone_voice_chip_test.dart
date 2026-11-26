@@ -34,8 +34,8 @@ class _MemoryStore extends LocalStore {
 final _now = DateTime(2025, 11, 19, 9, 41);
 
 /// A note with a summarised recording and one at rest, at the phone's own
-/// width and at Android's Large text, where the chip's words grow once with
-/// the writing and a title takes the line under the row.
+/// width and at Android's Large text, where each card grows once with the
+/// writing and keeps its title to its first line.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
