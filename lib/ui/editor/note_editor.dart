@@ -7500,6 +7500,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     final checklist = _checklist();
     final now = (widget.now ?? DateTime.now)();
     final displayTime = widget.displayTime ?? (time) => time.toLocal();
+    final shelved = TagShelf.maybeOf(context) != null;
     final scale = title.row.height / EditorMetrics.titleRow;
     return ClipRect(
       child: ListenableBuilder(
@@ -7537,9 +7538,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
             readOnlyIcon: widget.readOnlyIcon,
             onReadOnlyPressed: widget.onReadOnlyPressed,
-            tags: TagShelf.maybeOf(context) == null
-                ? null
-                : NoteTagChips(noteId: widget.noteId, adds: !widget.phone),
+            tags: shelved ? NoteTagChips(noteId: widget.noteId) : null,
+            addTag: shelved && !widget.phone
+                ? NoteAddTag(noteId: widget.noteId)
+                : null,
             phone: widget.phone,
             width: column,
           ),

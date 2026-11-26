@@ -119,6 +119,7 @@ class NoteMetaRow extends StatelessWidget {
     this.readOnlyIcon,
     this.onReadOnlyPressed,
     this.tags,
+    this.addTag,
     this.phone = false,
     this.width = double.infinity,
   });
@@ -148,8 +149,11 @@ class NoteMetaRow extends StatelessWidget {
   final KapyIconData? readOnlyIcon;
   final VoidCallback? onReadOnlyPressed;
 
-  /// The note's tag chips and + Tag, at the end of the line.
+  /// The note's tag chips, at the end of the line.
   final Widget? tags;
+
+  /// + Tag, after the chips: on a desktop's line, the first to step aside.
+  final Widget? addTag;
 
   /// On a phone's note page (M07): the facts and tags share one line that
   /// wraps, where a tablet keeps the tags on a line of their own.
@@ -384,7 +388,16 @@ class NoteMetaRow extends StatelessWidget {
             const SizedBox(height: 8),
             // The tags' own targets are 44 pt tall on a phone, so the row
             // gives them the room rather than clipping them to the pill.
-            SizedBox(height: AppPlatform.hasPointer ? 22 : 44, child: tags),
+            SizedBox(
+              height: AppPlatform.hasPointer ? 22 : 44,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (tags case final tags?) Flexible(child: tags),
+                  ?addTag,
+                ],
+              ),
+            ),
           ],
         ),
       );
@@ -409,16 +422,17 @@ class NoteMetaRow extends StatelessWidget {
                   ),
           if (tags case final tags?)
             Padding(padding: const EdgeInsets.only(left: 6), child: tags),
+          ?addTag,
         ],
       ),
     );
   }
 }
 
-/// A desktop's meta line: the facts in order, then the tags, each whole. Where
-/// the column ends before one does, it and everything after it step aside, as
-/// the bar's items do, rather than run into the pane's edge. Only the date,
-/// first, shortens to fit a column too narrow even for it.
+/// A desktop's meta line: the facts in order, then the tags, then + Tag, each
+/// whole. Where the column ends before one does, it and everything after it
+/// step aside, as the bar's items do, rather than run into the pane's edge.
+/// Only the date, first, shortens to fit a column too narrow even for it.
 class _MetaLine extends MultiChildRenderObjectWidget {
   const _MetaLine({required this.width, required super.children});
 

@@ -968,6 +968,31 @@ void main() {
     await pointer.removePointer();
   });
 
+  /// The open note's meta line, the first pane's while split, ends every item
+  /// it shows inside the writing column.
+  void expectLineInColumn(WidgetTester tester, [List<String> keys = const []]) {
+    final line = find.byType(NoteMetaRow).first;
+    final pane = tester.getRect(find.byType(EditorPaneFrame).first);
+    final column = pane.right - (tester.getRect(line).left - pane.left);
+    for (final key in [
+      'note-edited',
+      'note-saved',
+      'note-progress',
+      'note-add-tag',
+      ...keys,
+    ]) {
+      final shown = find
+          .descendant(of: line, matching: find.byKey(ValueKey(key)))
+          .hitTestable();
+      if (shown.evaluate().isEmpty) continue;
+      expect(
+        tester.getRect(shown).right,
+        lessThanOrEqualTo(column),
+        reason: key,
+      );
+    }
+  }
+
   // Split in a 600 wide window, the left pane's meta line had no right bound:
   // 1 of 3 done ran into the pane's edge, and + Tag sat past it.
   testWidgets("KAP-173: split at 600, a note's meta line keeps to its column", (
@@ -989,25 +1014,7 @@ void main() {
     await windowManager.setBounds(Offset.zero & const Size(600, 640));
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(tester.getSize(find.byType(KapyNotesApp)).width, 600);
-    final line = find.byType(NoteMetaRow).first;
-    final pane = tester.getRect(find.byType(EditorPaneFrame).first);
-    final column = pane.right - (tester.getRect(line).left - pane.left);
-    for (final key in [
-      'note-edited',
-      'note-saved',
-      'note-progress',
-      'note-add-tag',
-    ]) {
-      final shown = find
-          .descendant(of: line, matching: find.byKey(ValueKey(key)))
-          .hitTestable();
-      if (shown.evaluate().isEmpty) continue;
-      expect(
-        tester.getRect(shown).right,
-        lessThanOrEqualTo(column),
-        reason: key,
-      );
-    }
+    expectLineInColumn(tester);
     await shot(tester, 'kap173-split-600');
   });
 
@@ -1032,7 +1039,7 @@ void main() {
     final chip = find.byKey(ValueKey('tag-chip-$quarter'));
     final remove = find.byKey(ValueKey('tag-chip-remove-$quarter'));
     expect(find.text('1 of 3 done').hitTestable(), findsOneWidget);
-    expect(chip.hitTestable(), findsNothing);
+    expectLineInColumn(tester, ['tag-chip-$quarter']);
     await shot(tester, 'kap378-400');
 
     notes.updateBody(id('Quote for the deck'), 'Quote for the deck');

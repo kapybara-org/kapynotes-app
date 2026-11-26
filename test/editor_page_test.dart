@@ -528,8 +528,10 @@ void main() {
     });
 
     testWidgets("the desktop's line keeps to its column: what has no room "
-        'there steps aside whole, with everything after it, and the date '
-        'shortens last (KAP-173)', (tester) async {
+        'there steps aside whole, with everything after it, so + Tag goes '
+        'before the tags, and the date shortens last (KAP-173)', (
+      tester,
+    ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       final semantics = tester.ensureSemantics();
@@ -547,6 +549,7 @@ void main() {
                   done: 1,
                   tasks: 3,
                   tags: const Text('Work'),
+                  addTag: const Text('Add'),
                 ),
               ),
             ),
@@ -557,12 +560,18 @@ void main() {
       final date = find.text('Thu 19 Nov · 8:55');
       final count = find.text('1 of 3 done');
       final tags = find.text('Work');
+      final add = find.text('Add');
       await pumpAt(400);
       expect(date.hitTestable(), findsOneWidget);
       expect(count.hitTestable(), findsOneWidget);
       expect(find.semantics.byLabel(RegExp('1 of 3 done')), findsOneWidget);
       expect(tags.hitTestable(), findsOneWidget);
+      expect(add.hitTestable(), findsOneWidget);
       final through = tester.getRect(count).right;
+
+      await pumpAt(tester.getRect(tags).right + 0.5);
+      expect(tags.hitTestable(), findsOneWidget);
+      expect(add.hitTestable(), findsNothing);
 
       await pumpAt(through + 0.5);
       expect(count.hitTestable(), findsOneWidget);
