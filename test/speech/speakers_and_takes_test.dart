@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
@@ -438,6 +439,36 @@ void main() {
       expect(ref.takes, hasLength(NoteVoiceRef.maxTakes));
       expect(ref.takes.first.text, 'post 2');
       expect(ref.takes.last.text, 'post 7');
+    });
+
+    test('a name given to the recording is written down and read back', () {
+      final named = recording(summary: aSummary().withTitle('Pricing plan'));
+      final json = jsonDecode(jsonEncode(named.toJson()));
+      final back = NoteAttachmentRef.fromJson(json)! as NoteVoiceRef;
+      expect(back.summary!.title, 'Pricing plan');
+      expect(back.summary!.named, isTrue);
+      expect(back, isNot(recording(summary: aSummary())));
+    });
+
+    test('a summary with no name given writes no mark, as before', () {
+      final json = recording(summary: aSummary()).toJson();
+      expect((json['summary']! as Map).containsKey('named'), isFalse);
+      expect(
+        (NoteAttachmentRef.fromJson(json)! as NoteVoiceRef).summary!.named,
+        isFalse,
+      );
+    });
+
+    test('an older build that drops the mark keeps the name', () {
+      // What a build that knows only engine, at, title and points writes
+      // back after touching the ref, such as renaming a speaker.
+      final json = recording(
+        summary: aSummary().withTitle('Pricing plan'),
+      ).toJson();
+      (json['summary']! as Map).remove('named');
+      final back = NoteAttachmentRef.fromJson(json)! as NoteVoiceRef;
+      expect(back.summary!.title, 'Pricing plan');
+      expect(back.summary!.named, isFalse);
     });
 
     test('renaming a speaker makes the note dirty', () {
