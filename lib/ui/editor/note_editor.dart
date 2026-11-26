@@ -40,6 +40,7 @@ import '../../data/task_lines.dart';
 import '../../data/note_format.dart';
 import '../../data/shortcut_prefs.dart';
 import '../compact_icon_button.dart';
+import '../focus_ring.dart';
 import '../notebook_paper.dart';
 import '../page_toolbar.dart' show NotePathLine, PagePlace;
 import '../celebrate.dart';
@@ -492,7 +493,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _slashCommandMenu,
   ]);
 
-  late final FocusNode _focusNode = FocusNode(
+  late final FocusNode _focusNode = NoRingFocusNode(
     debugLabel: 'note-editor:${widget.noteId}',
   );
 

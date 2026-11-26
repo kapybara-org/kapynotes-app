@@ -12,7 +12,9 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
+import 'package:kapy_notes/ui/focus_ring.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -123,8 +125,9 @@ String? _unseen(WidgetTester tester, FocusNode node) {
   return strokes.firstOrNull;
 }
 
-/// Checks the ring is drawn around [node], the whole of its field when it is
-/// a text field's, and only just around it, in the theme's accent.
+/// Checks the ring is drawn around [node], or the part of it a
+/// [FocusRingTarget] picks out, or the whole of its field when it is a text
+/// field's, and only just around it, in the theme's accent.
 void _expectRinged(WidgetTester tester, FocusNode node, {double width = 2}) {
   final ring = _painted(tester);
   expect(ring, isNotNull, reason: 'no ring around ${_name(node)}');
@@ -136,9 +139,15 @@ void _expectRinged(WidgetTester tester, FocusNode node, {double width = 2}) {
   expect(paint.style, PaintingStyle.stroke);
   expect(paint.strokeWidth, width);
   final field = node.context?.findAncestorStateOfType<State<TextField>>();
-  final marked = field == null
+  final part = find.descendant(
+    of: find.byElementPredicate((element) => element == node.context),
+    matching: find.byType(FocusRingTarget),
+  );
+  final marked = field != null
+      ? tester.getRect(find.byWidget(field.widget))
+      : part.evaluate().isEmpty
       ? node.rect
-      : tester.getRect(find.byWidget(field.widget));
+      : tester.getRect(part.first);
   final window = Offset.zero & tester.view.physicalSize;
   final shown = marked.intersect(window);
   final outside = rrect.outerRect.inflate(width / 2);
@@ -182,8 +191,9 @@ Future<void> _press(WidgetTester tester, {bool back = false}) async {
 }
 
 /// Presses Tab, or Shift+Tab, until focus comes back round to the first stop,
-/// checking on the way that each stop is in sight with the ring around it, and
-/// returns the stops in the order they were reached.
+/// checking on the way that each stop is in sight with the ring around it, or
+/// with none when it is a surface for writing or drawing, and returns the
+/// stops in the order they were reached.
 Future<List<FocusNode>> _round(
   WidgetTester tester, {
   bool back = false,
@@ -204,7 +214,11 @@ Future<List<FocusNode>> _round(
       return stops;
     }
     expect(_unseen(tester, node), isNull, reason: _name(node));
-    _expectRinged(tester, node, width: width);
+    if (node is NoRingFocusNode) {
+      expect(_painted(tester), isNull, reason: 'a ring around ${_name(node)}');
+    } else {
+      _expectRinged(tester, node, width: width);
+    }
     stops.add(node);
   }
   fail('Tab never came back round');
@@ -231,7 +245,8 @@ void main() {
       testWidgets(
         '${platform.name}, notes list ${listShown ? 'shown' : 'hidden'}: Tab '
         'takes the rail, then the toolbar left to right, then the note, each '
-        'in sight with the ring around it, and Shift+Tab goes back the same way',
+        'in sight with the ring around it but the note, which has its caret, '
+        'and Shift+Tab goes back the same way',
         (tester) async {
           await _pump(tester, platform: platform, listShown: listShown);
           final stops = await _round(tester);
@@ -250,6 +265,7 @@ void main() {
 
           final note = tester.getRect(find.byType(NoteEditor));
           expect(note.contains(stops.last.rect.center), isTrue);
+          expect(stops.last, isA<NoRingFocusNode>());
           final toolbar = stops.sublist(railStops.length, stops.length - 1);
           expect(toolbar, isNotEmpty);
           for (var i = 0; i < toolbar.length; i++) {
@@ -290,6 +306,58 @@ void main() {
 
     await _press(tester);
     _expectRinged(tester, FocusManager.instance.primaryFocus!);
+  });
+
+  testWidgets('on the rail the ring goes round the tile of a space, clear of '
+      'its name', (tester) async {
+    await _pump(tester);
+    final name = find.descendant(
+      of: find.byType(SpacesRail),
+      matching: find.text('Notes'),
+    );
+    final tile = tester.getRect(
+      find
+          .descendant(
+            of: find.ancestor(of: name, matching: find.byType(InkWell)).first,
+            matching: find.byType(AnimatedContainer),
+          )
+          .first,
+    );
+    for (var i = 0; i < 20; i++) {
+      await _press(tester);
+      if (FocusManager.instance.primaryFocus!.rect.contains(tile.center)) break;
+    }
+    final (ring, paint) = _painted(tester)!;
+    expect(
+      ring.outerRect,
+      rectMoreOrLessEquals(tile.inflate(FocusRing.gap + paint.strokeWidth / 2)),
+    );
+    expect(
+      ring.tlRadius,
+      const Radius.circular(AppRadii.surface + FocusRing.gap),
+    );
+    expect(
+      ring.outerRect.bottom + paint.strokeWidth / 2,
+      lessThanOrEqualTo(tester.getRect(name).top),
+    );
+  });
+
+  testWidgets('in a drawing, Tab takes the canvas with no ring around it, and '
+      'each other stop in sight with the ring', (tester) async {
+    await _pump(tester);
+    await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('sidebar-new-note')));
+    await tester.pumpAndSettle();
+    final stops = await _round(tester);
+    final canvas = tester.getRect(find.byType(DrawingCanvas));
+    expect(
+      stops.whereType<NoRingFocusNode>().where(
+        (node) => canvas.contains(node.rect.center),
+      ),
+      isNotEmpty,
+      reason: 'Tab never reached the canvas',
+    );
   });
 
   testWidgets('with the notes list open over the note in a narrow window, Tab '

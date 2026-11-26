@@ -13,6 +13,7 @@ import '../data/writing_streak.dart';
 import '../sync/auth_api.dart';
 import '../sync/sync_service.dart';
 import 'context_menu.dart';
+import 'focus_ring.dart';
 import 'installed_version.dart';
 import 'profile_avatar.dart';
 import 'window_drag_area.dart';
@@ -337,7 +338,7 @@ class _RailItemState extends State<_RailItem> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                tile,
+                FocusRingTarget(radius: AppRadii.surface, child: tile),
                 const SizedBox(height: 4),
                 Text(
                   widget.label,
