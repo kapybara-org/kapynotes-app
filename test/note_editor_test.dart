@@ -4462,7 +4462,7 @@ total to usd''';
         await tester.pumpAndSettle();
         expect(count(tester), 'No matches', reason: words);
       }
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('counts the matches, marks them, and steps through them', (
       tester,
@@ -4519,7 +4519,7 @@ total to usd''';
 
       expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
       expect(NoteDriver(tester).value.text, body);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('esc closes it on its match, back in the note', (tester) async {
       const body = 'Camping\nPack the tent\nTent pegs';
@@ -4554,7 +4554,7 @@ total to usd''';
       await tester.tap(find.byKey(const ValueKey('note-find-close')));
       await tester.pumpAndSettle();
       expect(bar, findsNothing);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('the bar pushes the note down, never over what it finds', (
       tester,
@@ -4581,7 +4581,7 @@ total to usd''';
 
       await press(tester, LogicalKeyboardKey.escape);
       expect(title().top, moreOrLessEquals(closed.top));
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('a selection over more than one line is not what it finds', (
       tester,
@@ -4599,7 +4599,7 @@ total to usd''';
       await openFind(tester);
       expect(words(tester).text, isEmpty);
       expect(find.byKey(const ValueKey('note-find-count')), findsNothing);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('finds the words the note shows, not its markdown', (
       tester,
@@ -4634,7 +4634,7 @@ total to usd''';
           isNull,
         );
       }
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('the count keeps up as the note changes', (tester) async {
       const body = 'Camping\nPack the tent';
@@ -4647,7 +4647,7 @@ total to usd''';
       await tester.pumpAndSettle();
       expect(count(tester), '1 of 2');
       expect(NoteDriver(tester).state.layout.marks.found!.ranges, hasLength(2));
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('a match in a table is filled in its cell, and esc leaves it '
         'selected there', (tester) async {
@@ -4686,7 +4686,7 @@ total to usd''';
         TextSelection(baseOffset: at, extentOffset: at + 4),
       );
       expect(note.value.text, body);
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('a match in a table below the page is scrolled into sight', (
       tester,
@@ -4712,7 +4712,7 @@ total to usd''';
       expect(count(tester), '1 of 1');
       expect(pegs().top, greaterThanOrEqualTo(page.top));
       expect(pegs().bottom, lessThanOrEqualTo(page.bottom));
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('a match below the page is scrolled into sight', (
       tester,
@@ -4735,7 +4735,53 @@ total to usd''';
       expect(count(tester), '1 of 1');
       expect(needle().top, greaterThanOrEqualTo(page.top));
       expect(needle().bottom, lessThanOrEqualTo(page.bottom));
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    // A desktop's click outside a text field takes the keyboard from it,
+    // which Android's tap does not, so this one runs as each desktop.
+    testWidgets('a click on Next or Previous leaves the keyboard in the bar', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
+      const body = 'Camping\nPack the tent\nTent pegs\nA tent for two';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      await openFind(tester, 'tent');
+      expect(count(tester), '1 of 3');
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      for (final (key, after) in [
+        ('note-find-next', '2 of 3'),
+        ('note-find-previous', '1 of 3'),
+      ]) {
+        final at = tester.getCenter(find.byKey(ValueKey(key)));
+        await mouse.moveTo(at);
+        await mouse.down(at);
+        await mouse.up();
+        await tester.pumpAndSettle();
+        expect(count(tester), after, reason: key);
+        expect(
+          tester.widget<TextField>(field).focusNode!.hasFocus,
+          isTrue,
+          reason: key,
+        );
+      }
+      await mouse.moveTo(Offset.zero);
+      await tester.pumpAndSettle();
+
+      // Enter still steps, and esc still closes it on its match.
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '2 of 3');
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(bar, findsNothing);
+      final at = body.indexOf('Tent');
+      expect(
+        NoteDriver(tester).value.selection,
+        TextSelection(baseOffset: at, extentOffset: at + 4),
+      );
+    }, variant: TargetPlatformVariant.desktop());
 
     testWidgets('phones have no find bar', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;

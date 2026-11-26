@@ -231,71 +231,80 @@ class NoteFindBar extends StatelessWidget {
     final inset =
         (AppControlMetrics.iconButtonExtent - AppControlMetrics.iconAdornment) /
         2;
-    return DecoratedBox(
-      key: const ValueKey('note-find-bar'),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: palette.railBorder)),
-      ),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(side, 4, math.max(0, side - inset), 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Focus(
-                canRequestFocus: false,
-                skipTraversal: true,
-                onKeyEvent: _key,
-                child: TextField(
-                  key: const ValueKey('note-find-field'),
-                  controller: find.query,
-                  focusNode: find.field,
-                  style: style,
-                  cursorHeight: 16,
-                  decoration: InputDecoration(
-                    hintText: 'Find in note',
-                    hintStyle: style.copyWith(color: palette.textTertiary),
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    filled: false,
-                    isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                ),
-              ),
-            ),
-            if (find.query.text.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Semantics(
-                  liveRegion: true,
-                  child: Text(
-                    count == 0 ? 'No matches' : '${find.current + 1} of $count',
-                    key: const ValueKey('note-find-count'),
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      fontSize: AppTypeScale.caption,
-                      color: palette.textTertiary,
-                      fontFeatures: const [FontFeature.tabularFigures()],
+    return TextFieldTapRegion(
+      child: DecoratedBox(
+        key: const ValueKey('note-find-bar'),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: palette.railBorder)),
+        ),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(side, 4, math.max(0, side - inset), 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Focus(
+                  canRequestFocus: false,
+                  skipTraversal: true,
+                  onKeyEvent: _key,
+                  child: TextField(
+                    key: const ValueKey('note-find-field'),
+                    controller: find.query,
+                    focusNode: find.field,
+                    style: style,
+                    cursorHeight: 16,
+                    decoration: InputDecoration(
+                      hintText: 'Find in note',
+                      hintStyle: style.copyWith(color: palette.textTertiary),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
                     ),
                   ),
                 ),
               ),
-            button(
-              'note-find-previous',
-              'Previous match',
-              KapyIcons.chevronUpRounded,
-              count == 0 ? null : onPrevious,
-            ),
-            button(
-              'note-find-next',
-              'Next match',
-              KapyIcons.chevronDownRounded,
-              count == 0 ? null : onNext,
-            ),
-            button('note-find-close', 'Close', KapyIcons.closeRounded, onClose),
-          ],
+              if (find.query.text.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      count == 0
+                          ? 'No matches'
+                          : '${find.current + 1} of $count',
+                      key: const ValueKey('note-find-count'),
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: AppTypeScale.caption,
+                        color: palette.textTertiary,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ),
+                ),
+              button(
+                'note-find-previous',
+                'Previous match',
+                KapyIcons.chevronUpRounded,
+                count == 0 ? null : onPrevious,
+              ),
+              button(
+                'note-find-next',
+                'Next match',
+                KapyIcons.chevronDownRounded,
+                count == 0 ? null : onNext,
+              ),
+              button(
+                'note-find-close',
+                'Close',
+                KapyIcons.closeRounded,
+                onClose,
+              ),
+            ],
+          ),
         ),
       ),
     );
