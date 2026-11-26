@@ -8,10 +8,11 @@ import 'package:material_ui/material_ui.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 
-/// The one mark of keyboard focus on the desktop: a ring in the theme's
-/// accent around whatever a key last moved focus to, drawn over the whole
-/// window. A press anywhere puts it away until a key moves focus again, so a
-/// click never leaves one behind.
+/// The one mark of keyboard focus: a ring in the theme's accent around
+/// whatever a key last moved focus to, drawn over the whole window. On a
+/// phone or tablet only Tab and Shift+Tab bring it, never a touch or the
+/// on-screen keyboard. A press anywhere puts it away until a key moves focus
+/// again, so a click never leaves one behind.
 class FocusRing extends StatefulWidget {
   const FocusRing({super.key, required this.child});
 
@@ -49,14 +50,12 @@ class NoRingFocusNode extends FocusNode {
 }
 
 class _FocusRingState extends State<FocusRing> {
-  final bool _desktop = AppPlatform.isDesktop;
   final ValueNotifier<FocusNode?> _target = ValueNotifier(null);
   bool _keyed = false;
 
   @override
   void initState() {
     super.initState();
-    if (!_desktop) return;
     HardwareKeyboard.instance.addHandler(_onKey);
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
     FocusManager.instance.addListener(_onFocus);
@@ -64,17 +63,18 @@ class _FocusRingState extends State<FocusRing> {
 
   @override
   void dispose() {
-    if (_desktop) {
-      HardwareKeyboard.instance.removeHandler(_onKey);
-      GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
-      FocusManager.instance.removeListener(_onFocus);
-    }
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
+    FocusManager.instance.removeListener(_onFocus);
     _target.dispose();
     super.dispose();
   }
 
   bool _onKey(KeyEvent event) {
-    if (event is KeyDownEvent) _keyed = true;
+    if (event is KeyDownEvent) {
+      _keyed =
+          AppPlatform.isDesktop || event.logicalKey == LogicalKeyboardKey.tab;
+    }
     return false;
   }
 
@@ -102,7 +102,6 @@ class _FocusRingState extends State<FocusRing> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_desktop) return widget.child;
     final palette = context.palette;
     return Stack(
       fit: StackFit.expand,

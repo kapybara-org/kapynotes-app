@@ -165,8 +165,12 @@ void _expectRinged(WidgetTester tester, FocusNode node, {double width = 2}) {
   );
 }
 
-Future<void> _bare(WidgetTester tester, Widget body) async {
-  AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+Future<void> _bare(
+  WidgetTester tester,
+  Widget body, {
+  TargetPlatform platform = TargetPlatform.linux,
+}) async {
+  AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(800, 800);
@@ -330,6 +334,51 @@ void main() {
     await _press(tester);
     _expectRinged(tester, FocusManager.instance.primaryFocus!);
   });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('on ${platform.name}, only Tab and Shift+Tab bring the ring, '
+        'never a touch or the on-screen keyboard', (tester) async {
+      final first = FocusNode();
+      final second = FocusNode();
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
+      await _bare(
+        tester,
+        platform: platform,
+        Column(
+          children: [
+            TextField(focusNode: first, textInputAction: TextInputAction.next),
+            TextField(focusNode: second),
+            TextButton(onPressed: () {}, child: const Text('Done')),
+          ],
+        ),
+      );
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pump();
+      expect(second.hasPrimaryFocus, isTrue);
+      expect(
+        _painted(tester),
+        isNull,
+        reason: 'a ring from the screen keyboard',
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(_name(FocusManager.instance.primaryFocus!), 'Done');
+      _expectRinged(tester, FocusManager.instance.primaryFocus!);
+
+      await _press(tester, back: true);
+      expect(second.hasPrimaryFocus, isTrue);
+      _expectRinged(tester, second);
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pump();
+      expect(_painted(tester), isNull, reason: 'a ring after a touch');
+    });
+  }
 
   testWidgets('a press on nothing puts the ring away', (tester) async {
     await _bare(
