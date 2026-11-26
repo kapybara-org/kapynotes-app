@@ -10,12 +10,17 @@ import 'package:path_provider/path_provider.dart';
 ///
 /// The web original kept everything in `localStorage` and wrote on every
 /// keystroke. On desktop and mobile a synchronous disk write per keystroke is
-/// the wrong trade, so writes are coalesced into a short window and forced
-/// out whenever the app loses focus or shuts down. The in-memory copy is
-/// always current, so nothing the user sees depends on the flush.
+/// the wrong trade, so writes are coalesced and forced out whenever the app
+/// loses focus or shuts down. The in-memory copy is always current, so
+/// nothing the user sees depends on the flush.
 class LocalStore {
   final String fileName;
-  final Duration debounce;
+
+  /// How long a change waits for the write that takes it to disk, at most.
+  /// Counted from the first change since the last write, not the latest, so
+  /// typing without a pause cannot hold the write back: a process killed
+  /// mid-sentence, where nothing can flush, loses at most this much.
+  final Duration delay;
 
   File? _file;
   Map<String, Object?> _data = {};
@@ -37,7 +42,7 @@ class LocalStore {
 
   LocalStore({
     required this.fileName,
-    this.debounce = const Duration(milliseconds: 250),
+    this.delay = const Duration(milliseconds: 250),
   });
 
   Map<String, Object?> get data => _data;
@@ -68,11 +73,10 @@ class LocalStore {
   void put(String key, Object? value) {
     _data[key] = value;
     _dirty = true;
-    _timer?.cancel();
-    _timer = Timer(debounce, () => unawaited(flush()));
+    _timer ??= Timer(delay, () => unawaited(flush()));
   }
 
-  /// Writes without waiting for the coalescing window.
+  /// Writes without waiting for [delay].
   ///
   /// For settings rather than notes. Coalescing exists because a note changes
   /// on every keystroke; a preference changes when somebody deliberately

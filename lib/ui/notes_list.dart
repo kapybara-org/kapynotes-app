@@ -3050,6 +3050,7 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
       checked: widget.ticked,
       label: widget.label,
       excludeSemantics: true,
+      onTap: widget.onTap,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovering = true),

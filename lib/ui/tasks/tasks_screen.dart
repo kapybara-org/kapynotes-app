@@ -1126,6 +1126,7 @@ class _LaterRow extends StatelessWidget {
       label: '$words, the first on $day',
       onTapHint: 'Open ${first.note.title}',
       excludeSemantics: true,
+      onTap: () => onOpenNote(first.note.id),
       child: InkWell(
         key: const ValueKey('tasks-later'),
         onTap: () => onOpenNote(first.note.id),

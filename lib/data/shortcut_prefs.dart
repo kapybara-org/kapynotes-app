@@ -122,7 +122,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.goForward => 'Go forward again after going back',
     ShortcutAction.closeTab =>
       'Close the tab you are in. Its note stays in the list',
-    ShortcutAction.reopenTab => 'Open the tab you closed last again',
+    ShortcutAction.reopenTab => 'Bring back closed tabs, the last one first',
     ShortcutAction.splitEditor =>
       'Open a pane beside this note, for up to three side by side',
     ShortcutAction.focusFirstPane => 'Move the keyboard to the leftmost pane',

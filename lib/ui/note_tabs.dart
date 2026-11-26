@@ -566,6 +566,7 @@ class _MoreButton extends StatelessWidget {
       button: true,
       label: '$count more ${count == 1 ? 'tab' : 'tabs'}',
       excludeSemantics: true,
+      onTap: () => unawaited(_show(context)),
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(
