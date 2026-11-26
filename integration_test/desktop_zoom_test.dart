@@ -89,7 +89,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('rail-settings')));
     await shot('150-narrow-settings');
-    expect(find.text('Appearance'), findsWidgets);
+    expect(find.text('Done'), findsOneWidget);
 
     await tester.ensureVisible(find.byKey(const ValueKey('zoom-setting')));
     await shot('150-narrow-settings-zoom-row');
