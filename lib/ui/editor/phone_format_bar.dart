@@ -32,8 +32,7 @@ class FormatBarAction {
 
 /// The row above a phone's software keyboard while a note is being written:
 /// one tap per markdown action, scrolling sideways, with the key that puts
-/// the keyboard away fixed on the right. Where the row scrolls, its buttons
-/// widen a little so that it ends on a whole one rather than cut one off.
+/// the keyboard away fixed on the right.
 ///
 /// Its buttons are plain gesture targets, so a tap never takes focus from the
 /// note or ends its selection, and the bar is a [TapRegion] of [tapGroup] so
@@ -53,18 +52,6 @@ class PhoneFormatBar extends StatefulWidget {
   static const double height = 44;
   static const double _target = 44;
   static const double _tile = 38;
-
-  /// The room past the last whole button, before the divider: what a 412 pt
-  /// Android phone has with buttons at [_target].
-  static const double _peek = 11;
-
-  /// Each button's width in a row [room] wide holding [count]: [_target], or
-  /// a little more where they don't all fit, so the row ends on a whole
-  /// button and [_peek].
-  static double _width(double room, int count) {
-    final whole = ((room - _peek) / _target).floor();
-    return whole < 1 || whole >= count ? _target : (room - _peek) / whole;
-  }
 
   @override
   State<PhoneFormatBar> createState() => _PhoneFormatBarState();
@@ -95,12 +82,8 @@ class _PhoneFormatBarState extends State<PhoneFormatBar> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients) return;
       final position = _scroll.position;
-      final width = PhoneFormatBar._width(
-        position.viewportDimension,
-        widget.actions.length,
-      );
-      final left = index * width;
-      final right = left + width;
+      final left = index * PhoneFormatBar._target;
+      final right = left + PhoneFormatBar._target;
       if (left < position.pixels) {
         _scroll.jumpTo(left);
       } else if (right > position.pixels + position.viewportDimension) {
@@ -128,29 +111,17 @@ class _PhoneFormatBarState extends State<PhoneFormatBar> {
           child: Row(
             children: [
               Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final width = PhoneFormatBar._width(
-                      constraints.maxWidth,
-                      widget.actions.length,
-                    );
-                    return SingleChildScrollView(
-                      key: const ValueKey('phone-format-scroll'),
-                      controller: _scroll,
-                      scrollDirection: Axis.horizontal,
-                      physics: const ClampingScrollPhysics(),
-                      child: Row(
-                        children: [
-                          for (final action in widget.actions)
-                            _BarButton(
-                              key: ValueKey(action.key),
-                              width: width,
-                              action: action,
-                            ),
-                        ],
-                      ),
-                    );
-                  },
+                child: SingleChildScrollView(
+                  key: const ValueKey('phone-format-scroll'),
+                  controller: _scroll,
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      for (final action in widget.actions)
+                        _BarButton(key: ValueKey(action.key), action: action),
+                    ],
+                  ),
                 ),
               ),
               Container(width: 1, height: 22, color: palette.separator),
@@ -173,7 +144,7 @@ class _PhoneFormatBarState extends State<PhoneFormatBar> {
 }
 
 class _BarButton extends StatelessWidget {
-  const _BarButton({super.key, required this.action, required this.width});
+  const _BarButton({super.key, required this.action, this.width = 44});
 
   final FormatBarAction action;
   final double width;

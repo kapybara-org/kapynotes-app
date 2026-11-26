@@ -142,21 +142,6 @@ Future<void> _tap(WidgetTester tester, String key) async {
   await tester.pumpAndSettle();
 }
 
-/// The buttons on a text line's bar, in order.
-const _plainBar = [
-  'format-attach',
-  'format-style',
-  'format-bold',
-  'format-italic',
-  'format-checklist',
-  'format-bullets',
-  'format-numbered',
-  'format-quote',
-  'format-code',
-  'format-link',
-  'format-commands',
-];
-
 /// The rows of the sheet the attach button opens, top to bottom.
 List<String?> _attachChoices(WidgetTester tester) => [
   for (final tile in tester.widgetList<ListTile>(
@@ -721,35 +706,6 @@ void main() {
           expect(_attachChoices(tester), ['Photo', 'Video', 'File']);
         });
       }
-
-      testWidgets('the row ends on a whole button, clear of the divider', (
-        tester,
-      ) async {
-        await _open(
-          tester,
-          platform,
-          'Trip',
-          const TextSelection.collapsed(offset: 4),
-        );
-        for (final width in [375.0, 390.0, 412.0, 430.0]) {
-          tester.view.physicalSize = Size(width, 760);
-          await tester.pumpAndSettle();
-          final row = tester.getRect(
-            find.byKey(const ValueKey('phone-format-scroll')),
-          );
-          final buttons = [
-            for (final key in _plainBar)
-              tester.getRect(find.byKey(ValueKey(key))),
-          ];
-          for (final button in buttons) {
-            expect(button.width, greaterThanOrEqualTo(44), reason: '$width');
-          }
-          final cut = buttons.firstWhere(
-            (button) => button.right > row.right + 0.01,
-          );
-          expect(cut.left, closeTo(row.right - 11, 0.01), reason: '$width');
-        }
-      });
 
       testWidgets('Code, lit past the end of the row, scrolls into view', (
         tester,
