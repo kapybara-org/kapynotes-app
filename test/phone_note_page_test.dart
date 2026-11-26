@@ -1735,7 +1735,7 @@ void main() {
         ('pin', 'Pin note'),
         ('share', 'Share note'),
         ('folder', 'Move to folder…'),
-        ('tags', 'Tags'),
+        ('tags', 'Tags…'),
         ('hide', 'Move to Hidden Notes'),
         ('archive', 'Archive note'),
         ('delete', 'Delete note…'),

@@ -878,6 +878,27 @@ void main() {
       return (menu, opened);
     }
 
+    /// The menu keeps a corner at [click], and the list hangs from that corner.
+    void expectHung(Rect menu, Rect opened, Offset click) {
+      final menuCorners = [
+        menu.topLeft,
+        menu.topRight,
+        menu.bottomLeft,
+        menu.bottomRight,
+      ];
+      final at = menuCorners.indexWhere(
+        (corner) => (corner - click).distance < 0.5,
+      );
+      expect(at, isNot(-1), reason: '$menu has no corner at $click');
+      final openedCorner = [
+        opened.topLeft,
+        opened.topRight,
+        opened.bottomLeft,
+        opened.bottomRight,
+      ][at];
+      expect(openedCorner, menuCorners[at]);
+    }
+
     testWidgets('Move to folder… opens where its menu was, hung from the '
         'corner the menu hung from', (tester) async {
       await pumpWindow(tester);
@@ -886,12 +907,12 @@ void main() {
       await tester.pumpAndSettle();
       final row = tester.getRect(rowOf(note.id));
 
-      // Clicked near the row's end, the menu hangs from its top right corner,
-      // and so does the list; near the row's start, both from the top left.
+      // Whichever corner the menu keeps at the click, the list hangs from
+      // that same corner. Near the row's end that is the top right when the
+      // menu fits to the left of the click, and the top left when it does not.
       final end = row.centerRight - const Offset(16, 0);
       final (menuAtEnd, pickerAtEnd) = await moveFrom(tester, note.id, end);
-      expect(end.dx, greaterThan(menuAtEnd.center.dx));
-      expect(pickerAtEnd.topRight, menuAtEnd.topRight);
+      expectHung(menuAtEnd, pickerAtEnd, end);
 
       final start = row.centerLeft + const Offset(16, 0);
       final (menuAtStart, pickerAtStart) = await moveFrom(
@@ -899,8 +920,7 @@ void main() {
         note.id,
         start,
       );
-      expect(start.dx, lessThan(menuAtStart.center.dx));
-      expect(pickerAtStart.topLeft, menuAtStart.topLeft);
+      expectHung(menuAtStart, pickerAtStart, start);
 
       await tester.tap(rowOf(note.id));
       await tester.pumpAndSettle();
@@ -932,7 +952,7 @@ void main() {
 
       final end = row.centerRight - const Offset(8, 0);
       final (menuAtEnd, pickerAtEnd) = await moveFrom(tester, note.id, end);
-      expect(pickerAtEnd.topRight, menuAtEnd.topRight);
+      expectHung(menuAtEnd, pickerAtEnd, end);
       expect(window.intersect(pickerAtEnd), pickerAtEnd);
 
       final start = row.centerLeft + const Offset(8, 0);
@@ -941,7 +961,7 @@ void main() {
         note.id,
         start,
       );
-      expect(pickerAtStart.topLeft, menuAtStart.topLeft);
+      expectHung(menuAtStart, pickerAtStart, start);
       expect(window.intersect(pickerAtStart), pickerAtStart);
 
       for (var i = 1; i <= 12; i++) {
@@ -981,6 +1001,49 @@ void main() {
       await tester.pumpAndSettle();
       await tapKey(tester, 'tags-note-${note.id}');
       expect(find.byKey(const ValueKey('tag-picker-field')), findsOneWidget);
+    });
+
+    testWidgets("a note's menu, opened mid-list in a short window, keeps a "
+        'corner at the pointer and no item under it', (tester) async {
+      await pumpWindow(tester);
+      final notes = [
+        for (var i = 1; i <= 3; i++) goldenNotes.create(body: 'Note $i'),
+      ];
+      tester.view.physicalSize = const Size(1440, 360);
+      await tester.pumpAndSettle();
+      final rows = [for (final note in notes) tester.getRect(rowOf(note.id))]
+        ..sort((a, b) => a.top.compareTo(b.top));
+      final at = rows[1].centerRight - const Offset(16, 0);
+      await tester.tapAt(
+        at,
+        buttons: kSecondaryButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+
+      final menu = tester.getRect(
+        find.byKey(const ValueKey('kapy-context-menu')),
+      );
+      expect(
+        [
+          menu.topLeft,
+          menu.topRight,
+          menu.bottomLeft,
+          menu.bottomRight,
+        ].any((corner) => (corner - at).distance < 0.01),
+        isTrue,
+        reason: '$menu has no corner at $at',
+      );
+      final underPointer = {
+        for (final entry in tester.hitTestOnBinding(at).path) entry.target,
+      };
+      expect(
+        find
+            .byType(PopupMenuItem<String>)
+            .evaluate()
+            .where((item) => underPointer.contains(item.renderObject)),
+        isEmpty,
+      );
     });
 
     testWidgets('Move to folder… works from the keyboard: ↓ in More reaches '

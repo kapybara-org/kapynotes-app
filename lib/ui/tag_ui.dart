@@ -138,10 +138,21 @@ class TagPopover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final laid = constraints.maxWidth.isFinite
+            ? width.clamp(0, constraints.maxWidth).toDouble()
+            : width;
+        return _box(palette, laid);
+      },
+    );
+  }
+
+  Widget _box(CalcPalette palette, double laid) {
     return Material(
       type: MaterialType.transparency,
       child: Container(
-        width: width,
+        width: laid,
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
           color: palette.controlBackground,
@@ -876,7 +887,7 @@ class _TagNameFieldState extends State<TagNameField> {
   }
 }
 
-/// ⋯ on a tag's row: Rename, Colour ▸ and Delete. Rename is the row's own,
+/// ⋯ on a tag's row: Rename, Colour… and Delete. Rename is the row's own,
 /// which turns into a field.
 Future<void> showTagActions(
   BuildContext context, {
@@ -905,9 +916,8 @@ Future<void> showTagActions(
       item(
         const KapyMenuAction(
           value: 'colour',
-          label: 'Colour',
+          label: 'Colour…',
           icon: KapyIcons.tagRounded,
-          hint: '›',
         ),
       ),
       item(
