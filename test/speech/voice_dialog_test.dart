@@ -698,6 +698,11 @@ void main() {
         'Delete voice note',
       ]);
       expect(find.byType(PopupMenuDivider), findsNWidgets(3));
+      // Under the button, its right edge on the button's.
+      final button = tester.getRect(find.byTooltip('More'));
+      final menu = tester.getRect(find.byType(KapyContextMenuSurface));
+      expect(menu.top, greaterThan(button.bottom));
+      expect(menu.right, moreOrLessEquals(button.right, epsilon: 1));
     });
 
     testWidgets('is a sheet on a phone', (tester) async {

@@ -1016,7 +1016,12 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
       final button = anchor.findRenderObject()! as RenderBox;
       choice = await showKapyContextMenu<String>(
         context: context,
-        globalPosition: button.localToGlobal(Offset(0, button.size.height + 4)),
+        // Its right edge under the button's, so it opens over the window
+        // rather than off its side.
+        globalPosition: button.localToGlobal(
+          button.size.bottomRight(Offset.zero) + const Offset(0, 4),
+        ),
+        preferredGlobalBounds: Offset.zero & MediaQuery.sizeOf(context),
         items: kapyMenuItems(menu, key: (value) => 'voice-more-$value'),
       );
     }
@@ -1624,61 +1629,71 @@ class _SwitchRow extends StatelessWidget {
           // On a phone the track shares its width between the two, so it is
           // given one; beside a pointer it fits its labels.
           if (pointer) segmented else SizedBox(width: 176, child: segmented),
-          const Spacer(),
-          if (onSearch != null)
-            IconButton(
-              icon: const KapyIcon(KapyIcons.searchRounded, size: 18),
-              tooltip: 'Search transcript',
-              color: palette.textSecondary,
-              padding: EdgeInsets.zero,
-              constraints: BoxConstraints.tightFor(
-                width: extent,
-                height: extent,
-              ),
-              style: IconButton.styleFrom(
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              onPressed: onSearch,
-            ),
-          const SizedBox(width: 4),
-          Flexible(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
+          // What is left goes to search and Insert, which keep to the right
+          // and shrink rather than overflow on a narrow phone.
+          Expanded(
+            child: Align(
               alignment: Alignment.centerRight,
-              child: Semantics(
-                button: true,
-                enabled: onInsert != null,
-                child: InkWell(
-                  onTap: onInsert,
-                  borderRadius: BorderRadius.circular(7),
-                  child: Container(
-                    height: pointer ? 26 : 36,
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    alignment: Alignment.center,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        KapyIcon(
-                          KapyIcons.noteAddRounded,
-                          size: 16,
-                          color: colour,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (onSearch != null)
+                      IconButton(
+                        icon: const KapyIcon(KapyIcons.searchRounded, size: 18),
+                        tooltip: 'Search transcript',
+                        color: palette.textSecondary,
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints.tightFor(
+                          width: extent,
+                          height: extent,
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          insertLabel,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: AppWeight.font(AppWeight.button),
-                            fontVariations: AppWeight.wght(AppWeight.button),
-                            color: colour,
+                        style: IconButton.styleFrom(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                      ],
+                        onPressed: onSearch,
+                      ),
+                    const SizedBox(width: 4),
+                    Semantics(
+                      button: true,
+                      enabled: onInsert != null,
+                      child: InkWell(
+                        onTap: onInsert,
+                        borderRadius: BorderRadius.circular(7),
+                        child: Container(
+                          height: pointer ? 26 : 36,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              KapyIcon(
+                                KapyIcons.noteAddRounded,
+                                size: 16,
+                                color: colour,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                insertLabel,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: AppWeight.font(AppWeight.button),
+                                  fontVariations: AppWeight.wght(
+                                    AppWeight.button,
+                                  ),
+                                  color: colour,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
             ),
