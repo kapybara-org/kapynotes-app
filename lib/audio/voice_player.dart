@@ -73,6 +73,9 @@ class JustAudioBackend implements VoicePlayerBackend {
 /// fetched first. See `openRecording`.
 typedef VoiceFileLocator = Future<File?> Function(String hash);
 
+/// A silence in a recording, as [VoicePlayer.skipPauses] jumps it.
+typedef VoicePause = ({Duration from, Duration to});
+
 /// Why the last recording asked for did not start.
 enum VoicePlaybackFailure {
   /// The audio is not on this device and could not be fetched: no connection,
@@ -124,6 +127,8 @@ class VoicePlayer extends ChangeNotifier {
   Duration _position = Duration.zero;
   Duration? _duration;
   double _speed = 1;
+  bool _skipPauses = false;
+  final Map<String, List<VoicePause>> _pauses = {};
   bool _disposed = false;
 
   /// Whether the active recording played all the way to its end.
@@ -163,6 +168,25 @@ class VoicePlayer extends ChangeNotifier {
   Duration get position => _position;
   Duration? get duration => _duration;
   double get speed => _speed;
+
+  /// Whether playback jumps the silences handed over with [setPauses]. One
+  /// setting for every recording, like [speed].
+  bool get skipPauses => _skipPauses;
+
+  void setSkipPauses(bool skip) {
+    _skipPauses = skip;
+    _notify();
+  }
+
+  /// The silences in [hash] that [skipPauses] jumps, from its transcript.
+  /// The player has no transcript of its own, so whoever shows one says
+  /// where they are.
+  void setPauses(String hash, List<VoicePause> pauses) =>
+      _pauses[hash] = pauses;
+
+  /// The file [hash] plays from, fetched first if it is not on this device:
+  /// for saving or sharing the audio. Null when it cannot be had.
+  Future<File?> fileFor(String hash) => _files(hash);
 
   /// How far through [hash] playback is, 0 to 1 — or null when this is not the
   /// recording being played, which is what tells a chip to draw itself idle.
@@ -322,6 +346,14 @@ class VoicePlayer extends ChangeNotifier {
 
   void _onPosition(Duration position) {
     if (_disposed) return;
+    if (_skipPauses && _playing) {
+      for (final pause in _pauses[_activeHash] ?? const <VoicePause>[]) {
+        if (position >= pause.from && position < pause.to) {
+          unawaited(_moveTo(pause.to));
+          return;
+        }
+      }
+    }
     _position = position;
     _publishProgress();
   }
