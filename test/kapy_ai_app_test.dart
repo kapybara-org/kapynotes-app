@@ -350,6 +350,32 @@ void main() {
       variant: TargetPlatformVariant.desktop(),
     );
 
+    testWidgets(
+      'a press in its focused field leaves the field focused throughout',
+      (tester) async {
+        notes.create(body: 'Trip budget');
+        await _pump(tester);
+        await _toggleWithKeys(tester);
+        final field = find.byKey(const ValueKey('kapy-ai-field'));
+        await tester.tap(field);
+        await tester.pumpAndSettle();
+
+        final press = await tester.startGesture(tester.getCenter(field));
+        await tester.pump();
+        expect(
+          FocusManager.instance.primaryFocus?.debugLabel,
+          'kapy-ai-composer',
+        );
+        await press.up();
+        await tester.pumpAndSettle();
+        expect(
+          FocusManager.instance.primaryFocus?.debugLabel,
+          'kapy-ai-composer',
+        );
+      },
+      variant: TargetPlatformVariant.desktop(),
+    );
+
     testWidgets('Esc closes it from the field and from anywhere in it, but '
         'not while an input method is composing', (tester) async {
       notes.create(body: 'Trip budget');
