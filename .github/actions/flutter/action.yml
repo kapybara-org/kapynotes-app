@@ -1,0 +1,79 @@
+# Flutter and its pub cache for a CI job, from the Actions cache that runs on
+# main fill (KAP-383).
+#
+# Only a run on main saves. Every other run, pull requests, dispatches and
+# release branches included, restores main's copy and saves nothing. Before
+# this, a run that missed main's copy saved its own (2.1 GB for macOS), which
+# pushed the repository past GitHub's 10 GB limit, and GitHub evicted main's
+# copy to make room. The keys are flutter-action's own, one per OS, channel,
+# version and architecture, so every workflow shares one copy: Phones and
+# Widgets, which never run on main, restore what Desktop CI and Goldens save
+# there.
+#
+# A restore that stalls gives up after 3 minutes, and Flutter then downloads
+# as it would on a miss.
+name: Set up Flutter from main's cache
+description: Installs Flutter, restoring the SDK and pub cache that runs on main save.
+
+inputs:
+  flutter-version:
+    description: The Flutter version to install
+    required: true
+  lock-hash:
+    description: The pubspec.lock digest for the pub cache key, when the job has it already; hashFiles('pubspec.lock') otherwise
+    required: false
+    default: ''
+
+outputs:
+  PUB-CACHE-PATH:
+    description: Where the pub cache lives
+    value: ${{ steps.config.outputs.PUB-CACHE-PATH }}
+
+runs:
+  using: composite
+  steps:
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+      id: config
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        channel: stable
+        dry-run: true
+
+    - if: github.ref == 'refs/heads/main'
+      uses: actions/cache@v5
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: '3'
+      with:
+        path: ${{ steps.config.outputs.CACHE-PATH }}
+        key: ${{ steps.config.outputs.CACHE-KEY }}
+
+    - if: github.ref != 'refs/heads/main'
+      uses: actions/cache/restore@v5
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: '3'
+      with:
+        path: ${{ steps.config.outputs.CACHE-PATH }}
+        key: ${{ steps.config.outputs.CACHE-KEY }}
+
+    - if: github.ref == 'refs/heads/main'
+      uses: actions/cache@v5
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: '3'
+      with:
+        path: ${{ steps.config.outputs.PUB-CACHE-PATH }}
+        key: ${{ steps.config.outputs.PUB-CACHE-KEY }}-${{ inputs.lock-hash || hashFiles('pubspec.lock') }}
+
+    - if: github.ref != 'refs/heads/main'
+      uses: actions/cache/restore@v5
+      env:
+        SEGMENT_DOWNLOAD_TIMEOUT_MINS: '3'
+      with:
+        path: ${{ steps.config.outputs.PUB-CACHE-PATH }}
+        key: ${{ steps.config.outputs.PUB-CACHE-KEY }}-${{ inputs.lock-hash || hashFiles('pubspec.lock') }}
+
+    # Installs into the restored copy when there is one, and downloads Flutter
+    # otherwise.
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+      with:
+        flutter-version: ${{ inputs.flutter-version }}
+        channel: stable
