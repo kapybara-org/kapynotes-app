@@ -202,39 +202,40 @@ class _BarButton extends StatelessWidget {
   }
 }
 
-/// What the picture button adds to the note.
-enum FormatBarAttachment { photo, video, file }
+/// What the attach button adds to the note.
+enum FormatBarAttachment { photo, video, voice, file }
 
-/// The small sheet the picture button opens, one row for each thing a note
-/// can take that is not text.
-Future<FormatBarAttachment?> chooseAttachment(BuildContext context) =>
-    showModalBottomSheet<FormatBarAttachment>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final (choice, label, icon) in const [
-              (
-                FormatBarAttachment.photo,
-                'Photo',
-                KapyIcons.photoLibraryOutlined,
-              ),
-              (FormatBarAttachment.video, 'Video', KapyIcons.videoOutlined),
-              (FormatBarAttachment.file, 'File', KapyIcons.attachFileRounded),
-            ])
-              ListTile(
-                key: ValueKey('attach-${choice.name}'),
-                leading: KapyIcon(icon),
-                title: Text(label),
-                onTap: () => Navigator.pop(context, choice),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
+/// The small sheet the attach button opens, one row for each thing a note
+/// can take that is not text. Voice recording is left out where [voice] is
+/// false, as Commands leaves out Voice note.
+Future<FormatBarAttachment?> chooseAttachment(
+  BuildContext context, {
+  required bool voice,
+}) => showModalBottomSheet<FormatBarAttachment>(
+  context: context,
+  showDragHandle: true,
+  builder: (context) => SafeArea(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final (choice, label, icon) in const [
+          (FormatBarAttachment.photo, 'Photo', KapyIcons.photoLibraryOutlined),
+          (FormatBarAttachment.video, 'Video', KapyIcons.videoOutlined),
+          (FormatBarAttachment.voice, 'Voice recording', KapyIcons.micRounded),
+          (FormatBarAttachment.file, 'File', KapyIcons.attachFileRounded),
+        ])
+          if (voice || choice != FormatBarAttachment.voice)
+            ListTile(
+              key: ValueKey('attach-${choice.name}'),
+              leading: KapyIcon(icon),
+              title: Text(label),
+              onTap: () => Navigator.pop(context, choice),
+            ),
+        const SizedBox(height: 8),
+      ],
+    ),
+  ),
+);
 
 /// Asks for the address a link goes to; null when it is cancelled or empty.
 Future<String?> askLinkAddress(BuildContext context) => showDialog<String>(

@@ -11,6 +11,8 @@
 //
 // On the iOS Simulator turn off I/O > Keyboard > Connect Hardware Keyboard, or
 // the software keyboard never appears and the first case says so.
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -18,6 +20,7 @@ import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
@@ -46,10 +49,16 @@ void main() {
 
   late CalcEngine engine;
   late ShortcutPrefs shortcuts;
+  late BlobStore images;
+  var recordings = 0;
 
   setUp(() {
     engine = CalcEngine();
     shortcuts = ShortcutPrefs(_MemoryStore())..load();
+    final blobs = Directory.systemTemp.createTempSync('phone-format-bar');
+    addTearDown(() => blobs.deleteSync(recursive: true));
+    images = BlobStore(directory: blobs);
+    recordings = 0;
   });
 
   NoteField field(WidgetTester tester) =>
@@ -91,6 +100,10 @@ void main() {
             highlighter: Highlighter(engine.registry),
             resultsVisible: true,
             markdownEnabled: true,
+            // With somewhere to keep pictures and something to record with,
+            // as in the app, so Attach and its sheet are as people see them.
+            images: images,
+            onRecordVoice: () => recordings++,
             // Opened the way the app reopens a note within the day: both
             // NoteEditor call sites in lib/ui/home_page.dart pass startAtEnd
             // and initialCaret along with autofocus and ensureKeyboardVisible.
@@ -294,6 +307,38 @@ void main() {
       isTrue,
       reason: 'the note did not get focus back after the menu',
     );
+  });
+
+  testWidgets('Attach leads the bar and offers Photo, Video, Voice recording '
+      'and File', (tester) async {
+    await open(tester, 'Trip budget');
+    final bar = tester.getRect(find.byKey(_bar));
+    final attach = tester.getRect(find.byKey(const ValueKey('format-attach')));
+    await tap(tester, 'format-attach');
+    // The keyboard goes down under the sheet; the shot waits for it to stop.
+    var inset = -1.0;
+    for (var i = 0; i < 30 && tester.view.viewInsets.bottom != inset; i++) {
+      inset = tester.view.viewInsets.bottom;
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await screenshot('format-bar-attach-sheet', device: true);
+
+    expect(attach.left, closeTo(bar.left, 1), reason: 'Attach is not first');
+    final sheet = find.byType(BottomSheet);
+    expect(
+      [
+        for (final tile in tester.widgetList<ListTile>(
+          find.descendant(of: sheet, matching: find.byType(ListTile)),
+        ))
+          (tile.title! as Text).data,
+      ],
+      ['Photo', 'Video', 'Voice recording', 'File'],
+    );
+
+    await tester.tap(find.byKey(const ValueKey('attach-voice')));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(recordings, 1);
+    expect(sheet, findsNothing);
   });
 
   testWidgets('Hide keyboard puts the keyboard and the bar away', (
