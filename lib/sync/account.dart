@@ -6,6 +6,7 @@ import '../ai/kapy_chat_book.dart';
 import '../billing/billing.dart';
 import '../billing/note_limit.dart';
 import '../billing/plan_terms.dart';
+import '../data/day_tabs.dart';
 import '../data/folders.dart';
 import '../data/note_days.dart';
 import '../data/local_store.dart';
@@ -80,6 +81,7 @@ class Account extends ChangeNotifier {
     required TagStore tags,
     FolderStore? folders,
     NoteDayStore? days,
+    DayTabsStore? dayTabs,
     KapyChatBook? chats,
     SyncService Function({
       required SyncApi api,
@@ -97,6 +99,7 @@ class Account extends ChangeNotifier {
        _tags = tags,
        _folders = folders,
        _days = days,
+       _dayTabs = dayTabs,
        _chats = chats,
        _syncServiceFactory = syncServiceFactory;
 
@@ -172,6 +175,7 @@ class Account extends ChangeNotifier {
   /// The day each note was given, synced while signed in; null in a test with
   /// none.
   final NoteDayStore? _days;
+  final DayTabsStore? _dayTabs;
 
   /// Kapy AI's chats, synced while signed in with Pro; null in a build or a
   /// test with none.
@@ -249,7 +253,9 @@ class Account extends ChangeNotifier {
     final tagsHeld = await _tags.load();
     final foldersHeld = await _folders?.load() ?? true;
     final daysHeld = await _days?.load() ?? true;
-    if (!(tagsHeld && foldersHeld && daysHeld) && _tasks.index.cursor > 0) {
+    final tabsHeld = await _dayTabs?.load() ?? true;
+    if (!(tagsHeld && foldersHeld && daysHeld && tabsHeld) &&
+        _tasks.index.cursor > 0) {
       _tasks.index.recordCursor(0);
     }
     final token = await _keys.readToken();
@@ -552,6 +558,7 @@ class Account extends ChangeNotifier {
     _tags.forgetAccount();
     _folders?.forgetAccount();
     _days?.forgetAccount();
+    _dayTabs?.forgetAccount();
     _chats?.forgetAccount();
   }
 
@@ -722,6 +729,7 @@ class Account extends ChangeNotifier {
       _tags.clear();
       _folders?.clear();
       _days?.clear();
+      _dayTabs?.clear();
       _chats?.forgetEverything();
     }
     _state.adopt(_user!.id);
@@ -754,6 +762,7 @@ class Account extends ChangeNotifier {
             tags: _tags,
             folders: _folders,
             days: _days,
+            dayTabs: _dayTabs,
             chats: _chats,
             chatsOn: () => _billing?.hasPro ?? false,
             docs: docs,
@@ -880,6 +889,7 @@ class Account extends ChangeNotifier {
     _tags.forgetAccount();
     _folders?.forgetAccount();
     _days?.forgetAccount();
+    _dayTabs?.forgetAccount();
   }
 
   /// Signing out drops the session and the key. It never touches the notes:

@@ -662,6 +662,40 @@ void main() {
     await boardShot(tester, 'pfp-friday-note');
   });
 
+  // A day picked in the week (KAP-339): its notes take the place of the
+  // tabs, one to a tab in the list's order with the first in front, and a
+  // click on the day picked brings back the tabs from before.
+  testWidgets("A day's notes as the tabs: today picked opens its notes, and "
+      'a second click brings back the tab from before', (tester) async {
+    await board(tester);
+    await click(tester, row('Call with Arjun'));
+    final now = notes.now();
+    final today = find.byKey(
+      ValueKey('day-strip-${now.year}-${now.month}-${now.day}'),
+    );
+    final tabs = find.byType(NoteTabRow);
+
+    await click(tester, today);
+    expect(tabs, findsOneWidget);
+    final titles = [
+      for (final tab in tester.widget<NoteTabRow>(tabs).tabs) tab.title,
+    ];
+    expect(titles, contains('Reading list'));
+    expect(titles, isNot(contains('Renewal notes')));
+    expect(
+      tester.widget<NoteField>(openNote).controller.text,
+      startsWith('${titles.first}\n'),
+    );
+    await boardShot(tester, 'day-tabs');
+
+    await click(tester, today);
+    expect(tabs, findsNothing);
+    expect(
+      tester.widget<NoteField>(openNote).controller.text,
+      startsWith('Call with Arjun\n'),
+    );
+  });
+
   testWidgets("D07's board: + Tag lists every tag in its colour, the note's "
       'own ticked', (tester) async {
     await board(tester);

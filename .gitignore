@@ -46,7 +46,7 @@ app.*.map.json
 
 # Golden diffs written by a failing `flutter test`, useful locally and never
 # worth committing.
-/test/failures/
+/test/**/failures/
 
 # Widget Preview related
 .widget_preview/
