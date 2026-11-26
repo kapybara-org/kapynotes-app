@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -955,6 +956,23 @@ class _SettingsDialogState extends State<SettingsDialog>
     // A pane the user has not seen should start at its top, not wherever the
     // previous one was scrolled to.
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
+  /// A swipe or the mouse's Back and Forward over the dialog: to the
+  /// category above or below on the rail. Back from search results leaves
+  /// the search, for the category it was opened over.
+  bool _stepSections(BackForwardStep step) {
+    if (_searching) {
+      if (step == BackForwardStep.forward) return false;
+      _search.clear();
+      return true;
+    }
+    final sections = _sections;
+    final next =
+        sections.indexOf(_section) + (step == BackForwardStep.back ? -1 : 1);
+    if (next < 0 || next >= sections.length) return false;
+    _selectFromRail(sections[next]);
+    return true;
   }
 
   /// A category chosen from the rail while results are showing is a change
@@ -3127,97 +3145,102 @@ class _SettingsDialogState extends State<SettingsDialog>
             'Found by name, by everyday words and by what each one changes',
           )
         : (section.label, section.summary);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          width: _navWidth,
-          padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
-          decoration: BoxDecoration(
-            color: palette.sidebarBackground,
-            border: Border(right: BorderSide(color: palette.paneEdge)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                height: 26,
-                padding: const EdgeInsets.only(left: 10),
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Settings',
-                  style: chromeStyle(
-                    size: 13,
-                    line: 18,
-                    weight: AppWeight.button,
-                    color: palette.textPrimary,
+    return BackForwardArea(
+      onStep: _stepSections,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            width: _navWidth,
+            padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+            decoration: BoxDecoration(
+              color: palette.sidebarBackground,
+              border: Border(right: BorderSide(color: palette.paneEdge)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  height: 26,
+                  padding: const EdgeInsets.only(left: 10),
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Settings',
+                    style: chromeStyle(
+                      size: 13,
+                      line: 18,
+                      weight: AppWeight.button,
+                      color: palette.textPrimary,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              // Settings opened on purpose, sent to one pane, leaves the
-              // keyboard to whatever that pane wanted it for.
-              _searchField(autofocus: widget.section == null),
-              const SizedBox(height: 14),
-              Expanded(
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final updates = widget.updates;
-                    // Every category stays in view, so the card gets only
-                    // what the rail leaves: its rows, a gap and the version.
-                    final left =
-                        constraints.maxHeight -
-                        _sections.length * _SettingsRail.itemHeight -
-                        (updates == null ? 0 : 28);
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          child: _SettingsRail(
-                            sections: _sections,
-                            changed: _changedSections,
-                            // No category is the one on show while results
-                            // are.
-                            selected: _searching ? null : section,
-                            onSelect: _selectFromRail,
+                const SizedBox(height: 14),
+                // Settings opened on purpose, sent to one pane, leaves the
+                // keyboard to whatever that pane wanted it for.
+                _searchField(autofocus: widget.section == null),
+                const SizedBox(height: 14),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final updates = widget.updates;
+                      // Every category stays in view, so the card gets only
+                      // what the rail leaves: its rows, a gap and the version.
+                      final left =
+                          constraints.maxHeight -
+                          _sections.length * _SettingsRail.itemHeight -
+                          (updates == null ? 0 : 28);
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _SettingsRail(
+                              sections: _sections,
+                              changed: _changedSections,
+                              // No category is the one on show while results
+                              // are.
+                              selected: _searching ? null : section,
+                              onSelect: _selectFromRail,
+                            ),
                           ),
-                        ),
-                        if (updates != null) ...[
-                          SettingsUpdateCard(
-                            updates: updates,
-                            layoutPrefs: widget.layoutPrefs,
-                            maxHeight: left,
-                          ),
-                          const SizedBox(height: 10),
-                          _VersionStatus(updates: updates),
+                          if (updates != null) ...[
+                            SettingsUpdateCard(
+                              updates: updates,
+                              layoutPrefs: widget.layoutPrefs,
+                              maxHeight: left,
+                            ),
+                            const SizedBox(height: 10),
+                            _VersionStatus(updates: updates),
+                          ],
                         ],
-                      ],
-                    );
-                  },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: _paneColumn(
+              title: title,
+              summary: summary,
+              pane: BackForwardSlide(
+                child: _ScrollingPane(
+                  key: _paneKey,
+                  controller: _scrollController,
+                  flashTarget: _flashTarget,
+                  flash: _flash,
+                  children: _searching ? [_searchResults()] : _paneFor(section),
                 ),
               ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _paneColumn(
-            title: title,
-            summary: summary,
-            pane: _ScrollingPane(
-              key: _paneKey,
-              controller: _scrollController,
-              flashTarget: _flashTarget,
-              flash: _flash,
-              children: _searching ? [_searchResults()] : _paneFor(section),
+              footer: _searching
+                  ? const _SearchHints()
+                  : section == SettingsSection.shortcuts
+                  ? _shortcutsFooter()
+                  : null,
             ),
-            footer: _searching
-                ? const _SearchHints()
-                : section == SettingsSection.shortcuts
-                ? _shortcutsFooter()
-                : null,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

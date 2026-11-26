@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -2220,10 +2221,33 @@ class _NotesFilterState extends State<_NotesFilter> {
     _ => null,
   };
 
+  /// The submenu Back closed last, for Forward to open again.
+  _FilterSubmenu? _closedSubmenu;
+
+  /// A swipe or the mouse's Back and Forward over the menu: Back closes the
+  /// open submenu, and Forward opens it again.
+  bool _stepSubmenu(BackForwardStep step) {
+    if (step == BackForwardStep.back) {
+      final open = _submenu;
+      if (open == null) return false;
+      setState(() {
+        _closedSubmenu = open;
+        _submenu = null;
+      });
+      return true;
+    }
+    final closed = _closedSubmenu;
+    if (closed == null || _submenu != null) return false;
+    _closedSubmenu = null;
+    _toggleSubmenu(closed, closed == _FilterSubmenu.when ? _whenRow : _tagsRow);
+    return true;
+  }
+
   void _toggle() {
     if (AppPlatform.isMobile) return unawaited(_openPopover());
     setState(() {
       _submenu = null;
+      _closedSubmenu = null;
       _menu.isShowing ? _menu.hide() : _menu.show();
     });
   }
@@ -2535,33 +2559,36 @@ class _NotesFilterState extends State<_NotesFilter> {
                       link: _link,
                       targetAnchor: Alignment.bottomLeft,
                       offset: const Offset(0, 8),
-                      child: TapRegion(
-                        groupId: _menu,
-                        child: _FilterMenu(
-                          key: _menuKey,
-                          show: widget.show,
-                          offersShow: widget.offersShow,
-                          onShow: _choose,
-                          hiddenListed: widget.hiddenListed,
-                          hiddenShortcut: widget.hiddenShortcut,
-                          archivedCount: widget.archivedCount,
-                          everything: widget.everything,
-                          media: widget.media,
-                          onTick: _tick,
-                          when: widget.onWhenChanged == null
-                              ? null
-                              : widget.when,
-                          onWhen: () =>
-                              _toggleSubmenu(_FilterSubmenu.when, _whenRow),
-                          whenRow: _whenRow,
-                          onTags: widget.tags == null
-                              ? null
-                              : () => _toggleSubmenu(
-                                  _FilterSubmenu.tags,
-                                  _tagsRow,
-                                ),
-                          tagsRow: _tagsRow,
-                          tags: widget.tags ?? const TagFilter(),
+                      child: BackForwardArea(
+                        onStep: _stepSubmenu,
+                        child: TapRegion(
+                          groupId: _menu,
+                          child: _FilterMenu(
+                            key: _menuKey,
+                            show: widget.show,
+                            offersShow: widget.offersShow,
+                            onShow: _choose,
+                            hiddenListed: widget.hiddenListed,
+                            hiddenShortcut: widget.hiddenShortcut,
+                            archivedCount: widget.archivedCount,
+                            everything: widget.everything,
+                            media: widget.media,
+                            onTick: _tick,
+                            when: widget.onWhenChanged == null
+                                ? null
+                                : widget.when,
+                            onWhen: () =>
+                                _toggleSubmenu(_FilterSubmenu.when, _whenRow),
+                            whenRow: _whenRow,
+                            onTags: widget.tags == null
+                                ? null
+                                : () => _toggleSubmenu(
+                                    _FilterSubmenu.tags,
+                                    _tagsRow,
+                                  ),
+                            tagsRow: _tagsRow,
+                            tags: widget.tags ?? const TagFilter(),
+                          ),
                         ),
                       ),
                     ),
@@ -2569,7 +2596,10 @@ class _NotesFilterState extends State<_NotesFilter> {
                   if (_openSubmenu case final submenu?)
                     CustomSingleChildLayout(
                       delegate: PopoverAtPoint(_submenuAt),
-                      child: TapRegion(groupId: _menu, child: submenu),
+                      child: BackForwardArea(
+                        onStep: _stepSubmenu,
+                        child: TapRegion(groupId: _menu, child: submenu),
+                      ),
                     ),
                 ],
               ),
