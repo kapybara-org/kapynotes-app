@@ -6,6 +6,7 @@ import '../../data/folders.dart';
 import '../../sync/presence.dart';
 import '../checklist_pie.dart';
 import '../collaborator_colors.dart';
+import '../save_status.dart';
 import '../sidebar_timestamp.dart';
 import 'note_footer.dart' show typingStatusText;
 
@@ -56,19 +57,19 @@ class _UnderlinePainter extends CustomPainter {
       old.word != word || old.color != color;
 }
 
-/// What Saved says, for the date line to carry while the page is too narrow
+/// The save status, for the date line to carry while the page is too narrow
 /// to show it in its bar.
 class DateLineSaved extends InheritedWidget {
-  const DateLineSaved({super.key, required this.saved, required super.child});
+  const DateLineSaved({super.key, required this.save, required super.child});
 
-  /// Null while the bar has room for Saved itself.
-  final ({String label, String? tooltip})? saved;
+  /// Null while the bar has room for the save status itself.
+  final SaveState? save;
 
-  static ({String label, String? tooltip})? of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<DateLineSaved>()?.saved;
+  static SaveState? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<DateLineSaved>()?.save;
 
   @override
-  bool updateShouldNotify(DateLineSaved oldWidget) => saved != oldWidget.saved;
+  bool updateShouldNotify(DateLineSaved oldWidget) => save != oldWidget.save;
 }
 
 /// The folders the notes on the page are filed in, for the line above each
@@ -169,6 +170,20 @@ class NoteMetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final save = DateLineSaved.of(context);
+    return save == null
+        ? _build(context, null)
+        : ListenableBuilder(
+            listenable: save.status,
+            builder: (context, _) => _build(
+              context,
+              SaveStatusLabel.noticeOf(save) == null ? null : save,
+            ),
+          );
+  }
+
+  /// [save] is null while the date line has nothing to say about saving.
+  Widget _build(BuildContext context, SaveState? save) {
     final palette = context.palette;
     final quiet = TextStyle(
       fontFamily: AppFonts.ui,
@@ -188,10 +203,6 @@ class NoteMetaRow extends StatelessWidget {
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final progress = '$done of $tasks done';
-    final saved = DateLineSaved.of(context);
-    final savedLabel = saved == null
-        ? null
-        : Text(saved.label, key: const ValueKey('note-saved'), style: quiet);
     final items = <Widget>[
       if (!mobile)
         Text(
@@ -237,11 +248,13 @@ class NoteMetaRow extends StatelessWidget {
           key: const ValueKey('note-edited'),
           style: quiet,
         ),
-      if (savedLabel != null)
-        switch (saved?.tooltip) {
-          final tooltip? => Tooltip(message: tooltip, child: savedLabel),
-          null => savedLabel,
-        },
+      if (save != null)
+        SaveStatusLabel(
+          save,
+          key: const ValueKey('note-saved'),
+          style: quiet,
+          icon: false,
+        ),
       if (tasks > 0 && !mobile)
         Text(progress, key: const ValueKey('note-progress'), style: quiet)
       else if (tasks > 0)

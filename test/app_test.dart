@@ -112,6 +112,9 @@ class MemoryStore extends LocalStore {
   /// Writes straight through: no debounce timer to outlive the test.
   @override
   void put(String key, Object? value) => data[key] = value;
+
+  @override
+  void putNow(String key, Object? value) => data[key] = value;
 }
 
 class DeferredMemoryStore extends MemoryStore {
@@ -1770,10 +1773,16 @@ void main() {
     expect(find.text('Unpin note'), findsOneWidget);
   });
 
-  testWidgets('a page too narrow for Saved in its bar puts it on the note\'s '
-      'date line', (tester) async {
+  testWidgets('typing says "Saving…", then "Saved", then nothing, on the '
+      'note\'s date line where the page is too narrow for it in its bar', (
+    tester,
+  ) async {
     final inBar = find.byKey(const ValueKey('page-saved'));
     final onDateLine = find.byKey(const ValueKey('note-saved'));
+    final field = find.descendant(
+      of: find.byType(NoteEditor),
+      matching: noteField,
+    );
     await pumpApp(
       tester,
       size: LayoutPrefs.minimumWindowSize,
@@ -1783,12 +1792,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getSize(find.byType(PageToolbar)).width, lessThan(560));
     expect(inBar, findsNothing);
-    expect(tester.widget<Text>(onDateLine).data, 'Saved');
+    expect(onDateLine, findsNothing);
+
+    await tester.enterNote('alpha beta', field);
+    await tester.pump();
+    expect(inBar, findsNothing);
+    expect(
+      find.descendant(of: onDateLine, matching: find.text('Saving…')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 1100));
+    expect(
+      find.descendant(of: onDateLine, matching: find.text('Saved')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2400));
+    expect(onDateLine, findsNothing);
 
     tester.view.physicalSize = const Size(1100, 760);
     await tester.pumpAndSettle();
-    expect(inBar, findsOneWidget);
+    await tester.enterNote('alpha beta gamma', field);
+    await tester.pump();
+    expect(
+      find.descendant(of: inBar, matching: find.text('Saving…')),
+      findsOneWidget,
+    );
     expect(onDateLine, findsNothing);
+    await tester.pump(const Duration(milliseconds: 1100));
+    expect(
+      find.descendant(of: inBar, matching: find.text('Saved')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2400));
+    expect(inBar, findsNothing);
   });
 
   testWidgets('a first run opens on a page, with the notes list closed', (
@@ -1844,7 +1880,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(Sidebar), findsNothing);
       expect(barrier, findsNothing);
-      for (final key in ['page-show-list', 'page-share', 'page-more']) {
+      for (final key in ['page-show-list', 'page-more']) {
         expect(find.byKey(ValueKey(key)), findsOneWidget);
       }
 
@@ -2135,7 +2171,6 @@ void main() {
       tester.getSize(pageButton('page-more', IconButton)),
       const Size.square(32),
     );
-    expect(tester.getSize(pageButton('page-share', FilledButton)).height, 32);
     expect(
       tester.getSize(find.byType(NoteRow).first).height,
       NoteCardFace.height,
@@ -4590,9 +4625,8 @@ void main() {
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "
-        'month in full at its top left and the week centred on the page', (
-      tester,
-    ) async {
+        'month in three letters at its top left and the week centred on the '
+        'page', (tester) async {
       await library(tester);
       final bar = tester.getRect(find.byKey(const ValueKey('page-toolbar')));
       final list = tester.getRect(find.byType(SidebarWindowBar));
@@ -4601,7 +4635,7 @@ void main() {
       expect(list.height, 52);
       final month = find.byKey(const ValueKey('day-strip-month'));
       expect(
-        find.descendant(of: month, matching: find.text('November')),
+        find.descendant(of: month, matching: find.text('Nov')),
         findsOneWidget,
       );
       expect(tester.getTopLeft(month).dx, bar.left + 10);
@@ -4678,7 +4712,7 @@ void main() {
       for (final width in [1440.0, 1490.0]) {
         await window(width);
         expect(
-          find.descendant(of: month, matching: find.text('November')),
+          find.descendant(of: month, matching: find.text('Nov')),
           findsOneWidget,
           reason: '$width',
         );
@@ -5713,7 +5747,7 @@ void main() {
                 '${platform.name}, ${width.round()} wide, list '
                 '${listShown ? 'shown' : 'hidden'}';
             expect(modeSwitch(), findsNothing, reason: reason);
-            for (final key in ['page-share', 'page-more']) {
+            for (final key in ['page-more']) {
               final control = tester.getRect(find.byKey(ValueKey(key)));
               expect(
                 tester.getRect(bar).intersect(control),
@@ -6513,13 +6547,26 @@ void main() {
         expect(tester.getSize(toolbar).width, closeTo(width, 0.01));
       }
 
+      // Typing gives it something to say.
+      var typed = 0;
+      Future<void> type() async {
+        await tester.enterNote(
+          'alpha ${typed++}',
+          find.descendant(of: find.byType(NoteEditor), matching: noteField),
+        );
+        await tester.pump();
+      }
+
       await pageWidth(580);
+      await type();
       expect(inBar, findsNothing);
       expect(onDateLine, findsOneWidget);
 
       await pageWidth(596);
+      await type();
       expect(inBar, findsOneWidget);
       expect(onDateLine, findsNothing);
+      await tester.pump(const Duration(seconds: 4));
     });
   });
 
@@ -7097,8 +7144,7 @@ void main() {
       notes.create(body: 'Trip plan');
       await pumpApp(tester, account: account);
 
-      await tester.tap(find.byKey(const ValueKey('page-share')));
-      await tester.pumpAndSettle();
+      await pickPageAction(tester, 'share');
 
       // Not the share sheet, which would have nothing to share with, and not
       // General either: the pane that signs in, and the reason it opened.
@@ -12283,13 +12329,15 @@ void main() {
       await tester.pumpAndSettle();
 
       await openSpace(tester, 'drawings');
+      await openMore();
       expect(
         tester
-            .widget<TonalButton>(find.byKey(const ValueKey('page-share')))
-            .onPressed,
-        isNull,
+            .widget<PopupMenuItem<String>>(
+              find.byKey(const ValueKey('page-more-share')),
+            )
+            .enabled,
+        isFalse,
       );
-      await openMore();
       expect(find.byKey(const ValueKey('page-more-pin')), findsNothing);
       expect(find.byKey(const ValueKey('page-more-hide')), findsNothing);
       expect(find.byKey(const ValueKey('page-more-archive')), findsNothing);

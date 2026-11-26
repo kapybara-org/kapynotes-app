@@ -334,16 +334,19 @@ class _DayStripState extends State<DayStrip> {
     if (day != null) _choose(day);
   }
 
-  /// The month over the week, or the two its days span: "November",
-  /// "November–December". Spelled out in full (Sanjay, 20 Nov).
-  String _monthOver(List<DateTime> shown) {
-    if (shown.isEmpty) return SidebarTimestamp.monthName(widget.today);
+  /// The month over the week, or the two its days span, in three letters
+  /// each: "Nov", "Nov–Dec" (Sanjay, 26 Nov). With [full], spelled out for a
+  /// screen reader: "November", "November to December".
+  String _monthOver(List<DateTime> shown, {bool full = false}) {
+    final name = full
+        ? SidebarTimestamp.monthName
+        : SidebarTimestamp.shortMonth;
+    if (shown.isEmpty) return name(widget.today);
     final first = shown.first;
     final last = shown.last;
     return first.month == last.month
-        ? SidebarTimestamp.monthName(last)
-        : '${SidebarTimestamp.monthName(first)}–'
-              '${SidebarTimestamp.monthName(last)}';
+        ? name(last)
+        : [name(first), name(last)].join(full ? ' to ' : '–');
   }
 
   /// How wide [label] is: 8, its text, 4, a 12 chevron and 8.
@@ -393,7 +396,12 @@ class _DayStripState extends State<DayStrip> {
         builder: (context, constraints) =>
             _buttonWidth(context, label, compact: compact) <=
                 constraints.maxWidth
-            ? _calendarButton(label, palette, compact: compact)
+            ? _calendarButton(
+                label,
+                palette,
+                compact: compact,
+                spoken: compact ? null : _monthOver(_shown, full: true),
+              )
             : const SizedBox.shrink(),
       ),
       compact
@@ -590,6 +598,7 @@ class _DayStripState extends State<DayStrip> {
     String label,
     CalcPalette palette, {
     required bool compact,
+    String? spoken,
   }) {
     final icons = _choosing ? palette.tonalForeground : palette.textSecondary;
     return Builder(
@@ -627,7 +636,7 @@ class _DayStripState extends State<DayStrip> {
                 KapyIcon(KapyIcons.calendarOutlined, size: 16, color: icons),
                 const SizedBox(width: 4),
               ],
-              Text(label),
+              Text(label, semanticsLabel: spoken),
               const SizedBox(width: 4),
               KapyIcon(KapyIcons.chevronDownRounded, size: 12, color: icons),
             ],

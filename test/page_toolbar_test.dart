@@ -5,12 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note.dart';
-import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_service.dart' show SyncStatus;
+import 'package:kapy_notes/sync/spaces.dart';
+import 'package:kapy_notes/data/local_store.dart' show StoreWrite;
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
+import 'package:kapy_notes/ui/save_status.dart';
 import 'package:kapy_notes/ui/unloaded_pictures_status.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -21,7 +23,6 @@ void main() {
   setUpAll(loadTestFonts);
   setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-
 
   Widget harness(
     PageToolbar toolbar, {
@@ -58,7 +59,7 @@ void main() {
     bool listVisible = true,
     bool underList = false,
     bool noteOpen = true,
-    SyncStatus? syncStatus,
+    SaveState? save,
     int unloadedPictures = 0,
     List<SpaceMember> members = const [],
     List<KapyMenuAction> moreActions = const [],
@@ -82,7 +83,7 @@ void main() {
         : (label: 'New note', tooltip: 'New note  Cmd + N', onPressed: onNew),
     onOpenFolder: onOpenFolder ?? (_, {required behind}) {},
     noteOpen: noteOpen,
-    syncStatus: syncStatus,
+    save: save ?? (status: _Saying(SavePhase.saved), problem: null),
     unloadedPictures: unloadedPictures,
     members: members,
     currentUserId: 'me',
@@ -96,44 +97,12 @@ void main() {
   final showList = find.byKey(const ValueKey('page-show-list'));
   final newButton = find.byKey(const ValueKey('page-new'));
   final saved = find.byKey(const ValueKey('page-saved'));
-  final share = find.byKey(const ValueKey('page-share'));
   final more = find.byKey(const ValueKey('page-more'));
   final path = find.byKey(const ValueKey('page-path'));
   final fold = find.byKey(const ValueKey('page-path-fold'));
   const ai = ValueKey('ai');
   Finder onPath(String text) =>
       find.descendant(of: path, matching: find.text(text));
-
-  testWidgets('Share is quiet: grey words on no fill until the pointer is '
-      'on it, and greyer still when it cannot be used', (tester) async {
-    await tester.pumpWidget(harness(toolbar()));
-
-    final palette = tester.element(share).palette;
-    final style = tester
-        .widget<FilledButton>(
-          find.descendant(of: share, matching: find.byType(FilledButton)),
-        )
-        .style!;
-    expect(style.backgroundColor!.resolve({}), Colors.transparent);
-    expect(style.foregroundColor!.resolve({}), palette.textSecondary);
-    expect(
-      style.backgroundColor!.resolve({WidgetState.hovered}),
-      palette.textPrimary.withValues(alpha: 0.07),
-    );
-    expect(
-      style.backgroundColor!.resolve({WidgetState.disabled}),
-      Colors.transparent,
-    );
-    expect(
-      style.foregroundColor!.resolve({WidgetState.disabled}),
-      palette.textTertiary,
-    );
-    expect(style.side!.resolve({}), BorderSide.none);
-    expect(
-      style.side!.resolve({WidgetState.focused}),
-      BorderSide(color: palette.selectedBorder, width: 1),
-    );
-  });
 
   testWidgets('the band has a hairline along its bottom, but none under the '
       'list', (tester) async {
@@ -169,17 +138,14 @@ void main() {
       expect(showList, findsNothing);
       expect(find.byKey(const ValueKey('page-new-note')), findsNothing);
       expect(tester.getTopLeft(path).dx, rect.left + 18);
-      for (final control in [path, saved, share, more, find.byKey(ai)]) {
+      for (final control in [path, saved, more, find.byKey(ai)]) {
         expect(tester.getCenter(control).dy, rect.center.dy);
       }
-      expect(tester.getSize(share).height, 32);
       expect(tester.getSize(more), const Size.square(32));
-      // Saved and Share 8 apart, Kapy AI straight after Share behind its own
-      // hairline, and More 4 after it at the bar's end.
-      expect(tester.getTopLeft(share).dx - tester.getTopRight(saved).dx, 8);
+      // Saved, Kapy AI 8 after it, and More 4 after that at the bar's end.
       expect(
-        tester.getTopLeft(find.byKey(ai)).dx,
-        tester.getTopRight(share).dx,
+        tester.getTopLeft(find.byKey(ai)).dx - tester.getTopRight(saved).dx,
+        8,
       );
       expect(
         tester.getTopLeft(more).dx - tester.getTopRight(find.byKey(ai)).dx,
@@ -229,15 +195,11 @@ void main() {
     }
     expect(compact.last, isFalse);
 
-    await tester.pumpWidget(
-      harness(toolbar(days: days), width: 719),
-    );
+    await tester.pumpWidget(harness(toolbar(days: days), width: 719));
     expect(compact.last, isTrue);
     expect(find.byKey(week), findsNothing);
     expect(tester.getTopLeft(find.byKey(month)).dx, rect.left + 10);
-    await tester.pumpWidget(
-      harness(toolbar(days: days), width: 720),
-    );
+    await tester.pumpWidget(harness(toolbar(days: days), width: 720));
     expect(compact.last, isFalse);
   });
 
@@ -277,7 +239,6 @@ void main() {
     );
 
     expect(saved, findsNothing);
-    expect(share, findsNothing);
     expect(
       tester.getTopLeft(more).dx - tester.getTopRight(find.byKey(ai)).dx,
       4,
@@ -594,17 +555,13 @@ void main() {
 
   testWidgets('a narrower page keeps the last level, after a fold, then on '
       'its own, and hovering shows the whole path', (tester) async {
-    await tester.pumpWidget(
-      harness(toolbar(listVisible: false), width: 640),
-    );
+    await tester.pumpWidget(harness(toolbar(listVisible: false), width: 640));
     expect(onPath('Clients'), findsOneWidget);
     expect(onPath('My notes'), findsNothing);
     expect(fold, findsOneWidget);
     expect(find.byTooltip('My notes › Work › Clients'), findsOneWidget);
 
-    await tester.pumpWidget(
-      harness(toolbar(listVisible: false), width: 520),
-    );
+    await tester.pumpWidget(harness(toolbar(listVisible: false), width: 520));
     expect(onPath('Clients'), findsOneWidget);
     expect(onPath('My notes'), findsNothing);
     expect(fold, findsNothing);
@@ -745,18 +702,34 @@ void main() {
     });
   });
 
-  testWidgets('Saved speaks for the open note, and for sync', (tester) async {
+  testWidgets('the save status speaks for the open note, and says nothing '
+      'at rest', (tester) async {
     await tester.pumpWidget(harness(toolbar()));
     expect(
       find.descendant(of: saved, matching: find.text('Saved')),
       findsOneWidget,
     );
 
-    await tester.pumpWidget(harness(toolbar(syncStatus: SyncStatus.syncing)));
-    expect(find.text('Syncing'), findsOneWidget);
+    await tester.pumpWidget(
+      harness(toolbar(save: (status: _Saying(SavePhase.rest), problem: null))),
+    );
+    expect(saved, findsNothing);
+    expect(find.text('Saved'), findsNothing);
 
-    await tester.pumpWidget(harness(toolbar(syncStatus: SyncStatus.offline)));
-    expect(find.text('Offline'), findsOneWidget);
+    await tester.pumpWidget(
+      harness(
+        toolbar(
+          save: (
+            status: _Saying(SavePhase.rest),
+            problem: syncProblem(SyncStatus.offline),
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.descendant(of: saved, matching: find.text('Offline')),
+      findsOneWidget,
+    );
     expect(
       find.byTooltip(
         'Saved on this device. It syncs once you are back online.',
@@ -768,8 +741,14 @@ void main() {
     expect(saved, findsNothing);
   });
 
-  testWidgets('below a 560 page Saved leaves the bar, and Share, More and '
-      'Kapy AI stay', (tester) async {
+  testWidgets('Share is not in the bar any more', (tester) async {
+    await tester.pumpWidget(harness(toolbar()));
+    expect(find.text('Share'), findsNothing);
+    expect(find.byKey(const ValueKey('page-share')), findsNothing);
+  });
+
+  testWidgets('below a 560 page Saved leaves the bar, and More and Kapy AI '
+      'stay', (tester) async {
     Widget at(double width) => harness(
       toolbar(
         listVisible: false,
@@ -783,10 +762,6 @@ void main() {
 
     await tester.pumpWidget(at(559));
     expect(saved, findsNothing);
-    expect(
-      find.descendant(of: share, matching: find.text('Share')),
-      findsOneWidget,
-    );
     expect(more, findsOneWidget);
     expect(find.byKey(ai), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -921,11 +896,11 @@ void main() {
 
         final avatars = find.byKey(const ValueKey('toolbar-members'));
         expect(avatars, findsOneWidget);
-        final share = find.byKey(const ValueKey('page-share'));
+        final more = find.byKey(const ValueKey('page-more'));
         // Straight after the breadcrumb's empty stretch, never half way
         // across it: the cluster is one group flush with the right edge.
         expect(
-          tester.getTopLeft(share).dx - tester.getTopRight(avatars).dx,
+          tester.getTopLeft(more).dx - tester.getTopRight(avatars).dx,
           lessThan(160),
         );
         expect(
@@ -1000,4 +975,15 @@ void main() {
       }
     }
   });
+}
+
+/// A save status fixed at [fixed], so the bar's layout can be read without
+/// its timers.
+class _Saying extends SaveStatus {
+  _Saying(this.fixed) : super(ValueNotifier(StoreWrite.written));
+
+  final SavePhase fixed;
+
+  @override
+  SavePhase get phase => fixed;
 }

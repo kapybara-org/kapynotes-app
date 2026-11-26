@@ -795,7 +795,6 @@ void main() {
     expect(find.byKey(const ValueKey('page-home')), findsOneWidget);
     expect(find.byKey(const ValueKey('page-day')), findsNothing);
     expect(find.byKey(const ValueKey('page-tasks-line')), findsNothing);
-    expect(find.byKey(const ValueKey('page-share')), findsNothing);
     expect(find.byKey(const ValueKey('view-only-status')), findsWidgets);
 
     await tester.tap(find.byKey(const ValueKey('page-more')));
@@ -821,6 +820,40 @@ void main() {
     expect(find.byType(PhoneNoteHeader), findsNothing);
     expect(find.byKey(const ValueKey('shared-page')), findsNothing);
     expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('beside a window, More leads with Manage sharing on a note you '
+      'share, and with Share note on one you keep to yourself', (tester) async {
+    await signIn(tester);
+    await shareWithPriya(tester);
+    await pumpApp(tester, phone: false);
+    await openTab(tester, SidebarTab.mine, phone: false);
+    for (final (title, label) in [
+      ('Trip budget', 'Manage sharing'),
+      ('Bank details', 'Share note'),
+    ]) {
+      await tester.tap(
+        find
+            .descendant(of: find.byType(Sidebar), matching: find.text(title))
+            .first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('page-share')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      final first = find
+          .byWidgetPredicate((widget) => widget is PopupMenuItem<String>)
+          .first;
+      expect(tester.widget<PopupMenuItem<String>>(first).value, 'share');
+      expect(
+        find.descendant(of: first, matching: find.text(label)),
+        findsOneWidget,
+        reason: title,
+      );
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+    }
     await tester.pump(const Duration(seconds: 2));
   });
 

@@ -172,10 +172,9 @@ void main() {
           .removeAttachment(second);
       await tester.pumpAndSettle();
       expect(find.byType(UnloadedPicturesStatus), findsNothing);
-      expect(
-        find.descendant(of: saved, matching: find.text('Saved')),
-        findsOneWidget,
-      );
+      // The save status has its place back, and says nothing at rest.
+      await tester.pump(const Duration(seconds: 4));
+      expect(saved, findsNothing);
     },
   );
 

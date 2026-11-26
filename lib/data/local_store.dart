@@ -24,6 +24,10 @@ class LocalStore {
   Future<void>? _loadFuture;
   bool _dirty = false;
 
+  /// Whether everything put here is on disk, still on its way there, or
+  /// failed its last write, which is tried again after [retry].
+  final ValueNotifier<StoreWrite> writes = ValueNotifier(StoreWrite.written);
+
   /// How long the last write came out, so the next one knows whether it is
   /// worth an isolate. Starts high so a store that has never been written
   /// takes the safe path once and measures itself.
@@ -38,7 +42,10 @@ class LocalStore {
   LocalStore({
     required this.fileName,
     this.debounce = const Duration(milliseconds: 250),
+    this.retry = const Duration(seconds: 5),
   });
+
+  final Duration retry;
 
   Map<String, Object?> get data => _data;
 
@@ -68,6 +75,7 @@ class LocalStore {
   void put(String key, Object? value) {
     _data[key] = value;
     _dirty = true;
+    if (writes.value == StoreWrite.written) writes.value = StoreWrite.pending;
     _timer?.cancel();
     _timer = Timer(debounce, () => unawaited(flush()));
   }
@@ -82,6 +90,7 @@ class LocalStore {
   void putNow(String key, Object? value) {
     _data[key] = value;
     _dirty = true;
+    if (writes.value == StoreWrite.written) writes.value = StoreWrite.pending;
     _timer?.cancel();
     _timer = null;
     unawaited(flush());
@@ -100,17 +109,25 @@ class LocalStore {
     _dirty = false;
 
     final previous = _inFlight;
-    final next = () async {
+    late final Future<void> next;
+    next = () async {
       if (previous != null) await previous;
-      await _write();
+      final wrote = await _write();
+      // Scheduled here rather than in _write, whose context its isolate
+      // copies, and which must not hold this store.
+      if (!wrote) _timer ??= Timer(retry, () => unawaited(flush()));
+      if (!identical(_inFlight, next) || _dirty && wrote) return;
+      writes.value = wrote ? StoreWrite.written : StoreWrite.failed;
     }();
     _inFlight = next;
     return next;
   }
 
-  Future<void> _write() async {
+  /// Whether the store is on disk once this returns. A failed write leaves
+  /// it dirty and tries again after [retry], unless a change comes first.
+  Future<bool> _write() async {
     final file = _file;
-    if (file == null) return;
+    if (file == null) return true;
     try {
       await file.parent.create(recursive: true);
       // Every keystroke lands here a quarter of a second later, so this is
@@ -128,13 +145,18 @@ class LocalStore {
       final temp = File('${file.path}.tmp');
       await temp.writeAsString(encoded, flush: true);
       await temp.rename(file.path);
+      return true;
     } catch (error, stack) {
       _dirty = true;
       debugPrint('KapyNotes: could not write $fileName: $error\n$stack');
+      return false;
     }
   }
 
   void dispose() {
     _timer?.cancel();
+    writes.dispose();
   }
 }
+
+enum StoreWrite { written, pending, failed }
