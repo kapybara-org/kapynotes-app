@@ -30,6 +30,7 @@ import '../../core/platform_spell_check.dart';
 import '../../core/appearance.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
+import '../../core/type_ahead.dart';
 import '../../data/daily_separator.dart';
 import '../../data/attachment_limits.dart';
 import '../../data/note.dart';
@@ -3858,6 +3859,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// of the note are the ones it looks for. Desktop only.
   void openFind() {
     if (!AppPlatform.isDesktop) return;
+    TypeAhead.hold();
     final find = _find ??= NoteFind()..query.addListener(_onFindChanged);
     final selection = _controller.selection;
     if (selection.isValid && !selection.isCollapsed) {
