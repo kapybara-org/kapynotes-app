@@ -999,6 +999,8 @@ class _PlusButton extends StatelessWidget {
       label: label,
       onLongPressHint: onLongPress == null ? null : 'More to make',
       excludeSemantics: true,
+      onTap: onPressed,
+      onLongPress: onLongPress,
       child: Material(
         color: scheme.primary,
         shape: const CircleBorder(),
@@ -1119,6 +1121,9 @@ class _CreateMenuRoute extends PopupRoute<String> {
                           enabled: action.enabled,
                           label: action.label,
                           excludeSemantics: true,
+                          onTap: action.enabled
+                              ? () => Navigator.of(context).pop(action.value)
+                              : null,
                           child: InkWell(
                             key: ValueKey('phone-new-${action.value}'),
                             borderRadius: BorderRadius.circular(8),

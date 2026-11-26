@@ -895,6 +895,7 @@ class PageBackButton extends StatelessWidget {
       button: true,
       label: 'Back to $to',
       excludeSemantics: true,
+      onTap: onPressed,
       child: TextButton(
         key: const ValueKey('page-back'),
         onPressed: onPressed,
