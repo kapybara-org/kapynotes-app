@@ -6,6 +6,7 @@ import 'package:window_manager/window_manager.dart';
 import 'ai/kapy_chat_book.dart';
 import 'ai/open_router.dart';
 import 'app.dart';
+import 'audio/noise_removal.dart';
 import 'billing/billing.dart';
 import 'billing/billing_api.dart';
 import 'billing/note_limit.dart';
@@ -44,6 +45,7 @@ Future<void> main([List<String> args = const []]) async {
   QuickCapture.startedWith(args);
   registerFontLicenses();
   registerVadLicense();
+  registerNoiseModelLicense();
   // After the binding has claimed the view-focus callback, so it wraps the
   // framework's handler rather than being replaced by it.
   if (AppPlatform.isMacOS) {

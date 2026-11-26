@@ -1,0 +1,136 @@
+# Builds Remove noise's library (packages/denoise/rust) for every target the
+# app ships on, so that no app build needs Rust: the results are committed
+# under packages/denoise/prebuilt/ and packages/denoise/hook/build.dart hands
+# Flutter the right one.
+#
+# Runs on any pull request that changes the library, and on demand. It only
+# builds and uploads: one artifact, `prebuilt`, laid out exactly as the
+# folder it replaces, with SHA256SUMS. Committing it is a person's step, so
+# this workflow never needs write access.
+name: Denoise library
+
+on:
+  pull_request:
+    paths:
+      - packages/denoise/rust/**
+      - .github/workflows/denoise.yml
+  workflow_dispatch:
+  push:
+    branches: [kapy92/denoise-engine]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: denoise-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  # Pinned by packages/denoise/rust/rust-toolchain.toml as well.
+  RUST: 1.100.0
+
+jobs:
+  build:
+    name: ${{ matrix.dir }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 22.04, as the Linux release builds use: the oldest glibc the app
+          # supports, so the library loads everywhere the app does.
+          - { runner: ubuntu-22.04, dir: linux-x64, targets: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-22.04-arm, dir: linux-arm64, targets: aarch64-unknown-linux-gnu }
+          - { runner: windows-latest, dir: windows-x64, targets: x86_64-pc-windows-msvc }
+          - { runner: ubuntu-22.04, dir: android, targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android }
+          # One macOS job for all five Apple targets: those runners are scarce.
+          - { runner: macos-latest, dir: apple, targets: aarch64-apple-darwin x86_64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios }
+    defaults:
+      run:
+        shell: bash
+        working-directory: packages/denoise/rust
+    env:
+      # The app's own deployment targets (macos/Runner, ios/Runner).
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      IPHONEOS_DEPLOYMENT_TARGET: '15.0'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install "$RUST" --profile minimal
+          for target in ${{ matrix.targets }}; do
+            rustup target add --toolchain "$RUST" "$target"
+          done
+
+      - name: Test
+        if: matrix.dir == 'linux-x64'
+        run: cargo test --release --locked
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          out="$GITHUB_WORKSPACE/out"
+          case "${{ matrix.dir }}" in
+            android)
+              # Android 7 (API 24) is the app's minimum. 16 KB pages, which
+              # Google Play requires of native code for Android 15 and later.
+              ndk="$ANDROID_NDK_LATEST_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
+              export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$ndk/aarch64-linux-android24-clang"
+              export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$ndk/armv7a-linux-androideabi24-clang"
+              export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$ndk/x86_64-linux-android24-clang"
+              export RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384"
+              ;;
+            windows-x64)
+              # The C runtime linked in, so the DLL needs nothing installed.
+              export RUSTFLAGS="-C target-feature=+crt-static"
+              ;;
+          esac
+          for target in ${{ matrix.targets }}; do
+            cargo build --release --locked --target "$target"
+            case "$target" in
+              x86_64-unknown-linux-gnu) dir=linux-x64 file=libkapy_denoise.so ;;
+              aarch64-unknown-linux-gnu) dir=linux-arm64 file=libkapy_denoise.so ;;
+              x86_64-pc-windows-msvc) dir=windows-x64 file=kapy_denoise.dll ;;
+              aarch64-linux-android) dir=android-arm64 file=libkapy_denoise.so ;;
+              armv7-linux-androideabi) dir=android-arm file=libkapy_denoise.so ;;
+              x86_64-linux-android) dir=android-x64 file=libkapy_denoise.so ;;
+              aarch64-apple-darwin) dir=macos-arm64 file=libkapy_denoise.dylib ;;
+              x86_64-apple-darwin) dir=macos-x64 file=libkapy_denoise.dylib ;;
+              aarch64-apple-ios) dir=ios-arm64 file=libkapy_denoise.dylib ;;
+              aarch64-apple-ios-sim) dir=ios-sim-arm64 file=libkapy_denoise.dylib ;;
+              x86_64-apple-ios) dir=ios-sim-x64 file=libkapy_denoise.dylib ;;
+            esac
+            mkdir -p "$out/$dir"
+            cp "target/$target/release/$file" "$out/$dir/$file"
+          done
+          ls -lR "$out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt-${{ matrix.dir }}
+          path: out/
+          if-no-files-found: error
+
+  collect:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: prebuilt-*
+          path: prebuilt
+          merge-multiple: true
+      - name: Checksums
+        working-directory: prebuilt
+        run: |
+          find . -type f ! -name SHA256SUMS | sort | xargs sha256sum > SHA256SUMS
+          cat SHA256SUMS
+          du -h */*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: prebuilt
+          path: prebuilt/
+          if-no-files-found: error

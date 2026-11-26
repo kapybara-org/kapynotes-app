@@ -1,12 +1,15 @@
 package com.kapybara.kapynotes
 
 import android.media.MediaCodec
+import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMuxer
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodChannel
 import java.io.BufferedOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -34,12 +37,18 @@ import kotlin.math.sin
  * The samples are written to a file rather than returned, because thirty
  * minutes is 57 MB and a method channel would hold the native buffer and the
  * Dart copy at the same time. Dart owns the file once this returns.
+ *
+ * The channel also goes the other way: `encode` writes a recording whose
+ * noise has been removed, raw PCM by then, back into an `.m4a`.
  */
 object AudioDecode {
   private const val CHANNEL = "kapynotes/audio_decode"
 
   /** Long enough that a stalled decoder is obvious, short enough to keep the loop responsive. */
   private const val TIMEOUT_US = 10_000L
+
+  /** What the encoder is fed per pass: half a second at 16 kHz, and never the whole file. */
+  private const val PCM_CHUNK_BYTES = 16 * 1024
 
   private val worker = Executors.newSingleThreadExecutor()
 
@@ -67,6 +76,31 @@ object AudioDecode {
                 val message = error.message ?: "This recording could not be read."
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                   result.error("decode", message, null)
+                }
+              }
+            }
+          }
+        }
+        "encode" -> {
+          val path = call.argument<String>("path")
+          val destination = call.argument<String>("destination")
+          val sampleRate = call.argument<Int>("sampleRate") ?: 16000
+          val bitRate = call.argument<Int>("bitRate") ?: 48000
+          if (path.isNullOrEmpty() || destination.isNullOrEmpty()) {
+            result.error("arguments", "A recording is required.", null)
+          } else {
+            // Off the main thread for the reason decode is: thirty minutes of
+            // audio is seconds of work.
+            worker.execute {
+              try {
+                encode(path, destination, sampleRate, bitRate)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                  result.success(null)
+                }
+              } catch (error: Throwable) {
+                File(destination).delete()
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                  result.error("encode", "This recording could not be saved.", null)
                 }
               }
             }
@@ -161,6 +195,87 @@ object AudioDecode {
       throw IllegalStateException("This recording has no audio in it.")
     }
     return Pair(out.absolutePath, frames)
+  }
+
+  /**
+   * Writes raw 16-bit mono PCM back out as the app's own kind of recording.
+   *
+   * The way back from [run], for a recording whose noise has been removed:
+   * `MediaCodec`'s AAC-LC encoder into `MediaMuxer`'s MPEG-4 writer, so the
+   * cleaned file is the same kind of `.m4a` the note had before. Dart owns the
+   * rename into place; this only has to fail without leaving anything open.
+   */
+  private fun encode(path: String, destination: String, sampleRate: Int, bitRate: Int) {
+    val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 1)
+    format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
+    format.setInteger(MediaFormat.KEY_BIT_RATE, bitRate)
+    format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, PCM_CHUNK_BYTES)
+
+    FileInputStream(path).use { input ->
+      val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
+      try {
+        codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        codec.start()
+        val muxer = MediaMuxer(destination, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        var started = false
+        try {
+          val info = MediaCodec.BufferInfo()
+          val chunk = ByteArray(PCM_CHUNK_BYTES)
+          var queuedFrames = 0L
+          var inputDone = false
+          var track = -1
+          while (true) {
+            if (!inputDone) {
+              val index = codec.dequeueInputBuffer(TIMEOUT_US)
+              if (index >= 0) {
+                val buffer = codec.getInputBuffer(index)!!
+                buffer.clear()
+                val read = input.read(chunk, 0, min(chunk.size, buffer.remaining()))
+                // Each buffer is stamped with where it starts, which is what
+                // the muxer turns into the recording's timing.
+                val time = queuedFrames * 1_000_000L / sampleRate
+                if (read <= 0) {
+                  codec.queueInputBuffer(index, 0, 0, time, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                  inputDone = true
+                } else {
+                  buffer.put(chunk, 0, read)
+                  codec.queueInputBuffer(index, 0, read, time, 0)
+                  queuedFrames += read / 2
+                }
+              }
+            }
+
+            val index = codec.dequeueOutputBuffer(info, TIMEOUT_US)
+            if (index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+              // The encoder's first answer is the format with the codec
+              // setup in it, which is what the muxer needs to add the track.
+              track = muxer.addTrack(codec.outputFormat)
+              muxer.start()
+              started = true
+            } else if (index >= 0) {
+              if (info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG == 0 && info.size > 0) {
+                val buffer = codec.getOutputBuffer(index)!!
+                buffer.position(info.offset)
+                buffer.limit(info.offset + info.size)
+                muxer.writeSampleData(track, buffer, info)
+              }
+              codec.releaseOutputBuffer(index, false)
+              if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) break
+            }
+          }
+          // Stopping is what writes the header; a failure here is a failed
+          // save, so it is not swallowed like the one in `finally`.
+          muxer.stop()
+          started = false
+        } finally {
+          if (started) runCatching { muxer.stop() }
+          muxer.release()
+        }
+      } finally {
+        runCatching { codec.stop() }
+        codec.release()
+      }
+    }
   }
 
   /**
