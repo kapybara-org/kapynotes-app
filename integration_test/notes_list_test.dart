@@ -1033,7 +1033,6 @@ void main() {
       size: const Size(400, 640),
     );
     expect(tester.getSize(find.byType(KapyNotesApp)).width, 400);
-    await click(tester, row('Quote for the deck'));
     if (prefs.sidebarVisible) prefs.toggleSidebar();
     await tester.pumpAndSettle();
     final chip = find.byKey(ValueKey('tag-chip-$quarter'));
