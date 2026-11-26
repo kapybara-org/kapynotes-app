@@ -30,6 +30,7 @@ import '../core/quick_capture.dart';
 import '../core/status_bar.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
+import '../core/type_ahead.dart';
 import '../data/engine_provider.dart';
 import '../data/attachment_limits.dart';
 import '../data/auto_titles.dart';
@@ -3624,6 +3625,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         (_selectedId != null && _selectedId == _untouchedWelcomeId)) {
       return;
     }
+    TypeAhead.hold();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _editorFocusSuppressed) return;
       _selectedEditor?.focusAtEnd();
@@ -3748,6 +3750,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     bool field = false,
     bool again = false,
   }) async {
+    TypeAhead.hold();
     final shown = _tasksMode ? null : _shownNote(_selectedId);
     _findOnBack = null;
     if (!again) _findWords.clear();
@@ -3882,6 +3885,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       unawaited(tasks.add(text));
       return;
     }
+    TypeAhead.hold();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _taskAddFocus.requestFocus();
     });

@@ -13,6 +13,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/type_ahead.dart';
 import 'highlighting_controller.dart';
 import 'note_gestures.dart';
 import 'note_lines.dart';
@@ -142,7 +143,7 @@ class NoteFieldState extends State<NoteField>
         TextInputClient,
         DeltaTextInputClient,
         WidgetsBindingObserver
-    implements TextLayoutMetrics {
+    implements TextLayoutMetrics, TypeAheadField {
   /// The note as the field lays it out, kept equal to the controller's text.
   late final NoteLines _lines = NoteLines(_text);
   late String _text = widget.controller.text;
@@ -694,6 +695,19 @@ class NoteFieldState extends State<NoteField>
   ) {
     if (value != _value) return _formatAndSetValue(value, cause);
     if (!widget.focusNode.hasFocus) widget.focusNode.requestFocus();
+  }
+
+  @override
+  void takeTyping(String text) {
+    if (widget.readOnly) return;
+    final value = _value;
+    final selection = value.selection.isValid
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+    userUpdateTextEditingValue(
+      value.replaced(selection, text),
+      SelectionChangedCause.keyboard,
+    );
   }
 
   /// Takes the value an undo or redo restores, exactly, as [UndoHistory]
