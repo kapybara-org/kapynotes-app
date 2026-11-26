@@ -92,6 +92,7 @@ drive() {
       kill -TERM -- "-$pid" 2>/dev/null
       sleep 15
       kill -KILL -- "-$pid" "-$shot" 2>/dev/null
+      status=1
       break
     fi
     sleep 5
