@@ -29,11 +29,17 @@ class _FakeRecordPlatform extends RecordPlatform {
     required String path,
   }) async => this.path = path;
 
+  /// What starting a stream recording throws, if anything.
+  Object? streamFailure;
+
   @override
   Future<Stream<Uint8List>> startStream(
     String recorderId,
     RecordConfig config,
-  ) async => (frames = StreamController<Uint8List>()).stream;
+  ) async {
+    if (streamFailure case final failure?) throw failure;
+    return (frames = StreamController<Uint8List>()).stream;
+  }
 
   @override
   Future<String?> stop(String recorderId) async {
@@ -140,6 +146,17 @@ void main() {
       await recorder.start(path);
 
       expect(await recorder.stop(), isNull);
+
+      expect(temp.listSync(), isEmpty);
+    });
+
+    test('a recording that fails to start leaves nothing', () async {
+      platform.streamFailure = Exception('the microphone is busy');
+
+      await expectLater(
+        recorder.start('${temp.path}/voice-7.m4a'),
+        throwsException,
+      );
 
       expect(temp.listSync(), isEmpty);
     });

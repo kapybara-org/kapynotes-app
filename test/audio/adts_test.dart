@@ -173,6 +173,19 @@ void main() {
       expect(mp4DurationMs(mp4.readAsBytesSync()), 5120);
     });
 
+    test('keeps the ADTS when the MPEG-4 file cannot be written', () async {
+      final adts = File('${temp.path}/voice-3.aac')..writeAsBytesSync(_tone);
+      final mp4 = File('${temp.path}/voice-3.m4a');
+      Directory(mp4.path).createSync();
+
+      await expectLater(
+        finishAdtsRecording(adts, mp4),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(adts.lengthSync(), _tone.length);
+    });
+
     test('with no audio in it, leaves nothing at all', () async {
       final adts = File('${temp.path}/voice-2.aac')..writeAsBytesSync([0xFF]);
       final mp4 = File('${temp.path}/voice-2.m4a');

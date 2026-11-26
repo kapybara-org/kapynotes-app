@@ -170,8 +170,11 @@ class VoiceRecorder implements VoiceRecorderBackend {
     if (adts != null && await adts.exists()) await adts.delete();
   }
 
-  /// Also closes the ADTS file. `record` has delivered every frame by the
-  /// time its stop returns: it closes the stream behind them.
+  /// Also closes the ADTS file. A frame that reaches Dart after `record`'s
+  /// stop returns is lost, because `record` stops listening then. On
+  /// Android that can be the last frame or two: record_android 2.1.2 sends
+  /// stop's reply from its recording thread but each frame through the main
+  /// thread.
   Future<void> _stopListening() async {
     await _amplitudes?.cancel();
     await _states?.cancel();
