@@ -364,6 +364,17 @@ void main() {
     expect(reloaded.lastSlashCommand, 'heading2');
   });
 
+  test('the camera opens in Photo the first time, then in the mode used '
+      'last', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.cameraVideo, isFalse);
+    prefs.cameraVideo = true;
+
+    final reloaded = LayoutPrefs(store)..load();
+    expect(reloaded.cameraVideo, isTrue);
+  });
+
   test('markdown in notes starts on, and a no survives reload', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();

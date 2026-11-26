@@ -69,6 +69,9 @@ dependencies:
   # preview, rear/front switching, flash and still-image capture. Pinned to
   # the newest release whose public package keeps this app's Dart 3.10 floor.
   camera: 0.12.0+2
+  # The recording settings the video camera is opened with. Comes in with
+  # camera; named here because the camera builds its MediaSettings directly.
+  camera_platform_interface: ^2.13.1
   # The platform photo library behind the Photos button in that camera. Its
   # lost-data API also lets Android finish a selection after recreating the
   # activity under memory pressure.
@@ -216,6 +219,9 @@ dev_dependencies:
   # Lets a test stand in for the camera and Android's lost-result store. It
   # comes in with image_picker; named here because a test uses it directly.
   image_picker_platform_interface: ^2.11.1
+  # Lets the camera's review play a video in a test. It comes in with
+  # video_player; named here because a test uses it directly.
+  video_player_platform_interface: ^6.9.0
   plugin_platform_interface: ^2.1.8
   # Drives the real app on a real device or simulator, with the real plugins
   # behind it. `flutter test` runs against fakes by design; this is the only
