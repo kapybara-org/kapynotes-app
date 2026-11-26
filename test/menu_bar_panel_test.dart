@@ -375,6 +375,20 @@ void main() {
       );
     });
 
+    testWidgets('with no microphone at all, it says so and makes nothing', (
+      tester,
+    ) async {
+      recorder.microphone = false;
+      await pumpPanel(tester);
+      await tester.tap(find.byKey(const ValueKey('menu-bar-mic')));
+      await tester.pump();
+
+      expect(recording.isRecording, isFalse);
+      expect(recorder.startedAt, isNull);
+      expect(notes.notes, isEmpty);
+      expect(find.text('No microphone found'), findsOneWidget);
+    });
+
     testWidgets('on the Free plan at its limit, no note is made', (
       tester,
     ) async {
@@ -997,6 +1011,7 @@ class _PanelView extends TestFlutterView {
 
 class _SilentRecorder implements VoiceRecorderBackend {
   bool permitted = true;
+  bool microphone = true;
   String? startedAt;
 
   final _amplitude = StreamController<double>.broadcast();
@@ -1004,6 +1019,9 @@ class _SilentRecorder implements VoiceRecorderBackend {
 
   @override
   Future<bool> hasPermission() async => permitted;
+
+  @override
+  Future<bool> hasMicrophone() async => microphone;
 
   @override
   Future<void> start(String path) async => startedAt = path;

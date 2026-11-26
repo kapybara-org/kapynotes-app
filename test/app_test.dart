@@ -93,6 +93,7 @@ import 'package:kapy_notes/ui/window_drag_area.dart';
 import 'audio/voice_recording_controller_test.dart'
     show FakeRecordingControls, FakeVoiceRecorder;
 import 'kapy_icon_finder.dart';
+import 'note_editor_test.dart' show sendShortcut;
 import 'quick_capture_test.dart' show stubLaunchIntent;
 import 'support/note_driver.dart';
 import 'sync/fake_server.dart';
@@ -3858,6 +3859,48 @@ void main() {
       final draft = notes.notes.singleWhere((note) => note.isEmpty);
       expect(openNoteBody(tester), draft.body.trimRight());
     });
+  });
+
+  group('with no microphone (KAP-372)', () {
+    late FakeVoiceRecorder recorder;
+    late VoiceRecordingController recording;
+
+    for (final platform in [TargetPlatform.linux, TargetPlatform.macOS]) {
+      testWidgets('the shortcut on ${platform.name} says "No microphone '
+          'found" and records nothing', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final temp = Directory.systemTemp.createTempSync('kapy-no-mic');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        recorder = FakeVoiceRecorder(writesFile: false, microphone: false);
+        recording = VoiceRecordingController(
+          recorder: recorder,
+          tempDirectory: temp,
+        );
+        addTearDown(recording.dispose);
+        final note = notes.create(body: 'Standup');
+        await pumpApp(
+          tester,
+          size: const Size(1400, 800),
+          recording: recording,
+        );
+
+        await sendShortcut(
+          tester,
+          shortcuts.bindingFor(ShortcutAction.recordVoiceNote)!,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(find.text('No microphone found'), findsOneWidget);
+        expect(find.text('Recording started'), findsNothing);
+        expect(find.byKey(const ValueKey('recording-status')), findsNothing);
+        expect(recorder.startedAt, isNull, reason: 'nothing may record');
+        expect(recording.isRecording, isFalse);
+        expect(notes.byId(note.id)!.attachments, isEmpty);
+        await tester.pump(const Duration(seconds: 5));
+      });
+    }
   });
 
   group('notes list', () {

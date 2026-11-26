@@ -145,6 +145,11 @@ jobs:
 
       - run: flutter pub get
 
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - shell: bash
+        run: bash tool/ci/gemma_natives.sh
+
       # Obfuscated, symbols split out, Kapy AI on: the same flags release.sh
       # passes on every other platform. See dart_size_flags. The symbols are
       # what makes a stack trace from this build readable, so they ride along
@@ -231,6 +236,10 @@ jobs:
           cache: true
 
       - run: flutter pub get
+
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh
 
       # A throwaway keychain, so nothing is left on the runner and the search
       # list is predictable for codesign and xcodebuild.
@@ -387,6 +396,10 @@ jobs:
           "$HOME/flutter/bin/flutter" precache --linux
 
       - run: flutter pub get
+
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh
 
       - uses: actions/cache@v4
         with:
