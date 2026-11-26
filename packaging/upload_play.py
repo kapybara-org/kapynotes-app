@@ -14,6 +14,10 @@
 #   --rollout 0.2                            staged release, promote only
 #   --notes-file PATH                        promote only: release notes from
 #                                            this file instead of play_listing.json
+#   --from-track internal                    promote only: refuse unless the
+#                                            version code is on this track
+#   --validate-only                          promote only: have Play check the
+#                                            change, then discard it uncommitted
 #   --text-only                              listing only: copy, not graphics
 #
 # Play refuses to accept a version code it has already seen, so a build cannot
@@ -391,7 +395,8 @@ def release_notes(notes_file):
     return notes
 
 
-def promote(version_code, track, rollout, notes_file=None):
+def promote(version_code, track, rollout, notes_file=None, from_track=None,
+            validate_only=False):
     """Move an already-uploaded build to another track.
 
     Play refuses a second upload of a version code that already exists, so a
@@ -425,6 +430,26 @@ def promote(version_code, track, rollout, notes_file=None):
                 f"Known: {', '.join(sorted(known)) or 'none'}. Upload it first."
             )
 
+        def releases_on(name):
+            return [
+                release
+                for entry in tracks.get("tracks", [])
+                if entry.get("track") == name
+                for release in entry.get("releases", [])
+                if str(version_code) in [str(code) for code in release.get("versionCodes", []) or []]
+            ]
+
+        if from_track is not None and not releases_on(from_track):
+            die(
+                f"version code {version_code} is not on the {from_track} track, so "
+                f"there is nothing to promote from there. Upload it to {from_track} first."
+            )
+        if any(release.get("status") == "completed" for release in releases_on(track)):
+            if not validate_only:
+                print(f"  version code {version_code} is already on '{track}' for all users; nothing to change")
+                return
+            print(f"  version code {version_code} is already on '{track}'; checking the change anyway")
+
         notes = release_notes(notes_file)
 
         def build_release(status):
@@ -450,9 +475,10 @@ def promote(version_code, track, rollout, notes_file=None):
                 f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}/tracks/{track}",
                 body={"track": track, "releases": [build_release(release_status)]},
             )
+            action = "validate" if validate_only else "commit" + COMMIT_QUERY
             call(
                 "POST",
-                f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:commit{COMMIT_QUERY}",
+                f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}:{action}",
                 soft=True,
             )
 
@@ -464,8 +490,15 @@ def promote(version_code, track, rollout, notes_file=None):
             # to be sent for review by a human in the Console; there is no API
             # for that step. Fall back to staging it as a draft so the build,
             # the track and the release notes are all in place for that click.
+            if "in review" in str(error).lower():
+                die(
+                    f"Google is still reviewing an earlier change, so version code "
+                    f"{version_code} was not sent to '{track}' and nothing was changed.\n"
+                    f"  Run this again once that review is done (Play Console -> "
+                    f"Publishing overview).\n  Play said: {error}"
+                )
             if "draft" not in str(error).lower():
-                die(f"commit failed\n  {error}")
+                die(f"{'validate' if validate_only else 'commit'} failed\n  {error}")
             print("  App has never been published, so Play requires a draft release.")
             status = "draft"
             call("DELETE", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}")
@@ -474,10 +507,15 @@ def promote(version_code, track, rollout, notes_file=None):
             )["id"]
             put_and_commit(status)
 
-        committed = True
+        committed = not validate_only
     finally:
         if not committed:
             call("DELETE", f"{API}/applications/{PACKAGE_NAME}/edits/{edit_id}")
+
+    if validate_only:
+        print(f"  Play accepts {status} version code {version_code} on '{track}'.")
+        print("  Validate only: nothing was committed, and the edit was discarded.")
+        return
 
     if status == "draft":
         print(f"\n  Version code {version_code} is staged as a DRAFT on '{track}'.")
@@ -618,8 +656,8 @@ def main():
     args = sys.argv[1:]
     mode, track, bundle = "all", "internal", DEFAULT_BUNDLE
     rollout, version_code, track_given = None, None, False
-    notes_file = None
-    text_only, confirmed = False, False
+    notes_file, from_track = None, None
+    text_only, confirmed, validate_only = False, False, False
     data_safety_csv = DATA_SAFETY_CSV
     index = 0
     while index < len(args):
@@ -660,6 +698,11 @@ def main():
         elif argument == "--version-code":
             index += 1
             version_code = args[index] if index < len(args) else ""
+        elif argument == "--from-track":
+            index += 1
+            from_track = args[index] if index < len(args) else ""
+        elif argument == "--validate-only":
+            validate_only = True
         else:
             die(f"unknown argument '{argument}'")
         index += 1
@@ -674,6 +717,8 @@ def main():
 
     if track not in VALID_TRACKS:
         die(f"track must be one of {', '.join(VALID_TRACKS)}")
+    if from_track is not None and from_track not in VALID_TRACKS:
+        die(f"--from-track must be one of {', '.join(VALID_TRACKS)}")
     if mode in ("validate", "upload", "all") and not os.path.exists(bundle):
         die(f"no bundle at {bundle}. Run packaging/release.sh android first.")
 
@@ -684,7 +729,7 @@ def main():
     if mode == "data-safety":
         data_safety(data_safety_csv, confirmed)
     if mode == "promote":
-        promote(version_code, track, rollout, notes_file)
+        promote(version_code, track, rollout, notes_file, from_track, validate_only)
     if mode in ("validate", "upload", "all"):
         validate(bundle)
     if mode in ("upload", "all"):
