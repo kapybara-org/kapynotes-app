@@ -19,11 +19,15 @@ class FakeBackend implements VoicePlayerBackend {
   Duration? seekedTo;
   double? speed;
 
+  /// Loads that answer only when their completer does, by path.
+  final held = <String, Completer<Duration?>>{};
+
   @override
   Future<Duration?> load(File file) async {
     if (failLoad) throw const FileSystemException('gone');
     loaded.add(file.path);
-    return reports;
+    final hold = held[file.path];
+    return hold == null ? reports : await hold.future;
   }
 
   @override
@@ -188,6 +192,25 @@ void main() {
     expect(player.progressFor('a').value, isNull);
   });
 
+  test('a late load leaves the next recording alone', () async {
+    // On Windows a load can wait for the player to report the length
+    // (KAP-398), so it can land after the next recording has started.
+    final slow = backend.held[fileA.path] = Completer<Duration?>();
+    final first = player.play('a', from: const Duration(seconds: 4));
+    await pumpEventQueue();
+    backend.reports = const Duration(seconds: 7);
+    await player.play('b');
+    backend.seekedTo = null;
+
+    slow.complete(const Duration(seconds: 10));
+    await first;
+
+    expect(player.activeHash, 'b');
+    expect(player.duration, const Duration(seconds: 7));
+    expect(player.position, Duration.zero);
+    expect(backend.seekedTo, isNull, reason: "not at a's 0:04");
+  });
+
   test('pressing play again resumes rather than reloading', () async {
     await player.play('a');
     await player.pause();
@@ -219,21 +242,27 @@ void main() {
     expect(player.speed, 1.5);
   });
 
-  test('a file that will not open leaves nothing playing, and says so', () async {
-    backend.failLoad = true;
-    await player.play('a');
-    expect(player.activeHash, isNull);
-    expect(player.playing, isFalse);
-    expect(player.failureFor('a'), VoicePlaybackFailure.unreadable);
-  });
+  test(
+    'a file that will not open leaves nothing playing, and says so',
+    () async {
+      backend.failLoad = true;
+      await player.play('a');
+      expect(player.activeHash, isNull);
+      expect(player.playing, isFalse);
+      expect(player.failureFor('a'), VoicePlaybackFailure.unreadable);
+    },
+  );
 
-  test('a recording with no readable duration does not divide by zero', () async {
-    backend.reports = null;
-    await player.play('a');
-    backend.positionController.add(const Duration(seconds: 5));
-    await pumpEventQueue();
-    expect(player.progressFor('a').value, 0);
-  });
+  test(
+    'a recording with no readable duration does not divide by zero',
+    () async {
+      backend.reports = null;
+      await player.play('a');
+      backend.positionController.add(const Duration(seconds: 5));
+      await pumpEventQueue();
+      expect(player.progressFor('a').value, 0);
+    },
+  );
 
   test('an idle player releases its engine', () async {
     final quick = VoicePlayer(
@@ -301,23 +330,26 @@ void main() {
       expect(backend.loaded, ['/tmp/a.m4a']);
     });
 
-    test('says when it could not be got, and the next press asks again', () async {
-      final pressed = player.play('a');
-      arriving.complete(null);
-      await pressed;
+    test(
+      'says when it could not be got, and the next press asks again',
+      () async {
+        final pressed = player.play('a');
+        arriving.complete(null);
+        await pressed;
 
-      expect(player.failureFor('a'), VoicePlaybackFailure.notDownloaded);
-      expect(player.isOpening('a'), isFalse);
-      expect(player.activeHash, isNull);
-      expect(backend.plays, 0);
+        expect(player.failureFor('a'), VoicePlaybackFailure.notDownloaded);
+        expect(player.isOpening('a'), isFalse);
+        expect(player.activeHash, isNull);
+        expect(backend.plays, 0);
 
-      arriving = Completer<File?>()..complete(fileA);
-      await player.play('a');
+        arriving = Completer<File?>()..complete(fileA);
+        await player.play('a');
 
-      expect(lookups, 2);
-      expect(player.failureFor('a'), isNull);
-      expect(player.isPlaying('a'), isTrue);
-    });
+        expect(lookups, 2);
+        expect(player.failureFor('a'), isNull);
+        expect(player.isPlaying('a'), isTrue);
+      },
+    );
 
     test('a lookup that throws is one that could not be got', () async {
       final pressed = player.play('a');
@@ -345,20 +377,23 @@ void main() {
       expect(backend.plays, 1);
     });
 
-    test('does not take over from one chosen while it was on its way', () async {
-      final pressed = player.play('a');
-      await pumpEventQueue();
-      await player.play('b');
-      expect(player.isPlaying('b'), isTrue);
-      expect(player.isOpening('a'), isFalse);
+    test(
+      'does not take over from one chosen while it was on its way',
+      () async {
+        final pressed = player.play('a');
+        await pumpEventQueue();
+        await player.play('b');
+        expect(player.isPlaying('b'), isTrue);
+        expect(player.isOpening('a'), isFalse);
 
-      arriving.complete(fileA);
-      await pressed;
+        arriving.complete(fileA);
+        await pressed;
 
-      expect(player.activeHash, 'b');
-      expect(player.isPlaying('b'), isTrue);
-      expect(backend.loaded, ['/tmp/b.m4a']);
-    });
+        expect(player.activeHash, 'b');
+        expect(player.isPlaying('b'), isTrue);
+        expect(backend.loaded, ['/tmp/b.m4a']);
+      },
+    );
 
     test('a pause before it arrives means it does not start', () async {
       final pressed = player.play('a');

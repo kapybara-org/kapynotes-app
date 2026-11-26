@@ -118,9 +118,11 @@ jobs:
       # it (KAP-381), against VB-CABLE as the runner's only input. Last, so a
       # driver that will not install still leaves the installer uploaded.
       - name: A microphone for the voice tests
+        timeout-minutes: 10
         run: .\tool\ci\windows_microphone.ps1
 
       - run: flutter test integration_test/voice_recording_test.dart -d windows
+        timeout-minutes: 20
 
   macos:
     runs-on: macos-latest

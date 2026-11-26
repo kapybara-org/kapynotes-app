@@ -253,7 +253,9 @@ class VoicePlayer extends ChangeNotifier {
     _notify();
 
     try {
-      _duration = await _backend.load(file);
+      final duration = await _backend.load(file);
+      if (_disposed || request != _request) return;
+      _duration = duration;
       await _backend.setSpeed(_speed);
       if (from != null) await _moveTo(from);
     } catch (error) {
