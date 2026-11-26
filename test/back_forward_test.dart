@@ -220,4 +220,42 @@ void main() {
     expect(await midway(_forward), 0);
     expect(steps, hasLength(3));
   }, variant: TargetPlatformVariant.desktop());
+
+  testWidgets('a place that goes mid-swipe takes no step', (tester) async {
+    asDesktop();
+    var panel = true;
+    late StateSetter setPanel;
+    await tester.pumpWidget(
+      app(
+        BackForwardArea(
+          onStep: record('page'),
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              setPanel = setState;
+              return panel
+                  ? BackForwardArea(
+                      onStep: record('panel'),
+                      child: box('panel'),
+                    )
+                  : box('panel');
+            },
+          ),
+        ),
+      ),
+    );
+    final at = tester.getCenter(find.byKey(const ValueKey('panel')));
+    final pointer = TestPointer(1, PointerDeviceKind.trackpad);
+    await tester.sendEventToBinding(pointer.panZoomStart(at));
+    await tester.sendEventToBinding(
+      pointer.panZoomUpdate(at, pan: const Offset(40, 0)),
+    );
+    setPanel(() => panel = false);
+    await tester.pump();
+    await tester.sendEventToBinding(
+      pointer.panZoomUpdate(at, pan: const Offset(140, 0)),
+    );
+    await tester.sendEventToBinding(pointer.panZoomEnd());
+    await tester.pumpAndSettle();
+    expect(steps, isEmpty);
+  }, variant: TargetPlatformVariant.desktop());
 }

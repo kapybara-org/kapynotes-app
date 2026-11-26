@@ -86,6 +86,7 @@ class _BackForwardAreaState extends State<BackForwardArea> {
   }
 
   void _step(BackForwardStep step) {
+    if (!mounted) return;
     if (widget.onStep?.call(step) ?? false) _steps.took(step);
   }
 
