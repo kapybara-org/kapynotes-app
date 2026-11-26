@@ -37,6 +37,7 @@ import 'core/theme.dart';
 import 'core/window_material.dart';
 import 'data/auto_titles.dart';
 import 'data/engine_provider.dart';
+import 'data/day_tabs.dart';
 import 'data/folders.dart';
 import 'data/note_days.dart';
 import 'ui/note_day_scope.dart';
@@ -91,6 +92,7 @@ class KapyNotesApp extends StatefulWidget {
     this.tags,
     this.folders,
     this.days,
+    this.dayTabs,
     this.chats,
     this.recording,
     this.kapyAi,
@@ -129,6 +131,10 @@ class KapyNotesApp extends StatefulWidget {
 
   /// The day each note was given, where one was given; null leaves days out.
   final NoteDayStore? days;
+
+  /// The order a person put each day's notes in as tabs on a phone, and the
+  /// tabs they pinned; null leaves the order out.
+  final DayTabsStore? dayTabs;
 
   /// Kapy AI's chats, which the account syncs; Kapy AI keeps its own where
   /// this is left out.
@@ -813,10 +819,17 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             result = JoiningScope(account: widget.account, child: result);
 
             final media = MediaQuery.of(context);
+            final negativeInset = media.viewInsets.bottom < 0;
             return MediaQuery(
               data: media.copyWith(
                 textScaler: widget.prefs.appTextSize.applyTo(media.textScaler),
                 highContrast: asks,
+                viewInsets: negativeInset
+                    ? media.viewInsets.copyWith(bottom: 0)
+                    : null,
+                padding: negativeInset
+                    ? media.padding.copyWith(bottom: media.viewPadding.bottom)
+                    : null,
               ),
               child: result,
             );
@@ -845,6 +858,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
                   tags: widget.tags,
                   folders: widget.folders,
                   days: widget.days,
+                  dayTabs: widget.dayTabs,
                   store: widget.store,
                   welcomeNoteId: _welcomeNoteId,
                   launchIntent: _launchIntent,

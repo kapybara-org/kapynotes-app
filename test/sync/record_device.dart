@@ -1,4 +1,5 @@
 import 'package:kapy_notes/ai/kapy_chat_book.dart';
+import 'package:kapy_notes/data/day_tabs.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_days.dart';
@@ -43,6 +44,7 @@ class Device {
     this.withChats = true,
     this.withFolders = true,
     this.withDays = true,
+    this.withDayTabs = true,
     MemoryStore? resume,
   }) : store = resume ?? MemoryStore() {
     store.data['sync.v1'] = {'deviceId': deviceIdFor(name)};
@@ -55,6 +57,7 @@ class Device {
     tags = TagStore(store, now: tick);
     folders = FolderStore(store, now: tick);
     days = NoteDayStore(store, now: tick);
+    dayTabs = DayTabsStore(store, now: tick);
     chats = KapyChatBook(store, now: tick);
     sync = SyncService(
       notes: notes,
@@ -73,6 +76,7 @@ class Device {
         tags: tags,
         folders: withFolders ? folders : null,
         days: withDays ? days : null,
+        dayTabs: withDayTabs ? dayTabs : null,
         chats: withChats ? chats : null,
         chatsOn: () => pro,
         docs: docs,
@@ -109,6 +113,11 @@ class Device {
   late final NoteDayStore days;
   final bool withDays;
 
+  /// The order of each day's tabs, left out of the sync by
+  /// `withDayTabs: false`, which is a build from before them.
+  late final DayTabsStore dayTabs;
+  final bool withDayTabs;
+
   /// Kapy AI's chats, which this device syncs only while [pro]. Left out of
   /// the sync by `withChats: false`, which is a build from before them.
   late final KapyChatBook chats;
@@ -126,6 +135,7 @@ class Device {
     await tags.load();
     await folders.load();
     await days.load();
+    await dayTabs.load();
     await chats.load();
   }
 

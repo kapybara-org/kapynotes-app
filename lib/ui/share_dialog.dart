@@ -1437,43 +1437,6 @@ class _SheetScaffold extends StatelessWidget {
             color: color,
           ),
         );
-        final footer = DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: palette.textPrimary.withValues(alpha: 0.06),
-                width: AppHairline.of(context),
-              ),
-            ),
-          ),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(12, phone ? 4 : 8, 12, phone ? 0 : 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      for (final action in actions)
-                        TextButton(
-                          key: action.key,
-                          onPressed: action.onPressed,
-                          style: text(palette.textSecondary),
-                          child: Text(action.label),
-                        ),
-                    ],
-                  ),
-                ),
-                TextButton(
-                  key: const ValueKey('share-done'),
-                  onPressed: onClose,
-                  style: text(palette.textPrimary),
-                  child: const Text('Done'),
-                ),
-              ],
-            ),
-          ),
-        );
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1486,22 +1449,54 @@ class _SheetScaffold extends StatelessWidget {
             ),
             Flexible(
               child: SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, phone ? 8 : 12),
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
                 child: body,
               ),
             ),
-            // A phone's notice takes the footer's place, from 8 under the
-            // last row: the body's last 4 are the footer's here.
-            if (phone)
-              ToastClearance(
-                cover: true,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: footer,
+            DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: palette.textPrimary.withValues(alpha: 0.06),
+                    width: AppHairline.of(context),
+                  ),
                 ),
-              )
-            else
-              footer,
+              ),
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  phone ? 4 : 8,
+                  12,
+                  phone ? 0 : 8,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          for (final action in actions)
+                            TextButton(
+                              key: action.key,
+                              onPressed: action.onPressed,
+                              style: text(palette.textSecondary),
+                              child: Text(action.label),
+                            ),
+                        ],
+                      ),
+                    ),
+                    TextButton(
+                      key: const ValueKey('share-done'),
+                      onPressed: onClose,
+                      style: text(palette.textPrimary),
+                      child: const Text('Done'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // A phone's sheet opens the same room in its frame.
+            if (!phone) const ToastClearance.room(),
           ],
         );
       },
@@ -2018,41 +2013,39 @@ class _MemberMenu extends StatelessWidget {
   final VoidCallback onRemove;
 
   @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      enabled: enabled,
-      tooltip: _accessLabel(role),
-      onSelected: (value) => switch (value) {
-        'edit' => onAccess(SpaceRole.member),
-        'view' => onAccess(SpaceRole.viewer),
-        'report' => onReport(),
-        'block' => onBlock(),
-        _ => onRemove(),
-      },
-      itemBuilder: (context) => [
-        if (canManage) ...[
-          PopupMenuItem(
-            value: 'edit',
-            enabled: !role.canEdit,
-            child: const Text('Can edit'),
-          ),
-          PopupMenuItem(
-            value: 'view',
-            enabled: role.canEdit,
-            child: const Text('Can view'),
-          ),
-          const PopupMenuDivider(),
-        ],
-        const PopupMenuItem(value: 'report', child: Text('Report…')),
-        const PopupMenuItem(value: 'block', child: Text('Block…')),
-        if (canRemove) ...[
-          const PopupMenuDivider(),
-          PopupMenuItem(value: 'remove', child: Text(removeLabel)),
-        ],
+  Widget build(BuildContext context) => _RowMenu(
+    enabled: enabled,
+    tooltip: _accessLabel(role),
+    onSelected: (value) => switch (value) {
+      'edit' => onAccess(SpaceRole.member),
+      'view' => onAccess(SpaceRole.viewer),
+      'report' => onReport(),
+      'block' => onBlock(),
+      _ => onRemove(),
+    },
+    items: [
+      if (canManage) ...[
+        PopupMenuItem(
+          value: 'edit',
+          enabled: !role.canEdit,
+          child: const Text('Can edit'),
+        ),
+        PopupMenuItem(
+          value: 'view',
+          enabled: role.canEdit,
+          child: const Text('Can view'),
+        ),
+        const PopupMenuDivider(),
       ],
-      child: _AccessButton(_accessLabel(role), chevron: canManage),
-    );
-  }
+      const PopupMenuItem(value: 'report', child: Text('Report…')),
+      const PopupMenuItem(value: 'block', child: Text('Block…')),
+      if (canRemove) ...[
+        const PopupMenuDivider(),
+        PopupMenuItem(value: 'remove', child: Text(removeLabel)),
+      ],
+    ],
+    child: _AccessButton(_accessLabel(role), chevron: canManage),
+  );
 }
 
 /// An invitation nobody has accepted yet.
@@ -2071,24 +2064,77 @@ class _InviteMenu extends StatelessWidget {
   final VoidCallback onCancel;
 
   @override
-  Widget build(BuildContext context) {
-    return PopupMenuButton<String>(
-      enabled: enabled,
-      tooltip: 'Invitation',
-      onSelected: (value) => switch (value) {
-        'copy' => onCopyLink(),
-        'resend' => onSendAgain(),
-        _ => onCancel(),
-      },
-      itemBuilder: (context) => [
-        const PopupMenuItem(value: 'copy', child: Text('Copy link')),
-        const PopupMenuItem(value: 'resend', child: Text('Send again')),
-        const PopupMenuDivider(),
-        const PopupMenuItem(value: 'cancel', child: Text('Cancel invitation…')),
-      ],
-      child: _AccessButton('Invited', chevron: enabled),
-    );
+  Widget build(BuildContext context) => _RowMenu(
+    enabled: enabled,
+    tooltip: 'Invitation',
+    onSelected: (value) => switch (value) {
+      'copy' => onCopyLink(),
+      'resend' => onSendAgain(),
+      _ => onCancel(),
+    },
+    items: const [
+      PopupMenuItem(value: 'copy', child: Text('Copy link')),
+      PopupMenuItem(value: 'resend', child: Text('Send again')),
+      PopupMenuDivider(),
+      PopupMenuItem(value: 'cancel', child: Text('Cancel invitation…')),
+    ],
+    child: _AccessButton('Invited', chevron: enabled),
+  );
+}
+
+/// A row's menu, which hides a notice showing while it is open. The notice
+/// comes back when the menu's route ends, however it ends, even when the
+/// row has gone from under it.
+class _RowMenu extends StatelessWidget {
+  const _RowMenu({
+    required this.enabled,
+    required this.tooltip,
+    required this.items,
+    required this.onSelected,
+    required this.child,
+  });
+
+  final bool enabled;
+  final String tooltip;
+  final List<PopupMenuEntry<String>> items;
+  final ValueChanged<String> onSelected;
+  final Widget child;
+
+  void _open(BuildContext context) {
+    final button = context.findRenderObject()! as RenderBox;
+    final overlay =
+        Navigator.of(context).overlay!.context.findRenderObject()! as RenderBox;
+    final under =
+        PopupMenuTheme.of(context).position == PopupMenuPosition.under;
+    final offset = Offset(0, under ? button.size.height : 0);
+    Toast.hide(true);
+    showMenu<String>(
+      context: context,
+      position: RelativeRect.fromRect(
+        Rect.fromPoints(
+          button.localToGlobal(offset, ancestor: overlay),
+          button.localToGlobal(
+            button.size.bottomRight(Offset.zero) + offset,
+            ancestor: overlay,
+          ),
+        ),
+        Offset.zero & overlay.size,
+      ),
+      items: items,
+    ).whenComplete(() => Toast.hide(false)).then((value) {
+      if (value != null && context.mounted) onSelected(value);
+    });
   }
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: tooltip,
+    child: InkWell(
+      onTap: enabled ? () => _open(context) : null,
+      canRequestFocus: enabled,
+      child: child,
+    ),
+  );
 }
 
 /// What a person row's menu opens from: their access, or that they are
