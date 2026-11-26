@@ -1,0 +1,10 @@
+Kapy Notes 1.35.7
+
+- Picking a day with several notes opens them as tabs under the week. Pin a tab or drag it to a new place, and the day keeps that order on all your devices.
+- The week under a note's header follows your finger when you swipe it. Flick to move a few weeks.
+- Folders lists only your folders, and a folder's page has Add notes, to file notes into it in one go.
+- A folder's count leaves out a note set for a later day until that day comes.
+- Notices no longer let taps through, and in the Share sheet they no longer cover Done or Stop sharing.
+- VoiceOver can now tap Home, the day button and a day's note count, and turn the week.
+- With large text, Quick find's buttons show their whole words.
+- When Kapy AI Cloud needs Pro or a sign-in, its card now offers Sign in, Upgrade or your own key.

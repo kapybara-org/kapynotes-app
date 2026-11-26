@@ -1,0 +1,9 @@
+Day tabs and easier folders.
+
+- A day with several notes opens them as tabs. Pin or drag a tab, and the order stays on all your devices.
+- Swipe the week under a note to change weeks.
+- Add notes to a folder from its page.
+- Notices no longer let taps through or cover the Share sheet's buttons.
+- TalkBack can now tap Home, the day button and a day's note count.
+- With large text, Quick find's buttons show their whole words.
+- A camera photo is kept if Android closes the app while taking it.
