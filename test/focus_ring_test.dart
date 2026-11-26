@@ -165,6 +165,29 @@ void _expectRinged(WidgetTester tester, FocusNode node, {double width = 2}) {
   );
 }
 
+Future<void> _bare(WidgetTester tester, Widget body) async {
+  AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+  addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = const Size(800, 800);
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: KapyTheme.dark(),
+      builder: (context, child) => FocusRing(child: child!),
+      home: Scaffold(body: body),
+    ),
+  );
+}
+
+Future<void> _awayAndBack(WidgetTester tester) async {
+  tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+  await tester.pump();
+  expect(_painted(tester), isNull, reason: 'a ring while the app is away');
+  tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  await tester.pump();
+}
+
 String _name(FocusNode node) {
   final context = node.context;
   if (context == null) return '$node';
@@ -307,6 +330,92 @@ void main() {
     await _press(tester);
     _expectRinged(tester, FocusManager.instance.primaryFocus!);
   });
+
+  testWidgets('a press on nothing puts the ring away', (tester) async {
+    await _bare(
+      tester,
+      Center(
+        child: TextButton(onPressed: () {}, child: const Text('Only')),
+      ),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    final node = FocusManager.instance.primaryFocus;
+    expect(_painted(tester), isNotNull);
+
+    await tester.tapAt(const Offset(40, 40));
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus, node);
+    expect(_painted(tester), isNull);
+  });
+
+  testWidgets('a control its list scrolls out of sight takes its ring along, '
+      'and one partly out is cut at the edge', (tester) async {
+    final list = ScrollController();
+    addTearDown(list.dispose);
+    await _bare(
+      tester,
+      Column(
+        children: [
+          const SizedBox(height: 300),
+          Expanded(
+            child: ListView(
+              controller: list,
+              children: [
+                for (var i = 0; i < 30; i++)
+                  SizedBox(
+                    height: 48,
+                    child: TextButton(onPressed: () {}, child: Text('Row $i')),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(_painted(tester), isNotNull);
+
+    list.jumpTo(24);
+    await tester.pump();
+    expect(
+      tester.renderObject(_ring),
+      paints
+        ..clipRect(rect: const Rect.fromLTRB(-4, 296, 804, 804))
+        ..rrect(),
+    );
+
+    list.jumpTo(120);
+    await tester.pump();
+    expect(find.text('Row 0', skipOffstage: false), findsOneWidget);
+    expect(_painted(tester), isNull);
+  });
+
+  testWidgets('leaving the app and coming back brings a ring back only where '
+      'there was one', (tester) async {
+    FocusManager.instance.listenToApplicationLifecycleChangesIfSupported();
+    await _bare(
+      tester,
+      Column(
+        children: [
+          const SizedBox(width: 300, child: TextField()),
+          TextButton(onPressed: () {}, child: const Text('Next')),
+        ],
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.metaLeft);
+    await _awayAndBack(tester);
+    expect(_painted(tester), isNull);
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(_painted(tester), isNotNull);
+    await _awayAndBack(tester);
+    expect(_painted(tester), isNotNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
 
   testWidgets('on the rail the ring goes round the tile of a space, clear of '
       'its name', (tester) async {

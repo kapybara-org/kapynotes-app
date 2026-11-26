@@ -86,6 +86,10 @@ class _FocusRingState extends State<FocusRing> {
 
   void _onFocus() {
     final node = FocusManager.instance.primaryFocus;
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state != null && state != AppLifecycleState.resumed) {
+      _keyed = _target.value != null;
+    }
     _target.value =
         _keyed &&
             node != null &&
@@ -178,7 +182,7 @@ class _RenderRing extends RenderBox {
   /// The ring as last painted. A frame can move what it marks, a scroll or a
   /// panel sliding, without repainting the ring, so each frame after one with
   /// a ring checks whether it still fits and paints it again if not.
-  RRect? _painted;
+  (RRect, Rect)? _painted;
   bool _watching = false;
 
   @override
@@ -205,7 +209,7 @@ class _RenderRing extends RenderBox {
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) => false;
 
-  RRect? _ring() {
+  (RRect, Rect)? _ring() {
     final context = _target.value?.context;
     if (context == null || !context.mounted) return null;
     // A control with a [FocusRingTarget] in it is marked there, and a text
@@ -218,18 +222,30 @@ class _RenderRing extends RenderBox {
     if (_root(box) != _root(this)) return null;
     final toRing = getTransformTo(null);
     if (toRing.invert() == 0) return null;
-    final bounds = MatrixUtils.transformRect(
-      toRing..multiply(box.getTransformTo(null)),
-      Offset.zero & box.size,
+    Rect inRing(RenderObject from, Rect rect) => MatrixUtils.transformRect(
+      toRing.clone()..multiply(from.getTransformTo(null)),
+      rect,
     );
+    final bounds = inRing(box, Offset.zero & box.size);
+    var shown = Offset.zero & size;
+    RenderObject child = box;
+    for (var parent = box.parent; parent != null; parent = parent.parent) {
+      final clip = parent.describeApproximatePaintClip(child);
+      if (clip != null) shown = shown.intersect(inRing(parent, clip));
+      child = parent;
+    }
+    if (!bounds.overlaps(shown)) return null;
     final rect = bounds
         .inflate(FocusRing.gap + _width / 2)
         .intersect((Offset.zero & size).deflate(_width / 2));
     if (rect.width <= 0 || rect.height <= 0) return null;
     final radius = (target?.widget as FocusRingTarget?)?.radius;
-    return RRect.fromRectAndRadius(
-      rect,
-      Radius.circular((radius ?? AppRadii.control) + FocusRing.gap),
+    return (
+      RRect.fromRectAndRadius(
+        rect,
+        Radius.circular((radius ?? AppRadii.control) + FocusRing.gap),
+      ),
+      shown.inflate(FocusRing.gap + _width),
     );
   }
 
@@ -277,12 +293,17 @@ class _RenderRing extends RenderBox {
     final ring = _painted = _ring();
     if (ring == null) return;
     _watch();
-    context.canvas.drawRRect(
-      ring.shift(offset),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = _width
-        ..color = _color,
-    );
+    final (rrect, shown) = ring;
+    context.canvas
+      ..save()
+      ..clipRect(shown.shift(offset))
+      ..drawRRect(
+        rrect.shift(offset),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = _width
+          ..color = _color,
+      )
+      ..restore();
   }
 }
