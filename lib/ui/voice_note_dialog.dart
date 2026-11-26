@@ -1165,31 +1165,6 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
   }
 }
 
-/// Groups segments into readable paragraphs.
-///
-/// A transcript arrives as hundreds of short spans, which is right for seeking
-/// and unreadable as prose. Breaks go where a speaker paused for more than a
-/// second and a half, or every six segments so a monologue still gets air.
-List<List<TranscriptSegment>> groupTranscriptParagraphs(
-  List<TranscriptSegment> segments, {
-  int gapMs = 1500,
-  int maxSegments = 6,
-}) {
-  final paragraphs = <List<TranscriptSegment>>[];
-  var current = <TranscriptSegment>[];
-  for (final segment in segments) {
-    final tooLong = current.length >= maxSegments;
-    final afterPause = current.isNotEmpty && segment.s - current.last.e > gapMs;
-    if (tooLong || afterPause) {
-      paragraphs.add(current);
-      current = <TranscriptSegment>[];
-    }
-    current.add(segment);
-  }
-  if (current.isNotEmpty) paragraphs.add(current);
-  return paragraphs;
-}
-
 const TextStyle _reading = TextStyle(fontSize: 13.5, height: 20 / 13.5);
 
 /// "English" for "en": a transcript's language by name where the app has

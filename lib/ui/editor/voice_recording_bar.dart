@@ -4,8 +4,8 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../audio/voice_recording_controller.dart';
 import '../../core/theme.dart';
+import '../../speech/moments.dart' show formatVoiceDuration;
 import '../compact_icon_button.dart';
-import 'voice_chip.dart';
 
 /// The strip that replaces the formatting row while a recording is running.
 ///

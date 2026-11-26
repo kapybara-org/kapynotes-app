@@ -202,8 +202,16 @@ class FakeKapyAi extends KapyAi {
   }
 
   @override
-  Future<void> ask(String question, {String? noteId}) async {
-    calls.add('ask:$question:${noteId ?? ''}');
+  Future<void> ask(
+    String question, {
+    String? noteId,
+    KapyRecordingRef? recording,
+  }) async {
+    calls.add(
+      recording == null
+          ? 'ask:$question:${noteId ?? ''}'
+          : 'askRecording:$question:${recording.hash}',
+    );
     _answering = true;
     notifyListeners();
   }

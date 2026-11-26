@@ -8,6 +8,7 @@ import '../../audio/voice_player.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/note_attachment.dart';
+import '../../speech/moments.dart' show formatVoiceDuration;
 import '../context_menu.dart';
 import 'note_image_layout.dart';
 import 'placeholder_scale.dart';
@@ -682,15 +683,4 @@ class VoiceWaveformPainter extends CustomPainter {
       old.played != played ||
       old.unplayed != unplayed ||
       old.bars != bars;
-}
-
-/// `m:ss`, or `h:mm:ss` past an hour. Recordings are capped at thirty minutes,
-/// so the third case is only reachable by a note from another client.
-String formatVoiceDuration(Duration duration) {
-  final seconds = duration.inSeconds;
-  final s = (seconds % 60).toString().padLeft(2, '0');
-  final m = (seconds ~/ 60) % 60;
-  final h = seconds ~/ 3600;
-  if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:$s';
-  return '$m:$s';
 }

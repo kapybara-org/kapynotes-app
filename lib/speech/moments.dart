@@ -34,6 +34,26 @@ Duration? momentFor(
   return Duration(milliseconds: best.first.s);
 }
 
+/// The moments [answer] draws on, in the order they were said: where each
+/// of its sentences was said, by [momentFor], at most [max] of them and
+/// none twice. Empty when no sentence matches well enough, so an answer
+/// never points to a moment it did not come from.
+List<Duration> momentsIn(
+  String answer,
+  List<List<TranscriptSegment>> paragraphs, {
+  int max = 3,
+}) {
+  final found = <Duration>{};
+  for (final sentence in answer.split(_sentenceEnd)) {
+    if (found.length == max) break;
+    final at = momentFor(sentence, paragraphs);
+    if (at != null) found.add(at);
+  }
+  return found.toList()..sort();
+}
+
+final RegExp _sentenceEnd = RegExp(r'(?<=[.!?])\s+|\n+');
+
 /// The silences between [segments] longer than [longerThan], each trimmed by
 /// [cushion] at both ends so a jump never clips the first or last word.
 List<({Duration from, Duration to})> pausesIn(
@@ -52,4 +72,40 @@ List<({Duration from, Duration to})> pausesIn(
     ));
   }
   return pauses;
+}
+
+/// Groups segments into readable paragraphs.
+///
+/// A transcript arrives as hundreds of short spans, which is right for seeking
+/// and unreadable as prose. Breaks go where a speaker paused for more than a
+/// second and a half, or every six segments so a monologue still gets air.
+List<List<TranscriptSegment>> groupTranscriptParagraphs(
+  List<TranscriptSegment> segments, {
+  int gapMs = 1500,
+  int maxSegments = 6,
+}) {
+  final paragraphs = <List<TranscriptSegment>>[];
+  var current = <TranscriptSegment>[];
+  for (final segment in segments) {
+    final tooLong = current.length >= maxSegments;
+    final afterPause = current.isNotEmpty && segment.s - current.last.e > gapMs;
+    if (tooLong || afterPause) {
+      paragraphs.add(current);
+      current = <TranscriptSegment>[];
+    }
+    current.add(segment);
+  }
+  if (current.isNotEmpty) paragraphs.add(current);
+  return paragraphs;
+}
+
+/// `m:ss`, or `h:mm:ss` past an hour. Recordings are capped at thirty minutes,
+/// so the third case is only reachable by a note from another client.
+String formatVoiceDuration(Duration duration) {
+  final seconds = duration.inSeconds;
+  final s = (seconds % 60).toString().padLeft(2, '0');
+  final m = (seconds ~/ 60) % 60;
+  final h = seconds ~/ 3600;
+  if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:$s';
+  return '$m:$s';
 }

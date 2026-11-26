@@ -67,6 +67,42 @@ void main() {
     });
   });
 
+  group('the moments an answer draws on', () {
+    test('are where its sentences were said, in order, none twice', () {
+      expect(
+        momentsIn(
+          'Finance said the first invoice is too big, so split it across two '
+          'months. The annual plan goes first, with the monthly price '
+          'underneath.\nSplitting the first invoice across two months is the '
+          'ask.',
+          paragraphs,
+        ),
+        const [Duration(seconds: 8), Duration(seconds: 38)],
+      );
+    });
+
+    test('are none when nothing matches well', () {
+      expect(momentsIn('Sounds good. Talk soon.', paragraphs), isEmpty);
+    });
+
+    test('are the first three it names', () {
+      final fruit = [
+        paragraph(0, 'apples bananas cherries'),
+        paragraph(10000, 'dates elderberries figs'),
+        paragraph(20000, 'grapes honeydew kiwis'),
+        paragraph(30000, 'lemons mangoes nectarines'),
+      ];
+      expect(
+        momentsIn(
+          'Lemons, mangoes and nectarines. Apples, bananas and cherries. '
+          'Grapes, honeydew and kiwis. Dates, elderberries and figs.',
+          fruit,
+        ),
+        const [Duration.zero, Duration(seconds: 20), Duration(seconds: 30)],
+      );
+    });
+  });
+
   group('the pauses Skip pauses jumps', () {
     test('are the gaps over a second and a half, trimmed at both ends', () {
       final pauses = pausesIn(const [
