@@ -640,6 +640,7 @@ class _DayTabsRowState extends State<DayTabsRow>
       button: true,
       label: 'All $count notes on this day',
       excludeSemantics: true,
+      onTap: widget.onList,
       child: GestureDetector(
         key: const ValueKey('day-tabs-count'),
         behavior: HitTestBehavior.opaque,

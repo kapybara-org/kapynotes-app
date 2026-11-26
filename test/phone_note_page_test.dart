@@ -1,8 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show kLongPressTimeout;
 import 'package:flutter/semantics.dart'
-    show CustomSemanticsAction, SemanticsAction;
+    show CustomSemanticsAction, SemanticsAction, SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/app.dart';
@@ -279,6 +280,64 @@ void main() {
       await tester.pumpAndSettle();
       expect(day(19), findsOneWidget);
     });
+
+    testWidgets(
+      'a screen reader hears Home and the day in plain words, and presses '
+      'each as a tap does (KAP-361)',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
+        seed();
+        await pump(tester);
+        SemanticsNode node(String key) =>
+            tester.getSemantics(find.byKey(ValueKey(key)));
+        Future<void> press(String key) async {
+          final id = node(key).id;
+          tester.semantics.tap(find.semantics.byPredicate((n) => n.id == id));
+          await tester.pumpAndSettle();
+        }
+
+        expect(
+          node('page-day'),
+          isSemantics(
+            label: 'Hide the week',
+            isButton: true,
+            hasToggledState: true,
+            isToggled: true,
+            hasTapAction: true,
+          ),
+        );
+        await press('page-day');
+        expect(day(19), findsNothing);
+        expect(tasksLine, findsNothing);
+        expect(
+          node('page-day'),
+          isSemantics(
+            label: 'Show the week',
+            isButton: true,
+            hasToggledState: true,
+            isToggled: false,
+            hasTapAction: true,
+          ),
+        );
+        await press('page-day');
+        expect(day(19), findsOneWidget);
+        expect(tasksLine, findsOneWidget);
+
+        expect(
+          node('page-home'),
+          isSemantics(label: 'Home', isButton: true, hasTapAction: true),
+        );
+        await press('page-home');
+        expect(header, findsNothing);
+        expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
+        semantics.dispose();
+      },
+      variant: TargetPlatformVariant(const {
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      }),
+    );
 
     testWidgets('while the keyboard is up its buttons step back, and the '
         'week, its tasks line and the path stay (M08)', (tester) async {
@@ -1383,6 +1442,41 @@ void main() {
       );
       semantics.dispose();
     });
+
+    testWidgets(
+      "a screen reader hears a crowded day's count in plain words, and opens "
+      'the list from it as a tap does (KAP-361)',
+      (tester) async {
+        final semantics = tester.ensureSemantics();
+        AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
+        crowdMonday();
+        seed();
+        await pump(tester);
+        await open(tester, 17);
+        final count = tester.getSemantics(
+          find.byKey(const ValueKey('day-tabs-count')),
+        );
+        expect(
+          count,
+          isSemantics(
+            label: 'All 14 notes on this day',
+            isButton: true,
+            hasTapAction: true,
+          ),
+        );
+        tester.semantics.tap(
+          find.semantics.byPredicate((node) => node.id == count.id),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('day-notes-sheet')), findsOneWidget);
+        expect(find.byKey(const ValueKey('day-notes-mon-a')), findsOneWidget);
+        semantics.dispose();
+      },
+      variant: TargetPlatformVariant(const {
+        TargetPlatform.android,
+        TargetPlatform.iOS,
+      }),
+    );
   });
 
   group('the tasks line', () {
