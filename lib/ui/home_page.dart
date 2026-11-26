@@ -3963,8 +3963,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// How many notes the list shows as the filter narrows it, for the bar
   /// over the list, whatever the search has narrowed the list to. By day,
-  /// Notes leaves out a note for a later day until its day.
-  int get _matchingCount {
+  /// Notes leaves out a note for a later day until its day, and so does
+  /// Drawings beside the rail. A [phone] lists every drawing under Recent, so
+  /// its Drawings counts them all.
+  int _matchingCount({required bool phone}) {
     final notes = _filtered(
       _archiveMode
           ? widget.notes.archivedNotes
@@ -3972,7 +3974,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ? widget.notes.hiddenNotes
           : widget.notes.notes,
     );
-    return _space == LibrarySpace.notes &&
+    return (_space == LibrarySpace.notes ||
+                (_space == LibrarySpace.drawings && !phone)) &&
             widget.prefs.notesGrouping == NotesGrouping.byDate
         ? _listedByDay(notes).length
         : notes.length;
@@ -4399,7 +4402,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   setState(() => _pinnedOnly = value),
               windowBar: SidebarWindowBar(
                 title: _listTitle,
-                count: _matchingCount,
+                count: _matchingCount(phone: false),
                 noun: createNoun,
                 onCreate: _createInSpace,
                 newNoteShortcut: newNoteShortcut,
@@ -5715,7 +5718,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               title: folder?.name ?? _listTitle,
               count: folder != null
                   ? _listedByDay(notes).length
-                  : _matchingCount,
+                  : _matchingCount(phone: true),
               onBack: page ? _showFolders : null,
               trailing: page ? _phoneAccount() : null,
             ),
