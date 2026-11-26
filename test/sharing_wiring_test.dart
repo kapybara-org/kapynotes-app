@@ -6,6 +6,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
@@ -19,6 +20,7 @@ import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/ui/notes_list.dart' show NoteCardFace;
+import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
@@ -119,7 +121,11 @@ void main() {
   bool priyaIn(String space) =>
       server.spaces[space]?.members.containsKey(priya.userId) ?? false;
 
-  Future<void> pumpApp(WidgetTester tester, {required bool phone}) async {
+  Future<void> pumpApp(
+    WidgetTester tester, {
+    required bool phone,
+    NoteDayStore? days,
+  }) async {
     AppPlatform.debugTargetPlatformOverride = phone
         ? TargetPlatform.iOS
         : TargetPlatform.macOS;
@@ -140,6 +146,7 @@ void main() {
         prefs: prefs,
         shortcuts: shortcuts,
         account: account,
+        days: days,
       ),
     );
     await tester.pumpAndSettle();
@@ -878,6 +885,46 @@ void main() {
     expect(sharedTile, findsOneWidget);
     expect(lit(tester, 'bar-folders'), isTrue);
   });
+
+  for (final phone in [false, true]) {
+    testWidgets('${phone ? 'on a phone' : 'beside a window'}, a shared note '
+        'for a later day leaves My notes and its count, while Shared lists '
+        'and counts it (KAP-352)', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await signIn(tester);
+      final mine = await shareWithPriya(tester);
+      final now = notes.now();
+      days.setDay(mine, DateTime(now.year, now.month, now.day + 2));
+      await pumpApp(tester, phone: phone, days: days);
+      await showList(tester, phone: phone);
+
+      await openTab(tester, SidebarTab.mine, phone: phone);
+      expect(listed(tester, 'Trip budget'), isFalse);
+      expect(listed(tester, 'Bank details'), isTrue);
+      expect(
+        phone
+            ? tester
+                  .widget<PhoneHomeHeader>(find.byType(PhoneHomeHeader))
+                  .notesCount
+            : tester
+                  .widget<SidebarWindowBar>(find.byType(SidebarWindowBar))
+                  .count,
+        1,
+      );
+
+      await openTab(tester, SidebarTab.shared, phone: phone);
+      expect(listed(tester, 'Trip budget'), isTrue);
+      expect(
+        phone
+            ? tester.widget<PhoneListTitle>(find.byType(PhoneListTitle)).count
+            : tester
+                  .widget<SidebarWindowBar>(find.byType(SidebarWindowBar))
+                  .count,
+        1,
+      );
+    });
+  }
 
   group("a phone row's swipe in Shared", () {
     /// Priya shares Packing list with Sam, who joins, and Sam shares Trip
