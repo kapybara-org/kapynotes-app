@@ -1001,6 +1001,28 @@ void main() {
       ]);
     });
 
+    test('take a new order where the day is arranged anew, the tab in front '
+        'staying in front and a tab opened over them after', () {
+      final workspace = _opened('alpha')
+        ..showDay(tuesday, ['bravo', 'charlie', 'delta'])
+        ..activateTab(1)
+        ..openInNewTab('alpha');
+      expect(workspace.dayNoteIds, ['bravo', 'charlie', 'delta']);
+
+      expect(workspace.arrangeDay(['delta', 'bravo', 'charlie']), isTrue);
+      expect(_tabsOf(workspace), [
+        ['delta'],
+        ['bravo'],
+        ['charlie'],
+        ['alpha'],
+      ]);
+      expect(workspace.selectedNoteId, 'charlie');
+      expect(workspace.arrangeDay(['delta', 'bravo', 'charlie']), isFalse);
+
+      workspace.leaveDay();
+      expect(workspace.arrangeDay(['alpha']), isFalse);
+    });
+
     test("a folder's tab opened over a day's goes with the day for Reopen "
         'to bring back', () {
       final workspace = _opened('alpha')

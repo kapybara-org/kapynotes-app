@@ -255,6 +255,9 @@ class EditorWorkspace {
   /// while the tabs are the reader's own.
   DateTime? get dayInTabs => _dayInTabs;
 
+  /// The notes [showDay] opened for [dayInTabs], in the order it opened them.
+  Iterable<String> get dayNoteIds => _dayNotes;
+
   /// Where [noteId] is on screen, or -1.
   int paneOf(String noteId) => frontTab?._paneOf(noteId) ?? -1;
 
@@ -663,6 +666,34 @@ class EditorWorkspace {
       _useFront();
     }
     _dayNotes = const {};
+    _persist();
+    return true;
+  }
+
+  /// Puts the day's tabs in [order], the day's notes as it is now arranged,
+  /// and any tab of a note it doesn't name after them, as they were. The tab
+  /// in front stays in front. Returns whether a tab moved.
+  bool arrangeDay(List<String> order) {
+    if (_dayInTabs == null) return false;
+    final place = {for (final (index, id) in order.indexed) id: index};
+    final was = {for (final (index, tab) in _tabs.indexed) tab: index};
+    int rank(EditorTab tab) => switch (tab.noteIds) {
+      [final id] when tab.folderId == null => place[id] ?? order.length,
+      _ => order.length,
+    };
+    final arranged = [..._tabs]
+      ..sort(
+        (a, b) => switch (rank(a).compareTo(rank(b))) {
+          0 => was[a]!.compareTo(was[b]!),
+          final by => by,
+        },
+      );
+    if (listEquals(arranged, _tabs)) return false;
+    final front = frontTab;
+    _tabs
+      ..clear()
+      ..addAll(arranged);
+    if (front != null) _front = _tabs.indexOf(front);
     _persist();
     return true;
   }

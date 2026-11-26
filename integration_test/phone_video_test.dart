@@ -16,6 +16,7 @@ import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_video_view.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'keyboard_support.dart';
 import 'screenshot.dart';
 
 class _MemoryStore extends LocalStore {
@@ -95,7 +96,7 @@ void main() {
         );
         await tester.pumpAndSettle(const Duration(seconds: 1));
         FocusManager.instance.primaryFocus?.unfocus();
-        await tester.pumpAndSettle(const Duration(seconds: 1));
+        await settleKeyboard(tester, up: false);
 
         expect(find.byType(NoteVideoView), findsNWidgets(2));
         expect(find.text('Loading video…'), findsOneWidget);
