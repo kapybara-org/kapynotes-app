@@ -6,7 +6,7 @@ the app's `pubspec.yaml` in place of the published package.
 The published package binds through keybinder, which matches a press by the
 key value it produces once the modifiers that produced it are taken away. Shift
 turns `x` into `X`, so a binding of Shift and a letter never matches its own
-press, and both of the app's default system-wide shortcuts, Alt+Shift+X and
+press, and both of the app's default system-wide shortcuts, Alt+Shift+L and
 Alt+Shift+N, are bindings of that kind. This one grabs the X key code under the
 X modifiers itself and matches presses on exactly those, which also drops
 keybinder from the app's runtime dependencies.
