@@ -28,7 +28,8 @@
 # instead of after the file's whole limit. A file whose app logged "All tests
 # passed!" and then lost only the results, with the emulator gone, counts as
 # passed, with a warning that its Flutter screenshots are missing. A file with
-# a failing test is never run again.
+# a failing test is never run again. An emulator still offline 4 minutes after
+# adb restarts ends the run there, since no file after it can run.
 set -u
 
 device=$1
@@ -51,7 +52,7 @@ wanted() {
 # enough to hang the app can hang the shot too.
 stop() {
   set -m
-  if $android; then
+  if $android || adb -s "$device" get-state >/dev/null 2>&1; then
     adb -s "$device" exec-out screencap -p > "build/screenshots/$1-stopped.png" &
   else
     xcrun simctl io "$device" screenshot "build/screenshots/$1-stopped.png" >/dev/null &
@@ -63,15 +64,16 @@ stop() {
   kill -KILL -- "-$2" "-$shot" 2>/dev/null
 }
 
-# Restarts adb and waits up to 4 minutes for the emulator to be booted again.
+# Restarts adb and waits up to 4 minutes for the emulator to be booted again,
+# or ends the run.
 reconnect() {
   adb kill-server >/dev/null 2>&1
   adb start-server >/dev/null 2>&1
   local waited=0
   until [[ $(adb -s "$device" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') == 1 ]]; do
     if (( waited >= 240 )); then
-      echo "::error::the emulator was still offline 4 minutes after adb restarted"
-      return 1
+      echo "::error::the emulator was still offline 4 minutes after adb restarted at $1_test.dart, so the run stops there"
+      exit 1
     fi
     sleep 5
     waited=$(( waited + 5 ))
@@ -90,7 +92,7 @@ drive() {
   while :; do
     if $android && [[ $(adb -s "$device" get-state 2>/dev/null) != device ]]; then
       echo "::warning::the emulator was offline before $1_test.dart; restarting adb"
-      reconnect
+      reconnect "$1"
     fi
     local args=(drive --no-pub -d "$device"
       --driver test_driver/integration_test.dart
@@ -129,7 +131,7 @@ drive() {
     sleep 1
     if $android && spoiled && grep -q 'All tests passed!' "$log"; then
       echo "::warning::$1_test.dart passed, but the emulator dropped before its results came back, so its Flutter screenshots are missing; restarting adb"
-      reconnect
+      reconnect "$1"
       return 0
     fi
     if ! $android || (( tries > 0 || SECONDS >= retry_until )) || ! spoiled; then
@@ -138,7 +140,7 @@ drive() {
     fi
     tries=1
     echo "::warning::the emulator spoiled $1_test.dart's run, not a test; restarting adb and running it again"
-    reconnect || { status=1; return; }
+    reconnect "$1"
   done
 }
 
