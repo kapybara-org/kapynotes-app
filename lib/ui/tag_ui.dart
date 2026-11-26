@@ -486,12 +486,14 @@ class _TagPickerState extends State<TagPicker> {
                 ),
               ),
             ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 30.0 * 8),
-              child: ListView(
-                shrinkWrap: true,
-                padding: EdgeInsets.zero,
-                children: rows,
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 30.0 * 8),
+                child: ListView(
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: rows,
+                ),
               ),
             ),
             if (problem != null)

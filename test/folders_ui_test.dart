@@ -957,6 +957,32 @@ void main() {
       expect(const Rect.fromLTRB(8, 8, 392, 292).intersect(short), short);
     });
 
+    testWidgets("in a 300 tall window, the tag list from a note's menu "
+        'shortens to fit', (tester) async {
+      await pumpForGolden(
+        tester,
+        size: const Size(400, 800),
+        brightness: Brightness.dark,
+        withNote: false,
+      );
+      for (var i = 1; i <= 12; i++) {
+        goldenTags.create('Tag $i');
+      }
+      final note = goldenNotes.create(body: 'Pricing ideas');
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'page-show-list');
+      tester.view.physicalSize = const Size(400, 300);
+      await tester.pumpAndSettle();
+      await tester.tapAt(
+        tester.getRect(rowOf(note.id)).centerRight - const Offset(8, 0),
+        buttons: kSecondaryButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'tags-note-${note.id}');
+      expect(find.byKey(const ValueKey('tag-picker-field')), findsOneWidget);
+    });
+
     testWidgets('Move to folder… works from the keyboard: ↓ in More reaches '
         'it, ↵ opens the list on the menu with its field ready, and ↓ there '
         'keeps the folder it reaches in sight', (tester) async {
