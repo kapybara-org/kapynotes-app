@@ -388,8 +388,7 @@ jobs:
           name: linux-x86_64-unsigned
           path: dist
 
-      # The runner's own apt installs the AppImage entry's baseline and FUSE,
-      # and ImageMagick for the screenshots.
+      # The runner's own apt installs the AppImage entry's baseline and FUSE.
       - name: Give the runner's apt the fallback mirrors
         run: sudo sh .github/apt-mirrors.sh
 
@@ -439,7 +438,8 @@ jobs:
         run: |
           gzip -dc baseline.tar.gz | docker load
           docker run --rm -v "$PWD:/w" -w /w smoke-baseline bash -c \
-            'if command -v apt-get >/dev/null; then apt-get update -q; fi
+            'sh .github/apt-mirrors.sh
+             if command -v apt-get >/dev/null; then apt-get update -q; fi
              packaging/linux/smoke_test.sh all dist smoke-out'
 
       - name: Mount the AppImage through FUSE
@@ -454,16 +454,6 @@ jobs:
           fi
           ! ldconfig -p | grep -q 'libfuse.so.2'
           SMOKE_FUSE=1 packaging/linux/smoke_test.sh appimage dist/KapyNotes-*.AppImage smoke-out
-
-      # The containers have no ImageMagick on purpose; the runner does.
-      - name: Convert screenshots
-        if: always()
-        run: |
-          command -v convert >/dev/null || { sudo apt-get update && sudo apt-get install -y imagemagick; }
-          for xwd in smoke-out/*.xwd; do
-            [ -e "$xwd" ] && convert "xwd:$xwd" "${xwd%.xwd}.png" && rm "$xwd"
-          done
-          true
 
       - uses: actions/upload-artifact@v4
         if: always()
