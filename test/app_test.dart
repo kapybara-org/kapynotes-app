@@ -2545,43 +2545,127 @@ void main() {
     expect((LayoutPrefs(store)..load()).appTextSize, AppTextSize.large);
   });
 
-  testWidgets('editor text shortcuts change, persist, and reset its size', (
-    tester,
-  ) async {
+  testWidgets('the zoom keys step the whole window, persist, and reset it, '
+      'leaving note text as it is', (tester) async {
     await pumpApp(tester);
     notes.create(body: 'Zoom this note\n2 + 2');
     await tester.pumpAndSettle();
 
     double editorFontSize() => openNoteField(tester).style.fontSize!;
+    Future<void> press(ShortcutAction action) =>
+        pressShortcut(tester, shortcuts.bindingFor(action)!);
+
+    final seen = <double>[];
+    for (var i = 0; i < 7; i++) {
+      await press(ShortcutAction.zoomIn);
+      seen.add(prefs.zoom);
+    }
+    expect(seen, [1.1, 1.25, 1.5, 1.75, 2, 2, 2]);
+    expect((LayoutPrefs(store)..load()).zoom, 2);
+    expect(prefs.editorTextScale, 1);
     expect(editorFontSize(), WritingFont.clean.editorSize);
 
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.increaseEditorTextSize)!,
-    );
-    expect(prefs.editorTextScale, 1.1);
+    for (var i = 0; i < 8; i++) {
+      await press(ShortcutAction.zoomOut);
+    }
+    expect(prefs.zoom, 0.8);
+    expect((LayoutPrefs(store)..load()).zoom, 0.8);
+
+    await press(ShortcutAction.resetZoom);
+    expect(prefs.zoom, 1);
+    expect((LayoutPrefs(store)..load()).zoom, 1);
+    expect(prefs.editorTextScale, 1);
+  });
+
+  testWidgets('Settings shows the zoom and steps it', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpApp(tester);
+    await openSettings(tester, section: SettingsSection.appearance);
+    final row = find.byKey(const ValueKey('zoom-setting'));
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+
     expect(
-      editorFontSize(),
-      closeTo(WritingFont.clean.editorSize * 1.1, 0.001),
+      find.descendant(of: row, matching: find.text('The whole window')),
+      findsOneWidget,
     );
-    expect((LayoutPrefs(store)..load()).editorTextScale, 1.1);
+    expect(find.descendant(of: row, matching: find.text('100%')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('note-text-size-setting')),
+        matching: find.text('Text inside notes'),
+      ),
+      findsOneWidget,
+    );
 
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.decreaseEditorTextSize)!,
+    await tester.tap(
+      find.descendant(of: row, matching: find.byKey(const ValueKey('stepper-up'))),
     );
+    await tester.pumpAndSettle();
+    expect(prefs.zoom, 1.1);
+    expect(find.descendant(of: row, matching: find.text('110%')), findsOneWidget);
     expect(prefs.editorTextScale, 1);
+  });
 
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.increaseEditorTextSize)!,
-    );
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.resetEditorTextSize)!,
-    );
-    expect(prefs.editorTextScale, 1);
-    expect(editorFontSize(), WritingFont.clean.editorSize);
+  testWidgets('at 150% the narrowest window, and a short one at 200%, keep '
+      'every control in view', (tester) async {
+    // The app draws a zoomed window as a screen of that much higher pixel
+    // density, so these are the same windows on screen, laid out zoomed. The
+    // narrowest window grows with the zoom, up to what the display holds.
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final bar = find.byKey(const ValueKey('page-toolbar'));
+    for (final (zoom, window) in [
+      (1.5, LayoutPrefs.minimumWindowSize * 1.5),
+      (2.0, Size(LayoutPrefs.minimumWindowSize.width * 2, 876)),
+    ]) {
+      for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        for (final listShown in [true, false]) {
+          final reason = '${(zoom * 100).round()}%, ${platform.name}, list '
+              '${listShown ? 'shown' : 'hidden'}';
+          await pumpApp(tester, sidebarVisible: listShown);
+          prefs.zoom = zoom;
+          tester.view.devicePixelRatio = zoom;
+          tester.view.physicalSize = window;
+          notes.create(body: 'Trip budget\nFlights 420 + hotel 380');
+          await tester.pumpAndSettle();
+
+          final page = tester.getRect(bar);
+          for (final key in ['page-share', 'page-more']) {
+            final control = tester.getRect(find.byKey(ValueKey(key)));
+            expect(page.intersect(control), control, reason: '$key, $reason');
+          }
+          final screen = Offset.zero & (window / zoom);
+          for (final key in ['rail-notes', 'rail-drawings']) {
+            final item = tester.getRect(find.byKey(ValueKey(key)));
+            expect(screen.intersect(item), item, reason: '$key, $reason');
+          }
+
+          await openSettings(tester);
+          final done = find.text('Done');
+          expect(done, findsOneWidget, reason: reason);
+          final doneRect = tester.getRect(done);
+          expect(screen.intersect(doneRect), doneRect, reason: reason);
+          final zoomRow = find.byKey(const ValueKey('zoom-setting'));
+          await tester.ensureVisible(zoomRow);
+          await tester.pumpAndSettle();
+          for (final words in ['Zoom', 'The whole window']) {
+            final text = find.descendant(of: zoomRow, matching: find.text(words));
+            expect(
+              tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+              isFalse,
+              reason: '$words, $reason',
+            );
+          }
+          await tester.tap(done);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: reason);
+        }
+      }
+    }
   });
 
   testWidgets('transparency thins the whole window, and persists', (

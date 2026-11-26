@@ -24,6 +24,7 @@ import '../speech/local_model_store.dart';
 import '../speech/summarizer.dart';
 import '../speech/transcriber.dart';
 import '../speech/transcription_queue.dart';
+import '../core/app_zoom.dart';
 import '../core/desktop_integration.dart';
 import '../core/platform.dart';
 import '../core/quick_capture.dart';
@@ -1447,8 +1448,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// build.
   bool get _listFits {
     final view = WidgetsBinding.instance.platformDispatcher.views.first;
-    return view.physicalSize.width / view.devicePixelRatio >=
-        kTwoPaneBreakpoint;
+    return zoomedSizeOf(view).width >= kTwoPaneBreakpoint;
   }
 
   /// Whether the notes list is on screen, beside the page or over it.
@@ -4266,9 +4266,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     : () => _focusPane(index),
             ],
             onOpenSettings: _showSettings,
-            onIncreaseEditorTextSize: widget.prefs.increaseEditorTextSize,
-            onDecreaseEditorTextSize: widget.prefs.decreaseEditorTextSize,
-            onResetEditorTextSize: widget.prefs.resetEditorTextSize,
+            onZoomIn: widget.prefs.zoomIn,
+            onZoomOut: widget.prefs.zoomOut,
+            onResetZoom: widget.prefs.resetZoom,
             onInsertImage: () => unawaited(
               _selectedEditor?.pickAndInsertImages() ?? Future<void>.value(),
             ),
@@ -6701,9 +6701,9 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onGoForward,
     required this.onFocusPane,
     required this.onOpenSettings,
-    required this.onIncreaseEditorTextSize,
-    required this.onDecreaseEditorTextSize,
-    required this.onResetEditorTextSize,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onResetZoom,
     required this.onInsertImage,
     required this.onRecordVoice,
     required this.onToggleSidebar,
@@ -6775,9 +6775,9 @@ class _DesktopShortcuts extends StatelessWidget {
   /// One per pane position, left to right; null past the panes that are open.
   final List<VoidCallback?> onFocusPane;
   final VoidCallback onOpenSettings;
-  final VoidCallback onIncreaseEditorTextSize;
-  final VoidCallback onDecreaseEditorTextSize;
-  final VoidCallback onResetEditorTextSize;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onResetZoom;
   final VoidCallback onInsertImage;
   final VoidCallback onRecordVoice;
   final VoidCallback onToggleSidebar;
@@ -6848,12 +6848,9 @@ class _DesktopShortcuts extends StatelessWidget {
             ?onFocusPane[2],
         ?shortcuts.bindingFor(ShortcutAction.openSettings)?.activator:
             onOpenSettings,
-        ?shortcuts.bindingFor(ShortcutAction.increaseEditorTextSize)?.activator:
-            onIncreaseEditorTextSize,
-        ?shortcuts.bindingFor(ShortcutAction.decreaseEditorTextSize)?.activator:
-            onDecreaseEditorTextSize,
-        ?shortcuts.bindingFor(ShortcutAction.resetEditorTextSize)?.activator:
-            onResetEditorTextSize,
+        ?shortcuts.bindingFor(ShortcutAction.zoomIn)?.activator: onZoomIn,
+        ?shortcuts.bindingFor(ShortcutAction.zoomOut)?.activator: onZoomOut,
+        ?shortcuts.bindingFor(ShortcutAction.resetZoom)?.activator: onResetZoom,
         ?shortcuts.bindingFor(ShortcutAction.insertImage)?.activator:
             onInsertImage,
         ?shortcuts.bindingFor(ShortcutAction.recordVoiceNote)?.activator:

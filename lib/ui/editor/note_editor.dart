@@ -7171,10 +7171,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       final rect = _cellRect(field, active.table, active.row, active.column);
       if (rect == null) return;
       final view = box.localToGlobal(Offset.zero) & box.size;
-      final window = View.of(context);
-      final keyboardTop =
-          (window.physicalSize.height - window.viewInsets.bottom) /
-          window.devicePixelRatio;
+      final media = MediaQuery.of(context);
+      final keyboardTop = media.size.height - media.viewInsets.bottom;
       const margin = 12.0;
       final top = view.top + margin;
       final bottom = math.min(view.bottom, keyboardTop) - margin;
