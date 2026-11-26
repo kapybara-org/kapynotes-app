@@ -99,15 +99,27 @@ void main() {
     final cloud = client((_) => http.Response('{"error":"pro-required"}', 402));
     expect(
       () => cloud.answer(KapyModel.cloud, request),
-      throwsA(
-        isA<AnswerFailed>().having(
-          (e) => e.message,
-          'message',
-          contains('Pro'),
-        ),
-      ),
+      throwsA(isA<AnswerProNeeded>()),
     );
   });
+
+  test(
+    '401 asks for a sign-in, and 426 for an update a retry cannot bring',
+    () async {
+      expect(
+        () => client(
+          (_) => http.Response('{}', 401),
+        ).answer(KapyModel.cloud, request),
+        throwsA(isA<AnswerSignInNeeded>()),
+      );
+      expect(
+        () => client(
+          (_) => http.Response('{}', 426),
+        ).answer(KapyModel.cloud, request),
+        throwsA(isA<AnswerFailed>().having((e) => e.retry, 'retry', isFalse)),
+      );
+    },
+  );
 
   test('429 is the limit, with its usage', () async {
     final cloud = client(
@@ -159,7 +171,7 @@ void main() {
     );
     await expectLater(
       cloud.answer(KapyModel.cloud, request),
-      throwsA(isA<AnswerFailed>()),
+      throwsA(isA<AnswerSignInNeeded>()),
     );
     expect(log, isEmpty);
   });
