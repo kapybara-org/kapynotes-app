@@ -3,6 +3,7 @@
 //
 // The platform side is FakeMacTextInput, which keeps the macOS plugin's model
 // and sends the deltas the plugin sends for an input method and the keyboard.
+import 'dart:io' show sleep;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/semantics.dart' show SemanticsAction;
 import 'package:flutter/services.dart';
@@ -1116,7 +1117,9 @@ void main() {
       await tester.pump();
       expect(field.layout.marks.caretColor, isNull);
 
-      await tester.pump(const Duration(milliseconds: 9500));
+      await tester.pump(const Duration(milliseconds: 9000));
+      expect(field.layout.marks.caretColor, isNull);
+      await tester.pump(const Duration(milliseconds: 500));
       expect(field.layout.marks.caretColor, color);
       expect(_drawn(tester, 2), paints..rect(color: color));
       await tester.binding.delayed(const Duration(minutes: 1));
@@ -1153,14 +1156,44 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.linux),
   );
 
+  testWidgets(
+    'on Linux the caret rests on even when a stall makes the blink miss a '
+    'half second',
+    (tester) async {
+      final text = _note(10);
+      final field = await _pumpField(tester, text);
+      final caret = _lineStart(text, 2) + 4;
+      await _select(tester, field, TextSelection.collapsed(offset: caret));
+      final color = field.layout.marks.caretColor;
+      expect(color, isNotNull);
+      // A real timer skips the ticks a stall misses, where a fake one never
+      // does, so this takes about 11 seconds.
+      await tester.runAsync(() async {
+        field.userUpdateTextEditingValue(
+          TextEditingValue(
+            text: text,
+            selection: TextSelection.collapsed(offset: caret + 1),
+          ),
+          SelectionChangedCause.keyboard,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 3100));
+        sleep(const Duration(milliseconds: 1200));
+        await Future<void>.delayed(const Duration(milliseconds: 7000));
+      });
+      expect(field.layout.marks.caretColor, color);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.linux),
+  );
+
   testWidgets('elsewhere the caret goes on blinking while the field waits', (
     tester,
   ) async {
     final field = await _pumpField(tester, _note(10));
     await _select(tester, field, const TextSelection.collapsed(offset: 3));
     await tester.pump(const Duration(seconds: 60));
-    await tester.binding.delayed(const Duration(milliseconds: 500));
-    expect(tester.binding.hasScheduledFrame, isTrue);
+    final shown = field.layout.marks.caretColor;
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(field.layout.marks.caretColor, isNot(shown));
   }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
   testWidgets('on iOS the caret fades out and back in as UIKit fades it', (

@@ -816,6 +816,7 @@ class NoteFieldState extends State<NoteField>
         if (defaultTargetPlatform == TargetPlatform.linux &&
             _blinkHalfPeriod * timer.tick >= _linuxBlinkTimeout) {
           timer.cancel();
+          _blink.value = 1;
         }
       });
     }
