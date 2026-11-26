@@ -114,6 +114,14 @@ jobs:
           path: build/release/KapyNotes-${{ steps.version.outputs.version }}-setup.exe
           if-no-files-found: error
 
+      # Whether the app finds a microphone on Windows, and records sound from
+      # it (KAP-381), against VB-CABLE as the runner's only input. Last, so a
+      # driver that will not install still leaves the installer uploaded.
+      - name: A microphone for the voice tests
+        run: .\tool\ci\windows_microphone.ps1
+
+      - run: flutter test integration_test/voice_recording_test.dart -d windows
+
   macos:
     runs-on: macos-latest
     steps:

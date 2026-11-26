@@ -9,6 +9,7 @@
 // container we cannot read back.
 //
 //   flutter test integration_test/voice_recording_test.dart -d macos
+//   flutter test integration_test/voice_recording_test.dart -d windows
 //   flutter test integration_test/voice_recording_test.dart -d <android id>
 //   flutter test integration_test/voice_recording_test.dart -d <ios sim id>
 //
