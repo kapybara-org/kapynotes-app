@@ -37,6 +37,7 @@ import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_days.dart';
+import 'package:kapy_notes/data/note_drawing.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
@@ -386,6 +387,39 @@ void main() {
       );
     }
     await shot(tester, 'later-day-by-tag');
+  });
+
+  testWidgets("KAP-364: grouped by day, Drawings counts only what it lists, "
+      'so a drawing for the day after tomorrow is out of its count, and A to '
+      'Z lists and counts it', (tester) async {
+    await launch(
+      tester,
+      bodies: ['Standup\nShip it'],
+      prepare: (tags, days) {
+        final shelf = notes.create(drawing: true);
+        notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+        final deck = notes.create(drawing: true);
+        notes.updateDrawing(deck.id, NoteDrawing.empty, title: 'Deck flow');
+        final now = notes.now();
+        days.setDay(shelf.id, DateTime(now.year, now.month, now.day + 2));
+      },
+    );
+    await click(tester, find.byKey(const ValueKey('rail-drawings')));
+    final list = find.byType(Sidebar);
+    Finder listed(String title) =>
+        find.descendant(of: list, matching: find.text(title));
+    int count() =>
+        tester.widget<SidebarWindowBar>(find.byType(SidebarWindowBar)).count;
+    expect(listed('Shelf plan'), findsNothing);
+    expect(listed('Deck flow'), findsOneWidget);
+    expect(count(), 1);
+    await shot(tester, 'kap364-drawings-by-date');
+
+    prefs.notesGrouping = NotesGrouping.aToZ;
+    await tester.pumpAndSettle();
+    expect(listed('Shelf plan'), findsOneWidget);
+    expect(count(), 2);
+    await shot(tester, 'kap364-drawings-a-to-z');
   });
 
   /// The boards' window, D03, D04 and D07 alike.

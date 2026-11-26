@@ -13146,6 +13146,45 @@ void main() {
       expect(find.text('Upcoming'), findsNothing);
     });
 
+    testWidgets("a phone's Drawings lists a drawing for a later day under "
+        'Recent and counts it, as it does every drawing', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final days = NoteDayStore(store);
+      await days.load();
+      final folders = FolderStore(store);
+      await folders.load();
+      final shelf = notes.create(drawing: true);
+      notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+      final deck = notes.create(drawing: true);
+      notes.updateDrawing(deck.id, NoteDrawing.empty, title: 'Deck flow');
+      final now = notes.now();
+      days.setDay(shelf.id, DateTime(now.year, now.month, now.day + 2));
+      await pumpApp(
+        tester,
+        size: const Size(390, 844),
+        folders: folders,
+        days: days,
+      );
+      await showNotesList(tester);
+      await tester.tap(find.byKey(const ValueKey('bar-folders')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('folders-drawings-tile')));
+      await tester.pumpAndSettle();
+
+      Finder listed(String title) =>
+          find.descendant(of: find.byType(Sidebar), matching: find.text(title));
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(listed('Deck flow'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(PhoneListTitle),
+          matching: find.text('2'),
+        ),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('⋮ gives the open note another day, and Remove day takes it '
         'off', (tester) async {
       final days = NoteDayStore(store);
@@ -13227,6 +13266,49 @@ void main() {
         findsOneWidget,
       );
       expect(count(), before);
+    });
+
+    testWidgets("a drawing for a later day stays off the desktop's Drawings "
+        'and out of its count until its day, though pinned it stays and '
+        'counts, and A to Z lists and counts it', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final shelf = notes.create(drawing: true);
+      notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+      final deck = notes.create(drawing: true);
+      notes.updateDrawing(deck.id, NoteDrawing.empty, title: 'Deck flow');
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+      await tester.tap(find.byKey(const ValueKey('rail-drawings')));
+      await tester.pumpAndSettle();
+      int count() =>
+          tester.widget<SidebarWindowBar>(find.byType(SidebarWindowBar)).count;
+      Finder listed(String title) =>
+          find.descendant(of: find.byType(Sidebar), matching: find.text(title));
+      expect(count(), 2);
+
+      final now = notes.now();
+      days.setDay(shelf.id, DateTime(now.year, now.month, now.day + 2));
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsNothing);
+      expect(listed('Deck flow'), findsOneWidget);
+      expect(count(), 1, reason: 'the count is what the list shows');
+
+      prefs.notesGrouping = NotesGrouping.aToZ;
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(count(), 2);
+
+      prefs.notesGrouping = NotesGrouping.byDate;
+      notes.togglePinned(shelf.id);
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(count(), 2);
+
+      notes.togglePinned(shelf.id);
+      days.setDay(shelf.id, DateTime(now.year, now.month, now.day));
+      await tester.pumpAndSettle();
+      expect(listed('Shelf plan'), findsOneWidget);
+      expect(count(), 2);
     });
 
     testWidgets('Archived Notes lists and counts an archived note for a '

@@ -266,7 +266,7 @@ class HomePage extends StatefulWidget {
 
   /// Injectable media boundaries keep launch tests independent of a physical
   /// camera and let the real page remember which note owns an interrupted
-  /// Android photo-library result.
+  /// Android camera or photo-library result.
   final ImageFileAcquirer? imageAcquirer;
   final LostImageRetriever? lostImageRetriever;
   final HiddenNotesGate hiddenNotesGate;
@@ -289,7 +289,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   static const String _pendingImageNoteKey = 'pendingImageNote.v1';
 
-  final FocusNode _desktopShortcutFocus = FocusNode(
+  final FocusScopeNode _desktopShortcutFocus = FocusScopeNode(
     debugLabel: 'desktop-shortcuts',
   );
   final NoteSwitcher _noteSwitcher = NoteSwitcher();
@@ -817,7 +817,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!AppPlatform.isAndroid) return await acquireNoteImages(context);
       return await acquireNoteImages(
         context,
-        chooseFromLibrary: () => _pickImagesFromAndroidLibrary(noteId),
+        takePhoto: () => _pickImagesOnAndroid(noteId, takeNotePhoto),
+        chooseFromLibrary: () =>
+            _pickImagesOnAndroid(noteId, pickExistingImageFiles),
       );
     } finally {
       if (protectsHiddenSession) _hiddenSystemUiDepth--;
@@ -849,13 +851,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Remembers the target note only for the moment Android leaves Flutter for
-  /// its system photo picker. This durable marker is needed where the operating
-  /// system may reclaim the Activity while another one is choosing photos.
-  Future<List<XFile>> _pickImagesFromAndroidLibrary(String noteId) async {
+  /// its camera or system photo picker. This durable marker is needed where the
+  /// operating system may reclaim the Activity while another one is open.
+  Future<List<XFile>> _pickImagesOnAndroid(
+    String noteId,
+    Future<List<XFile>> Function() pick,
+  ) async {
     widget.store.put(_pendingImageNoteKey, noteId);
     await widget.store.flush();
     try {
-      return await pickExistingImageFiles();
+      return await pick();
     } finally {
       widget.store.put(_pendingImageNoteKey, null);
       unawaited(widget.store.flush());
@@ -1710,7 +1715,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // the real keyboard focus agree, while further Tabs still reach the
       // same held-key session.
       if (selectionPreview && _noteSwitcher.isActive) {
-        _desktopShortcutFocus.requestFocus();
+        _desktopShortcutFocus.requestScopeFocus();
       }
     }
     final paneBefore = _workspace.activePane;
@@ -3958,8 +3963,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// How many notes the list shows as the filter narrows it, for the bar
   /// over the list, whatever the search has narrowed the list to. By day,
-  /// Notes leaves out a note for a later day until its day.
-  int get _matchingCount {
+  /// Notes leaves out a note for a later day until its day, and so does
+  /// Drawings beside the rail. A [phone] lists every drawing under Recent, so
+  /// its Drawings counts them all.
+  int _matchingCount({required bool phone}) {
     final notes = _filtered(
       _archiveMode
           ? widget.notes.archivedNotes
@@ -3967,7 +3974,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           ? widget.notes.hiddenNotes
           : widget.notes.notes,
     );
-    return _space == LibrarySpace.notes &&
+    return (_space == LibrarySpace.notes ||
+                (_space == LibrarySpace.drawings && !phone)) &&
             widget.prefs.notesGrouping == NotesGrouping.byDate
         ? _listedByDay(notes).length
         : notes.length;
@@ -4394,7 +4402,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   setState(() => _pinnedOnly = value),
               windowBar: SidebarWindowBar(
                 title: _listTitle,
-                count: _matchingCount,
+                count: _matchingCount(phone: false),
                 noun: createNoun,
                 onCreate: _createInSpace,
                 newNoteShortcut: newNoteShortcut,
@@ -5710,7 +5718,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               title: folder?.name ?? _listTitle,
               count: folder != null
                   ? _listedByDay(notes).length
-                  : _matchingCount,
+                  : _matchingCount(phone: true),
               onBack: page ? _showFolders : null,
               trailing: page ? _phoneAccount() : null,
             ),
@@ -6622,7 +6630,7 @@ class _DesktopShortcuts extends StatelessWidget {
   });
 
   final Widget child;
-  final FocusNode focusNode;
+  final FocusScopeNode focusNode;
   final VoidCallback onNewNote;
 
   /// The pair's keys, unless they belong to a field being typed in.
@@ -6778,8 +6786,8 @@ class _DesktopShortcuts extends StatelessWidget {
         ?shortcuts.bindingFor(ShortcutAction.toggleKapyAi)?.activator:
             ?onToggleKapyAi,
       },
-      child: Focus(
-        focusNode: focusNode,
+      child: FocusScope(
+        node: focusNode,
         autofocus: autofocus,
         onKeyEvent: _pairKey,
         child: child,
