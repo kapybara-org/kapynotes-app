@@ -81,9 +81,10 @@ class Toast {
   /// as View after a note is filed away. A toast with one stays a little
   /// longer, so there is time to reach it.
   ///
-  /// [onGone] runs once the toast goes without its action: its time up, or
-  /// another toast in its place. A toast still showing when the app closes
-  /// never goes that way, so what [onGone] would have done stays undone.
+  /// [onGone] runs once the toast goes without its action: its time up,
+  /// another toast in its place, or the app leaving the foreground (see
+  /// [giveUpUndo]). A toast still showing when the app is killed never goes
+  /// that way, so what [onGone] would have done stays undone.
   static void show(
     BuildContext context,
     String message, {

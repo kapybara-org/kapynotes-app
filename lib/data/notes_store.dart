@@ -57,7 +57,7 @@ class NotesStore extends ChangeNotifier {
   /// Notes deleted while Undo is still on offer: out of every list, but
   /// whole, and written and synced as they were, until [deleteAll] takes
   /// them for good or [undoDelete] puts them back. Nothing of the delete is
-  /// written down, so one the app closes on is there on the next launch.
+  /// written down, so one the app is killed on is there on the next launch.
   Set<String> _deleting = const {};
 
   /// The days something was written on, as [WritingStreak.dayOf] numbers.

@@ -2752,7 +2752,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// with Undo. They go for good once the toast does, with the pictures and
   /// recordings nothing else refers to. Until then nothing of them has
   /// changed, so Undo puts them back as they were, the open one open again
-  /// on a desktop's page, and quitting keeps them.
+  /// on a desktop's page, and the app being killed keeps them. Leaving the
+  /// app ends the toast as its time running out would: see
+  /// [Toast.giveUpUndo].
   void _forget(List<String> ids) {
     final removing = ids.toSet();
     final removed = _sharedByOthers(ids);
