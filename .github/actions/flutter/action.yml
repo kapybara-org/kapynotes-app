@@ -24,11 +24,6 @@ inputs:
     required: false
     default: ''
 
-outputs:
-  PUB-CACHE-PATH:
-    description: Where the pub cache lives
-    value: ${{ steps.config.outputs.PUB-CACHE-PATH }}
-
 runs:
   using: composite
   steps:
