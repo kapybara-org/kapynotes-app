@@ -9,6 +9,7 @@ import 'package:kapy_notes/audio/voice_player.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
+import 'package:kapy_notes/speech/moments.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
 
 import '../kapy_icon_finder.dart';

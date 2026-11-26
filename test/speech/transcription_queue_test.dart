@@ -551,6 +551,43 @@ void main() {
     expect(api.transcribeRequestIds, hasLength(1));
   });
 
+  test('a name the person gave survives the summary written again', () async {
+    queue.enqueue(noteId, 'v1');
+    await queue.drain();
+    notes.updateAttachment(
+      noteId,
+      'v1',
+      (ref) => (ref as NoteVoiceRef).copyWith(
+        summary: ref.summary!.withTitle('Pricing plan'),
+      ),
+    );
+
+    queue.summarizeAgain(noteId, 'v1');
+    expect(current()!.summary, isNull);
+    await queue.drain();
+
+    expect(api.summarizeCalls, 2);
+    expect(current()!.summary!.title, 'Pricing plan');
+    expect(current()!.summary!.named, isTrue);
+  });
+
+  test('a name the person gave survives a summary written over it', () async {
+    queue.enqueue(noteId, 'v1');
+    await queue.drain();
+    notes.updateAttachment(
+      noteId,
+      'v1',
+      (ref) => (ref as NoteVoiceRef).copyWith(
+        summary: ref.summary!.withTitle('Pricing plan'),
+      ),
+    );
+
+    queue.enqueue(noteId, 'v1', fresh: true);
+    await queue.drain();
+
+    expect(current()!.summary!.title, 'Pricing plan');
+  });
+
   test('a server that cannot be reached is a failure, not a silence', () async {
     // This is what an unreachable or refusing server looked like from the
     // chip: nothing. The attempt was not counted and no code was kept, so it

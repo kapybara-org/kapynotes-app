@@ -67,6 +67,10 @@ class ChatMeta {
     ),
     model: Stamped(chat.model.toJson(), chat.modelAt.millisecondsSinceEpoch),
     createdAt: chat.createdAt.millisecondsSinceEpoch,
+    extra: {
+      if (chat.recording case final recording?)
+        recordingField: recording.toJson(),
+    },
   );
 
   final String chatId;
@@ -74,8 +78,15 @@ class ChatMeta {
   final Stamped<Map<String, Object?>> model;
   final int createdAt;
 
-  /// Fields a later build wrote, kept and written back.
+  /// Fields a later build wrote, kept and written back. The chat's
+  /// recording rides here too, as [recordingField], so a build from before
+  /// it, which keeps whatever it does not know, writes it back on a rename.
   final Map<String, Object?> extra;
+
+  static const String recordingField = 'recording';
+
+  KapyRecordingRef? get recording =>
+      KapyRecordingRef.fromJson(extra[recordingField]);
 
   static const _known = {'kind', 'chatId', 'title', 'model', 'createdAt'};
 
@@ -141,6 +152,7 @@ class ChatMessagePart {
     this.read = const [],
     this.matching = 0,
     this.model,
+    this.readTo,
   });
 
   final String chatId;
@@ -153,6 +165,7 @@ class ChatMessagePart {
   final List<KapyNoteRef> read;
   final int matching;
   final KapyModel? model;
+  final int? readTo;
 
   String get key => messageKey(chatId, messageId, part);
 
@@ -176,6 +189,7 @@ class ChatMessagePart {
       ],
     if (matching > 0) 'matching': matching,
     if (model != null) 'model': model!.toJson(),
+    if (readTo != null) 'readTo': readTo,
   };
 
   /// Null for a payload that is not a whole part this build can read.
@@ -224,6 +238,7 @@ class ChatMessagePart {
       ],
       matching: raw['matching'] is int ? raw['matching'] as int : 0,
       model: KapyModel.fromJson(raw['model']),
+      readTo: raw['readTo'] is int ? raw['readTo'] as int : null,
     );
   }
 }
@@ -250,6 +265,7 @@ List<ChatMessagePart> chatMessageParts(String chatId, KapyMessage message) {
     read: read,
     matching: message.matching,
     model: message.model,
+    readTo: message.readTo?.inMilliseconds,
   );
   int size(ChatMessagePart part) =>
       utf8.encode(jsonEncode(part.toPayload())).length;
@@ -325,5 +341,6 @@ KapyMessage? chatMessageOf(List<ChatMessagePart> parts) {
     read: head.read,
     matching: head.matching,
     model: head.model,
+    readTo: head.readTo == null ? null : Duration(milliseconds: head.readTo!),
   );
 }
