@@ -61,7 +61,10 @@ class _SplitViewState extends State<SplitView> {
 
   bool _hovering = false;
 
-  final FocusNode _overlayFocus = FocusNode(debugLabel: 'sidebar-overlay');
+  final FocusNode _overlayFocus = FocusNode(
+    debugLabel: 'sidebar-overlay',
+    skipTraversal: true,
+  );
 
   /// Where the divider is while it is being dragged.
   double? _dragWidth;
@@ -125,19 +128,27 @@ class _SplitViewState extends State<SplitView> {
                         duration: const Duration(milliseconds: 160),
                         curve: Curves.easeOutCubic,
                         width: beside ? width : 0,
-                        child: ClipRect(
-                          child: OverflowBox(
-                            alignment: Alignment.topLeft,
-                            minWidth: width,
-                            maxWidth: width,
-                            minHeight: listHeight,
-                            maxHeight: listHeight,
-                            child: widget.sidebar,
+                        child: ExcludeFocus(
+                          excluding: !beside,
+                          child: ClipRect(
+                            child: OverflowBox(
+                              alignment: Alignment.topLeft,
+                              minWidth: width,
+                              maxWidth: width,
+                              minHeight: listHeight,
+                              maxHeight: listHeight,
+                              child: widget.sidebar,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  Expanded(child: widget.body),
+                  Expanded(
+                    child: ExcludeFocus(
+                      excluding: overlay && widget.sidebarVisible,
+                      child: widget.body,
+                    ),
+                  ),
                 ],
               ),
             ),

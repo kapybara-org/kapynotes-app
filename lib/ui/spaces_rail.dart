@@ -13,6 +13,7 @@ import '../data/writing_streak.dart';
 import '../sync/auth_api.dart';
 import '../sync/sync_service.dart';
 import 'context_menu.dart';
+import 'focus_ring.dart';
 import 'installed_version.dart';
 import 'profile_avatar.dart';
 import 'window_drag_area.dart';
@@ -128,103 +129,108 @@ class SpacesRail extends StatelessWidget {
       badge: badge,
     );
 
-    return Material(
-      type: MaterialType.transparency,
-      child: Container(
-        width: width + MediaQuery.paddingOf(context).left,
-        decoration: BoxDecoration(
-          color: palette.railBackground,
-          border: Border(right: BorderSide(color: palette.railBorder)),
-        ),
-        child: SafeArea(
-          right: false,
-          child: Column(
-            children: [
-              if (WindowChrome.overlaysContent)
-                const WindowDragArea(
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: titleBarHeight,
+    return FocusTraversalGroup(
+      child: Material(
+        type: MaterialType.transparency,
+        child: Container(
+          width: width + MediaQuery.paddingOf(context).left,
+          decoration: BoxDecoration(
+            color: palette.railBackground,
+            border: Border(right: BorderSide(color: palette.railBorder)),
+          ),
+          child: SafeArea(
+            right: false,
+            child: Column(
+              children: [
+                if (WindowChrome.overlaysContent)
+                  const WindowDragArea(
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: titleBarHeight,
+                    ),
                   ),
-                ),
-              // The spaces scroll rather than overflow in the shortest window,
-              // and the room under them drags the window.
-              Expanded(
-                child: ScrollConfiguration(
-                  behavior: ScrollConfiguration.of(
-                    context,
-                  ).copyWith(scrollbars: false),
-                  child: CustomScrollView(
-                    slivers: [
-                      SliverToBoxAdapter(
-                        child: Column(
-                          children: [
-                            const SizedBox(height: 8),
-                            destination(
-                              LibrarySpace.notes,
-                              icon: KapyIcons.noteOutlined,
-                              label: 'Notes',
-                            ),
-                            if (tasks) ...[
+                // The spaces scroll rather than overflow in the shortest window,
+                // and the room under them drags the window.
+                Expanded(
+                  child: ScrollConfiguration(
+                    behavior: ScrollConfiguration.of(
+                      context,
+                    ).copyWith(scrollbars: false),
+                    child: CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 8),
+                              destination(
+                                LibrarySpace.notes,
+                                icon: KapyIcons.noteOutlined,
+                                label: 'Notes',
+                              ),
+                              if (tasks) ...[
+                                const SizedBox(height: 16),
+                                destination(
+                                  LibrarySpace.tasks,
+                                  icon: KapyIcons.tasksOutlined,
+                                  label: 'Tasks',
+                                ),
+                              ],
                               const SizedBox(height: 16),
                               destination(
-                                LibrarySpace.tasks,
-                                icon: KapyIcons.tasksOutlined,
-                                label: 'Tasks',
+                                LibrarySpace.drawings,
+                                icon: KapyIcons.penRounded,
+                                label: 'Drawings',
                               ),
+                              if (invitations != null) ...[
+                                const SizedBox(height: 16),
+                                destination(
+                                  LibrarySpace.shared,
+                                  icon: KapyIcons.groupOutlined,
+                                  label: 'Shared',
+                                  semanticLabel: switch (invitations) {
+                                    0 => 'Shared with me',
+                                    1 => 'Shared with me, 1 invitation',
+                                    _ =>
+                                      'Shared with me, $invitations invitations',
+                                  },
+                                  badge: invitations,
+                                ),
+                              ],
                             ],
-                            const SizedBox(height: 16),
-                            destination(
-                              LibrarySpace.drawings,
-                              icon: KapyIcons.penRounded,
-                              label: 'Drawings',
-                            ),
-                            if (invitations != null) ...[
-                              const SizedBox(height: 16),
-                              destination(
-                                LibrarySpace.shared,
-                                icon: KapyIcons.groupOutlined,
-                                label: 'Shared',
-                                semanticLabel: switch (invitations) {
-                                  0 => 'Shared with me',
-                                  1 => 'Shared with me, 1 invitation',
-                                  _ =>
-                                    'Shared with me, $invitations invitations',
-                                },
-                                badge: invitations,
-                              ),
-                            ],
-                          ],
+                          ),
                         ),
-                      ),
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: WindowDragArea(child: SizedBox.expand()),
-                      ),
-                    ],
+                        const SliverFillRemaining(
+                          hasScrollBody: false,
+                          child: WindowDragArea(child: SizedBox.expand()),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              if (streak != null && streak.days > 0) ...[
-                StreakMark(key: const ValueKey('rail-streak'), streak: streak),
-                const SizedBox(height: 7.5),
-              ],
-              _RailSettings(
-                onPressed: onSettingsPressed,
-                shortcut: settingsShortcut,
-                updates: updates,
-              ),
-              if (onAccountPressed != null) ...[
-                const SizedBox(height: 7.5),
-                AccountAvatar(
-                  key: const ValueKey('rail-account'),
-                  onPressed: onAccountPressed,
-                  user: user,
-                  syncStatus: syncStatus,
+                if (streak != null && streak.days > 0) ...[
+                  StreakMark(
+                    key: const ValueKey('rail-streak'),
+                    streak: streak,
+                  ),
+                  const SizedBox(height: 7.5),
+                ],
+                _RailSettings(
+                  onPressed: onSettingsPressed,
+                  shortcut: settingsShortcut,
+                  updates: updates,
                 ),
+                if (onAccountPressed != null) ...[
+                  const SizedBox(height: 7.5),
+                  AccountAvatar(
+                    key: const ValueKey('rail-account'),
+                    onPressed: onAccountPressed,
+                    user: user,
+                    syncStatus: syncStatus,
+                  ),
+                ],
+                const SizedBox(height: 16),
               ],
-              const SizedBox(height: 16),
-            ],
+            ),
           ),
         ),
       ),
@@ -271,13 +277,12 @@ class _RailItem extends StatefulWidget {
 
 class _RailItemState extends State<_RailItem> {
   bool _hovered = false;
-  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final selected = widget.selected;
-    final lit = _hovered || _focused;
+    final lit = _hovered;
     final ink = selected
         ? palette.tonalForeground
         : lit
@@ -324,7 +329,6 @@ class _RailItemState extends State<_RailItem> {
       child: InkWell(
         onTap: widget.onPressed,
         onHover: (value) => setState(() => _hovered = value),
-        onFocusChange: (value) => setState(() => _focused = value),
         mouseCursor: SystemMouseCursors.click,
         overlayColor: const WidgetStatePropertyAll(Colors.transparent),
         splashFactory: NoSplash.splashFactory,
@@ -334,7 +338,7 @@ class _RailItemState extends State<_RailItem> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                tile,
+                FocusRingTarget(radius: AppRadii.surface, child: tile),
                 const SizedBox(height: 4),
                 Text(
                   widget.label,
@@ -686,7 +690,6 @@ class _RailButton extends StatelessWidget {
     onTap: onPressed,
     borderRadius: BorderRadius.circular(AppRadii.control),
     hoverColor: context.palette.hover,
-    focusColor: context.palette.hover,
     highlightColor: Colors.transparent,
     splashFactory: NoSplash.splashFactory,
     mouseCursor: SystemMouseCursors.click,
