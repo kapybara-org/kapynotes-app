@@ -7496,7 +7496,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   /// The title's underline and the meta row under it, scrolled with the
   /// text they belong to.
-  Widget _titleMarks(_TitleLayout title, EdgeInsets padding) {
+  Widget _titleMarks(_TitleLayout title, EdgeInsets padding, double column) {
     final checklist = _checklist();
     final now = (widget.now ?? DateTime.now)();
     final displayTime = widget.displayTime ?? (time) => time.toLocal();
@@ -7541,6 +7541,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 ? null
                 : NoteTagChips(noteId: widget.noteId, adds: !widget.phone),
             phone: widget.phone,
+            width: column,
           ),
         ),
       ),
@@ -8366,7 +8367,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           ),
                         ),
                       if (title != null)
-                        Positioned.fill(child: _titleMarks(title, padding)),
+                        Positioned.fill(
+                          child: _titleMarks(
+                            title,
+                            padding,
+                            textPaneWidth - padding.horizontal,
+                          ),
+                        ),
                       if (!widget.readOnly)
                         Positioned.fill(child: _emptyLineMarks(padding)),
                       if (widget.markdownEnabled)

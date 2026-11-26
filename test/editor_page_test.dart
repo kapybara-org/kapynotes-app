@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/calc/engine.dart';
@@ -525,5 +526,128 @@ void main() {
       final progress = tester.getRect(find.text('0 of 1 done'));
       expect(tester.getRect(find.text('Work')).left - progress.right, 6);
     });
+
+    testWidgets("the desktop's line keeps to its column: what has no room "
+        'there steps aside whole, with everything after it, and the date '
+        'shortens last (KAP-173)', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final semantics = tester.ensureSemantics();
+      Future<void> pumpAt(double width) => tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: width,
+                child: NoteMetaRow(
+                  edited: DateTime(2026, 11, 19, 8, 55),
+                  today: DateTime(2026, 11, 19),
+                  done: 1,
+                  tasks: 3,
+                  tags: const Text('Work'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final date = find.text('Thu 19 Nov · 8:55');
+      final count = find.text('1 of 3 done');
+      final tags = find.text('Work');
+      await pumpAt(400);
+      expect(date.hitTestable(), findsOneWidget);
+      expect(count.hitTestable(), findsOneWidget);
+      expect(find.semantics.byLabel(RegExp('1 of 3 done')), findsOneWidget);
+      expect(tags.hitTestable(), findsOneWidget);
+      final through = tester.getRect(count).right;
+
+      await pumpAt(through + 0.5);
+      expect(count.hitTestable(), findsOneWidget);
+      expect(tags.hitTestable(), findsNothing);
+
+      await pumpAt(through - 1);
+      expect(date.hitTestable(), findsOneWidget);
+      expect(count.hitTestable(), findsNothing);
+      expect(find.semantics.byLabel(RegExp('1 of 3 done')), findsNothing);
+      expect(tags.hitTestable(), findsNothing);
+      expect(
+        tester.renderObject(find.byType(NoteMetaRow)),
+        paintsExactlyCountTimes(#drawParagraph, 1),
+      );
+
+      await pumpAt(60);
+      expect(tester.getSize(date).width, lessThanOrEqualTo(60));
+      expect(
+        tester.renderObject<RenderParagraph>(date).didExceedMaxLines,
+        isTrue,
+      );
+      expect(count.hitTestable(), findsNothing);
+      semantics.dispose();
+    });
+
+    testWidgets("a chip that grows by its × under the pointer keeps its place "
+        "on the desktop's line, though nothing new shows past the column "
+        '(KAP-173)', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      const chip = ValueKey('chip');
+      Future<void> pumpAt(double width, {Key? key}) => tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: NoteMetaRow(
+                key: key,
+                edited: DateTime(2026, 11, 19, 8, 55),
+                today: DateTime(2026, 11, 19),
+                width: width,
+                tags: const _GrowsUnderPointer(key: chip),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await pumpAt(400);
+      final rest = tester.getRect(find.byKey(chip)).right;
+      await pumpAt(rest + 5);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(tester.getCenter(find.byKey(chip)));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byKey(chip)).right, rest + 15);
+      expect(find.byKey(chip).hitTestable(), findsOneWidget);
+      await mouse.moveTo(
+        tester.getRect(find.byKey(chip)).centerRight - const Offset(2, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(chip).hitTestable(), findsOneWidget);
+
+      await pumpAt(rest - 1, key: const ValueKey('fresh'));
+      expect(find.byKey(chip).hitTestable(), findsNothing);
+    });
   });
+}
+
+/// Wider by a tag chip's × while the pointer is on it.
+class _GrowsUnderPointer extends StatefulWidget {
+  const _GrowsUnderPointer({super.key});
+
+  @override
+  State<_GrowsUnderPointer> createState() => _GrowsUnderPointerState();
+}
+
+class _GrowsUnderPointerState extends State<_GrowsUnderPointer> {
+  bool _over = false;
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    onEnter: (_) => setState(() => _over = true),
+    onExit: (_) => setState(() => _over = false),
+    child: SizedBox(width: _over ? 55 : 40, height: 16),
+  );
 }

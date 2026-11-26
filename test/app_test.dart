@@ -4815,6 +4815,89 @@ void main() {
     });
   });
 
+  // KAP-173: split at 600, the left note's "1 of 3 done" ran into its
+  // pane's edge, cut with no ellipsis, and + Tag sat past it.
+  testWidgets("split at 600, a note's meta line keeps to its column, and what "
+      'has no room there steps aside whole', (tester) async {
+    await notes.load();
+    final tags = TagStore(store);
+    await tags.load();
+    notes.create(body: 'Right note');
+    notes.create(body: 'Left note\n☑ One\n☐ Two\n☐ Three');
+    await pumpApp(tester, tags: tags);
+    await tester.tap(find.widgetWithText(NoteRow, 'Left note'));
+    await tester.pumpAndSettle();
+    await pickPageAction(tester, 'split');
+    await tester.tap(find.widgetWithText(NoteRow, 'Right note'));
+    await tester.pumpAndSettle();
+
+    final line = find.byType(NoteMetaRow).first;
+    Finder onLine(String key) =>
+        find.descendant(of: line, matching: find.byKey(ValueKey(key)));
+    Future<void> inColumn(double width) async {
+      tester.view.physicalSize = Size(width, 760);
+      await tester.pumpAndSettle();
+      final pane = tester.getRect(find.byType(EditorPaneFrame).first);
+      final column = pane.right - (tester.getRect(line).left - pane.left);
+      expect(onLine('note-edited').hitTestable(), findsOneWidget);
+      for (final key in [
+        'note-edited',
+        'note-saved',
+        'note-progress',
+        'note-add-tag',
+      ]) {
+        final shown = onLine(key).hitTestable();
+        if (shown.evaluate().isEmpty) continue;
+        expect(
+          tester.getRect(shown).right,
+          lessThanOrEqualTo(column),
+          reason: '$key at $width',
+        );
+      }
+    }
+
+    await inColumn(1280);
+    expect(onLine('note-progress').hitTestable(), findsOneWidget);
+    await inColumn(600);
+  });
+
+  // At 400 the line had no room for its tag, yet the chip sat at the window's
+  // edge, and the × it shows under the pointer fell outside it (KAP-378).
+  testWidgets("at 400, a note's tags step aside where the line has no room "
+      "for them, and where it has, a chip's × shows inside the window", (
+    tester,
+  ) async {
+    notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 8, 55));
+    await notes.load();
+    final tags = TagStore(store);
+    await tags.load();
+    final note = notes.create(
+      body: 'Quote for the deck\n☑ One\n☐ Two\n☐ Three',
+    );
+    final quarter = tags.create('Q4')!;
+    tags.addTag(note.id, quarter.id);
+    await pumpApp(
+      tester,
+      size: const Size(400, 700),
+      tags: tags,
+      sidebarVisible: false,
+    );
+    final chip = find.byKey(ValueKey('tag-chip-${quarter.id}'));
+    final remove = find.byKey(ValueKey('tag-chip-remove-${quarter.id}'));
+    expect(find.text('1 of 3 done').hitTestable(), findsOneWidget);
+    expect(chip.hitTestable(), findsNothing);
+
+    notes.updateBody(note.id, 'Quote for the deck');
+    await tester.pumpAndSettle();
+    expect(chip.hitTestable(), findsOneWidget);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(chip));
+    await tester.pumpAndSettle();
+    expect(remove.hitTestable(), findsOneWidget);
+    expect(tester.getRect(remove).right, lessThanOrEqualTo(400));
+  });
+
   testWidgets('picked notes dragged together promise nothing over the panes, '
       'and letting go there opens nothing', (tester) async {
     final folders = FolderStore(store);
