@@ -38,7 +38,9 @@
 # reviewing the previous release. It refuses if the build is not on internal,
 # and stops without changing anything while Google still has changes in
 # review. android_promote_dry_run has Play check that promote and then
-# discards it, so nothing is sent for review.
+# discards it, so nothing is sent for review. It can't tell whether Google is
+# still reviewing an earlier change: only the real promote finds that out, and
+# then it changes nothing.
 #
 # The notes files hold the text users see: What's New for the App Store (up to
 # 4000 characters) and the Play release notes (up to 500). Both are paths
@@ -110,7 +112,7 @@ on:
         type: boolean
         default: false
       android_promote_dry_run:
-        description: With android_promote_only. Have Play check the promote, then discard it without committing anything
+        description: With android_promote_only. Have Play check the promote, then discard it without committing anything. It can't see a review still in progress; only the real promote finds that out, and then it changes nothing
         required: false
         type: boolean
         default: false

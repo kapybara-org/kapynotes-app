@@ -5,7 +5,7 @@ import sys
 import tempfile
 import threading
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import upload_play
@@ -268,7 +268,10 @@ class PromoteTest(unittest.TestCase):
 
     def test_validate_only_asks_play_to_validate_and_never_commits(self):
         self.tracks(("internal", ["48"], "completed"), ("production", ["47"], "completed"))
-        upload_play.promote("48", "production", 1.0, self.notes_file("Notes"), "internal", True)
+        with redirect_stdout(io.StringIO()) as out:
+            upload_play.promote("48", "production", 1.0, self.notes_file("Notes"), "internal", True)
+        self.assertIn("nothing was committed", out.getvalue())
+        self.assertNotIn("is now on", out.getvalue())
         [body] = self.puts()
         self.assertEqual(body["releases"][0]["versionCodes"], ["48"])
         self.assertEqual(body["releases"][0]["status"], "completed")
