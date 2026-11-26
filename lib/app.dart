@@ -562,9 +562,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       unawaited(queue.drain());
     });
 
-    // Stray `voice-*.m4a` from a force quit: unreadable, unrecoverable, and
-    // nothing else will ever clean them up. A walk of the whole temp
-    // directory, so it waits its turn behind the frames that matter.
+    // Stray recordings no marker claims: unrecoverable, and nothing else will
+    // ever clean them up. A walk of the whole temp directory, so it waits its
+    // turn behind the frames that matter.
     _tempSweepTimer?.cancel();
     _tempSweepTimer = Timer(
       _tempSweepDelay,

@@ -1,6 +1,11 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:record/record.dart';
+
+import '../core/platform.dart';
+import 'adts.dart';
 
 /// What a recording backend has to be able to do.
 ///
@@ -12,9 +17,12 @@ import 'package:record/record.dart';
 abstract class VoiceRecorderBackend {
   Future<bool> hasPermission();
 
-  /// Begins writing to [path]. The extension decides the container on
-  /// Windows, where Media Foundation's sink writer picks its muxer from it,
-  /// so it must end in `.m4a`.
+  /// Begins a recording that [stop] leaves at [path]. The extension decides
+  /// the container on Windows, where Media Foundation's sink writer picks its
+  /// muxer from it, so it must end in `.m4a`.
+  ///
+  /// A phone writes the audio in progress to [adtsBeside] it instead, and
+  /// [stop] rewraps it: see [mp4FromAdts].
   Future<void> start(String path);
 
   Future<void> pause();
@@ -41,6 +49,15 @@ class VoiceRecorder implements VoiceRecorderBackend {
   AudioRecorder? _recorder;
   StreamSubscription<Amplitude>? _amplitudes;
   StreamSubscription<RecordState>? _states;
+
+  /// On a phone, the `.m4a` asked for and the ADTS written until [stop].
+  String? _path;
+  File? _adts;
+
+  /// On Android, where `record` writes AAC to a file only as MPEG-4, its
+  /// ADTS stream, put on disk by this as each frame arrives.
+  StreamSubscription<Uint8List>? _frames;
+  RandomAccessFile? _sink;
 
   final _amplitude = StreamController<double>.broadcast();
   final _paused = StreamController<bool>.broadcast();
@@ -73,7 +90,34 @@ class VoiceRecorder implements VoiceRecorderBackend {
 
   @override
   Future<void> start(String path) async {
-    await _live.start(config, path: path);
+    if (!AppPlatform.isMobile) {
+      await _live.start(config, path: path);
+    } else {
+      final adts = File(adtsBeside(path));
+      _path = path;
+      _adts = adts;
+      if (AppPlatform.isIOS) {
+        // AVAudioRecorder picks its container from the extension: `.aac`
+        // is ADTS.
+        await _live.start(config, path: adts.path);
+      } else {
+        // Written as it comes, so the file holds every frame the app was
+        // given whatever ends the app: a write is in the system's hands at
+        // once, and a kill does not take those back.
+        final sink = _sink = await adts.open(mode: FileMode.writeOnly);
+        try {
+          final frames = await _live.startStream(config);
+          _frames = frames.listen(sink.writeFromSync);
+        } catch (_) {
+          await sink.close();
+          await adts.delete();
+          _sink = null;
+          _adts = null;
+          _path = null;
+          rethrow;
+        }
+      }
+    }
     _amplitudes = _live
         .onAmplitudeChanged(const Duration(milliseconds: 100))
         .listen((amplitude) {
@@ -92,9 +136,15 @@ class VoiceRecorder implements VoiceRecorderBackend {
 
   @override
   Future<String?> stop() async {
-    final path = await _live.stop();
+    final written = await _live.stop();
     await _stopListening();
-    return path;
+    final adts = _adts;
+    final path = _path;
+    _adts = null;
+    _path = null;
+    if (adts == null || path == null) return written;
+    if (!await adts.exists()) return null;
+    return await finishAdtsRecording(adts, File(path)) ? path : null;
   }
 
   /// Stops, and leaves the file for the caller to delete.
@@ -114,13 +164,23 @@ class VoiceRecorder implements VoiceRecorderBackend {
   Future<void> cancel() async {
     await _live.stop();
     await _stopListening();
+    final adts = _adts;
+    _adts = null;
+    _path = null;
+    if (adts != null && await adts.exists()) await adts.delete();
   }
 
+  /// Also closes the ADTS file. `record` has delivered every frame by the
+  /// time its stop returns: it closes the stream behind them.
   Future<void> _stopListening() async {
     await _amplitudes?.cancel();
     await _states?.cancel();
+    await _frames?.cancel();
+    await _sink?.close();
     _amplitudes = null;
     _states = null;
+    _frames = null;
+    _sink = null;
   }
 
   @override

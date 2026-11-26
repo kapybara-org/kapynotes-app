@@ -6,7 +6,9 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/audio/adts.dart';
 import 'package:kapy_notes/audio/audio_decode.dart';
+import 'package:kapy_notes/audio/mp4_duration.dart';
 import 'package:kapy_notes/audio/recording_controls.dart';
 import 'package:kapy_notes/audio/voice_recorder.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
@@ -296,6 +298,22 @@ void main() {
     expect(await old.exists(), isFalse);
     expect(await fresh.exists(), isTrue);
     expect(await other.exists(), isTrue);
+  });
+
+  test('the sweep removes a stray phone recording no note claims', () async {
+    final stray = File('${temp.path}/voice-old.aac')..writeAsBytesSync([1]);
+    final claimed = File('${temp.path}/voice-kept.aac')..writeAsBytesSync([1]);
+    File('${temp.path}/voice-kept.json').writeAsStringSync('{"noteId":"n1"}');
+    for (final file in [stray, claimed]) {
+      file.setLastModifiedSync(
+        DateTime.now().subtract(const Duration(hours: 2)),
+      );
+    }
+
+    await VoiceRecordingController.sweepTempFiles(directory: temp);
+
+    expect(await stray.exists(), isFalse);
+    expect(await claimed.exists(), isTrue);
   });
 
   group('durationFor', () {
@@ -645,6 +663,61 @@ void main() {
         expect(peaks.last, greaterThan(200));
         // The decoded copy is the caller's to throw away.
         expect(pcm.existsSync(), isFalse);
+      });
+
+      /// What a phone leaves when the app is killed outright mid-recording:
+      /// its marker, and the ADTS written so far, with no `.m4a` yet.
+      File killedDuring(String name, String noteId, List<int> adts) {
+        File(
+          '${temp.path}/$name.json',
+        ).writeAsStringSync(jsonEncode({'noteId': noteId}));
+        File('${temp.path}/$name.aac').writeAsBytesSync(adts);
+        return File('${temp.path}/$name.m4a');
+      }
+
+      final toneAdts = File('test/fixtures/tone_5s.aac').readAsBytesSync();
+
+      test('delivers a phone recording the app was killed during', () async {
+        // 42 whole frames, and the start of a 43rd the kill cut short.
+        final audio = killedDuring(
+          'voice-11-12',
+          'n7',
+          toneAdts.sublist(0, 15000),
+        );
+
+        await controller.recoverInterrupted();
+
+        expect(delivered.keys, ['n7']);
+        expect(delivered['n7']!.file.path, audio.path);
+        expect(delivered['n7']!.duration, const Duration(milliseconds: 2688));
+        expect(mp4DurationMs(audio.readAsBytesSync()), 2688);
+        expect(File(adtsBeside(audio.path)).existsSync(), isFalse);
+        expect(markerOf(audio.path).existsSync(), isFalse);
+        expect(flushes, 1);
+      });
+
+      test(
+        'rewraps it again when the last launch was cut off doing so',
+        () async {
+          final audio = killedDuring('voice-13-14', 'n7', toneAdts)
+            ..writeAsBytesSync(tone.sublist(0, 4096));
+
+          await controller.recoverInterrupted();
+
+          expect(delivered['n7']!.duration, const Duration(milliseconds: 5120));
+          expect(File(adtsBeside(audio.path)).existsSync(), isFalse);
+        },
+      );
+
+      test('lets go of one killed before its first frame', () async {
+        final audio = killedDuring('voice-15-16', 'n7', [0xFF, 0xF1, 0x60]);
+
+        await controller.recoverInterrupted();
+
+        expect(delivered, isEmpty);
+        expect(flushes, 0);
+        expect(File(adtsBeside(audio.path)).existsSync(), isFalse);
+        expect(markerOf(audio.path).existsSync(), isFalse);
       });
 
       test('leaves a file killed before it was closed to the sweep', () async {
