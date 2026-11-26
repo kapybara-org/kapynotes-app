@@ -271,6 +271,20 @@ void main() {
       expect(tester.getRect(menu).bottom, tester.getRect(_bubble).top - 6);
     });
 
+    testWidgets('Text ▾ over a bubble near the top opens under the '
+        'selection, clear of it', (tester) async {
+      window(tester);
+      await tester.pumpWidget(_app());
+      await _show(tester, above: const Rect.fromLTWH(60, 60, 160, 22));
+      expect(tester.getRect(_bubble).bottom, 60 - 8);
+      _standalone.toggleBlocks();
+      await tester.pumpAndSettle();
+      expect(
+        tester.getRect(find.byKey(const ValueKey('selection-block-menu'))).top,
+        60 + 22 + 8,
+      );
+    });
+
     testWidgets('keeps to the note\'s pane, menu and all', (tester) async {
       window(tester);
       await tester.pumpWidget(_app());
@@ -549,6 +563,97 @@ void main() {
       expect(_bubble, findsOneWidget);
 
       _taken.value = const EdgeInsets.only(bottom: 560);
+      await tester.pumpAndSettle();
+      expect(_bubble, findsNothing);
+      expect(_controller(tester).selection.isCollapsed, isFalse);
+    });
+
+    testWidgets('lifts off while the note scrolls and settles back over its '
+        'selection, from out of sight too', (tester) async {
+      tester.view.physicalSize = const Size(1200, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      // Long enough to scroll, and opened at its end, by the words.
+      final body = [
+        'Title',
+        for (var line = 1; line <= 60; line++) 'Line $line',
+        'the words to format',
+        'The end',
+      ].join('\n');
+      await tester.pumpWidget(_editor(body));
+      await tester.pumpAndSettle();
+      await _select(tester, 'words');
+      expect(_bubble, findsOneWidget);
+      final editable = NoteDriver(tester);
+      final controller = _controller(tester);
+      Future<void> wheel(double dy) async {
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: const Offset(600, 400),
+            scrollDelta: Offset(0, dy),
+          ),
+        );
+        await tester.pump();
+      }
+
+      Future<void> settle() async {
+        await tester.pump(const Duration(milliseconds: 160));
+        await tester.pumpAndSettle();
+      }
+
+      await wheel(-20);
+      expect(_bubble, findsNothing);
+      await settle();
+      expect(_bubble, findsOneWidget);
+      final words = editable.boxesFor(controller.selection).first.toRect();
+      expect(
+        tester
+            .getRect(_bubble)
+            .overlaps(
+              Rect.fromPoints(
+                editable.toGlobal(words.topLeft),
+                editable.toGlobal(words.bottomRight),
+              ),
+            ),
+        isFalse,
+      );
+
+      await wheel(-600);
+      await settle();
+      expect(_bubble, findsNothing);
+      await wheel(600);
+      await settle();
+      expect(_bubble, findsOneWidget);
+      expect(controller.selection.isCollapsed, isFalse);
+    });
+
+    testWidgets('a bubble put away with esc stays away through a scroll', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      // Long enough to scroll, and opened at its end, by the words.
+      final body = [
+        'Title',
+        for (var line = 1; line <= 60; line++) 'Line $line',
+        'the words to format',
+        'The end',
+      ].join('\n');
+      await tester.pumpWidget(_editor(body));
+      await tester.pumpAndSettle();
+      await _select(tester, 'words');
+      expect(_bubble, findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(_bubble, findsNothing);
+      await tester.sendEventToBinding(
+        const PointerScrollEvent(
+          position: Offset(600, 400),
+          scrollDelta: Offset(0, -20),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 160));
       await tester.pumpAndSettle();
       expect(_bubble, findsNothing);
       expect(_controller(tester).selection.isCollapsed, isFalse);

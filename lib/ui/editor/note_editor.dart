@@ -528,6 +528,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
 
+  /// How long a selection, or the page under it, keeps still before the
+  /// bubble comes, so a drag or a scroll never flickers it.
+  static const _selectionSettle = Duration(milliseconds: 150);
+
   /// A right-click selects the word under it on macOS, and that selection
   /// is for the menu it opens, not for the bubble.
   bool _rightClicked = false;
@@ -864,7 +868,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _handleEditorScroll() {
     LinkPopover.hide();
     _slashCommandMenu.hide();
-    _selectionBubble.hide();
+    // The bubble lifts off while the page moves, and settles back over the
+    // selection once it stops with the selection in view.
+    if (_selectionBubble.isVisible || _selectionBubble.isLifted) {
+      _selectionBubble.lift();
+      _selectionToolbarTimer?.cancel();
+      _selectionToolbarTimer = Timer(_selectionSettle, () {
+        if (mounted) _showSelectionBubble();
+      });
+    }
     if (_pasteChipShown) _placePasteChip();
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
@@ -5548,7 +5560,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (!selection.isValid || selection.isCollapsed || !_focusNode.hasFocus) {
       return;
     }
-    _selectionToolbarTimer = Timer(const Duration(milliseconds: 150), () {
+    _selectionToolbarTimer = Timer(_selectionSettle, () {
       if (!mounted ||
           !_focusNode.hasFocus ||
           _controller.selection != selection) {
@@ -5591,12 +5603,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       pane.getTransformTo(null),
       Offset.zero & pane.size,
     );
-    // A selection the pane no longer shows, after the window shrank under
-    // it, takes the bubble with it rather than leave it over other words.
+    // A selection the pane no longer shows, scrolled away or under a window
+    // that shrank, takes the bubble with it rather than leave it over other
+    // words, until it is back in view.
     if (boxes.isEmpty ||
         line(boxes.last).bottom <= within.top ||
         line(boxes.first).top >= within.bottom) {
-      _selectionBubble.hide();
+      _selectionBubble.lift();
       return;
     }
     String? key(ShortcutAction action) =>

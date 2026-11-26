@@ -68,6 +68,7 @@ class SelectionBubbleController extends ChangeNotifier {
   VoidCallback? _onLinkClosed;
   bool _blocksOpen = false;
   bool _editingLink = false;
+  bool _lifted = false;
   final _link = TextEditingController();
   late final _linkFocus = FocusNode(
     debugLabel: 'Link address',
@@ -83,6 +84,10 @@ class SelectionBubbleController extends ChangeNotifier {
 
   bool get isVisible => _entry != null;
   bool get blocksOpen => _blocksOpen;
+
+  /// Whether the bubble is away only while its selection is out of place, a
+  /// scroll moving it or the pane no longer showing it, and is due back.
+  bool get isLifted => _lifted;
 
   /// Whether the address field holds the keyboard, which the note gave up.
   bool get editingLink => _editingLink;
@@ -113,6 +118,7 @@ class SelectionBubbleController extends ChangeNotifier {
     _markdownEnabled = markdownEnabled;
     _onLink = onLink;
     _onLinkClosed = onLinkClosed;
+    _lifted = false;
     if (_entry == null) {
       _entry = OverlayEntry(
         builder: (context) => _SelectionBubbleOverlay(controller: this),
@@ -128,7 +134,15 @@ class SelectionBubbleController extends ChangeNotifier {
     _entry = null;
     _blocksOpen = false;
     _editingLink = false;
+    _lifted = false;
     _link.clear();
+  }
+
+  /// Takes the bubble away as [hide] does, but keeps it due: the editor
+  /// brings it back over the selection once it is in view and still.
+  void lift() {
+    hide();
+    _lifted = true;
   }
 
   void toggleBlocks() {
@@ -252,8 +266,9 @@ class _SelectionBubbleOverlay extends StatelessWidget {
 /// Over the selection's first line, or under its last where there is no room
 /// above, within the note's own pane. Writing and reading go on below a
 /// selection, the next line is where the next click goes, so the bubble keeps
-/// off it. Text ▾ opens away from the selection when there is room, so the
-/// selection stays in view, and otherwise toward the side with more.
+/// off it. Text ▾ opens away from the selection where it fits, or else past
+/// the selection on its far side, so the words it would change stay in view.
+/// Only when neither fits does it open toward the side with more room.
 class _BubbleLayout extends MultiChildLayoutDelegate {
   _BubbleLayout({
     required this.above,
@@ -307,22 +322,28 @@ class _BubbleLayout extends MultiChildLayoutDelegate {
 
     if (!hasChild(menu)) return;
     final menuSize = layoutChild(menu, loose);
+    final overBubble = y - _menuGap - menuSize.height;
+    final underBubble = y + bubbleSize.height + _menuGap;
+    final away = placedAbove ? overBubble : underBubble;
+    final past = placedAbove
+        ? below.bottom + _gap
+        : above.top - _gap - menuSize.height;
+    bool fits(double menuTop) =>
+        menuTop >= top && menuTop + menuSize.height <= bottom;
     final roomAbove = y - _menuGap - top;
-    final roomBelow = bottom - (y + bubbleSize.height + _menuGap);
-    final upward = placedAbove
-        ? menuSize.height <= roomAbove || roomAbove > roomBelow
-        : menuSize.height > roomBelow && roomAbove > roomBelow;
+    final roomBelow = bottom - underBubble;
+    final menuTop = fits(away)
+        ? away
+        : fits(past)
+        ? past
+        : roomAbove > roomBelow
+        ? overBubble
+        : underBubble;
     positionChild(
       menu,
       Offset(
         _clamp(x, left, right - menuSize.width),
-        _clamp(
-          upward
-              ? y - _menuGap - menuSize.height
-              : y + bubbleSize.height + _menuGap,
-          top,
-          bottom - menuSize.height,
-        ),
+        _clamp(menuTop, top, bottom - menuSize.height),
       ),
     );
   }
