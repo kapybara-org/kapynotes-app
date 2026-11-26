@@ -17,6 +17,10 @@ class Toast {
   static OverlayEntry? _current;
   static int _generation = 0;
 
+  /// What the toast showing does once it goes without its action: see
+  /// [show]'s onGone.
+  static VoidCallback? _whenGone;
+
   /// What a toast keeps clear of: above a phone's bar and its +, or the
   /// format bar over the keyboard, whichever reaches highest, and on a
   /// desktop beside the notes list and Kapy AI's panel.
@@ -32,6 +36,13 @@ class Toast {
   /// does while it is open, so the menu never sits under the toast nor uses
   /// up its Undo. A new toast shows, so a menu's own notice replaces it.
   static void hide(bool hidden) => _hidden.value = hidden;
+
+  /// Ends a toast whose [show] onGone is still to run, as its time running
+  /// out would: for the app leaving the foreground, where a phone stops
+  /// drawing, and the toast's time with it, and may close the app unseen.
+  static void giveUpUndo() {
+    if (_whenGone != null) _dismiss();
+  }
 
   /// Builds the toast on screen again once the frame has laid out what it
   /// keeps clear of, which has just come or gone: a clearance changes
@@ -69,6 +80,11 @@ class Toast {
   /// [action] names a button at the toast's end that runs [onAction], such
   /// as View after a note is filed away. A toast with one stays a little
   /// longer, so there is time to reach it.
+  ///
+  /// [onGone] runs once the toast goes without its action: its time up,
+  /// another toast in its place, or the app leaving the foreground (see
+  /// [giveUpUndo]). A toast still showing when the app is killed never goes
+  /// that way, so what [onGone] would have done stays undone.
   static void show(
     BuildContext context,
     String message, {
@@ -76,6 +92,7 @@ class Toast {
     bool isError = false,
     String? action,
     VoidCallback? onAction,
+    VoidCallback? onGone,
   }) {
     final overlay = Overlay.maybeOf(context, rootOverlay: true);
     if (overlay == null) return;
@@ -86,6 +103,7 @@ class Toast {
       isError: isError,
       action: action,
       onAction: onAction,
+      onGone: onGone,
     );
   }
 
@@ -98,6 +116,7 @@ class Toast {
     bool isError = false,
     String? action,
     VoidCallback? onAction,
+    VoidCallback? onGone,
   }) {
     if (!overlay.mounted) return;
     _showOn(
@@ -110,6 +129,7 @@ class Toast {
           ? const Duration(milliseconds: 1800)
           : actionLifetime,
       action: action == null || onAction == null ? null : (action, onAction),
+      onGone: onGone,
     );
   }
 
@@ -142,9 +162,12 @@ class Toast {
     required bool progress,
     required Duration? duration,
     (String, VoidCallback)? action,
+    VoidCallback? onGone,
   }) {
     _current?.remove();
     _hidden.value = false;
+    _gone();
+    _whenGone = onGone;
     final generation = ++_generation;
     late final OverlayEntry entry;
     entry = OverlayEntry(
@@ -158,7 +181,10 @@ class Toast {
             : (
                 action.$1,
                 () {
-                  if (_generation == generation) _dismiss();
+                  if (_generation == generation) {
+                    _whenGone = null;
+                    _dismiss();
+                  }
                   action.$2();
                 },
               ),
@@ -171,6 +197,7 @@ class Toast {
         onDisposed: () {
           if (!identical(_current, entry)) return;
           _current = null;
+          _whenGone = null;
           // Its overlay went without [_dismiss], so its room goes once the
           // frame is done, for the next toast to open its own.
           WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -219,7 +246,19 @@ class Toast {
     entry?.remove();
     _current = null;
     _room.value = 0;
+    _gone();
   }
+
+  static void _gone() {
+    final whenGone = _whenGone;
+    _whenGone = null;
+    whenGone?.call();
+  }
+
+  /// Ends the toast showing as its time running out does, for a test that
+  /// keeps toasts still: see [debugAnimateLifetimeInTests].
+  @visibleForTesting
+  static void debugTimeUp() => _dismiss();
 }
 
 /// The lifecycle of one user-visible asynchronous action.

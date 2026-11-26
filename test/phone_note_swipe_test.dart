@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -267,7 +268,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Delete note?'), findsOneWidget);
       expect(
-        find.text('Permanently deletes "Budget" from every synced device.'),
+        find.text('Deletes "Budget" from every synced device.'),
         findsOneWidget,
       );
       await tester.tap(find.text('Cancel'));
@@ -280,9 +281,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
       await tester.pumpAndSettle();
-      expect(notes.byId('budget'), isNull);
       expect(_row('Budget'), findsNothing);
       expect(find.text('Note deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.byId('budget'), isNull);
     });
 
     testWidgets('goes straight through once the question is turned off', (
@@ -294,8 +297,64 @@ void main() {
       await tester.tap(_button('delete', 'budget'));
       await tester.pumpAndSettle();
       expect(find.text('Delete note?'), findsNothing);
-      expect(notes.byId('budget'), isNull);
       expect(find.text('Note deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.byId('budget'), isNull);
+    });
+
+    testWidgets("its notice's Undo puts the note back where it was, filed "
+        "and pinned as before, and Home's count with it", (tester) async {
+      prefs.askBeforeDeleting = false;
+      final work = folders.create('Work')!;
+      folders.file(['budget'], work.id);
+      await pump(tester);
+      notes.togglePinned('offsite');
+      await tester.pumpAndSettle();
+      final before = _titles(tester);
+      final budget = notes.byId('budget');
+      final count = find.descendant(
+        of: find.byKey(const ValueKey('home-title-notes')),
+        matching: find.byType(Text),
+      );
+      expect(tester.widgetList<Text>(count).map((t) => t.data), contains('4'));
+
+      await _open(tester, 'Budget');
+      await tester.tap(_button('delete', 'budget'));
+      await tester.pumpAndSettle();
+      expect(_row('Budget'), findsNothing);
+      expect(tester.widgetList<Text>(count).map((t) => t.data), contains('3'));
+      expect(find.text('Note deleted'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(_titles(tester), before);
+      expect(tester.getTopLeft(_row('Budget')).dx, 0);
+      expect(tester.widgetList<Text>(count).map((t) => t.data), contains('4'));
+      expect(notes.byId('budget'), same(budget));
+      expect(notes.isPinned('offsite'), isTrue);
+      expect(folders.tree.folderOf('budget'), work.id);
+      expect(notes.tombstones, isEmpty);
+    });
+
+    testWidgets("the page's own Delete takes the reader back to Home, whose "
+        "notice's Undo puts the note back in the list", (tester) async {
+      prefs.askBeforeDeleting = false;
+      await pump(tester);
+      final before = _titles(tester);
+      await tester.tap(_row('Budget'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete note'));
+      await tester.pumpAndSettle();
+      expect(_row('Budget'), findsNothing);
+      expect(find.text('Note deleted'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(_titles(tester), before);
+      expect(notes.byId('budget'), isNotNull);
     });
   });
 
@@ -573,6 +632,8 @@ void main() {
       await _act(tester, 'Standup notes', 'Delete note…');
       expect(find.text('Delete note?'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      Toast.debugTimeUp();
       await tester.pumpAndSettle();
       expect(notes.byId('standup'), isNull);
       semantics.dispose();
