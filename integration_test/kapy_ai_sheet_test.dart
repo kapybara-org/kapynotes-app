@@ -13,7 +13,6 @@
 // text, with the sheet back at its rest and the answer on screen. Each is a
 // screenshot in build/screenshots, and a device shot where
 // tool/ci/phone_screenshots.sh names the device.
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
@@ -135,16 +134,6 @@ void main() {
       final sparkle = find.byKey(const ValueKey('page-kapy-ai'));
       await until(() => sparkle.evaluate().isNotEmpty, 'the note’s Kapy AI');
 
-      // The race Android lost in KAP-359, made likely: the note's keyboard is
-      // asked for again and the sheet opens as it starts to come up, so the
-      // sheet puts it away halfway in.
-      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
-      await settleKeyboard(tester, up: false);
-      await SystemChannels.textInput.invokeMethod<void>('TextInput.show');
-      for (var i = 0; i < 100 && tester.view.viewInsets.bottom == 0; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-      }
-
       // The sheet's route cancels the press it opens under, and the live
       // binding hands that cancel to its finder printer unless device pointer
       // events reach the app.
@@ -165,12 +154,25 @@ void main() {
           tester.view.devicePixelRatio *
           (1 - kapyAiSheetRest);
       bool resting() => (tester.getRect(sheet).top - rest).abs() < 1;
+      final field = find.byKey(const ValueKey('kapy-ai-field'));
       // The note asked for the keyboard as it opened and the sheet put it
-      // away, which can be halfway in, so it may still be going down.
+      // away, which can be halfway in (KAP-359), so the rest is checked once
+      // the keyboard has settled. The same race is then made likely: the
+      // keyboard is asked for and put away as soon as it starts to come up.
       await settleKeyboard(tester, up: false);
       expect(resting(), isTrue, reason: 'the sheet rests over the note');
+      await tester.tap(field);
+      for (var i = 0; i < 100 && tester.view.viewInsets.bottom == 0; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      FocusManager.instance.primaryFocus?.unfocus();
+      await settleKeyboard(tester, up: false);
+      expect(
+        resting(),
+        isTrue,
+        reason: 'the sheet rests over the note with the keyboard put away',
+      );
 
-      final field = find.byKey(const ValueKey('kapy-ai-field'));
       await tester.tap(field);
       await tester.pumpAndSettle();
       await tester.enterText(field, question);
