@@ -785,4 +785,97 @@ void main() {
       });
     }
   }
+  group("a toast's onGone", () {
+    testWidgets('runs once its time is up, and never after its action', (
+      tester,
+    ) async {
+      late BuildContext context;
+      await tester.pumpWidget(_harness((value) => context = value));
+      var gone = 0;
+      var undone = 0;
+
+      Toast.show(
+        context,
+        'Note deleted',
+        action: 'Undo',
+        onAction: () => undone++,
+        onGone: () => gone++,
+      );
+      await tester.pump();
+      await tester.pump(
+        Toast.actionLifetime - const Duration(milliseconds: 100),
+      );
+      expect(gone, 0);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('Note deleted'), findsNothing);
+      expect(gone, 1);
+
+      Toast.show(
+        context,
+        'Note deleted',
+        action: 'Undo',
+        onAction: () => undone++,
+        onGone: () => gone++,
+      );
+      await tester.pump();
+      await tester.tap(find.text('Undo'));
+      await tester.pump(Toast.actionLifetime * 2);
+      expect(undone, 1);
+      expect(gone, 1);
+    });
+
+    testWidgets('runs as another toast takes its place', (tester) async {
+      late BuildContext context;
+      await tester.pumpWidget(_harness((value) => context = value));
+      final gone = <String>[];
+
+      Toast.show(
+        context,
+        'Note deleted',
+        action: 'Undo',
+        onAction: () {},
+        onGone: () => gone.add('first'),
+      );
+      await tester.pump();
+      Toast.show(
+        context,
+        '2 notes deleted',
+        action: 'Undo',
+        onAction: () {},
+        onGone: () => gone.add('second'),
+      );
+      expect(gone, ['first']);
+      await tester.pump();
+      expect(find.text('2 notes deleted'), findsOneWidget);
+
+      Toast.show(context, 'Copied');
+      expect(gone, ['first', 'second']);
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('never runs for a toast still showing as the app closes', (
+      tester,
+    ) async {
+      late BuildContext context;
+      await tester.pumpWidget(_harness((value) => context = value));
+      var gone = 0;
+
+      Toast.show(
+        context,
+        'Note deleted',
+        action: 'Undo',
+        onAction: () {},
+        onGone: () => gone++,
+      );
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(Toast.actionLifetime * 2);
+      expect(gone, 0);
+
+      await tester.pumpWidget(_harness((value) => context = value));
+      Toast.show(context, 'Copied');
+      await tester.pump(const Duration(seconds: 2));
+      expect(gone, 0);
+    });
+  });
 }

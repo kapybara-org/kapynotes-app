@@ -7209,6 +7209,8 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.tombstones, hasLength(1));
     });
 
@@ -7500,6 +7502,8 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.tombstones, hasLength(1));
     });
   });
@@ -7619,8 +7623,10 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
-      expect(notes.tombstones.single.id, third.id);
       expect(find.text('Note deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.tombstones.single.id, third.id);
     });
 
     testWidgets('backing out of the question keeps the note', (tester) async {
@@ -7646,8 +7652,10 @@ void main() {
       await confirm(tester);
 
       expect(notes.archivedNotes, isEmpty);
-      expect(notes.tombstones, hasLength(3));
       expect(find.text('3 notes deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.tombstones, hasLength(3));
       // The notes that were never archived are untouched.
       expect(notes.notes, isEmpty);
     });
@@ -7695,6 +7703,8 @@ void main() {
       await confirm(tester);
 
       expect(notes.archivedNotes, isEmpty);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.tombstones, hasLength(3));
     });
 
@@ -8177,6 +8187,9 @@ void main() {
         expect(notes.byId('first'), isNotNull);
 
         await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+        await tester.pumpAndSettle();
+        expect(find.widgetWithText(NoteRow, 'First note'), findsNothing);
+        Toast.debugTimeUp();
         await tester.pumpAndSettle();
         expect(notes.byId('first'), isNull);
         expect(notes.tombstones, hasLength(1));
@@ -11435,6 +11448,8 @@ void main() {
       await tester.tap(find.byKey(ValueKey('swipe-delete-${offsite.id}')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      Toast.debugTimeUp();
       await tester.pumpAndSettle();
       expect(notes.byId(offsite.id), isNull);
     });

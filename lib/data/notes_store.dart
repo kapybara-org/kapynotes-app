@@ -54,6 +54,12 @@ class NotesStore extends ChangeNotifier {
   List<Tombstone> _tombstones = const [];
   Set<String> _pinnedNoteIds = const {};
 
+  /// Notes deleted while Undo is still on offer: out of every list, but
+  /// whole, and written and synced as they were, until [deleteAll] takes
+  /// them for good or [undoDelete] puts them back. Nothing of the delete is
+  /// written down, so one the app closes on is there on the next launch.
+  Set<String> _deleting = const {};
+
   /// The days something was written on, as [WritingStreak.dayOf] numbers.
   Set<int> _writingDays = const {};
 
@@ -567,16 +573,36 @@ class NotesStore extends ChangeNotifier {
     _persist();
   }
 
+  /// Takes notes out of every list as deleting them would, and leaves them
+  /// otherwise untouched until [deleteAll] or [undoDelete]: see [_deleting].
+  void holdDelete(Iterable<String> ids) {
+    _deleting = Set.unmodifiable({..._deleting, ...ids});
+    _refreshViews();
+    notifyListeners();
+  }
+
+  /// Puts notes [holdDelete] took out back where they were, as they are now.
+  void undoDelete(Iterable<String> ids) {
+    _deleting = Set.unmodifiable(_deleting.difference(ids.toSet()));
+    _refreshViews();
+    notifyListeners();
+  }
+
+  /// Whether [id] is deleted with Undo still on offer: see [holdDelete].
+  bool isDeleting(String id) => _deleting.contains(id);
+
   /// Deletes several notes as one change.
   ///
   /// The same thing [delete] does, once, rather than a write and a rebuild per
   /// note: emptying an archive is the one moment this is asked for in bulk,
-  /// and a list of a hundred should cost one save, not a hundred.
+  /// and a list of a hundred should cost one save, not a hundred. Notes
+  /// [holdDelete] took out go for good here.
   ///
   /// Returns how many were actually there to delete.
   int deleteAll(Iterable<String> ids) {
     final wanted = ids.toSet();
     if (wanted.isEmpty) return 0;
+    _deleting = Set.unmodifiable(_deleting.difference(wanted));
     final going = _notes.where((note) => wanted.contains(note.id)).toList();
     if (going.isEmpty) return 0;
 
@@ -1565,13 +1591,14 @@ class NotesStore extends ChangeNotifier {
   }
 
   void _refreshViews() {
+    final shown = _notes.where((note) => !_deleting.contains(note.id));
     _activeNotes = List.unmodifiable(
-      _notes.where((note) => !note.isArchived && !note.isHidden),
+      shown.where((note) => !note.isArchived && !note.isHidden),
     );
     _archivedNotes = List.unmodifiable(
-      _notes.where((note) => note.isArchived && !note.isHidden),
+      shown.where((note) => note.isArchived && !note.isHidden),
     );
-    _hiddenNotes = List.unmodifiable(_notes.where((note) => note.isHidden));
+    _hiddenNotes = List.unmodifiable(shown.where((note) => note.isHidden));
   }
 
   List<Object?> _encodeNotes() {
