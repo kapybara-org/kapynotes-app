@@ -627,11 +627,9 @@ void main() {
         expect(find.text('2 of 4 seen'), findsOneWidget);
         expect(find.byKey(const ValueKey('tasks-pair-explain')), findsOneWidget);
         expect(
-          find.text(
-            'Nothing comes off your list. Earlier picks wait in Up next.',
-          ),
-          findsNothing,
-          reason: 'the line under the question says it until the first pick',
+          find.text('Nothing comes off your list.'),
+          findsOneWidget,
+          reason: 'Up next has nothing in it until the first pick',
         );
         expect(
           find.text('Stop choosing and start Send the report'),
@@ -1252,9 +1250,9 @@ void main() {
       );
       expect(
         find.text(
-          'Nothing comes off your list. Earlier picks wait in Up next.',
+          'Nothing comes off your list.',
         ),
-        findsNothing,
+        findsOneWidget,
       );
       final left = tester.getRect(
         find.byKey(const ValueKey('tasks-pair-left')),

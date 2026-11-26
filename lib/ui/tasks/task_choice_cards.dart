@@ -320,12 +320,11 @@ class _TaskPairCardState extends State<TaskPairCard> {
         style: taskText(12, 16, ink.quiet),
       ),
     );
-    // While the line under the question explains the round, it says what
-    // the foot would, so the foot waits for the first pick and the smallest
-    // phone keeps Stop choosing above its tab bar.
     final foot = Text(
       last
           ? 'Your pick becomes Do now.'
+          : explain
+          ? 'Nothing comes off your list.'
           : 'Nothing comes off your list. Earlier picks wait in Up next.',
       style: quiet,
     );
@@ -359,7 +358,7 @@ class _TaskPairCardState extends State<TaskPairCard> {
                       16;
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            spacing: 12,
+            spacing: phone ? 10 : 12,
             children: [
               if (done != null && done.doneAt != null)
                 Row(
@@ -429,7 +428,7 @@ class _TaskPairCardState extends State<TaskPairCard> {
               if (beside)
                 Row(
                   children: [
-                    Expanded(child: explain ? const SizedBox.shrink() : foot),
+                    Expanded(child: foot),
                     if (start != null) ...[
                       const SizedBox(width: 12),
                       Flexible(
@@ -447,8 +446,8 @@ class _TaskPairCardState extends State<TaskPairCard> {
               else
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  spacing: 10,
-                  children: [if (!explain) foot, ?start],
+                  spacing: phone ? 8 : 10,
+                  children: [foot, ?start],
                 ),
             ],
           );
@@ -517,7 +516,10 @@ class _PairOptionState extends State<_PairOption> {
           onTap: widget.onPressed,
           child: Container(
             constraints: BoxConstraints(minHeight: phone ? 44 : 0),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: phone ? 10 : 12,
+            ),
             decoration: BoxDecoration(
               color: phone || lit ? ink.lifted : ink.raised,
               border: phone
