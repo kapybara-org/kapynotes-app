@@ -34,6 +34,13 @@ void main() {
       width: 64,
       height: 64,
     ),
+    'voice note': NoteVoiceRef(
+      offset: 0,
+      hash: 'r',
+      key: key,
+      bytes: 1,
+      durationMs: 72000,
+    ),
     'file': NoteFileRef(
       offset: 0,
       hash: 'f',
