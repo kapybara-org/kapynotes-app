@@ -39,6 +39,12 @@ void main() {
     },
   );
 
+  test('only the main window zooms', () {
+    zoom.value = 1.5;
+    expect(binding.zoomFor(view), 1.5);
+    expect(binding.zoomFor(_OtherWindow(view.viewId + 1)), 1);
+  });
+
   test('a click lands where the zoomed window draws it', () {
     final events = <PointerEvent>[];
     binding.pointerRouter.addGlobalRoute(events.add);
@@ -210,4 +216,11 @@ class _Recorder extends BinaryMessenger {
   @override
   void setMessageHandler(String channel, MessageHandler? handler) =>
       handlers[channel] = handler;
+}
+
+class _OtherWindow extends Fake implements ui.FlutterView {
+  _OtherWindow(this.viewId);
+
+  @override
+  final int viewId;
 }
