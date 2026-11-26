@@ -10,16 +10,22 @@ import 'package:path_provider/path_provider.dart';
 ///
 /// The web original kept everything in `localStorage` and wrote on every
 /// keystroke. On desktop and mobile a synchronous disk write per keystroke is
-/// the wrong trade, so writes are coalesced into a short window and forced
-/// out whenever the app loses focus or shuts down. The in-memory copy is
-/// always current, so nothing the user sees depends on the flush.
+/// the wrong trade, so writes are coalesced and forced out whenever the app
+/// loses focus or shuts down. The in-memory copy is always current, so
+/// nothing the user sees depends on the flush.
 class LocalStore {
   final String fileName;
-  final Duration debounce;
+
+  /// How long a change waits for the write that takes it to disk, at most.
+  /// Counted from the first change since the last write, not the latest, so
+  /// typing without a pause cannot hold the write back: a process killed
+  /// mid-sentence, where nothing can flush, loses at most this much.
+  final Duration delay;
 
   File? _file;
   Map<String, Object?> _data = {};
-  Timer? _timer;
+  Timer? _delayTimer;
+  Timer? _retryTimer;
   Future<void>? _inFlight;
   Future<void>? _loadFuture;
   bool _dirty = false;
@@ -42,7 +48,7 @@ class LocalStore {
 
   LocalStore({
     required this.fileName,
-    this.debounce = const Duration(milliseconds: 250),
+    this.delay = const Duration(milliseconds: 250),
     this.retry = const Duration(seconds: 5),
   });
 
@@ -77,11 +83,14 @@ class LocalStore {
     _data[key] = value;
     _dirty = true;
     if (writes.value == StoreWrite.written) writes.value = StoreWrite.pending;
-    _timer?.cancel();
-    _timer = Timer(debounce, () => unawaited(flush()));
+    // A retry waiting out a failed write must not hold this keystroke. The
+    // delay itself is counted from the first change, so a pause is not required.
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _delayTimer ??= Timer(delay, () => unawaited(flush()));
   }
 
-  /// Writes without waiting for the coalescing window.
+  /// Writes without waiting for [delay].
   ///
   /// For settings rather than notes. Coalescing exists because a note changes
   /// on every keystroke; a preference changes when somebody deliberately
@@ -92,8 +101,10 @@ class LocalStore {
     _data[key] = value;
     _dirty = true;
     if (writes.value == StoreWrite.written) writes.value = StoreWrite.pending;
-    _timer?.cancel();
-    _timer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _delayTimer?.cancel();
+    _delayTimer = null;
     unawaited(flush());
   }
 
@@ -104,8 +115,10 @@ class LocalStore {
 
   /// Writes immediately. Safe to call at any time; concurrent calls queue.
   Future<void> flush() async {
-    _timer?.cancel();
-    _timer = null;
+    _delayTimer?.cancel();
+    _delayTimer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     if (!_dirty) return;
     _dirty = false;
 
@@ -119,7 +132,9 @@ class LocalStore {
       if (_disposed) return;
       // Scheduled here rather than in _write, whose context its isolate
       // copies, and which must not hold this store.
-      if (!wrote) _timer ??= Timer(retry, () => unawaited(flush()));
+      if (!wrote) {
+        _retryTimer ??= Timer(retry, () => unawaited(flush()));
+      }
       if (_disposed || !identical(_inFlight, next) || _dirty && wrote) return;
       writes.value = wrote ? StoreWrite.written : StoreWrite.failed;
     }();
@@ -159,7 +174,8 @@ class LocalStore {
 
   void dispose() {
     _disposed = true;
-    _timer?.cancel();
+    _delayTimer?.cancel();
+    _retryTimer?.cancel();
     writes.dispose();
   }
 }
