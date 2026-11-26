@@ -37,6 +37,11 @@ class KapyAiStore {
   bool get cloudConsent => _settings['cloudConsent'] == true;
   set cloudConsent(bool value) => _set('cloudConsent', value);
 
+  /// The same, agreed to for a recording's transcript: it covers questions
+  /// about a recording only, so the panel still asks before it sends notes.
+  bool get recordingCloudConsent => _settings['recordingCloudConsent'] == true;
+  set recordingCloudConsent(bool value) => _set('recordingCloudConsent', value);
+
   /// "Goes to OpenAI", once per account.
   bool hasAccountConsent(KapyAccountKind account) =>
       (_settings['accountConsent'] as List?)?.contains(account.name) ?? false;

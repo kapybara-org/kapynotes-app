@@ -475,7 +475,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     }
     return Dialog(
       backgroundColor: palette.surfaceBackground,
-      child: SizedBox(width: 620, height: 700, child: body),
+      child: SizedBox(width: 620, height: 640, child: body),
     );
   }
 

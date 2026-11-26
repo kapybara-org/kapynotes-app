@@ -351,17 +351,42 @@ class _VoiceAskState extends State<VoiceAsk> {
                 Positioned.fill(child: widget.page),
                 if (showing)
                   Positioned(
-                    left: 12,
-                    right: 12,
-                    bottom: 8,
-                    child: _Drawer(
-                      key: const ValueKey('voice-ask-drawer'),
-                      maxHeight: constraints.maxHeight - 16,
-                      child: _earlier
-                          ? _earlierList(palette, history)
-                          : chat != null
-                          ? _conversation(palette, chat, answer)
-                          : _postView(palette, take),
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(
+                          height: 24,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                palette.surfaceBackground.withValues(alpha: 0),
+                                palette.surfaceBackground,
+                              ],
+                            ),
+                          ),
+                        ),
+                        ColoredBox(
+                          color: palette.surfaceBackground,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                            child: _Drawer(
+                              key: const ValueKey('voice-ask-drawer'),
+                              maxHeight: constraints.maxHeight - 32,
+                              child: _earlier
+                                  ? _earlierList(palette, history)
+                                  : chat != null
+                                  ? _conversation(palette, chat, answer)
+                                  : _postView(palette, take),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
               ],
@@ -558,7 +583,11 @@ class _VoiceAskState extends State<VoiceAsk> {
       children: [
         Expanded(child: title),
         if (earlier) ...[
-          _EarlierButton(compact: widget.compact, onPressed: _showEarlier),
+          _EarlierButton(
+            compact: widget.compact,
+            labelled: true,
+            onPressed: _showEarlier,
+          ),
           Container(
             width: 1,
             height: 16,
@@ -651,14 +680,94 @@ class _VoiceAskState extends State<VoiceAsk> {
 
   Widget _answer(CalcPalette palette, KapyChat chat, KapyMessage answer) {
     final moments = _momentsOf(answer);
-    final source = answer.model?.sourceLine(kapyDeviceWord);
+    final model = answer.model;
     final readTo = answer.readTo;
     final minutes = (widget.ref.duration.inSeconds / 60).ceil();
-    final read = readTo == null
+    final read = readTo != null
+        ? 'Read the first ${_minutes(readTo)} of $minutes'
+        : _ai!.readWhole(chat, answer)
         ? 'Read the whole transcript'
-        : 'Read the first ${_minutes(readTo)} of $minutes';
+        : null;
     final insert = widget.onInsert;
     final copy = widget.onCopy;
+    final meta = kapyText(11.5, 16, palette.textTertiary);
+    final source = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (model != null)
+          Flexible(
+            child: InkWell(
+              key: const ValueKey('voice-ask-model'),
+              onTap: () => setState(() => _picking = true),
+              borderRadius: BorderRadius.circular(AppRadii.control),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: widget.compact ? 44 : 26,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      KapyIcon(
+                        kapyModelIcon(model.kind),
+                        size: 13,
+                        color: palette.textTertiary,
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          model.plainLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: meta,
+                        ),
+                      ),
+                      const SizedBox(width: 3),
+                      KapyIcon(
+                        KapyIcons.chevronDownRounded,
+                        size: 11,
+                        color: palette.textTertiary,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (read != null)
+          Flexible(
+            child: Text(
+              model == null ? read : ' · $read',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: meta,
+            ),
+          ),
+      ],
+    );
+    final tools = Row(
+      children: [
+        if (insert != null) _insertButton(palette, answer.text),
+        if (copy != null)
+          KapyAiIconButton(
+            key: const ValueKey('voice-ask-copy'),
+            icon: KapyIcons.copyRounded,
+            tooltip: 'Copy',
+            extent: widget.compact ? 44 : 28,
+            iconSize: 15,
+            radius: AppRadii.control,
+            color: palette.textTertiary,
+            onPressed: () => copy(answer.text),
+          ),
+        if (!widget.compact) ...[
+          const SizedBox(width: 8),
+          Expanded(
+            child: Align(alignment: Alignment.centerRight, child: source),
+          ),
+        ],
+      ],
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -679,32 +788,9 @@ class _VoiceAskState extends State<VoiceAsk> {
           ),
         ],
         const SizedBox(height: 10),
-        Row(
-          children: [
-            if (insert != null) _insertButton(palette, answer.text),
-            if (copy != null)
-              KapyAiIconButton(
-                key: const ValueKey('voice-ask-copy'),
-                icon: KapyIcons.copyRounded,
-                tooltip: 'Copy',
-                extent: 28,
-                iconSize: 15,
-                radius: AppRadii.control,
-                color: palette.textTertiary,
-                onPressed: () => copy(answer.text),
-              ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                [?source, read].join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.end,
-                style: kapyText(11.5, 16, palette.textTertiary),
-              ),
-            ),
-          ],
-        ),
+        tools,
+        if (widget.compact)
+          Align(alignment: Alignment.centerLeft, child: source),
       ],
     );
   }
@@ -990,12 +1076,18 @@ class _Drawer extends StatelessWidget {
   }
 }
 
-/// ◷ Earlier: a label beside a pointer, and the clock alone on a sheet, with
-/// a 44 pt target there however small the glyph.
+/// ◷ Earlier: a label beside a pointer, and the clock alone in a sheet's
+/// starters unless [labelled], with a 44 pt target on a sheet however small
+/// the glyph.
 class _EarlierButton extends StatelessWidget {
-  const _EarlierButton({required this.compact, required this.onPressed});
+  const _EarlierButton({
+    required this.compact,
+    required this.onPressed,
+    this.labelled = false,
+  });
 
   final bool compact;
+  final bool labelled;
   final VoidCallback onPressed;
 
   @override
@@ -1010,9 +1102,10 @@ class _EarlierButton extends StatelessWidget {
       key: const ValueKey('voice-ask-earlier'),
       onTap: onPressed,
       borderRadius: BorderRadius.circular(AppRadii.control),
-      child: compact
+      child: compact && !labelled
           ? SizedBox.square(dimension: 44, child: Center(child: clock))
-          : Padding(
+          : Container(
+              constraints: BoxConstraints(minHeight: compact ? 44 : 0),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1027,7 +1120,7 @@ class _EarlierButton extends StatelessWidget {
               ),
             ),
     );
-    return compact
+    return compact && !labelled
         ? Tooltip(
             message: 'Earlier',
             child: Semantics(button: true, label: 'Earlier', child: button),

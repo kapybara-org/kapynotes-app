@@ -306,8 +306,12 @@ sealed class KapyPending {
 }
 
 /// "Before the first answer": once per device. Go ahead · Use this device.
+/// A [recording] chat's is worded for its transcript, and agreeing to it
+/// covers recording chats alone; the panel's covers both.
 class KapyCloudConsent extends KapyPending {
-  const KapyCloudConsent();
+  const KapyCloudConsent({this.recording = false});
+
+  final bool recording;
 }
 
 /// "Goes to OpenAI / Anthropic / OpenRouter" (Codex / Claude Code / key):
@@ -459,6 +463,12 @@ abstract class KapyAi extends ChangeNotifier {
   /// live.
   String linkSources(KapyChat chat, KapyMessage answer) => '';
 
+  /// Whether [answer], in [chat] about a recording, read its transcript to
+  /// the end. One that does not say where it stopped did only when the
+  /// transcript fits what its model reads: a build older than recording
+  /// chats drops that mark from an answer it sends again, after signing in.
+  bool readWhole(KapyChat chat, KapyMessage answer) => answer.readTo == null;
+
   /// True while an answer is being written.
   bool get answering;
   KapyPending? get pending;
@@ -467,7 +477,10 @@ abstract class KapyAi extends ChangeNotifier {
   /// Try again.
   Future<void> proceed();
 
-  /// Use [model] for this chat and answer the held question with it.
+  /// Use [model] for this chat and answer the held question with it. When
+  /// nothing is held and the last question has its answer, [model] answers
+  /// that question again: it joins the chat once more, since a message is
+  /// never taken back from the other devices.
   Future<void> answerWith(KapyModel model);
 
   /// Cancel / Not now: drops the pending state and keeps the question.

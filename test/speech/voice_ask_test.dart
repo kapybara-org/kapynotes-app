@@ -4,6 +4,7 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
 import 'package:kapy_notes/ui/voice_note_ask.dart';
 import 'package:kapy_notes/ui/voice_note_dialog.dart';
 import 'package:material_ui/material_ui.dart';
@@ -265,9 +266,10 @@ void main() {
       );
       expect(find.byKey(const ValueKey('voice-ask-moment-0')), findsNothing);
       expect(
-        find.text('Kapy AI Cloud · Read the whole transcript'),
+        find.descendant(of: _drawer, matching: find.text('Kapy AI Cloud')),
         findsOneWidget,
       );
+      expect(find.text(' · Read the whole transcript'), findsOneWidget);
       // On a computer the window turns to the transcript, at the lines.
       expect(find.text('Show the annual plan first.'), findsNothing);
       expect(
@@ -309,11 +311,52 @@ void main() {
       readTo: const Duration(minutes: 1, seconds: 5),
     );
     await tester.pumpAndSettle();
-    expect(
-      find.text('Kapy AI Cloud · Read the first 1 minute of 3'),
-      findsOneWidget,
-    );
+    expect(find.text(' · Read the first 1 minute of 3'), findsOneWidget);
   });
+
+  testWidgets('the model under an answer picks another, which answers again', (
+    tester,
+  ) async {
+    final ai = FakeKapyAi(pro: true);
+    await _show(tester, _window(ai));
+    await tester.tap(find.text('What did we decide?'));
+    _answer(ai, 'Annual first.');
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('voice-ask-model')));
+    await tester.pumpAndSettle();
+    final picker = find.byType(KapyAiPicker);
+    expect(picker, findsOneWidget);
+    tester.widget<KapyAiPicker>(picker).onPick(FakeKapyAi.appleIntelligence);
+    await tester.pumpAndSettle();
+    expect(ai.calls.last, 'answerWith:apple');
+    expect(picker, findsNothing);
+  });
+
+  testWidgets(
+    'on a sheet the answer\'s model has its own line, and Earlier its label',
+    (tester) async {
+      final ai = FakeKapyAi(pro: true);
+      await _show(tester, _window(ai, asSheet: true, onInsert: (_) {}));
+      await tester.tap(find.text('What did we decide?'));
+      _answer(ai, 'Annual first.');
+      await tester.pumpAndSettle();
+      final model = tester.getRect(
+        find.byKey(const ValueKey('voice-ask-model')),
+      );
+      final insert = tester.getRect(
+        find.byKey(const ValueKey('voice-ask-insert')),
+      );
+      expect(model.top, greaterThanOrEqualTo(insert.bottom));
+      expect(model.height, greaterThanOrEqualTo(44));
+      expect(find.text(' · Read the whole transcript'), findsOneWidget);
+      final earlier = find.descendant(of: _drawer, matching: _earlier);
+      expect(
+        find.descendant(of: earlier, matching: find.text('Earlier')),
+        findsOneWidget,
+      );
+      expect(tester.getSize(earlier).height, greaterThanOrEqualTo(44));
+    },
+  );
 
   group('every hold is Kapy AI\'s own card', () {
     Future<FakeKapyAi> held(WidgetTester tester, KapyPending pending) async {
@@ -326,8 +369,17 @@ void main() {
     }
 
     testWidgets('before the first answer', (tester) async {
-      final ai = await held(tester, const KapyCloudConsent());
+      final ai = await held(tester, const KapyCloudConsent(recording: true));
       expect(find.text('Before the first answer'), findsOneWidget);
+      expect(
+        find.text(
+          'Kapy AI sends your question and this transcript through Kapy '
+          'cloud, where an AI service answers it. Kapy keeps nothing, and it '
+          'is never used to train AI.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Hidden notes'), findsNothing);
       await tester.tap(find.text('Go ahead'));
       await tester.pump();
       expect(ai.calls.last, 'proceed');

@@ -1254,6 +1254,91 @@ void main() {
       expect(answers(), isEmpty);
     });
 
+    test(
+      'agreeing to send a transcript covers recordings, and not the notes',
+      () async {
+        final ai = await build(
+          notes: notes(),
+          billing: await billingOn(pro: true),
+        );
+        await ai.ask('What did we decide?', recording: _link);
+        expect((ai.pending! as KapyCloudConsent).recording, isTrue);
+        await ai.proceed();
+        expect(answers(), hasLength(1));
+
+        ai.newChat();
+        await ai.ask('What are the next steps?', recording: _link);
+        expect(ai.pending, isNull);
+        expect(answers(), hasLength(2));
+
+        ai.newChat();
+        await ai.ask('Lisbon?');
+        expect((ai.pending! as KapyCloudConsent).recording, isFalse);
+        expect(answers(), hasLength(2));
+      },
+    );
+
+    test("the panel's agreement covers recordings too", () async {
+      final ai = await build(
+        notes: notes(),
+        billing: await billingOn(pro: true),
+      );
+      await ai.ask('Lisbon?');
+      expect((ai.pending! as KapyCloudConsent).recording, isFalse);
+      await ai.proceed();
+      expect(answers(), hasLength(1));
+      await ai.ask('What did we decide?', recording: _link);
+      expect(ai.pending, isNull);
+      expect(answers(), hasLength(2));
+    });
+
+    test('another model answers the same question again', () async {
+      final ai = await build(notes: notes());
+      await ai.ask('What did we decide?', recording: _link);
+      await ai.answerWith(FakeDeviceModel.apple);
+      final messages = ai.current!.messages;
+      expect(
+        [for (final message in messages) message.role],
+        [KapyRole.user, KapyRole.assistant, KapyRole.user, KapyRole.assistant],
+      );
+      expect(messages[2].text, 'What did we decide?');
+      expect(messages[2].id, isNot(messages[0].id));
+      expect(messages.last.model, FakeDeviceModel.apple);
+      expect(device.asked, hasLength(2));
+      expect(device.asked.last.notes.single.id, 'standup');
+    });
+
+    test(
+      'reads the whole of a transcript that fits, with no mark to say so',
+      () async {
+        final ai = await build(notes: notes());
+        await ai.ask('What did we decide?', recording: _link);
+        final whole = ai.current!.messages.last;
+        expect(whole.readTo, isNull);
+        expect(ai.readWhole(ai.current!, whole), isTrue);
+      },
+    );
+
+    test(
+      'reads part of one that does not fit, whether it says so or not',
+      () async {
+        final long = await build(notes: notes(voice: _voice(minutes: 90)));
+        await long.ask('What did we decide?', recording: _link);
+        final part = long.current!.messages.last;
+        expect(part.readTo, isNotNull);
+        expect(long.readWhole(long.current!, part), isFalse);
+        // As a build from before recording chats sends it again: no mark.
+        final unmarked = KapyMessage(
+          id: 'unmarked',
+          role: KapyRole.assistant,
+          text: part.text,
+          at: part.at,
+          model: part.model,
+        );
+        expect(long.readWhole(long.current!, unmarked), isFalse);
+      },
+    );
+
     test('suggests two questions, and one about a named speaker', () {
       const two = ['What did we decide?', 'What are the next steps?'];
       VoiceTranscript said(Map<int, String> speakers, {int people = 2}) =>
