@@ -1899,46 +1899,8 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets("Back closes the model picker first, then goes Home", (
-      tester,
-    ) async {
-      await pumpPhone(tester);
-      await tap(tester, tab);
-      await tap(tester, find.byType(KapyAiModelButton));
-      final picker = find.byType(KapyAiPicker);
-      expect(picker, findsOneWidget);
-
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
-      expect(picker, findsNothing);
-      expect(page, findsOneWidget);
-
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
-      expect(page, findsNothing);
-      expect(home, findsOneWidget);
-    });
-
-    testWidgets('with the model picker open, another tab takes it away, and '
-        "Back then does that tab's step", (tester) async {
-      await pumpPhone(tester);
-      await tap(tester, tab);
-      await tap(tester, find.byType(KapyAiModelButton));
-      expect(find.byType(KapyAiPicker), findsOneWidget);
-
-      await tap(tester, find.byKey(const ValueKey('bar-folders')));
-      expect(page, findsNothing);
-      await tester.binding.handlePopRoute();
-      await tester.pumpAndSettle();
-      expect(home, findsOneWidget);
-      expect(
-        tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
-        PhoneTab.notes,
-      );
-    });
-
     for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
-      testWidgets('on ${platform.name}, its page, its picker and the sheet '
+      testWidgets('on ${platform.name}, its page, the sheet and its picker '
           'over a note name no desktop keys or clicks (KAP-115)', (
         tester,
       ) async {
@@ -1980,6 +1942,7 @@ void main() {
         await tap(tester, tab);
         expect(page, findsOneWidget);
         expectNoKeys('the page');
+        await tap(tester, find.byKey(const ValueKey('phone-new')));
         await tap(tester, find.byType(KapyAiModelButton));
         expect(find.byType(KapyAiPicker), findsOneWidget);
         expectNoKeys('the picker');
@@ -1987,7 +1950,7 @@ void main() {
       });
     }
 
-    testWidgets("mounts Kapy AI's page clear of the bar, lit in it; Notes and "
+    testWidgets("mounts Kapy AI's page, lit in the bar; Notes and "
         'Back both go Home', (tester) async {
       await pumpPhone(tester);
       expect(page, findsNothing);
@@ -1999,19 +1962,6 @@ void main() {
         tester.widget<PhoneSpaces>(find.byType(PhoneSpaces)).tab,
         PhoneTab.kapyAi,
       );
-      final field = find.byKey(const ValueKey('kapy-ai-page-field'));
-      expect(
-        tester.getRect(find.byKey(const ValueKey('phone-bar'))).top -
-            tester
-                .getRect(
-                  find
-                      .ancestor(of: field, matching: find.byType(Container))
-                      .first,
-                )
-                .bottom,
-        12,
-      );
-
       await tap(tester, find.byKey(const ValueKey('bar-notes')));
       expect(page, findsNothing);
       expect(home, findsOneWidget);
@@ -2023,10 +1973,20 @@ void main() {
       expect(home, findsOneWidget);
     });
 
-    testWidgets("on Android over three buttons, its composer ends above the "
-        'pill', (tester) async {
+    testWidgets("on Android over three buttons, its last chat scrolls clear "
+        'of the pill', (tester) async {
       tester.view.viewPadding = const FakeViewPadding(bottom: 48);
       tester.view.padding = const FakeViewPadding(bottom: 48);
+      ai.chatList = [
+        for (var i = 0; i < 20; i++)
+          KapyChat(
+            id: 'c$i',
+            title: 'Chat $i',
+            createdAt: DateTime(2026, 11, 19, 8, i),
+            updatedAt: DateTime(2026, 11, 19, 8, i),
+            model: KapyModel.cloud,
+          ),
+      ];
       await _pump(
         tester,
         size: const Size(412, 915),
@@ -2036,21 +1996,74 @@ void main() {
       if (back.evaluate().isNotEmpty) await tap(tester, back);
       await tap(tester, tab);
 
+      await tester.drag(
+        find.byKey(const ValueKey('kapy-ai-page-chats')),
+        const Offset(0, -3000),
+      );
+      await tester.pumpAndSettle();
       final pill = tester.getRect(find.byKey(const ValueKey('phone-bar')));
-      // The send button sits on the composer's last row, at its foot.
-      final composer = tester.getRect(
-        find.byKey(const ValueKey('kapy-ai-page-send')),
+      final last = tester.getRect(
+        find.byKey(const ValueKey('kapy-ai-page-chat-c0')),
       );
       expect(pill.bottom, lessThanOrEqualTo(915 - 48));
-      expect(composer.bottom, lessThanOrEqualTo(pill.top));
+      expect(last.bottom, lessThanOrEqualTo(pill.top));
     });
 
-    testWidgets('New chat opens the conversation over it', (tester) async {
+    testWidgets('its + is New chat: a new chat in the sheet, ready to type '
+        'in; held, it still makes the rest', (tester) async {
+      ai.chatList = [
+        KapyChat(
+          id: 'a',
+          title: 'Find my notes about Lisbon',
+          createdAt: DateTime(2026, 11, 19, 8),
+          updatedAt: DateTime(2026, 11, 19, 8),
+          model: KapyModel.cloud,
+        ),
+      ];
+      ai.openChat('a');
       await pumpPhone(tester);
+      final plus = find.byKey(const ValueKey('phone-new'));
+      expect(find.bySemanticsLabel('New note'), findsOneWidget);
       await tap(tester, tab);
+      expect(
+        tester
+            .widget<Semantics>(
+              find.descendant(of: plus, matching: find.byType(Semantics)).first,
+            )
+            .properties
+            .label,
+        'New chat',
+      );
+      expect(
+        tester
+            .widget<Material>(
+              find.descendant(of: plus, matching: find.byType(Material)).first,
+            )
+            .color,
+        Theme.of(tester.element(plus)).colorScheme.primary,
+      );
 
-      await tap(tester, find.byKey(const ValueKey('kapy-ai-page-new-chat')));
-      expect(_panel, findsOneWidget);
+      ai.calls.clear();
+      await tap(tester, plus);
+      expect(ai.calls, ['newChat']);
+      expect(ai.current, isNull);
+      expect(find.byKey(const ValueKey('kapy-ai-sheet')), findsOneWidget);
+      final field = tester.widget<TextField>(
+        find.byKey(const ValueKey('kapy-ai-field')),
+      );
+      expect(field.focusNode!.hasFocus, isTrue);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      await tester.longPress(plus);
+      await tester.pumpAndSettle();
+      for (final made in ['note', 'drawing']) {
+        expect(
+          find.byKey(ValueKey('phone-new-$made')),
+          findsOneWidget,
+          reason: made,
+        );
+      }
     });
 
     testWidgets("an account's Add row opens Settings at that account", (
@@ -2064,6 +2077,7 @@ void main() {
       ];
       await pumpPhone(tester);
       await tap(tester, tab);
+      await tap(tester, find.byKey(const ValueKey('phone-new')));
 
       await tap(tester, find.byKey(const ValueKey('kapy-ai-model-button')));
       // With no account yet, the picker's way to one is its Add row.
@@ -2149,19 +2163,20 @@ void main() {
       expect(field('Search or Ask Kapy AI'), findsNothing);
     });
 
-    testWidgets("after a visit to Drawings, + on it makes a note, and Folders "
+    testWidgets("after a visit to Drawings, + on it starts a chat, and Folders "
         'is back on its tree', (tester) async {
       await pumpPhone(tester);
       await tap(tester, find.byKey(const ValueKey('bar-folders')));
       await tap(tester, find.byKey(const ValueKey('folders-drawings-tile')));
       await tap(tester, tab);
 
-      // The blank note the app opens on is the one + reuses, as for a note.
+      // Here the + starts a chat, never a drawing.
       await tap(tester, find.byKey(const ValueKey('phone-new')));
-      expect(page, findsNothing);
+      expect(find.byKey(const ValueKey('kapy-ai-sheet')), findsOneWidget);
       expect(notes.notes.where((note) => note.isDrawing), isEmpty);
 
-      await tap(tester, find.byKey(const ValueKey('page-home')));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
       await tap(tester, find.byKey(const ValueKey('bar-folders')));
       expect(
         tester
