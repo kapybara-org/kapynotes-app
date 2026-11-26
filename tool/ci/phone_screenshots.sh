@@ -42,14 +42,21 @@ wanted() {
 
 tests=(phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_time_line phone_video)
 phone_tests=" ${tests[*]} phone_recording_away phone_bar_android "
+picked=
 set -f
 for name in ${PHONE_TESTS:-}; do
   if [[ $phone_tests != *" $name "* ]]; then
     echo "::error::PHONE_TESTS names $name, which isn't a phone test:$phone_tests"
     exit 1
   fi
+  picked+=" $name"
 done
 set +f
+if [[ -n ${PHONE_TESTS:-} && -z $picked ]]; then
+  echo "::error::PHONE_TESTS names no test"
+  exit 1
+fi
+PHONE_TESTS=$picked
 [[ $device == --check ]] && exit 0
 
 drive() {

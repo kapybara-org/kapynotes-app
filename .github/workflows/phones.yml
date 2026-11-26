@@ -23,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       tests:
-        description: The only tests to run, such as phone_recording_away; empty runs them all. A run of some tests names them in its title, fails on a name with no test file, and runs beside a run of them all on the same branch instead of cancelling it
+        description: The only tests to run, such as phone_recording_away; empty runs them all. A run of some tests names them in its title, fails on a name that isn't one of the phone tests, and runs beside a run of them all on the same branch instead of cancelling it
         required: false
         default: ''
 
