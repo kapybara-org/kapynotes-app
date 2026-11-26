@@ -4386,6 +4386,137 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    testWidgets(
+      'a note that leaves the day keeps its tab and its pin while the day is '
+      'open, and the day picked again leaves it out with its pin',
+      (tester) async {
+        final days = NoteDayStore(store);
+        await days.load();
+        final dayTabs = DayTabsStore(store);
+        await dayTabs.load();
+        await library(tester, days: days, dayTabs: dayTabs);
+        days.setDay('October plan', wednesday);
+        days.setDay('Pricing ideas', wednesday);
+        await tester.pumpAndSettle();
+        await tap(tester, day(18));
+        expect(tabTitles(tester), [
+          'October plan',
+          'Pricing ideas',
+          'Standup notes',
+        ]);
+        await tabMenu(tester, 'Standup notes');
+        await tap(tester, find.text('Pin tab'));
+        expect(tabTitles(tester), [
+          'Standup notes',
+          'October plan',
+          'Pricing ideas',
+        ]);
+        expect(pinOn('Standup notes'), findsOneWidget);
+
+        notes.updateBody('Standup notes', 'Standup notes\nmoved on');
+        await tester.pumpAndSettle();
+        expect(tabTitles(tester), [
+          'Standup notes',
+          'October plan',
+          'Pricing ideas',
+        ]);
+        expect(pinOn('Standup notes'), findsOneWidget);
+
+        await tabMenu(tester, 'Standup notes');
+        await tap(tester, find.text('Unpin tab'));
+        expect(pinOn('Standup notes'), findsNothing);
+        await tabMenu(tester, 'Standup notes');
+        await tap(tester, find.text('Pin tab'));
+        expect(pinOn('Standup notes'), findsOneWidget);
+        expect(tabTitles(tester).first, 'Standup notes');
+
+        await tap(tester, day(18));
+        await tap(tester, day(18));
+        expect(tabTitles(tester), ['October plan', 'Pricing ideas']);
+        expect(pinOn('October plan'), findsNothing);
+        expect(pinOn('Pricing ideas'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      "a screen reader pins and unpins a day's tab with the tab's own action",
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        final days = NoteDayStore(store);
+        await days.load();
+        final dayTabs = DayTabsStore(store);
+        await dayTabs.load();
+        await library(tester, days: days, dayTabs: dayTabs);
+        days.setDay('October plan', wednesday);
+        await tester.pumpAndSettle();
+        await tap(tester, day(18));
+        SemanticsNode node(String title) => tester.semantics.find(
+          find.descendant(of: tabOf(title), matching: find.text(title)).first,
+        );
+        Map<String, int> actions(String title) => {
+          for (final id
+              in node(title).getSemanticsData().customSemanticsActionIds ??
+                  const <int>[])
+            CustomSemanticsAction.getAction(id)!.label!: id,
+        };
+        Future<void> act(String title, String label) async {
+          final tab = node(title);
+          final id = actions(title)[label];
+          expect(id, isNotNull, reason: '$title offers $label');
+          tab.owner!.performAction(tab.id, SemanticsAction.customAction, id);
+          await tester.pumpAndSettle();
+        }
+
+        expect(
+          actions('Standup notes').keys,
+          containsAll(['Pin tab', 'Close tab']),
+        );
+        await act('Standup notes', 'Pin tab');
+        expect(tabTitles(tester), ['Standup notes', 'October plan']);
+        expect(pinOn('Standup notes'), findsOneWidget);
+        await act('Standup notes', 'Unpin tab');
+        expect(pinOn('Standup notes'), findsNothing);
+        handle.dispose();
+      },
+    );
+
+    testWidgets("a day's tab split with another note beside it has no pin to "
+        'give', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final dayTabs = DayTabsStore(store);
+      await dayTabs.load();
+      await library(tester, days: days, dayTabs: dayTabs);
+      days.setDay('October plan', wednesday);
+      await tester.pumpAndSettle();
+      await tap(tester, day(18));
+      expect(tabTitles(tester), wednesdayNotes);
+
+      await pickPageAction(tester, 'split');
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.focusSecondPane)!,
+      );
+      await tester.pumpAndSettle();
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.focusFirstPane)!,
+      );
+      await tester.pumpAndSettle();
+      final front = tester
+          .widget<NoteTabRow>(find.byType(NoteTabRow))
+          .tabs
+          .first;
+      expect(front.title, 'October plan');
+      expect(front.pinned, isNull);
+      await tabMenu(tester, 'October plan');
+      expect(find.text('Close tab'), findsOneWidget);
+      expect(find.text('Pin tab'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+    });
+
     testWidgets("a day's order changed on another device shows in its tabs "
         'here at once, the tab in front staying', (tester) async {
       final days = NoteDayStore(store);
