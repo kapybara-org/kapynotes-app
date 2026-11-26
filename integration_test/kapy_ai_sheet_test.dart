@@ -13,6 +13,7 @@
 // text, with the sheet back at its rest and the answer on screen. Each is a
 // screenshot in build/screenshots, and a device shot where
 // tool/ci/phone_screenshots.sh names the device.
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
@@ -30,6 +31,7 @@ import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../test/fake_kapy_ai.dart';
+import 'keyboard_support.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
 
@@ -133,6 +135,16 @@ void main() {
       final sparkle = find.byKey(const ValueKey('page-kapy-ai'));
       await until(() => sparkle.evaluate().isNotEmpty, 'the note’s Kapy AI');
 
+      // The race Android lost in KAP-359, made likely: the note's keyboard is
+      // asked for again and the sheet opens as it starts to come up, so the
+      // sheet puts it away halfway in.
+      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+      await settleKeyboard(tester, up: false);
+      await SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+      for (var i = 0; i < 100 && tester.view.viewInsets.bottom == 0; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
       // The sheet's route cancels the press it opens under, and the live
       // binding hands that cancel to its finder printer unless device pointer
       // events reach the app.
@@ -153,6 +165,9 @@ void main() {
           tester.view.devicePixelRatio *
           (1 - kapyAiSheetRest);
       bool resting() => (tester.getRect(sheet).top - rest).abs() < 1;
+      // The note asked for the keyboard as it opened and the sheet put it
+      // away, which can be halfway in, so it may still be going down.
+      await settleKeyboard(tester, up: false);
       expect(resting(), isTrue, reason: 'the sheet rests over the note');
 
       final field = find.byKey(const ValueKey('kapy-ai-field'));
@@ -188,10 +203,8 @@ void main() {
       );
 
       FocusManager.instance.primaryFocus?.unfocus();
-      await until(
-        () => tester.view.viewInsets.bottom == 0 && resting(),
-        'the keyboard to go down and the sheet to rest over the note',
-      );
+      await settleKeyboard(tester, up: false);
+      await until(resting, 'the sheet to rest over the note');
 
       expect(answerText, findsOneWidget);
       final over = tester.getRect(sheet);

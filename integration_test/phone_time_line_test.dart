@@ -22,6 +22,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'keyboard_support.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
 
@@ -81,20 +82,11 @@ void main() {
       );
       await tester.pumpAndSettle(const Duration(seconds: 1));
 
-      /// Pumps frames until [ready], and fails naming [what] if it never is.
-      Future<void> until(bool Function() ready, String what) async {
-        for (var i = 0; i < 100 && !ready(); i++) {
-          await tester.pump(const Duration(milliseconds: 100));
-        }
-        expect(ready(), isTrue, reason: 'waited 10 s for $what');
-        await tester.pumpAndSettle();
-      }
-
       NoteFieldState field() =>
           tester.state<NoteFieldState>(find.byType(NoteField));
       double offset() => field().widget.scrollController.offset;
 
-      await until(() => tester.view.viewInsets.bottom > 0, 'the keyboard');
+      await settleKeyboard(tester, up: true);
       expect(
         offset(),
         greaterThan(0),
@@ -102,10 +94,7 @@ void main() {
       );
 
       FocusManager.instance.primaryFocus?.unfocus();
-      await until(
-        () => tester.view.viewInsets.bottom == 0,
-        'the keyboard to go down',
-      );
+      await settleKeyboard(tester, up: false);
       expect(offset(), 0, reason: 'the whole note fits without the keyboard');
       await screenshot(name, device: true);
 
