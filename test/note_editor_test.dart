@@ -4438,6 +4438,32 @@ total to usd''';
       await tester.pumpAndSettle();
     }
 
+    testWidgets("finds the words in a table's cells, each cell on its own", (
+      tester,
+    ) async {
+      const body =
+          'Gear\n\n| Item | Qty |\n| --- | --- |\n| Stove | 1 |\n'
+          '| Tent pegs | 8 |\n\nSpare pegs';
+      await tester.pumpWidget(harness(body, autofocus: true, markdown: true));
+      await tester.pumpAndSettle();
+
+      await openFind(tester, 'pegs');
+      expect(count(tester), '1 of 2');
+      final at = body.indexOf('pegs');
+      expect(
+        NoteDriver(tester).state.layout.marks.found!.ranges.first,
+        TextRange(start: at, end: at + 4),
+      );
+
+      // The grid's lines are not words, and a match never runs from one
+      // cell into the next.
+      for (final words in ['pegs8', 'pegs 8', 'pegs | 8']) {
+        await tester.enterText(field, words);
+        await tester.pumpAndSettle();
+        expect(count(tester), 'No matches', reason: words);
+      }
+    });
+
     testWidgets('counts the matches, marks them, and steps through them', (
       tester,
     ) async {
@@ -4621,6 +4647,71 @@ total to usd''';
       await tester.pumpAndSettle();
       expect(count(tester), '1 of 2');
       expect(NoteDriver(tester).state.layout.marks.found!.ranges, hasLength(2));
+    });
+
+    testWidgets('a match in a table is filled in its cell, and esc leaves it '
+        'selected there', (tester) async {
+      const body =
+          'Gear\n\n| Item | Qty |\n| --- | --- |\n| Tent pegs | 8 |\n\n'
+          'Spare pegs';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      final at = body.indexOf('pegs');
+
+      await openFind(tester, 'pegs');
+      expect(count(tester), '1 of 2');
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '2 of 2');
+      // The cell's match is filled where a selection of its words would be,
+      // over the words in the cell.
+      final lines = note.state.lines;
+      final line = lines.lineAt(at);
+      final from = at - lines.startOf(line);
+      expect(note.state.layout.marks.found!.ranges.first.start, at);
+      expect(
+        note.state.layout.selectionOf!(
+          line,
+          TextRange(start: from, end: from + 4),
+        ),
+        [isA<Rect>().having((rect) => rect.width, 'width', greaterThan(1))],
+      );
+
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '1 of 2');
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(bar, findsNothing);
+      expect(
+        note.value.selection,
+        TextSelection(baseOffset: at, extentOffset: at + 4),
+      );
+      expect(note.value.text, body);
+    });
+
+    testWidgets('a match in a table below the page is scrolled into sight', (
+      tester,
+    ) async {
+      final body = [
+        'Long',
+        for (var line = 0; line < 80; line++) 'line $line',
+        '',
+        '| Item | Qty |',
+        '| --- | --- |',
+        '| Tent pegs | 8 |',
+      ].join('\n');
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      Rect pegs() => note
+          .caretRect(TextPosition(offset: body.indexOf('pegs')))
+          .shift(note.toGlobal(Offset.zero));
+      final page = tester.getRect(find.byType(NoteEditor));
+      expect(pegs().top, greaterThan(page.bottom));
+
+      await openFind(tester, 'pegs');
+      expect(count(tester), '1 of 1');
+      expect(pegs().top, greaterThanOrEqualTo(page.top));
+      expect(pegs().bottom, lessThanOrEqualTo(page.bottom));
     });
 
     testWidgets('a match below the page is scrolled into sight', (

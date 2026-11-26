@@ -6138,6 +6138,28 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    // No note is in front of you on Tasks, so F is left unbound there, while
+    // the page's other keys still answer.
+    testWidgets('F opens nothing on Tasks', (tester) async {
+      await pumpWithPair(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+      await tester.pumpAndSettle();
+
+      final modifier = AppPlatform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      await tester.sendKeyDownEvent(modifier);
+      final handled = await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+      expect(handled, isFalse);
+      expect(find.byKey(const ValueKey('note-find-bar')), findsNothing);
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+
+      await press(tester, ShortcutAction.findNotes);
+      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+    });
+
     Future<void> pumpWithWaiting(WidgetTester tester, {Size? size}) async {
       await notes.load();
       notes.create(body: 'Errands\n☐ Pay the rent\n☐ Call the bank');

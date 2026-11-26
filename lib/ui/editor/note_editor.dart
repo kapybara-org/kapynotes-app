@@ -3885,7 +3885,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   bool _refreshFind(NoteFind find) {
     final selection = _controller.selection;
     return find.refresh(
-      _controller.text,
+      _controller.markdownFor(_controller.text),
       _controller.hiddenIn(_controller.text),
       from: selection.isValid ? selection.start : 0,
     );

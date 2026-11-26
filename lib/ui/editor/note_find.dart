@@ -6,11 +6,16 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
 import '../compact_icon_button.dart';
+import 'markdown_syntax.dart';
+import 'table_geometry.dart';
 
 /// Where [query] is in [text], whatever its case, as the note shows the
 /// text: [hidden], what the note draws as nothing (markdown's markers, a
 /// link's address), is passed over. So every match is words the reader can
 /// see, and words a hidden marker splits still match. Sorted, and apart.
+///
+/// Lower case is as long as the text it comes from, a code unit for each,
+/// so an offset into one is the same offset into the other.
 List<TextRange> findInText(
   String text,
   String query, {
@@ -50,8 +55,8 @@ List<TextRange> findInText(
     return textAt[low] + offset - shownAt[low];
   }
 
-  final haystack = _lower(shown.toString());
-  final needle = _lower(query);
+  final haystack = shown.toString().toLowerCase();
+  final needle = query.toLowerCase();
   return [
     for (
       var found = haystack.indexOf(needle);
@@ -65,18 +70,36 @@ List<TextRange> findInText(
   ];
 }
 
-/// [text] in lower case, a code unit for each code unit, so that an offset
-/// into one is the same offset into the other.
-String _lower(String text) {
-  final lower = text.toLowerCase();
-  if (lower.length == text.length) return lower;
-  return String.fromCharCodes([
-    for (final unit in text.codeUnits)
-      switch (String.fromCharCode(unit).toLowerCase()) {
-        final one when one.length == 1 => one.codeUnitAt(0),
-        _ => unit,
-      },
-  ]);
+/// Where [query] is in the cells of [analysis]'s tables, whatever its case.
+/// A table is drawn as a grid over its source, which the note hides and
+/// [findInText] passes over, so each cell is searched on its own, in the
+/// words its grid shows: a match never runs from one cell into the next, and
+/// the grid's lines are not words. Each match maps back to the cell's source
+/// as [TableGeometry.sourcesOf] maps a painted character. Sorted, and apart.
+List<TextRange> findInTables(MarkdownAnalysis analysis, String query) {
+  final needle = query.toLowerCase();
+  if (needle.isEmpty) return const [];
+  final found = <TextRange>[];
+  for (final table in analysis.tables) {
+    for (final row in table.rows) {
+      for (final cell in row.cells) {
+        final words = [
+          for (final run in analysis.runsIn(cell.start, cell.end)) run.text,
+        ].join();
+        final haystack = words.toLowerCase();
+        var at = haystack.indexOf(needle);
+        if (at < 0) continue;
+        final sources = TableGeometry.sourcesOf(analysis, cell, words);
+        for (; at >= 0; at = haystack.indexOf(needle, at + needle.length)) {
+          final start = cell.start + sources[at];
+          final end = cell.start + sources[at + needle.length - 1] + 1;
+          if (end > cell.end) continue;
+          found.add(TextRange(start: start, end: end));
+        }
+      }
+    }
+  }
+  return found;
 }
 
 /// A find in one note: the words its bar holds, where they are in the note
@@ -99,10 +122,16 @@ class NoteFind {
   String? _words;
   List<TextRange> _hidden = const [];
 
-  /// Finds the words in [text] again, where it or they or [hidden] changed,
-  /// and answers whether it did. The reader stays on the match at or after
-  /// the one they were on, or, on none, at or after [from].
-  bool refresh(String text, List<TextRange> hidden, {required int from}) {
+  /// Finds the words in the note [analysis] reads again, where it or they or
+  /// [hidden] changed, and answers whether it did: in its text as shown, and
+  /// in its tables' cells. The reader stays on the match at or after the one
+  /// they were on, or, on none, at or after [from].
+  bool refresh(
+    MarkdownAnalysis analysis,
+    List<TextRange> hidden, {
+    required int from,
+  }) {
+    final text = analysis.text;
     final words = query.text;
     if (text == _text && words == _words && listEquals(hidden, _hidden)) {
       return false;
@@ -111,7 +140,10 @@ class NoteFind {
     _text = text;
     _words = words;
     _hidden = hidden;
-    _matches = findInText(text, words, hidden: hidden);
+    _matches = [
+      ...findInText(text, words, hidden: hidden),
+      ...findInTables(analysis, words),
+    ]..sort((a, b) => a.start.compareTo(b.start));
     final next = _matches.indexWhere((match) => match.start >= at);
     _current = _matches.isEmpty ? -1 : (next < 0 ? 0 : next);
     return true;
