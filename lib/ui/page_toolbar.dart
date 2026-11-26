@@ -803,32 +803,47 @@ class _Level extends StatelessWidget {
   }
 }
 
-/// The save status in the bar, 8 before Kapy AI or More while it says
-/// anything.
+/// The save status in the bar, 8 before Kapy AI or More. The slot is always
+/// the widest notice, so Saving and Saved coming and going never move the
+/// week or the avatars. The words sit on the right of that slot, which keeps
+/// them 8 before what follows.
 class _Saved extends StatelessWidget {
   const _Saved(this.save);
 
   final SaveState save;
 
   @override
-  Widget build(BuildContext context) => ListenableBuilder(
-    listenable: save.status,
-    builder: (context, _) => SaveStatusLabel.noticeOf(save) == null
-        ? const SizedBox.shrink()
-        : Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: SaveStatusLabel(
-              save,
-              key: const ValueKey('page-saved'),
-              style: _figtree(
-                12,
-                16,
-                FontWeight.w500,
-                context.palette.textTertiary,
-              ),
-            ),
-          ),
-  );
+  Widget build(BuildContext context) {
+    final style = _figtree(
+      12,
+      16,
+      FontWeight.w500,
+      context.palette.textTertiary,
+    );
+    final slot = SaveStatusLabel.slotWidth(
+      style,
+      MediaQuery.textScalerOf(context),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ListenableBuilder(
+        listenable: save.status,
+        builder: (context, _) {
+          final notice = SaveStatusLabel.noticeOf(save);
+          return SizedBox(
+            key: notice == null ? null : const ValueKey('page-saved'),
+            width: slot,
+            child: notice == null
+                ? null
+                : Align(
+                    alignment: Alignment.centerRight,
+                    child: SaveStatusLabel(save, style: style),
+                  ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 /// Back to the list a page came from: "← Tasks" on iOS, and on Android

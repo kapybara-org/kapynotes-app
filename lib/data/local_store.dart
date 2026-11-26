@@ -23,6 +23,7 @@ class LocalStore {
   Future<void>? _inFlight;
   Future<void>? _loadFuture;
   bool _dirty = false;
+  bool _disposed = false;
 
   /// Whether everything put here is on disk, still on its way there, or
   /// failed its last write, which is tried again after [retry].
@@ -113,10 +114,13 @@ class LocalStore {
     next = () async {
       if (previous != null) await previous;
       final wrote = await _write();
+      // A dispose during the write must not schedule a retry or touch
+      // [writes], which is already disposed.
+      if (_disposed) return;
       // Scheduled here rather than in _write, whose context its isolate
       // copies, and which must not hold this store.
       if (!wrote) _timer ??= Timer(retry, () => unawaited(flush()));
-      if (!identical(_inFlight, next) || _dirty && wrote) return;
+      if (_disposed || !identical(_inFlight, next) || _dirty && wrote) return;
       writes.value = wrote ? StoreWrite.written : StoreWrite.failed;
     }();
     _inFlight = next;
@@ -154,6 +158,7 @@ class LocalStore {
   }
 
   void dispose() {
+    _disposed = true;
     _timer?.cancel();
     writes.dispose();
   }

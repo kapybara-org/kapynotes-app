@@ -139,7 +139,7 @@ SaveNotice? syncProblem(
     ),
     SyncStatus.failed => notSyncing(
       'Sync failed',
-      'Account & sync says what went wrong.',
+      'Open Account & sync to see what went wrong.',
     ),
     _ when paused => notSyncing(
       'Sync paused',
@@ -155,7 +155,9 @@ typedef SaveState = ({SaveStatus status, SaveNotice? problem});
 
 /// "Saving…", "Saved" fading away, or what is wrong for as long as it is:
 /// in the bar with its icon, or with [icon] false as words alone on the
-/// note's date line. Says nothing at rest.
+/// note's date line. Says nothing at rest. In the bar "Saved" keeps the
+/// width of "Saving…", so the icon stays put, and "Couldn't save", the one
+/// state where the note is not safe, takes the danger colour.
 class SaveStatusLabel extends StatelessWidget {
   const SaveStatusLabel(
     this.state, {
@@ -193,14 +195,65 @@ class SaveStatusLabel extends StatelessWidget {
     SavePhase.saved || SavePhase.fading => _saved,
   };
 
+  /// How wide the widest notice is, icon included when [icon] is set. A bar
+  /// or a date line keeps this width while the words come and go, so the
+  /// week, the avatars and the date line stay where they are.
+  static double slotWidth(
+    TextStyle style,
+    TextScaler scaler, {
+    bool icon = true,
+  }) {
+    final notices = <SaveNotice>[
+      _saving,
+      _saved,
+      _notSaved,
+      for (final status in SyncStatus.values) ?syncProblem(status),
+      ?syncProblem(SyncStatus.idle, paused: true),
+      ?syncProblem(null, signInAgain: true),
+    ];
+    var widest = 0.0;
+    for (final notice in notices) {
+      final painter = TextPainter(
+        text: TextSpan(text: notice.label, style: style),
+        textDirection: TextDirection.ltr,
+        textScaler: scaler,
+        maxLines: 1,
+      )..layout();
+      final width = painter.width + (icon ? 20 : 0);
+      painter.dispose();
+      if (width > widest) widest = width;
+    }
+    return widest;
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: state.status,
     builder: (context, _) {
       final notice = noticeOf(state);
       if (notice == null) return const SizedBox.shrink();
-      final fading =
-          state.problem == null && state.status.phase == SavePhase.fading;
+      final phase = state.status.phase;
+      final fading = state.problem == null && phase == SavePhase.fading;
+      final style = phase == SavePhase.failed
+          ? this.style.copyWith(color: Theme.of(context).colorScheme.error)
+          : this.style;
+      Widget label = Text(notice.label, maxLines: 1, style: style);
+      if (icon && phase != SavePhase.failed && state.problem == null) {
+        final saving = TextPainter(
+          text: TextSpan(
+            text: _saving.label,
+            style: DefaultTextStyle.of(context).style.merge(style),
+          ),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        label = ConstrainedBox(
+          constraints: BoxConstraints(minWidth: saving.width),
+          child: label,
+        );
+        saving.dispose();
+      }
       Widget row = Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -208,7 +261,7 @@ class SaveStatusLabel extends StatelessWidget {
             KapyIcon(notice.icon, size: 16, color: style.color),
             const SizedBox(width: 4),
           ],
-          Text(notice.label, maxLines: 1, style: style),
+          label,
         ],
       );
       if (notice.tooltip case final tooltip?) {

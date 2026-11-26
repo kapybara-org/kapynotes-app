@@ -171,18 +171,15 @@ class NoteMetaRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final save = DateLineSaved.of(context);
-    return save == null
-        ? _build(context, null)
-        : ListenableBuilder(
-            listenable: save.status,
-            builder: (context, _) => _build(
-              context,
-              SaveStatusLabel.noticeOf(save) == null ? null : save,
-            ),
-          );
+    if (save == null) return _build(context, null);
+    return ListenableBuilder(
+      listenable: save.status,
+      builder: (context, _) => _build(context, save),
+    );
   }
 
-  /// [save] is null while the date line has nothing to say about saving.
+  /// [save] is set while this line owns the status, including at rest, so the
+  /// slot stays and the facts after it do not jump as the words come and go.
   Widget _build(BuildContext context, SaveState? save) {
     final palette = context.palette;
     final quiet = TextStyle(
@@ -248,13 +245,7 @@ class NoteMetaRow extends StatelessWidget {
           key: const ValueKey('note-edited'),
           style: quiet,
         ),
-      if (save != null)
-        SaveStatusLabel(
-          save,
-          key: const ValueKey('note-saved'),
-          style: quiet,
-          icon: false,
-        ),
+      if (save != null) _saveSlot(context, save, quiet, mobile: mobile),
       if (tasks > 0 && !mobile)
         Text(progress, key: const ValueKey('note-progress'), style: quiet)
       else if (tasks > 0)
@@ -339,7 +330,7 @@ class NoteMetaRow extends StatelessWidget {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               for (final (index, item) in items.indexed)
-                index == 0
+                index == 0 || item.key == const ValueKey('note-saved-slot')
                     ? item
                     : Row(
                         mainAxisSize: MainAxisSize.min,
@@ -398,7 +389,7 @@ class NoteMetaRow extends StatelessWidget {
       child: Row(
         children: [
           for (final (index, item) in items.indexed) ...[
-            if (index > 0)
+            if (index > 0 && item.key != const ValueKey('note-saved-slot'))
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text('·', style: quiet),
@@ -408,6 +399,52 @@ class NoteMetaRow extends StatelessWidget {
           if (tags case final tags?) ...[const SizedBox(width: 6), tags],
         ],
       ),
+    );
+  }
+
+  /// The save status, including the dot in front of it, in a slot as wide as
+  /// the longest notice. Empty at rest, so the facts after it stay put and
+  /// there is no stray dot.
+  Widget _saveSlot(
+    BuildContext context,
+    SaveState save,
+    TextStyle quiet, {
+    required bool mobile,
+  }) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final labelWidth = SaveStatusLabel.slotWidth(quiet, scaler, icon: false);
+    final dotStyle = mobile
+        ? quiet.copyWith(color: context.palette.textDivider)
+        : quiet;
+    final dot = TextPainter(
+      text: TextSpan(text: '·', style: dotStyle),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final sep = mobile ? _gap : 4.0;
+    // TextPainter comes out a few pixels under the rendered line.
+    final width = sep + dot.width + sep + labelWidth + 4;
+    dot.dispose();
+    return SizedBox(
+      key: const ValueKey('note-saved-slot'),
+      width: width,
+      child: SaveStatusLabel.noticeOf(save) == null
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(width: sep),
+                Text('·', style: dotStyle),
+                SizedBox(width: sep),
+                SaveStatusLabel(
+                  save,
+                  key: const ValueKey('note-saved'),
+                  style: quiet,
+                  icon: false,
+                ),
+              ],
+            ),
     );
   }
 }

@@ -196,6 +196,19 @@ void main() {
       ),
       findsOneWidget,
     );
+    final danger = KapyTheme.dark().colorScheme.error;
+    expect(
+      tester.widget<Text>(says("Couldn't save")).style?.color,
+      danger,
+    );
+    expect(
+      tester
+          .widget<KapyIcon>(
+            find.descendant(of: label, matching: find.byType(KapyIcon)),
+          )
+          .color,
+      danger,
+    );
 
     await tester.pump(const Duration(minutes: 1));
     status.edited();
@@ -207,6 +220,25 @@ void main() {
     expect(shown(tester), 'Saved');
     await tester.pump(const Duration(milliseconds: 2400));
     expect(shown(tester), isNull);
+  });
+
+  testWidgets('"Saved" keeps the width of "Saving…", so the icon stays put, '
+      'in the quiet colour', (tester) async {
+    final (store, status) = await pumpStatus(tester);
+    final icon = find.descendant(of: label, matching: find.byType(KapyIcon));
+    store.put('notes', 'a');
+    status.edited();
+    await tester.pump();
+    expect(shown(tester), 'Saving…');
+    final at = tester.getTopLeft(icon);
+    final size = tester.getSize(label);
+
+    await tester.pump(const Duration(seconds: 1));
+    expect(shown(tester), 'Saved');
+    expect(tester.getTopLeft(icon), at);
+    expect(tester.getSize(label), size);
+    expect(tester.widget<Text>(says('Saved')).style?.color, isNull);
+    await tester.pump(const Duration(seconds: 3));
   });
 
   group('a problem in the way of sync stays until it clears', () {
@@ -245,7 +277,7 @@ void main() {
       'sync failed': (
         syncProblem(SyncStatus.failed),
         'Sync failed',
-        'Saved on this device. Account & sync says what went wrong.',
+        'Saved on this device. Open Account & sync to see what went wrong.',
       ),
     };
     for (final MapEntry(key: name, value: (problem, words, tooltip))
