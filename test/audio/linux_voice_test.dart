@@ -44,6 +44,17 @@ Auto-detected sources for pulse:
       expect(LinuxVoiceRecorder.listsMicrophone(withSource), isTrue);
     });
 
+    test('is found when the default source is a monitor', () {
+      expect(
+        LinuxVoiceRecorder.listsMicrophone(
+          'Auto-detected sources for pulse:\n'
+          '* auto_null.monitor [Monitor of Dummy Output] (none)\n'
+          '  fakemic [Null Input] (none)\n',
+        ),
+        isTrue,
+      );
+    });
+
     test('is not an output\'s monitor, which records silence', () {
       expect(LinuxVoiceRecorder.listsMicrophone(nullSinkOnly), isFalse);
     });

@@ -130,6 +130,12 @@ class FakeRecordingControls implements RecordingControls {
 
 /// Controls whose question is answered only when [_answer] completes: a
 /// dialog left up, or a platform that never replies.
+/// A backend whose look for a microphone fails rather than answering.
+class _MicrophoneUnknown extends FakeVoiceRecorder {
+  @override
+  Future<bool> hasMicrophone() async => throw StateError('no answer');
+}
+
 class _UnansweredControls extends FakeRecordingControls {
   _UnansweredControls(this._answer);
 
@@ -290,6 +296,16 @@ void main() {
     await controller.start(noteId: 'n1');
     await controller.finishRecordingAndFlush();
     expect(order, ['flush']);
+  });
+
+  test('a backend that cannot tell whether there is a microphone lets the '
+      'recording try', () async {
+    final controller = VoiceRecordingController(
+      recorder: _MicrophoneUnknown(),
+      tempDirectory: temp,
+    );
+    addTearDown(controller.dispose);
+    expect(await controller.hasMicrophone(), isTrue);
   });
 
   test('the sweep removes stray recordings, and only old ones', () async {
