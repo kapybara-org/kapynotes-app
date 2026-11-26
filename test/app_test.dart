@@ -4861,6 +4861,47 @@ void main() {
     await inColumn(600);
   });
 
+  testWidgets(
+    "at 400, + Tag's list opens inside the window and stays put while "
+    'ticking tags pushes + Tag off the line',
+    (tester) async {
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 8, 55));
+      await notes.load();
+      final tags = TagStore(store);
+      await tags.load();
+      for (var i = 0; i < 6; i++) {
+        tags.create('Longer tag $i');
+      }
+      notes.create(body: 'Quote for the deck');
+      await pumpApp(
+        tester,
+        size: const Size(400, 700),
+        tags: tags,
+        sidebarVisible: false,
+      );
+      final add = find.byKey(const ValueKey('note-add-tag'));
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      final list = find.byType(TagPicker);
+      final opened = tester.getRect(list);
+      expect(opened.right, lessThanOrEqualTo(400));
+      var ticked = 0;
+      while (add.hitTestable().evaluate().isNotEmpty && ticked < 6) {
+        await tester.tap(
+          find.descendant(of: list, matching: find.text('Longer tag $ticked')),
+        );
+        ticked++;
+        await tester.pumpAndSettle();
+        expect(tester.getRect(list), opened);
+      }
+      expect(add.hitTestable(), findsNothing);
+      expect(
+        find.byKey(const ValueKey('tag-picker-field')).hitTestable(),
+        findsOneWidget,
+      );
+    },
+  );
+
   // At 400 the line had no room for its tag, yet the chip sat at the window's
   // edge, and the × it shows under the pointer fell outside it (KAP-378).
   testWidgets("at 400, a note's tags step aside where the line has no room "

@@ -620,10 +620,22 @@ class NoteAddTag extends StatefulWidget {
 
 class _NoteAddTagState extends State<NoteAddTag> {
   final _picker = OverlayPortalController();
-  final _link = LayerLink();
+
+  /// Where the list opened: under + Tag, inside the window. It stays there
+  /// while it's open, even when + Tag steps aside from the line.
+  Offset _opened = Offset.zero;
 
   void _close() {
     if (_picker.isShowing) setState(_picker.hide);
+  }
+
+  void _toggle() {
+    if (_picker.isShowing) return _close();
+    final box = context.findRenderObject()! as RenderBox;
+    setState(() {
+      _opened = box.localToGlobal(box.size.bottomLeft(const Offset(0, 6)));
+      _picker.show();
+    });
   }
 
   @override
@@ -634,53 +646,44 @@ class _NoteAddTagState extends State<NoteAddTag> {
     return TapRegion(
       groupId: _picker,
       onTapOutside: (_) => _close(),
-      child: CompositedTransformTarget(
-        link: _link,
-        child: OverlayPortal(
-          controller: _picker,
-          overlayChildBuilder: (context) => Align(
-            alignment: Alignment.topLeft,
-            child: CompositedTransformFollower(
-              link: _link,
-              targetAnchor: Alignment.bottomLeft,
-              offset: const Offset(0, 6),
-              child: TapRegion(
-                groupId: _picker,
-                child: TagPicker(
-                  shelf: shelf,
-                  noteIds: [widget.noteId],
-                  onClose: _close,
-                ),
-              ),
+      child: OverlayPortal(
+        controller: _picker,
+        overlayChildBuilder: (context) => CustomSingleChildLayout(
+          delegate: PopoverAtPoint(_opened),
+          child: TapRegion(
+            groupId: _picker,
+            child: TagPicker(
+              shelf: shelf,
+              noteIds: [widget.noteId],
+              onClose: _close,
             ),
           ),
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              key: const ValueKey('note-add-tag'),
-              behavior: HitTestBehavior.opaque,
-              onTap: () =>
-                  setState(_picker.isShowing ? _picker.hide : _picker.show),
-              child: Container(
-                // A phone's target is 44 pt tall; the pill stays small.
-                height: AppPlatform.hasPointer ? 22 : 44,
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.only(left: 4, right: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    KapyIcon(
-                      KapyIcons.addRounded,
-                      size: 12,
-                      color: palette.textTertiary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Tag',
-                      style: _text(13, FontWeight.w400, palette.textTertiary),
-                    ),
-                  ],
-                ),
+        ),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            key: const ValueKey('note-add-tag'),
+            behavior: HitTestBehavior.opaque,
+            onTap: _toggle,
+            child: Container(
+              // A phone's target is 44 pt tall; the pill stays small.
+              height: AppPlatform.hasPointer ? 22 : 44,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(left: 4, right: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  KapyIcon(
+                    KapyIcons.addRounded,
+                    size: 12,
+                    color: palette.textTertiary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Tag',
+                    style: _text(13, FontWeight.w400, palette.textTertiary),
+                  ),
+                ],
               ),
             ),
           ),
