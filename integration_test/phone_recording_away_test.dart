@@ -68,7 +68,10 @@ class _NoControls implements RecordingControls {
   Future<void> hide() async {}
 }
 
-/// At least this much of the recording is made with the app out of sight.
+/// At least this much of the recording is made with the app out of sight,
+/// read off the recording's own clock. That clock stops while the test pauses
+/// the recording for a shot, so a slow shot keeps the test away longer
+/// instead of eating into this.
 const _away = Duration(seconds: 130);
 
 void main() {
@@ -145,7 +148,7 @@ void main() {
 
     // Away. Nothing here pumps a frame until the app is back: a phone draws
     // none for an app out of sight, so a pump would wait for ever.
-    final left = DateTime.now();
+    final recordedInSight = recording.session!.elapsed;
     Future<void> wait(int seconds) =>
         Future<void>.delayed(Duration(seconds: seconds));
     // A host may have pressed Lock and locked nothing, so the phone counts as
@@ -236,8 +239,10 @@ void main() {
       await deviceAction('dark');
     }
 
-    final remaining = _away - DateTime.now().difference(left);
-    if (remaining > Duration.zero) await Future<void>.delayed(remaining);
+    if (recording.session case final session?) {
+      final remaining = _away - (session.elapsed - recordedInSight);
+      if (remaining > Duration.zero) await Future<void>.delayed(remaining);
+    }
     expect(recording.isRecording, isTrue, reason: 'stopped while away');
     if (Platform.isAndroid) expect(await deviceAction('cut'), isNull);
 
@@ -276,9 +281,8 @@ void main() {
     final killedAudio = await inProgress.copy(
       '${killed.path}/${inProgress.uri.pathSegments.last}',
     );
-    File(
-      killedAudio.path.replaceFirst(RegExp(r'\.aac$'), '.json'),
-    ).writeAsStringSync('{"noteId":"standup"}');
+    File(killedAudio.path.replaceFirst(RegExp(r'\.aac$'), '.json'))
+        .writeAsStringSync('{"noteId":"standup"}');
 
     await recording.finishRecordingAndFlush();
     await tester.pumpAndSettle(const Duration(seconds: 1));
