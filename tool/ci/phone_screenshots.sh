@@ -23,6 +23,9 @@
 # `phone_recording_away`, for a run that checks one test. A name that isn't
 # one of the phone tests below fails the run, so a typo, or a desktop test
 # this script never drives, can't run nothing and pass.
+# PHONE_APP, when set, names an app already built from
+# integration_test/phones.dart, as Phones' iOS job builds it: each file then
+# runs on that build instead of building one of its own.
 set -u
 
 device=$1
@@ -50,10 +53,15 @@ set +f
 
 drive() {
   wanted "$1" || return 0
+  local target=integration_test/$1_test.dart built=()
+  if [[ -n ${PHONE_APP:-} ]]; then
+    target=integration_test/phones.dart
+    built=(--use-application-binary "$PHONE_APP")
+  fi
   set -m
-  flutter drive --no-pub -d "$device" \
+  SIMCTL_CHILD_KAPYNOTES_PHONE_TEST=$1 flutter drive --no-pub -d "$device" \
     --driver test_driver/integration_test.dart \
-    --target "integration_test/$1_test.dart" \
+    --target "$target" ${built[@]+"${built[@]}"} \
     --dart-define=KAPYNOTES_SYNC=false \
     --dart-define=KAPYNOTES_DEVICE_SHOTS="$device" \
     --timeout=600 --screenshot=build/screenshots &
