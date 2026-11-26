@@ -11,6 +11,18 @@ abstract interface class TypeAheadField {
   void takeTyping(String text);
 }
 
+/// [value] with [text] in place of its selection and the caret after it, as
+/// typing [text] would leave it.
+TextEditingValue typedInto(TextEditingValue value, String text) {
+  final selection = value.selection.isValid
+      ? value.selection
+      : TextSelection.collapsed(offset: value.text.length);
+  return TextEditingValue(
+    text: value.text.replaceRange(selection.start, selection.end, text),
+    selection: TextSelection.collapsed(offset: selection.start + text.length),
+  );
+}
+
 /// Keeps the keys typed just after a shortcut that opens a field, and gives
 /// them to that field once it has the keyboard (KAP-388).
 ///
@@ -22,8 +34,9 @@ abstract interface class TypeAheadField {
 /// same frame.
 ///
 /// [hold] takes those keys before the focused field sees them. Letters,
-/// spaces, ↵ and ⌫ are kept, other plain keys are dropped, and a paste is
-/// kept to be done in the new field. Chords with ⌘ or Ctrl still reach the
+/// spaces, ↵ and ⌫ are kept, as are a paste and esc, which are done in the
+/// new field in their turn; other plain keys are dropped. ↵ in a one-line
+/// field submits it, as it would have. Chords with ⌘ or Ctrl still reach the
 /// shortcuts, apart from the ones that edit (cut, undo, redo, delete), which
 /// are dropped. Once the keyboard has moved, or after a few frames when it
 /// stays where it was, everything kept goes into the field that has it, in
@@ -47,13 +60,15 @@ final class _Hold {
   /// Where the keyboard was when the hold began.
   final FocusNode? from;
 
-  /// What was typed, in order: text, or [_paste].
+  /// What was typed, in order: text, [_paste] or [_escape].
   final List<Object> typed = [];
   var _frames = 0;
   var _releasing = false;
 
-  static const _paste = Object();
+  static const _paste = _Kept.paste;
+  static const _escape = _Kept.escape;
   static const _maxFrames = 4;
+  static const _pasteWait = Duration(seconds: 1);
 
   KeyEventResult key(KeyEvent event) {
     if (event is KeyUpEvent) return KeyEventResult.ignored;
@@ -74,6 +89,10 @@ final class _Hold {
               key == LogicalKeyboardKey.delete
           ? KeyEventResult.handled
           : KeyEventResult.ignored;
+    }
+    if (key == LogicalKeyboardKey.escape) {
+      typed.add(_escape);
+      return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.enter ||
         key == LogicalKeyboardKey.numpadEnter) {
@@ -107,24 +126,34 @@ final class _Hold {
     _frames++;
     final focused = FocusManager.instance.primaryFocus;
     if (focused == from && _frames < _maxFrames) return nextFrame();
-    unawaited(_release(focused?.context));
+    unawaited(_release(focused));
   }
 
-  Future<void> _release(BuildContext? context) async {
+  Future<void> _release(FocusNode? focused) async {
     _releasing = true;
+    final context = focused?.context;
     try {
       var i = 0;
       while (i < typed.length) {
         if (context == null || !context.mounted) break;
+        if (identical(typed[i], _escape)) {
+          _escapeFrom(focused!);
+          break;
+        }
         if (identical(typed[i], _paste)) {
           i++;
           final pasted = Actions.maybeInvoke(
             context,
             const PasteTextIntent(SelectionChangedCause.keyboard),
           );
-          await (pasted is Future
-              ? pasted
-              : Clipboard.getData(Clipboard.kTextPlain));
+          try {
+            await (pasted is Future
+                    ? pasted
+                    : Clipboard.getData(Clipboard.kTextPlain))
+                .timeout(_pasteWait);
+          } on Object {
+            // A paste that fails or hangs still lets the rest of the keys go.
+          }
           continue;
         }
         final text = StringBuffer();
@@ -139,6 +168,23 @@ final class _Hold {
     }
   }
 
+  /// Presses esc where the keyboard now is, as the focus tree would have
+  /// passed it on: from [focused] up, until something takes it.
+  static void _escapeFrom(FocusNode focused) {
+    const event = KeyDownEvent(
+      physicalKey: PhysicalKeyboardKey.escape,
+      logicalKey: LogicalKeyboardKey.escape,
+      timeStamp: Duration.zero,
+    );
+    for (final node in [focused, ...focused.ancestors]) {
+      final result = node.onKeyEvent?.call(node, event);
+      if (result == KeyEventResult.handled ||
+          result == KeyEventResult.skipRemainingHandlers) {
+        return;
+      }
+    }
+  }
+
   /// Puts [text] into the field [context], the keyboard's focus, belongs to.
   static void _type(BuildContext context, String text) {
     context.visitAncestorElements((element) {
@@ -147,14 +193,20 @@ final class _Hold {
         case final TypeAheadField field:
           field.takeTyping(text);
         case final EditableTextState field when !field.widget.readOnly:
-          final value = field.textEditingValue;
-          final selection = value.selection.isValid
-              ? value.selection
-              : TextSelection.collapsed(offset: value.text.length);
-          field.userUpdateTextEditingValue(
-            value.replaced(selection, text),
-            SelectionChangedCause.keyboard,
-          );
+          final lines = field.widget.maxLines == 1 ? text.split('\n') : [text];
+          for (final (index, line) in lines.indexed) {
+            if (!field.mounted) break;
+            if (index > 0) {
+              field.performAction(
+                field.widget.textInputAction ?? TextInputAction.done,
+              );
+            }
+            if (line.isEmpty || !field.mounted) continue;
+            field.userUpdateTextEditingValue(
+              typedInto(field.textEditingValue, line),
+              SelectionChangedCause.keyboard,
+            );
+          }
         case EditableTextState():
           break;
         default:
@@ -164,3 +216,6 @@ final class _Hold {
     });
   }
 }
+
+/// A key kept as itself rather than as text.
+enum _Kept { paste, escape }

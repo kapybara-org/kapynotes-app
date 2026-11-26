@@ -700,12 +700,8 @@ class NoteFieldState extends State<NoteField>
   @override
   void takeTyping(String text) {
     if (widget.readOnly) return;
-    final value = _value;
-    final selection = value.selection.isValid
-        ? value.selection
-        : TextSelection.collapsed(offset: value.text.length);
     userUpdateTextEditingValue(
-      value.replaced(selection, text),
+      typedInto(_value, text),
       SelectionChangedCause.keyboard,
     );
   }
