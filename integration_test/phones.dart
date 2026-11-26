@@ -1,15 +1,18 @@
 // Every phone integration test in one app, so Phones' iOS job builds it once
 // and tool/ci/phone_screenshots.sh drives each file against that build:
 //
-//   flutter build ios --simulator --debug --target integration_test/phones.dart
-//   SIMCTL_CHILD_KAPYNOTES_PHONE_TEST=phone_about flutter drive \
-//     --driver test_driver/integration_test.dart \
+//   flutter build ios --simulator --debug --target integration_test/phones.dart \
+//     --dart-define=KAPYNOTES_PHONE_TEST_FILE=/tmp/phone-test
+//   echo phone_about > /tmp/phone-test
+//   flutter drive --driver test_driver/integration_test.dart \
 //     --target integration_test/phones.dart -d <simulator> \
 //     --use-application-binary build/ios/iphonesimulator/Runner.app
 //
-// The simulator hands SIMCTL_CHILD_KAPYNOTES_PHONE_TEST to the app as
-// KAPYNOTES_PHONE_TEST, which names the file to run. Each file still runs in
-// a fresh install of the app, as it does under its own build.
+// A simulator's app reads the Mac's own files, so the file named at build time
+// says which test to run, and the script rewrites it before each drive. The
+// simulator doesn't pass SIMCTL_CHILD_ variables through flutter drive to the
+// app. Each file still runs in a fresh install of the app, as it does under
+// its own build.
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -51,14 +54,20 @@ const _tests = <String, void Function()>{
   'phone_voice_chip': phone_voice_chip.main,
 };
 
+const _pick = String.fromEnvironment('KAPYNOTES_PHONE_TEST_FILE');
+
 void main() {
-  final name = Platform.environment['KAPYNOTES_PHONE_TEST'];
+  final file = File(_pick);
+  final name = _pick.isNotEmpty && file.existsSync()
+      ? file.readAsStringSync().trim()
+      : null;
   final test = _tests[name];
   if (test != null) return test();
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('integration_test/phones.dart', (_) async {
     fail(
-      'KAPYNOTES_PHONE_TEST names ${name ?? 'no test'}, which is not one of '
+      '${_pick.isEmpty ? 'No KAPYNOTES_PHONE_TEST_FILE' : _pick} names '
+      '${name ?? 'no test'}, which is not one of '
       '${_tests.keys.join(', ')}.',
     );
   });

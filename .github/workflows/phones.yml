@@ -181,6 +181,7 @@ jobs:
           --target integration_test/phones.dart
           --dart-define=KAPYNOTES_SYNC=false
           --dart-define=KAPYNOTES_DEVICE_SHOTS="$UDID"
+          --dart-define=KAPYNOTES_PHONE_TEST_FILE="$RUNNER_TEMP/phone-test"
 
       # Waits out the boot, or boots the iPhone if that failed, then turns
       # Slide to Type off, which only a booted iPhone accepts, so its
@@ -218,6 +219,7 @@ jobs:
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
           PHONE_APP: build/ios/iphonesimulator/Runner.app
+          PHONE_TEST_FILE: ${{ runner.temp }}/phone-test
           PHONE_FIRST_FILE_MINUTES: 15
           PHONE_FILE_MINUTES: 12
         run: bash tool/ci/phone_screenshots.sh "$UDID"

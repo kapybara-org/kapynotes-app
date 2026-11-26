@@ -25,7 +25,8 @@
 # this script never drives, can't run nothing and pass.
 # PHONE_APP, when set, names an app already built from
 # integration_test/phones.dart, as Phones' iOS job builds it: each file then
-# runs on that build instead of building one of its own.
+# runs on that build instead of building one of its own, after the script
+# writes its name to PHONE_TEST_FILE, the file that build reads.
 set -u
 
 device=$1
@@ -57,9 +58,10 @@ drive() {
   if [[ -n ${PHONE_APP:-} ]]; then
     target=integration_test/phones.dart
     built=(--use-application-binary "$PHONE_APP")
+    echo "$1" > "$PHONE_TEST_FILE"
   fi
   set -m
-  SIMCTL_CHILD_KAPYNOTES_PHONE_TEST=$1 flutter drive --no-pub -d "$device" \
+  flutter drive --no-pub -d "$device" \
     --driver test_driver/integration_test.dart \
     --target "$target" ${built[@]+"${built[@]}"} \
     --dart-define=KAPYNOTES_SYNC=false \
