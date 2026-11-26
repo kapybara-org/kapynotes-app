@@ -226,7 +226,11 @@ class NoteFindBar extends StatelessWidget {
       key: ValueKey(key),
       tooltip: tooltip,
       onPressed: onPressed,
-      icon: KapyIcon(icon, size: AppControlMetrics.iconAdornment),
+      icon: KapyIcon(
+        icon,
+        size: AppControlMetrics.iconAdornment,
+        color: onPressed == null ? palette.textTertiary : null,
+      ),
     );
     final inset =
         (AppControlMetrics.iconButtonExtent - AppControlMetrics.iconAdornment) /

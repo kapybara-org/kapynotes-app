@@ -4629,11 +4629,34 @@ total to usd''';
       expect(count(tester), 'No matches');
       expect(NoteDriver(tester).state.layout.marks.found, isNull);
       for (final key in ['note-find-next', 'note-find-previous']) {
+        final button = tester.widget<CompactIconButton>(
+          find.byKey(ValueKey(key)),
+        );
+        expect(button.onPressed, isNull);
         expect(
-          tester.widget<CompactIconButton>(find.byKey(ValueKey(key))).onPressed,
-          isNull,
+          tester
+              .widget<KapyIcon>(
+                find.descendant(
+                  of: find.byKey(ValueKey(key)),
+                  matching: find.byType(KapyIcon),
+                ),
+              )
+              .color,
+          tester.element(find.byKey(ValueKey(key))).palette.textTertiary,
+          reason: key,
         );
       }
+      expect(
+        tester
+            .widget<KapyIcon>(
+              find.descendant(
+                of: find.byKey(const ValueKey('note-find-close')),
+                matching: find.byType(KapyIcon),
+              ),
+            )
+            .color,
+        isNull,
+      );
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
 
     testWidgets('the count keeps up as the note changes', (tester) async {
