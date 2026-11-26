@@ -28,8 +28,8 @@ void main() {
   setUpAll(loadTestFonts);
 
   test('the tree lists folders by name, each open one with its own folders '
-      'and then its notes; a count takes in what its folders hold; the '
-      'notes in no folder come after, and drawings never show', () async {
+      'and then its notes; a count takes in what its folders hold; a note '
+      'in no folder and a drawing never show', () async {
     final store = MemoryStore();
     final notes = NotesStore(store);
     await notes.load();
@@ -40,13 +40,13 @@ void main() {
     folders.create('Personal');
     final call = notes.create(body: 'Call with Arjun');
     final kickoff = notes.create(body: 'Acme kickoff');
-    final dentist = notes.create(body: 'Dentist');
+    notes.create(body: 'Dentist');
     final sketch = notes.create(drawing: true);
     folders.file([call.id, sketch.id], clients.id);
     folders.file([kickoff.id], acme.id);
 
     List<String> lines(Set<String> open) => [
-      for (final line in folderLines(folders.tree, notes.notes, open).tree)
+      for (final line in folderLines(folders.tree, notes.notes, open))
         switch (line) {
           FolderLine(:final folder, :final count, :final open, :final empty) =>
             '${folder.name} $count'
@@ -63,7 +63,14 @@ void main() {
       'Acme 1',
       'Call with Arjun at 3',
     ]);
-    expect(folderLines(folders.tree, notes.notes, {}).loose, [dentist]);
+    expect(lines({work.id, clients.id, acme.id}), [
+      'Personal 0 empty',
+      'Work 2 open',
+      'Clients 2 open',
+      'Acme 1 open',
+      'Acme kickoff at 4',
+      'Call with Arjun at 3',
+    ]);
   });
 
   test('the Folders tab and its open folders are kept for the next launch', () {
@@ -1489,6 +1496,36 @@ void main() {
         expect(find.text('Moved to “Work”'), findsOneWidget);
       },
     );
+
+    testWidgets("a folder's row in the tree still takes a note up out of a "
+        'folder inside it, dragged from the page', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final clients = goldenFolders.create('Clients', parentId: work.id)!;
+      final brief = goldenNotes.create(body: 'Acme brief');
+      goldenFolders.file([brief.id], clients.id);
+      await tester.pumpAndSettle();
+      await openFolder(tester, work);
+      final drag = await tester.startGesture(
+        tester.getCenter(
+          find.descendant(
+            of: find.byKey(ValueKey('folder-page-${work.id}')),
+            matching: rowOf(brief.id),
+          ),
+        ),
+        kind: PointerDeviceKind.mouse,
+      );
+      await drag.moveBy(const Offset(12, 2));
+      await tester.pump();
+      await drag.moveTo(
+        tester.getCenter(find.byKey(ValueKey('folder-${work.id}'))),
+      );
+      await tester.pump();
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(goldenFolders.tree.folderOf(brief.id), work.id);
+      expect(find.text('Moved to “Work”'), findsOneWidget);
+    });
 
     testWidgets("one of Add notes' ticked rows drags every ticked note with "
         'it, and an unticked row goes alone', (tester) async {

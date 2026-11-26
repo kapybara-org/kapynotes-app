@@ -210,6 +210,7 @@ class Sidebar extends StatelessWidget {
     this.when = NotesWhen.anyTime,
     this.onWhenChanged,
     this.folders,
+    this.onAddNotes,
   });
 
   /// The notes to list, already narrowed to [tab] while the tabs are shown.
@@ -408,10 +409,30 @@ class Sidebar extends StatelessWidget {
   /// notes it files.
   final SidebarFolders? folders;
 
+  /// Add notes on a phone's folder page, beside the search and on the page
+  /// while the folder is empty: the sheet of the notes in no folder.
+  final VoidCallback? onAddNotes;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     final controls = this.controls;
+    Widget searchButton(
+      Key key,
+      String label,
+      KapyIconData icon,
+      VoidCallback onPressed,
+    ) => SizedBox.square(
+      dimension: 44,
+      child: CompactIconButton(
+        key: key,
+        tooltip: label,
+        semanticLabel: label,
+        extent: 44,
+        onPressed: onPressed,
+        icon: KapyIcon(icon, size: 18, color: palette.textSecondary),
+      ),
+    );
 
     // Solid, rather than the GlassSurface the toolbar and footer use: the
     // notes list stays put whatever the window is doing behind it. See
@@ -433,31 +454,36 @@ class Sidebar extends StatelessWidget {
               shortcut: searchShortcut,
               placeholder: searchPlaceholder,
               phone: phone,
-              trailing: phone && controls != null && onFiltersToggled != null
-                  ? PhoneFiltersButton(
-                      key: const ValueKey('phone-filters'),
-                      active: filtersActive,
-                      onPressed: onFiltersToggled!,
-                    )
-                  : switch (folders?.newFolder) {
-                      final newFolder? when phone && _foldersTab =>
-                        SizedBox.square(
-                          dimension: 44,
-                          child: CompactIconButton(
-                            key: const ValueKey('phone-new-folder'),
-                            tooltip: 'New folder',
-                            semanticLabel: 'New folder',
-                            extent: 44,
-                            onPressed: () => newFolder.value++,
-                            icon: KapyIcon(
-                              KapyIcons.folderAddOutlined,
-                              size: 18,
-                              color: palette.textSecondary,
-                            ),
-                          ),
-                        ),
-                      _ => null,
-                    },
+              trailing: switch ([
+                if (phone && controls != null && onFiltersToggled != null)
+                  PhoneFiltersButton(
+                    key: const ValueKey('phone-filters'),
+                    active: filtersActive,
+                    onPressed: onFiltersToggled!,
+                  ),
+                if (onAddNotes case final onAddNotes? when phone)
+                  searchButton(
+                    const ValueKey('phone-add-notes'),
+                    'Add notes',
+                    KapyIcons.noteAddRounded,
+                    onAddNotes,
+                  ),
+                if (folders?.newFolder case final newFolder?
+                    when phone && _foldersTab)
+                  searchButton(
+                    const ValueKey('phone-new-folder'),
+                    'New folder',
+                    KapyIcons.folderAddOutlined,
+                    () => newFolder.value++,
+                  ),
+              ]) {
+                [] => null,
+                [final button] => button,
+                final buttons => Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: buttons,
+                ),
+              },
             ),
             if (folders?.newFolder case final newFolder?
                 when !phone && _foldersTab)
@@ -580,6 +606,28 @@ extension on Sidebar {
     }
     if (drawings && query.trim().isEmpty) {
       return _DrawingsEmpty(onNewDrawing: onNewDrawing);
+    }
+    if (onAddNotes case final onAddNotes?
+        when query.trim().isEmpty && !filtersActive) {
+      // Scrolls where the keyboard or a large text size leaves it too little
+      // room, so its Add notes is never cut off.
+      return CustomScrollView(
+        primary: false,
+        slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: SidebarEmpty(
+              message: 'Nothing in this folder yet',
+              action: TonalButton(
+                key: const ValueKey('phone-folder-empty-add'),
+                icon: KapyIcons.noteAddRounded,
+                label: 'Add notes',
+                onPressed: onAddNotes,
+              ),
+            ),
+          ),
+        ],
+      );
     }
     final nothingShared = query.trim().isEmpty && _onSharedTab;
     final onStartSharing = this.onStartSharing;
@@ -1181,15 +1229,9 @@ extension on Sidebar {
 
   List<Note> get _railOrder {
     if (folders case final folders? when folders.shown) {
-      final (:tree, :loose) = folderLines(
-        folders.store.tree,
-        notes,
-        folders.open,
-      );
       return [
-        for (final line in tree)
+        for (final line in folderLines(folders.store.tree, notes, folders.open))
           if (line case NoteLine(:final note)) note,
-        if (phone) ...loose,
       ];
     }
     final groups = _noteGroups;
@@ -1559,12 +1601,11 @@ extension on Sidebar {
         phone: phone,
         newFolder: folders.newFolder,
         onMade: folders.onMade,
-        looseHeading: phone ? (label) => _PhoneDayHeading(lead: label) : null,
         noteRow: (note, inset) => _row(
           note,
           shared: sharing != null && note.isShared,
-          style: inset == null ? NoteRowStyle.touch : NoteRowStyle.filed,
-          inset: inset ?? 0,
+          style: NoteRowStyle.filed,
+          inset: inset,
         ),
       ),
     );

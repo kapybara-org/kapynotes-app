@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../core/editor_font.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/folders.dart';
@@ -14,6 +15,7 @@ import 'editor_panes.dart' show NoteDragData, NoteDraggable;
 import 'note_tabs.dart' show clickOpensTabBehind;
 import 'notes_grouping.dart' show NoteGroup;
 import 'notes_list.dart' show NoteCardFace, NotesGroupHeading, PickBox;
+import 'sharing_sheet.dart' show SharingSheetFrame;
 import 'sidebar.dart' show SidebarEmpty;
 import 'tag_ui.dart' show PopoverAtPoint, TagPopover, notesCount;
 import 'tonal_button.dart';
@@ -84,20 +86,21 @@ final class NoteLine extends FolderTreeLine {
 
 /// The Folders tab's lines in the order it shows them: the folders by name,
 /// and inside each open one its own folders, then its notes in [notes]'
-/// order. The notes in no folder come after the tree. A folder's count takes
-/// in its folders' notes too, and drawings are never listed or counted.
-({List<FolderTreeLine> tree, List<Note> loose}) folderLines(
+/// order. A note in no folder isn't listed: Add notes, on a folder's page,
+/// offers it. A folder's count takes in its folders' notes too, and drawings
+/// are never listed or counted.
+List<FolderTreeLine> folderLines(
   FolderTree tree,
   Iterable<Note> notes,
   Set<String> open,
 ) {
-  final inside = <String?, List<Note>>{};
+  final inside = <String, List<Note>>{};
   final counts = <String, int>{};
   for (final note in notes) {
-    if (note.isDrawing) continue;
     final folderId = tree.folderOf(note.id);
+    if (note.isDrawing || folderId == null) continue;
     (inside[folderId] ??= []).add(note);
-    var at = folderId;
+    String? at = folderId;
     while (at != null) {
       counts.update(at, (count) => count + 1, ifAbsent: () => 1);
       at = tree.byId(at)?.parentId;
@@ -124,7 +127,7 @@ final class NoteLine extends FolderTreeLine {
   }
 
   tree.top.forEach(add);
-  return (tree: lines, loose: inside[null] ?? const []);
+  return lines;
 }
 
 /// The Notes | Folders switch at the foot of the Notes list beside the rail.
@@ -242,7 +245,6 @@ class FoldersTab extends StatefulWidget {
     this.phone = false,
     this.newFolder,
     this.onMade,
-    this.looseHeading,
   });
 
   final FolderStore store;
@@ -263,10 +265,6 @@ class FoldersTab extends StatefulWidget {
   /// front with Add notes beside it.
   final ValueChanged<String>? onMade;
 
-  /// Heads the notes in no folder, as a phone's Home heads a day; null for
-  /// the small heading beside the rail.
-  final Widget Function(String label)? looseHeading;
-
   /// The notes it files: the person's own, before any filter narrows them.
   final List<Note> notes;
 
@@ -274,9 +272,8 @@ class FoldersTab extends StatefulWidget {
   final Set<String> open;
   final void Function(String folderId, bool open) onOpen;
 
-  /// A note's row: in an open folder, its icon [inset] in, or on a phone in
-  /// the list of notes in no folder with a null [inset].
-  final Widget Function(Note note, double? inset) noteRow;
+  /// A note's row in an open folder, its icon [inset] in.
+  final Widget Function(Note note, double inset) noteRow;
 
   /// The folder the tab in front shows, which the tree marks.
   final String? inFront;
@@ -376,7 +373,7 @@ class _FoldersTabState extends State<FoldersTab> {
       ListenableBuilder(listenable: _store, builder: (context, _) => _list());
 
   Widget _list() {
-    final (:tree, :loose) = folderLines(_store.tree, widget.notes, widget.open);
+    final tree = folderLines(_store.tree, widget.notes, widget.open);
     final rows = <WidgetBuilder>[];
     void add(WidgetBuilder build, {double gap = 2}) {
       if (rows.isNotEmpty) rows.add((_) => SizedBox(height: gap));
@@ -400,11 +397,13 @@ class _FoldersTabState extends State<FoldersTab> {
 
     // A new folder is named at the top, under the button that asked.
     final namingTop = _naming && _namingIn == null;
-    if (!widget.phone && tree.isEmpty && !namingTop) {
-      return const SidebarEmpty(
+    if (tree.isEmpty && !namingTop) {
+      const empty = SidebarEmpty(
         message: 'No folders yet',
         detail: 'Make a folder, then pick the notes that go in it.',
       );
+      if (!widget.phone) return empty;
+      rows.add((_) => empty);
     }
     if (namingTop) add((_) => field(1));
     for (final line in tree) {
@@ -446,31 +445,6 @@ class _FoldersTabState extends State<FoldersTab> {
           }
         case NoteLine(:final note, :final depth):
           add((_) => widget.noteRow(note, inset(depth)));
-      }
-    }
-    if (widget.looseHeading case final heading? when loose.isNotEmpty) {
-      rows.add((_) => const SizedBox(height: 22));
-      rows.add(
-        (_) => Padding(
-          key: const ValueKey('folders-loose-heading'),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: heading('Not in a folder'),
-        ),
-      );
-      rows.add((_) => const SizedBox(height: 12));
-      for (final (index, note) in loose.indexed) {
-        if (index > 0) {
-          rows.add(
-            (context) => Divider(
-              height: AppHairline.of(context),
-              thickness: AppHairline.of(context),
-              indent: 20,
-              endIndent: 20,
-              color: context.palette.separator,
-            ),
-          );
-        }
-        rows.add((_) => widget.noteRow(note, null));
       }
     }
     return ListView.builder(
@@ -2026,9 +2000,53 @@ class _DragHoldState extends State<_DragHold> {
   );
 }
 
+/// Add notes over a phone's folder page, a sheet from the foot of the
+/// screen: the notes in no folder, which [changes] keeps current, ticked and
+/// added to [folder] together. Add puts the sheet away, then [onAdd] files
+/// them and says so.
+Future<void> showAddNotesSheet(
+  BuildContext context, {
+  required Folder folder,
+  required Listenable changes,
+  required List<Note> Function() notes,
+  required String Function(Note note) dateOf,
+  required ValueChanged<List<String>> onAdd,
+}) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  backgroundColor: Colors.transparent,
+  elevation: 0,
+  barrierColor: Theme.of(context).drawerTheme.scrimColor,
+  builder: (sheet) => SharingSheetFrame(
+    child: SizedBox(
+      height: MediaQuery.sizeOf(sheet).height * 0.72,
+      child: Material(
+        type: MaterialType.transparency,
+        child: ListenableBuilder(
+          listenable: changes,
+          builder: (sheet, _) => _AddNotesPanel(
+            key: const ValueKey('add-notes'),
+            folder: folder,
+            notes: notes(),
+            dateOf: dateOf,
+            phone: true,
+            onAdd: (noteIds) {
+              Navigator.pop(sheet);
+              onAdd(noteIds);
+            },
+          ),
+        ),
+      ),
+    ),
+  ),
+);
+
 /// Add notes beside a folder's page: the notes in no folder, newest first,
 /// found by what is in them, ticked by a click, and added to the folder
-/// together. A row drags as well, with the ticked ones when it is one.
+/// together. A row drags as well, with the ticked ones when it is one. On a
+/// phone it is a sheet over the folder's page ([showAddNotesSheet]): its
+/// count and Select all sit under its title, and its rows are a finger's
+/// height, a note's title in its hand face with its day after it.
 class _AddNotesPanel extends StatefulWidget {
   const _AddNotesPanel({
     super.key,
@@ -2036,7 +2054,8 @@ class _AddNotesPanel extends StatefulWidget {
     required this.notes,
     required this.dateOf,
     required this.onAdd,
-    required this.onClose,
+    this.onClose,
+    this.phone = false,
   });
 
   final Folder folder;
@@ -2045,7 +2064,10 @@ class _AddNotesPanel extends StatefulWidget {
   final List<Note> notes;
   final String Function(Note note) dateOf;
   final ValueChanged<List<String>> onAdd;
-  final VoidCallback onClose;
+
+  /// Its ×, beside a page. A phone's sheet goes with a swipe down instead.
+  final VoidCallback? onClose;
+  final bool phone;
 
   @override
   State<_AddNotesPanel> createState() => _AddNotesPanelState();
@@ -2064,6 +2086,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final phone = widget.phone;
     final notes = widget.notes;
     final query = _query.text.trim();
     final shown = [
@@ -2076,121 +2099,184 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
       for (final note in notes)
         if (_ticked.contains(note.id)) note.id,
     ];
-    final header = Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 10, 0),
-      child: Row(
-        children: [
-          Expanded(
-            child: Semantics(
-              header: true,
+    final count = Text(
+      '${notes.length} not in a folder',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: _figtree(
+        phone ? 13 : 12,
+        phone ? 18 : 16,
+        FontWeight.w400,
+        palette.textTertiary,
+      ),
+    );
+    final selectAll = shown.any((note) => !_ticked.contains(note.id))
+        ? InkWell(
+            key: const ValueKey('add-notes-select-all'),
+            borderRadius: BorderRadius.circular(AppRadii.small),
+            onTap: () => setState(
+              () => _ticked.addAll([for (final note in shown) note.id]),
+            ),
+            child: Container(
+              // A phone's is a 44 pt target, its words on the count's line.
+              constraints: BoxConstraints(minHeight: phone ? 44 : 0),
+              alignment: phone ? Alignment.bottomCenter : null,
+              padding: phone
+                  ? const EdgeInsets.symmetric(horizontal: 8)
+                  : const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
               child: Text(
-                'Add notes to ${widget.folder.name}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                'Select all',
                 style: _figtree(
-                  14,
-                  20,
-                  FontWeight.w600,
-                  palette.textPrimary,
-                  axis: AppWeight.section,
+                  phone ? 13 : 12,
+                  phone ? 18 : 16,
+                  FontWeight.w500,
+                  palette.textSecondary,
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          CompactIconButton(
-            key: const ValueKey('add-notes-close'),
-            tooltip: 'Close',
-            extent: 28,
-            foregroundColor: palette.textTertiary,
-            onPressed: widget.onClose,
-            icon: const KapyIcon(KapyIcons.closeRounded, size: 16),
-          ),
-        ],
+          )
+        : null;
+    final title = Semantics(
+      header: true,
+      child: Text(
+        'Add notes to ${widget.folder.name}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: _figtree(
+          phone ? 17 : 14,
+          phone ? 22 : 20,
+          FontWeight.w600,
+          palette.textPrimary,
+          axis: AppWeight.section,
+        ),
       ),
     );
-    if (notes.isEmpty) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          header,
-          const Expanded(
-            child: SidebarEmpty(
-              message: 'Every note is in a folder',
-              detail: 'Notes you write outside a folder show up here.',
+    final onClose = widget.onClose;
+    final header = phone
+        ? Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 12, 0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 44),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        title,
+                        if (notes.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          count,
+                        ],
+                      ],
+                    ),
+                  ),
+                  ?selectAll,
+                ],
+              ),
             ),
-          ),
-        ],
-      );
-    }
+          )
+        : Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 10, 0),
+            child: Row(
+              children: [
+                Expanded(child: title),
+                if (onClose != null) ...[
+                  const SizedBox(width: 8),
+                  CompactIconButton(
+                    key: const ValueKey('add-notes-close'),
+                    tooltip: 'Close',
+                    extent: 28,
+                    foregroundColor: palette.textTertiary,
+                    onPressed: onClose,
+                    icon: const KapyIcon(KapyIcons.closeRounded, size: 16),
+                  ),
+                ],
+              ],
+            ),
+          );
+    final list = ListView.separated(
+      key: const ValueKey('add-notes-list'),
+      padding: phone ? EdgeInsets.zero : const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      itemCount: shown.length,
+      separatorBuilder: (context, _) => phone
+          ? Divider(
+              height: AppHairline.of(context),
+              thickness: AppHairline.of(context),
+              color: palette.separator,
+            )
+          : const SizedBox(height: 2),
+      itemBuilder: (context, index) => _row(context, shown[index], ticked),
+    );
+    // With room, the list scrolls alone under the field. Where the keyboard
+    // or a large text size leaves it less than two rows, everything above
+    // Add scrolls as one instead, so nothing is cut off and Add stays put.
+    final twoRows = AppControlMetrics.scaleBar(context, 104);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        header,
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-          child: _field(context),
-        ),
-        if (shown.isEmpty)
-          Expanded(
-            child: SidebarEmpty(
-              message: 'No notes match “$query”',
-              detail: 'Notes already in a folder aren’t listed here.',
-            ),
-          )
-        else ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 12, 6),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '${notes.length} not in a folder',
-                    style: _figtree(
-                      12,
-                      16,
-                      FontWeight.w400,
-                      palette.textTertiary,
-                    ),
+        Expanded(
+          child: CustomScrollView(
+            primary: false,
+            slivers: [
+              SliverToBoxAdapter(child: header),
+              if (notes.isEmpty)
+                const SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: SidebarEmpty(
+                    message: 'Every note is in a folder',
+                    detail: 'Notes you write outside a folder show up here.',
+                  ),
+                )
+              else ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: phone
+                        ? const EdgeInsets.fromLTRB(20, 12, 20, 8)
+                        : const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                    child: _field(context),
                   ),
                 ),
-                if (shown.any((note) => !_ticked.contains(note.id)))
-                  InkWell(
-                    key: const ValueKey('add-notes-select-all'),
-                    borderRadius: BorderRadius.circular(AppRadii.small),
-                    onTap: () => setState(
-                      () => _ticked.addAll([for (final note in shown) note.id]),
+                if (shown.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: SidebarEmpty(
+                      message: 'No notes match “$query”',
+                      detail: 'Notes already in a folder aren’t listed here.',
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 2,
-                      ),
-                      child: Text(
-                        'Select all',
-                        style: _figtree(
-                          12,
-                          16,
-                          FontWeight.w500,
-                          palette.textSecondary,
+                  )
+                else ...[
+                  if (!phone)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 12, 6),
+                        child: Row(
+                          children: [
+                            Expanded(child: count),
+                            ?selectAll,
+                          ],
                         ),
                       ),
                     ),
+                  SliverLayoutBuilder(
+                    builder: (context, constraints) => SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: math.max(
+                          constraints.viewportMainAxisExtent -
+                              constraints.precedingScrollExtent,
+                          twoRows,
+                        ),
+                        child: list,
+                      ),
+                    ),
                   ),
+                ],
               ],
-            ),
+            ],
           ),
-          Expanded(
-            child: ListView.separated(
-              key: const ValueKey('add-notes-list'),
-              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-              itemCount: shown.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 2),
-              itemBuilder: (context, index) =>
-                  _row(context, shown[index], ticked),
-            ),
-          ),
-        ],
+        ),
         if (shown.isNotEmpty || ticked.isNotEmpty) _foot(context, ticked),
       ],
     );
@@ -2198,18 +2284,30 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
 
   Widget _field(BuildContext context) {
     final palette = context.palette;
+    final phone = widget.phone;
+    final words = _figtree(
+      phone ? 16 : 13,
+      phone ? 20 : 18,
+      FontWeight.w400,
+      palette.textPrimary,
+    );
     return Container(
-      height: AppControlMetrics.scaleBar(context, 32),
-      padding: const EdgeInsets.only(left: 10, right: 4),
+      // A phone's grows with the text size, as its search well does, and
+      // its words take a tap anywhere in its height.
+      height: phone ? null : AppControlMetrics.scaleBar(context, 32),
+      constraints: BoxConstraints(minHeight: phone ? 44 : 0),
+      padding: phone
+          ? const EdgeInsets.only(left: 14, right: 6)
+          : const EdgeInsets.only(left: 10, right: 4),
       decoration: BoxDecoration(
-        color: palette.controlBackground,
+        color: phone ? palette.fillControl : palette.controlBackground,
         borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         children: [
           KapyIcon(
             KapyIcons.searchRounded,
-            size: 14,
+            size: phone ? 16 : 14,
             color: palette.textTertiary,
           ),
           const SizedBox(width: 8),
@@ -2218,26 +2316,26 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
               key: const ValueKey('add-notes-field'),
               controller: _query,
               onChanged: (_) => setState(() {}),
-              style: _figtree(13, 18, FontWeight.w400, palette.textPrimary),
-              decoration: InputDecoration.collapsed(
-                hintText: 'Find a note',
-                hintStyle: _figtree(
-                  13,
-                  18,
-                  FontWeight.w400,
-                  palette.textTertiary,
-                ),
-              ),
+              style: words,
+              decoration:
+                  InputDecoration.collapsed(
+                    hintText: 'Find a note',
+                    hintStyle: words.copyWith(color: palette.textTertiary),
+                  ).copyWith(
+                    contentPadding: phone
+                        ? const EdgeInsets.symmetric(vertical: 12)
+                        : null,
+                  ),
             ),
           ),
           if (_query.text.isNotEmpty)
             CompactIconButton(
               key: const ValueKey('add-notes-field-clear'),
               tooltip: 'Clear',
-              extent: 24,
+              extent: phone ? 32 : 24,
               foregroundColor: palette.textTertiary,
               onPressed: () => setState(_query.clear),
-              icon: const KapyIcon(KapyIcons.closeRounded, size: 14),
+              icon: KapyIcon(KapyIcons.closeRounded, size: phone ? 16 : 14),
             ),
         ],
       ),
@@ -2247,6 +2345,62 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
   Widget _row(BuildContext context, Note note, List<String> ticked) {
     final palette = context.palette;
     final on = _ticked.contains(note.id);
+    void tick() => setState(() {
+      if (!_ticked.remove(note.id)) _ticked.add(note.id);
+    });
+    final date = widget.dateOf(note);
+    if (widget.phone) {
+      const face = WritingFont.handwritten;
+      return MergeSemantics(
+        child: Semantics(
+          checked: on,
+          child: InkWell(
+            key: ValueKey('add-note-${note.id}'),
+            onTap: tick,
+            child: Container(
+              constraints: BoxConstraints(
+                minHeight: AppControlMetrics.scaleBar(context, 52),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Row(
+                children: [
+                  PickBox(checked: on),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      note.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: chromeStyle(
+                        size: 17,
+                        line: 24,
+                        weight: AppWeight.axisOf(FontWeight.w400),
+                        color: palette.textPrimary,
+                        family: face.fontFamily,
+                        fallback: face.fontFamilyFallback,
+                        extra: face.faceVariations,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    date,
+                    maxLines: 1,
+                    style: chromeStyle(
+                      size: 13,
+                      line: 16,
+                      weight: AppWeight.axisOf(FontWeight.w400),
+                      color: palette.textTertiary,
+                      tabular: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     final radius = BorderRadius.circular(8);
     return NoteDraggable(
       data: NoteDragData(
@@ -2265,9 +2419,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
               key: ValueKey('add-note-${note.id}'),
               borderRadius: radius,
               hoverColor: palette.hover,
-              onTap: () => setState(() {
-                if (!_ticked.remove(note.id)) _ticked.add(note.id);
-              }),
+              onTap: tick,
               child: Container(
                 height: AppControlMetrics.scaleBar(context, 48),
                 padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -2292,7 +2444,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                             ),
                           ),
                           Text(
-                            widget.dateOf(note),
+                            date,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style:
@@ -2322,6 +2474,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
 
   Widget _foot(BuildContext context, List<String> ticked) {
     final palette = context.palette;
+    final phone = widget.phone;
     final radius = BorderRadius.circular(AppRadii.control);
     final ready = ticked.isNotEmpty;
     return DecoratedBox(
@@ -2329,9 +2482,15 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
         border: Border(top: BorderSide(color: palette.separator)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: phone
+            ? const EdgeInsets.fromLTRB(20, 12, 20, 4)
+            : const EdgeInsets.all(12),
         child: Material(
-          color: ready ? palette.tonalBackground : palette.controlBackground,
+          color: ready
+              ? palette.tonalBackground
+              : phone
+              ? palette.fillControl
+              : palette.controlBackground,
           borderRadius: radius,
           child: InkWell(
             key: const ValueKey('add-notes-add'),
@@ -2343,13 +2502,13 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
                   }
                 : null,
             child: SizedBox(
-              height: AppControlMetrics.scaleBar(context, 36),
+              height: AppControlMetrics.scaleBar(context, phone ? 48 : 36),
               child: Center(
                 child: Text(
                   ready ? 'Add ${notesCount(ticked.length)}' : 'Add notes',
                   style: _figtree(
-                    13,
-                    18,
+                    phone ? 16 : 13,
+                    phone ? 20 : 18,
                     FontWeight.w500,
                     ready ? palette.tonalForeground : palette.textTertiary,
                   ),

@@ -92,6 +92,7 @@ import 'folders_ui.dart'
         folderRefusalText,
         moveNotesToFolder,
         runFolderAction,
+        showAddNotesSheet,
         showFolderMenu;
 import 'context_menu.dart';
 import 'day_strip.dart';
@@ -4978,13 +4979,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           fileNotes(context, folders, noteIds, into, adding: adding),
       addNotes: widget.prefs.addNotesShown,
       onAddNotes: (shown) => widget.prefs.addNotesShown = shown,
-      dateOf: (note) => SidebarTimestamp.glance(
-        note.updatedAt,
-        now: widget.notes.now(),
-        displayTime: displayTime,
-      ),
+      dateOf: _changedOn,
     );
   }
+
+  /// When [note] last changed, as the notes list says it, which Add notes
+  /// gives with its title.
+  String _changedOn(Note note) => SidebarTimestamp.glance(
+    note.updatedAt,
+    now: widget.notes.now(),
+    displayTime: widget.prefs.displayTime,
+  );
 
   /// A folder card's menu on its folder's page.
   Future<void> _showFolderMenu(Folder folder, Offset at) async {
@@ -5704,12 +5709,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               onMade: null,
             )
           : null,
+      onAddNotes: folder == null
+          ? null
+          : () => unawaited(_openAddNotes(folder)),
       phoneTiles: tree
           ? Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
               child: _phoneFolderTiles(),
             )
           : null,
+    );
+  }
+
+  /// Add notes on a phone's folder page: a sheet of the notes in no folder,
+  /// kept current while it is up, whose ticked notes go into [folder]
+  /// together, with an Undo.
+  Future<void> _openAddNotes(Folder folder) {
+    final folders = widget.folders!;
+    return showAddNotesSheet(
+      context,
+      folder: folder,
+      changes: Listenable.merge([widget.notes, folders]),
+      notes: () => folders.tree.notesIn(_folderNotes, null),
+      dateOf: _changedOn,
+      onAdd: (noteIds) =>
+          fileNotes(context, folders, noteIds, folder.id, adding: true),
     );
   }
 
