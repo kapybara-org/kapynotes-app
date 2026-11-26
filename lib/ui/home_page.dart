@@ -5012,7 +5012,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       notes: _filtered(filed),
       controls: _notesControls(LibrarySpace.notes, onFolder: true),
       cards: widget.prefs.noteCards,
-      group: (notes) => groupNotes(
+      group: (context, notes) => groupNotes(
         notes,
         widget.prefs.notesGrouping,
         today: dayShown(widget.notes.now(), displayTime),

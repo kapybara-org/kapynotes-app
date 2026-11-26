@@ -392,6 +392,33 @@ void main() {
       counts(listed: true);
     });
 
+    testWidgets("grouped by tag, a folder's page heads its notes with their "
+        'first tags, as the list beside the rail does', (tester) async {
+      await pumpWindow(tester);
+      final work = goldenFolders.create('Work')!;
+      final call = goldenNotes.create(body: 'Call with Arjun');
+      final roadmap = goldenNotes.create(body: 'Roadmap');
+      goldenFolders.file([call.id, roadmap.id], work.id);
+      goldenTags.addTag(call.id, goldenTags.create('Acme')!.id);
+      goldenPrefs.notesGrouping = NotesGrouping.byTag;
+      await tester.pumpAndSettle();
+      await tapKey(tester, 'notes-switch-folders');
+      await tapKey(tester, 'folder-${work.id}');
+
+      Finder group(String label) =>
+          onPage(find.byKey(ValueKey('folder-group-$label')));
+      expect(group('Acme'), findsOneWidget);
+      expect(group('No tag'), findsOneWidget);
+      expect(
+        tester.getRect(onPage(rowOf(call.id))).top,
+        lessThan(tester.getRect(group('No tag')).top),
+      );
+      expect(
+        tester.getRect(onPage(rowOf(roadmap.id))).top,
+        greaterThan(tester.getRect(group('No tag')).top),
+      );
+    });
+
     testWidgets('a folder whose only note waits for a later day holds no '
         'notes on its page and its card, and never says it is empty', (
       tester,

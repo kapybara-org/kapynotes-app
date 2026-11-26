@@ -938,6 +938,8 @@ void main() {
     expect(find.text('2 notes and 1 folder, in Work'), findsOneWidget);
     expect(onCard('2 notes'), findsOneWidget);
     expect(onPage('Renewal notes'), findsOneWidget);
+    expect(find.byKey(const ValueKey('folder-group-Work')), findsOneWidget);
+    expect(find.byKey(const ValueKey('folder-group-No tag')), findsNothing);
     await boardShot(tester, 'kap352-clients-by-tag');
   });
 
