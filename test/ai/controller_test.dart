@@ -18,6 +18,7 @@ import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../billing/billing_fakes.dart';
 import 'ai_fakes.dart';
 import 'fake_cli.dart';
 
@@ -61,6 +62,7 @@ void main() {
     Map<String, String> environment = const {},
     ToolHelper? toolHelper,
     bool realTools = false,
+    String? Function()? token,
   }) async {
     final controller = KapyAiController(
       store: local ?? store,
@@ -71,7 +73,7 @@ void main() {
       ),
       device: device,
       billing: billing,
-      token: () => 'session-token',
+      token: token ?? () => 'session-token',
       client: MockClient((request) async {
         sent.add(request);
         return server(request);
@@ -108,10 +110,96 @@ void main() {
       expect(ai.defaultModel, KapyModel.cloud);
       expect(ai.cloudUsage, isNull);
       await ai.ask('Lisbon?');
-      final failed = ai.pending! as KapyFailed;
-      expect(failed.message, 'Kapy AI Cloud is part of Pro.');
-      expect(failed.fallbacks, [FakeDeviceModel.apple]);
+      final locked = ai.pending! as KapyCloudLocked;
+      expect(locked.upgrade, isTrue);
+      expect(locked.signIn, isFalse);
+      expect(locked.fallbacks, [FakeDeviceModel.apple]);
       expect(sent.where((r) => r.url.path.contains('/ai/')), isEmpty);
+    });
+
+    test('signed out, Cloud asks them to sign in and upgrade', () async {
+      final ai = await build(
+        billing: billingFor(FakeSession(), FakeBillingApi()),
+        token: () => null,
+      );
+      ai.defaultModel = KapyModel.cloud;
+      await ai.ask('Lisbon?');
+      final locked = ai.pending! as KapyCloudLocked;
+      expect(locked.signIn, isTrue);
+      expect(locked.upgrade, isTrue);
+      expect(sent, isEmpty);
+    });
+
+    test('signing in to Pro from the card moves the question on', () async {
+      final session = FakeSession();
+      final api = FakeBillingApi()..answer = () => entitlementsFor(pro: true);
+      final ai = await build(
+        billing: billingFor(session, api),
+        token: () => session.userId == null ? null : 'session-token',
+      );
+      ai.defaultModel = KapyModel.cloud;
+      await ai.ask('Lisbon?');
+      expect(ai.pending, isA<KapyCloudLocked>());
+      session.signIn('user-1');
+      await settle();
+      // Next is Cloud's own first-use notice, and nothing has been sent.
+      expect(ai.pending, isA<KapyCloudConsent>());
+      expect(sent.where((r) => r.method == 'POST'), isEmpty);
+    });
+
+    test('signed in without Pro, the card asks only for Pro', () async {
+      final session = FakeSession();
+      final api = FakeBillingApi()..answer = () => entitlementsFor(pro: false);
+      final ai = await build(
+        billing: billingFor(session, api),
+        token: () => session.userId == null ? null : 'session-token',
+      );
+      ai.defaultModel = KapyModel.cloud;
+      await ai.ask('Lisbon?');
+      expect((ai.pending! as KapyCloudLocked).signIn, isTrue);
+      session.signIn('user-1');
+      await settle();
+      final locked = ai.pending! as KapyCloudLocked;
+      expect(locked.signIn, isFalse);
+      expect(locked.upgrade, isTrue);
+    });
+
+    Future<KapyPending?> cloudSays(int status, [String body = '{}']) async {
+      server = (request) => request.url.path.endsWith('/ai/usage')
+          ? http.Response(jsonEncode(_usage), 200)
+          : http.Response(body, status);
+      final ai = await build(billing: await billingOn(pro: true));
+      await ai.ask('Lisbon?');
+      await ai.proceed();
+      return ai.pending;
+    }
+
+    test('the server saying no Pro asks for an upgrade', () async {
+      final locked = await cloudSays(402) as KapyCloudLocked;
+      expect(locked.upgrade, isTrue);
+      expect(locked.signIn, isFalse);
+    });
+
+    test('the server ending the session asks them to sign in', () async {
+      final locked =
+          await cloudSays(401, '{"error":"unauthorized"}') as KapyCloudLocked;
+      expect(locked.signIn, isTrue);
+      expect(locked.upgrade, isFalse);
+    });
+
+    test("a 401 that isn't the server's, from a Wi-Fi sign-in page, is "
+        'tried again', () async {
+      final failed =
+          await cloudSays(401, '<html>Sign in to the Wi-Fi</html>')
+              as KapyFailed;
+      expect(failed.retry, isTrue);
+    });
+
+    test('only what a retry can fix is tried again', () async {
+      final update = await cloudSays(426) as KapyFailed;
+      expect(update.message, 'Update Kapy Notes to use Kapy AI Cloud.');
+      expect(update.retry, isFalse);
+      expect((await cloudSays(502) as KapyFailed).retry, isTrue);
     });
 
     test('a Free chat on Cloud is held, not swapped', () async {
@@ -131,7 +219,9 @@ void main() {
       ai.openChat('c');
       expect(ai.model, KapyModel.cloud);
       await ai.ask('Lisbon?');
-      expect((ai.pending! as KapyFailed).fallbacks, [FakeDeviceModel.apple]);
+      expect((ai.pending! as KapyCloudLocked).fallbacks, [
+        FakeDeviceModel.apple,
+      ]);
     });
 
     test('own accounts and the device answer on Free', () async {
