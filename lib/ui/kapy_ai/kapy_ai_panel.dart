@@ -92,6 +92,8 @@ class KapyAiPanel extends StatefulWidget {
     required this.onOpenNote,
     required this.onManageAccounts,
     required this.onClose,
+    this.onSignIn,
+    this.onUpgrade,
     this.now = DateTime.now,
     this.compact = false,
     this.inSheet = false,
@@ -118,6 +120,10 @@ class KapyAiPanel extends StatefulWidget {
 
   /// Settings › Voice & AI at Your accounts.
   final VoidCallback onManageAccounts;
+
+  /// Kapy AI Cloud's card: sign in, and see Pro.
+  final VoidCallback? onSignIn;
+  final VoidCallback? onUpgrade;
   final VoidCallback onClose;
   final DateTime Function() now;
 
@@ -376,6 +382,8 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                     widget.onExpand?.call();
                   },
                   onManageAccounts: widget.onManageAccounts,
+                  onSignIn: widget.onSignIn,
+                  onUpgrade: widget.onUpgrade,
                   now: widget.now(),
                   compact: true,
                 ),
@@ -558,6 +566,8 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
       onOpenNote: widget.onOpenNote,
       onPickAnother: () => setState(() => _picking = true),
       onManageAccounts: widget.onManageAccounts,
+      onSignIn: widget.onSignIn,
+      onUpgrade: widget.onUpgrade,
       now: widget.now(),
     );
   }

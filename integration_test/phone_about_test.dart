@@ -96,6 +96,27 @@ void main() {
       notes.create(body: 'Groceries\nOat milk, lemons');
       prefs.appearance = AppearanceMode.dark;
       final play = AppPlatform.isAndroid;
+      if (waiting) {
+        PackageInfo.setMockInitialValues(
+          appName: build.appName,
+          packageName: build.packageName,
+          version: before.version,
+          buildNumber: '${before.build ?? 0}',
+          buildSignature: build.buildSignature,
+        );
+        addTearDown(
+          () => PackageInfo.setMockInitialValues(
+            appName: build.appName,
+            packageName: build.packageName,
+            version: build.version,
+            buildNumber: build.buildNumber,
+            buildSignature: build.buildSignature,
+            installerStore: build.installerStore,
+            installTime: build.installTime,
+            updateTime: build.updateTime,
+          ),
+        );
+      }
 
       await tester.pumpWidget(
         KapyNotesApp(
@@ -130,6 +151,12 @@ void main() {
       await screenshot('phone-about-$state-list');
 
       await tap(tester, 'settings-section-about');
+      if (listed) {
+        final note = releases.firstWhere(
+          (release) => release.version == version && release.build == number,
+        );
+        expect(find.text(note.summary), findsOneWidget);
+      }
       expect(
         find.text(
           !waiting
