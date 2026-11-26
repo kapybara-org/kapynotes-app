@@ -22,8 +22,7 @@ first time someone uses it; this package is what runs it.
 ## Changing the library
 
 1. Edit `rust/` and run `cargo test --release` there.
-2. Push. The Denoise library workflow runs on any change under `rust/`; it
-   tests and builds every target and uploads them as one artifact,
-   `prebuilt`.
+2. Dispatch the Denoise library workflow on the branch. It tests and builds
+   every target and uploads them as one artifact, `prebuilt`.
 3. Replace `prebuilt/` with that artifact's contents and commit it, quoting
    the run id. `prebuilt/SHA256SUMS` lists what each file should hash to.

@@ -122,16 +122,26 @@ class DenoiseRun {
 
   double? _final;
 
+  bool _closed = false;
+
   /// From 0 to 1.
-  double get progress => _final ?? _flags.value / 10000;
+  ///
+  /// [_flags] is freed the moment the run ends, and a progress timer can fire
+  /// in the same turn, so a closed run answers from the last reading.
+  double get progress {
+    if (_closed) return _final ?? 0;
+    return _flags.value / 10000;
+  }
 
   /// Stops the run at the next frame; [done] then fails as cancelled.
   void cancel() {
-    if (_final == null) (_flags + 1).value = 1;
+    if (!_closed) (_flags + 1).value = 1;
   }
 
   void _release() {
+    if (_closed) return;
     _final = _flags.value / 10000;
+    _closed = true;
     calloc.free(_flags);
   }
 }

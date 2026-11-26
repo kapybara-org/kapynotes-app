@@ -3,20 +3,17 @@
 # under packages/denoise/prebuilt/ and packages/denoise/hook/build.dart hands
 # Flutter the right one.
 #
-# Runs on any pull request that changes the library, and on demand. It only
-# builds and uploads: one artifact, `prebuilt`, laid out exactly as the
-# folder it replaces, with SHA256SUMS. Committing it is a person's step, so
-# this workflow never needs write access.
+# Dispatched by hand when the library changes. It only builds and uploads:
+# one artifact, `prebuilt`, laid out exactly as the folder it replaces, with
+# SHA256SUMS. Committing it is a person's step, so this workflow never needs
+# write access.
 name: Denoise library
 
 on:
-  pull_request:
-    paths:
-      - packages/denoise/rust/**
-      - .github/workflows/denoise.yml
+  # Dispatched by hand when rust/ changes. A pull_request trigger would rebuild
+  # every target, the scarce macOS runner included, on the PR that first adds
+  # this file. See packages/denoise/README.md.
   workflow_dispatch:
-  push:
-    branches: [kapy92/denoise-engine]
 
 permissions:
   contents: read
