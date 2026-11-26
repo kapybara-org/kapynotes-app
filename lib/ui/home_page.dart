@@ -10,7 +10,6 @@ import 'package:flutter/services.dart'
         KeyEvent,
         KeyUpEvent,
         LogicalKeyboardKey,
-        PhysicalKeyboardKey,
         SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
@@ -4198,6 +4197,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ? () => _tasksPage.currentState?.startEarly() ?? false
                 : null,
             onSearch: _openCommandMenu,
+            onFindInNote: _tasksMode ? null : () => _selectedEditor?.openFind(),
             onNewTask: _taskController == null ? null : _newTask,
             onNewDrawing: () => _createNote(drawing: true),
             onShowSpace: _showSpace,
@@ -6599,6 +6599,7 @@ class _DesktopShortcuts extends StatelessWidget {
     this.onTakeNext,
     this.onStartEarly,
     required this.onSearch,
+    required this.onFindInNote,
     required this.onNewTask,
     required this.onNewDrawing,
     required this.onShowSpace,
@@ -6667,6 +6668,9 @@ class _DesktopShortcuts extends StatelessWidget {
   final bool Function()? onTakeNext;
   final bool Function()? onStartEarly;
   final VoidCallback onSearch;
+
+  /// Null where no note is in front of the reader, such as on Tasks.
+  final VoidCallback? onFindInNote;
   final VoidCallback? onNewTask;
   final VoidCallback onNewDrawing;
 
@@ -6705,13 +6709,6 @@ class _DesktopShortcuts extends StatelessWidget {
   final ShortcutPrefs shortcuts;
   final bool autofocus;
 
-  ShortcutBinding get _find => ShortcutBinding(
-    logicalKey: LogicalKeyboardKey.keyF,
-    physicalKey: PhysicalKeyboardKey.keyF,
-    meta: AppPlatform.isMacOS,
-    control: !AppPlatform.isMacOS,
-  );
-
   @override
   Widget build(BuildContext context) {
     // A cleared shortcut leaves no entry behind: the action keeps whatever
@@ -6725,10 +6722,8 @@ class _DesktopShortcuts extends StatelessWidget {
           control: !AppPlatform.isMacOS,
         ): ?onCompleteTask,
         ?shortcuts.bindingFor(ShortcutAction.findNotes)?.activator: onSearch,
-        // Find's own chord opens search too, unless it was given to
-        // something else.
-        if (shortcuts.conflictFor(ShortcutAction.findNotes, _find) == null)
-          _find.activator: onSearch,
+        ?shortcuts.bindingFor(ShortcutAction.findInNote)?.activator:
+            ?onFindInNote,
         ?shortcuts.bindingFor(ShortcutAction.newTask)?.activator: ?onNewTask,
         ?shortcuts.bindingFor(ShortcutAction.newDrawing)?.activator:
             onNewDrawing,

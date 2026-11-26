@@ -733,7 +733,7 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     expect(
       ShortcutPrefs.defaultFor(ShortcutAction.findNotes).keycapLabel,
-      '⌘K',
+      '⇧⌘F',
     );
     // The order a Mac's own menus print modifiers in.
     expect(everything.keycapLabel, '⌃⌥⇧⌘K');
@@ -741,7 +741,7 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     expect(
       ShortcutPrefs.defaultFor(ShortcutAction.findNotes).keycapLabel,
-      'Ctrl+K',
+      'Ctrl+Shift+F',
     );
     expect(everything.keycapLabel, 'Ctrl+Alt+Shift+Win+K');
 
@@ -830,7 +830,6 @@ void main() {
       final claimed = <ShortcutBinding, ShortcutAction>{};
       for (final action in ShortcutAction.values) {
         final binding = ShortcutPrefs.defaultFor(action);
-        if (ShortcutPrefs.sharesChord(action, claimed[binding])) continue;
         expect(
           claimed[binding],
           isNull,
@@ -1005,9 +1004,7 @@ void main() {
       for (final action in ShortcutAction.values) prefs.bindingFor(action)!,
     ];
 
-    // Less one: Link and Search share a chord, Link only while words are
-    // selected.
-    expect(defaults.toSet(), hasLength(ShortcutAction.values.length - 1));
+    expect(defaults.toSet(), hasLength(ShortcutAction.values.length));
     expect(
       prefs.bindingFor(ShortcutAction.cycleTextStyle)!.logicalKey,
       LogicalKeyboardKey.keyT,
@@ -1150,6 +1147,96 @@ void main() {
     }
   });
 
+  // Search shared K with Link, which took it only while words were selected,
+  // and F opened Search as well. Now K is Link's alone, F finds in the open
+  // note, and Search answers to F with Shift.
+  test("Search moves off Link's K, and off F, onto F with Shift", () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final useMeta = platform == TargetPlatform.macOS;
+      for (final (logical, physical) in [
+        (LogicalKeyboardKey.keyK, PhysicalKeyboardKey.keyK),
+        (LogicalKeyboardKey.keyF, PhysicalKeyboardKey.keyF),
+      ]) {
+        final shipped = ShortcutBinding(
+          logicalKey: logical,
+          physicalKey: physical,
+          meta: useMeta,
+          control: !useMeta,
+        );
+        final store = _MemoryStore();
+        store.data['shortcuts.v1'] = {
+          'findNotes': shipped.toJson(),
+          'formatLink': ShortcutPrefs.defaultFor(
+            ShortcutAction.formatLink,
+          ).toJson(),
+        };
+
+        ShortcutPrefs(store).load();
+
+        // Checked after a second load, so the move is known to be on disk.
+        final reloaded = ShortcutPrefs(store)..load();
+        final reason = '${logical.keyLabel} on $platform';
+        expect(
+          reloaded.bindingFor(ShortcutAction.findNotes)!.keycapLabel,
+          useMeta ? '⇧⌘F' : 'Ctrl+Shift+F',
+          reason: reason,
+        );
+        expect(
+          reloaded.bindingFor(ShortcutAction.formatLink)!.keycapLabel,
+          useMeta ? '⌘K' : 'Ctrl+K',
+          reason: reason,
+        );
+        expect(
+          reloaded.bindingFor(ShortcutAction.findInNote)!.keycapLabel,
+          useMeta ? '⌘F' : 'Ctrl+F',
+          reason: reason,
+        );
+      }
+    }
+  });
+
+  // An action added since the shortcuts were saved would otherwise take a
+  // chord the person already gave to something of their own.
+  test('a new action leaves a chord the person chose to them', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+
+    final chosen = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyF,
+      physicalKey: PhysicalKeyboardKey.keyF,
+      meta: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'newDrawing': chosen.toJson()};
+
+    final prefs = ShortcutPrefs(store)..load();
+    expect(prefs.bindingFor(ShortcutAction.newDrawing), chosen);
+    expect(prefs.bindingFor(ShortcutAction.findInNote), isNull);
+    expect(
+      prefs.conflictFor(ShortcutAction.findInNote, chosen),
+      ShortcutAction.newDrawing,
+    );
+
+    // Written down as cleared, so a restart keeps it that way, and a key
+    // given to it later is kept.
+    final reloaded = ShortcutPrefs(store)..load();
+    expect(reloaded.bindingFor(ShortcutAction.findInNote), isNull);
+    final other = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyF,
+      physicalKey: PhysicalKeyboardKey.keyF,
+      meta: true,
+      alt: true,
+    );
+    reloaded.update(ShortcutAction.findInNote, other);
+    expect(
+      (ShortcutPrefs(store)..load()).bindingFor(ShortcutAction.findInNote),
+      other,
+    );
+  });
+
   test('a key chosen for Close pane carries over to Close tab', () {
     final store = _MemoryStore();
     const chosen = ShortcutBinding(
@@ -1267,7 +1354,6 @@ void main() {
       final seen = <String, ShortcutAction>{};
       for (final action in ShortcutAction.values) {
         final label = prefs.bindingFor(action)!.displayLabel;
-        if (ShortcutPrefs.sharesChord(action, seen[label])) continue;
         expect(
           seen[label],
           isNull,

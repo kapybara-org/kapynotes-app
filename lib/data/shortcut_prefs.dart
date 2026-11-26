@@ -10,6 +10,7 @@ enum ShortcutAction {
   openMenuBarPanel,
   newNote,
   findNotes,
+  findInNote,
   newTask,
   newDrawing,
   showNotes,
@@ -59,6 +60,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.openMenuBarPanel => 'Menu bar panel',
     ShortcutAction.newNote => 'New note',
     ShortcutAction.findNotes => 'Search',
+    ShortcutAction.findInNote => 'Find in note',
     ShortcutAction.newTask => 'New task',
     ShortcutAction.newDrawing => 'New drawing',
     ShortcutAction.showNotes => 'Go to Notes',
@@ -108,6 +110,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.newNote => 'Create and focus a blank note',
     ShortcutAction.findNotes =>
       'Find notes, tasks and drawings, or make one, from anywhere',
+    ShortcutAction.findInNote =>
+      'Find words in the note you are in, and step through each one',
     ShortcutAction.newTask => 'Add a task from anywhere',
     ShortcutAction.newDrawing => 'Start a blank drawing from anywhere',
     ShortcutAction.showNotes => 'Open your notes',
@@ -365,6 +369,19 @@ class ShortcutPrefs extends ChangeNotifier {
       _bindings[action] = replacement;
       migrated = true;
     }
+
+    // An action newer than the saved shortcuts starts on its default, unless
+    // a key the person set already answers to it. That key stays theirs, and
+    // the new action waits in Settings with none.
+    if (raw is Map) {
+      for (final action in ShortcutAction.values) {
+        final binding = _bindings[action];
+        if (binding == null || _saved(saved, action) != null) continue;
+        if (conflictFor(action, binding) == null) continue;
+        _bindings.remove(action);
+        migrated = true;
+      }
+    }
     if (migrated) {
       _persist();
       return;
@@ -437,12 +454,19 @@ class ShortcutPrefs extends ChangeNotifier {
           shift: true,
         ),
       ],
-      // Cmd/Ctrl+F, when this was the sidebar's find field. K is what a
-      // command menu answers to, and F still opens it beside K.
+      // Cmd/Ctrl+F, when this was the sidebar's find field, which Find in
+      // note answers to now. Then Cmd/Ctrl+K, which it shared with Link and
+      // which Link now keeps. See [defaultFor].
       ShortcutAction.findNotes => [
         ShortcutBinding(
           logicalKey: LogicalKeyboardKey.keyF,
           physicalKey: PhysicalKeyboardKey.keyF,
+          meta: useMeta,
+          control: !useMeta,
+        ),
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyK,
+          physicalKey: PhysicalKeyboardKey.keyK,
           meta: useMeta,
           control: !useMeta,
         ),
@@ -491,19 +515,10 @@ class ShortcutPrefs extends ChangeNotifier {
   ) {
     for (final entry in _bindings.entries) {
       if (entry.key == action || entry.value != candidate) continue;
-      if (sharesChord(action, entry.key)) continue;
       return entry.key;
     }
     return null;
   }
-
-  /// Link answers only while words are selected, and leaves its chord to
-  /// Search everywhere else, so the two may share one.
-  static bool sharesChord(ShortcutAction a, ShortcutAction? b) =>
-      {a, b}.containsAll(const {
-        ShortcutAction.findNotes,
-        ShortcutAction.formatLink,
-      });
 
   void update(ShortcutAction action, ShortcutBinding binding) {
     if (_bindings[action] == binding) return;
@@ -616,12 +631,20 @@ class ShortcutPrefs extends ChangeNotifier {
         meta: useMeta,
         control: !useMeta,
       ),
-      // K, as every command menu has it. Link keeps it while words are
-      // selected and leaves it here everywhere else; see [conflictFor]. The
-      // F it replaced still opens the menu too, as a fixed second chord.
+      // Find in note's F with Shift, as editors and other notes apps
+      // search everything: F finds, and Shift widens it to every note. Not
+      // K, which every editor keeps for Link, so one chord means one thing.
       ShortcutAction.findNotes => ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.keyK,
-        physicalKey: PhysicalKeyboardKey.keyK,
+        logicalKey: LogicalKeyboardKey.keyF,
+        physicalKey: PhysicalKeyboardKey.keyF,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
+      // What finds in a page or a document in every app.
+      ShortcutAction.findInNote => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyF,
+        physicalKey: PhysicalKeyboardKey.keyF,
         meta: useMeta,
         control: !useMeta,
       ),
@@ -772,8 +795,8 @@ class ShortcutPrefs extends ChangeNotifier {
         alt: !useMeta,
         shift: !useMeta,
       ),
-      // J sits under the right hand beside K, which ⌘K's search takes, and
-      // nothing here or in the editor binds it.
+      // J sits under the right hand beside K, which Link takes, and nothing
+      // here or in the editor binds it.
       ShortcutAction.toggleKapyAi => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyJ,
         physicalKey: PhysicalKeyboardKey.keyJ,
@@ -840,7 +863,7 @@ class ShortcutPrefs extends ChangeNotifier {
         control: !useMeta,
         shift: true,
       ),
-      // A for attach: ⌘⇧F is taken by search in most apps.
+      // A for attach: ⌘⇧F is Search, as it is in most apps.
       ShortcutAction.insertFile => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyA,
         physicalKey: PhysicalKeyboardKey.keyA,

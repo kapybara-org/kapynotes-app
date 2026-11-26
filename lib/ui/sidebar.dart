@@ -27,6 +27,7 @@ import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'folders_ui.dart';
 import 'join/joining_ui.dart' show joinedLine;
+import 'keycap.dart';
 import 'member_avatars.dart';
 import 'note_picks.dart';
 import 'note_row_swipe.dart';
@@ -2683,7 +2684,17 @@ class SidebarSearchField extends StatelessWidget {
   final ShortcutBinding? shortcut;
   final String placeholder;
 
-  Widget? _end(CalcPalette palette, double extent) {
+  /// What ends the field: Clear while it holds a search, else the chord
+  /// that opens it, where the placeholder keeps at least as much of the
+  /// [room] beside the icon as the chord takes. A long one in a list dragged
+  /// narrow is left out rather than crowding the placeholder off the field,
+  /// and Settings still shows it.
+  Widget? _end(
+    BuildContext context,
+    CalcPalette palette,
+    double extent, {
+    double room = double.infinity,
+  }) {
     final onClear = this.onClear;
     if (query.isNotEmpty && onClear != null) {
       // Inside the field's tap region, so Clear keeps the keyboard up.
@@ -2703,6 +2714,9 @@ class SidebarSearchField extends StatelessWidget {
     }
     final shortcut = this.shortcut;
     if (shortcut == null || !AppPlatform.hasPointer) return null;
+    if (Keycap.widthOf(context, shortcut.keycapLabel, plain: true) * 2 > room) {
+      return null;
+    }
     return Tooltip(
       message: '$placeholder · ${shortcut.displayLabel}',
       child: Semantics(
@@ -2729,8 +2743,9 @@ class SidebarSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final searching = query.isNotEmpty;
-    final end = _end(palette, phone ? 32 : 20);
     if (!phone) {
+      const icon = 14.0;
+      const gap = 8.0;
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Semantics(
@@ -2750,30 +2765,37 @@ class SidebarSearchField extends StatelessWidget {
                   color: palette.fillRest,
                   borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
-                child: Row(
-                  children: [
-                    KapyIcon(
-                      KapyIcons.searchRounded,
-                      size: 14,
-                      color: palette.textTertiary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        searching ? query : placeholder,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 16 / 13,
-                          color: searching
-                              ? palette.textPrimary
-                              : palette.textTertiary,
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Row(
+                    children: [
+                      KapyIcon(
+                        KapyIcons.searchRounded,
+                        size: icon,
+                        color: palette.textTertiary,
+                      ),
+                      const SizedBox(width: gap),
+                      Expanded(
+                        child: Text(
+                          searching ? query : placeholder,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            height: 16 / 13,
+                            color: searching
+                                ? palette.textPrimary
+                                : palette.textTertiary,
+                          ),
                         ),
                       ),
-                    ),
-                    ?end,
-                  ],
+                      ?_end(
+                        context,
+                        palette,
+                        20,
+                        room: constraints.maxWidth - icon - gap,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2781,6 +2803,8 @@ class SidebarSearchField extends StatelessWidget {
         ),
       );
     }
+
+    final end = _end(context, palette, 32);
 
     final trailing = this.trailing;
     final field = this.field;

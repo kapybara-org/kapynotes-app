@@ -2188,7 +2188,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// Kapy AI, only where the build carries it.
   KapyAi? get _kapyAi => kapyAiAvailable ? widget.kapyAi : null;
 
-  /// What ⌘K is called: it also asks Kapy AI while that is on.
+  /// What Search is called: it also asks Kapy AI while that is on.
   String _shortcutLabel(ShortcutAction action) =>
       action == ShortcutAction.findNotes && (_kapyAi?.enabled ?? false)
       ? 'Search or Ask Kapy AI'
@@ -3412,6 +3412,7 @@ extension on ShortcutAction {
     ShortcutAction.openMenuBarPanel => _ShortcutGroup.fromAnywhere,
     ShortcutAction.newNote ||
     ShortcutAction.findNotes ||
+    ShortcutAction.findInNote ||
     ShortcutAction.newTask ||
     ShortcutAction.newDrawing ||
     ShortcutAction.nextNote ||

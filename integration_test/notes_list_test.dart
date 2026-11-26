@@ -19,6 +19,8 @@
 // - KAPY-72's folder boards, d1 to d6, in the same window: Add notes beside
 //   a folder, notes dragged onto a folder and into the open one, Undo, a new
 //   folder, the empty states, and a tree note's whole-row hover.
+// - ⌘F's find bar in a note (KAP-389): no matches, the second of three, and
+//   the match esc leaves selected.
 // Each state is taken light and dark, as screenshots in build/screenshots;
 // the boards' states dark only, as the boards draw them, with d1 and d3
 // light too.
@@ -998,5 +1000,54 @@ void main() {
     expect(tester.getSize(face).width, width);
     await boardShot(tester, 'folders-whole-row-hover');
     await pointer.removePointer();
+  });
+
+  testWidgets('KAP-389: ⌘F finds words in the open note, Enter steps, and '
+      'esc leaves the match selected', (tester) async {
+    await launch(
+      tester,
+      bodies: [
+        'Trip budget\nflights = 412 eur\nhotel = 128 eur\nfood = 55 eur',
+      ],
+    );
+    await click(tester, row('Trip budget'));
+    final bar = find.byKey(const ValueKey('note-find-bar'));
+    final field = find.byKey(const ValueKey('note-find-field'));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    expect(bar, findsOneWidget);
+    expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+
+    await tester.enterText(field, 'porto');
+    await tester.pumpAndSettle();
+    expect(find.text('No matches'), findsOneWidget);
+    await shot(tester, 'find-in-note-none');
+
+    await tester.enterText(field, 'eur');
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('2 of 3'), findsOneWidget);
+    await shot(tester, 'find-in-note');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(bar, findsNothing);
+    final note = tester.widget<NoteField>(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(NoteField),
+      ),
+    );
+    final body = note.controller.text;
+    final at = body.indexOf('eur', body.indexOf('hotel'));
+    expect(
+      note.controller.selection,
+      TextSelection(baseOffset: at, extentOffset: at + 3),
+    );
+    await shot(tester, 'find-in-note-closed');
   });
 }

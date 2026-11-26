@@ -20,6 +20,7 @@ import 'package:kapy_notes/ui/editor/editor_formatting.dart';
 import 'package:kapy_notes/ui/editor/note_sliver.dart'
     show RenderNoteLine, lineTrailingGap;
 import 'package:kapy_notes/ui/celebrate.dart';
+import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
@@ -85,6 +86,7 @@ Widget harness(
   WritingFont writingFont = WritingFont.handwritten,
   double editorTextScale = 1,
   ShortcutPrefs? shortcuts,
+  bool markdown = false,
 }) {
   final editor = NoteEditor(
     // Keyed by body so re-pumping with different text remounts the editor,
@@ -116,6 +118,7 @@ Widget harness(
     writingFont: writingFont,
     editorTextScale: editorTextScale,
     shortcuts: shortcuts ?? shortcutPrefs,
+    markdownEnabled: markdown,
   );
   return MaterialApp(
     theme: KapyTheme.dark().copyWith(platform: platform),
@@ -4398,5 +4401,259 @@ total to usd''';
         .shift(driver.toGlobal(Offset.zero));
     expect(caret.bottom, lessThanOrEqualTo(field.bottom + 0.5));
     expect(caret.top, greaterThanOrEqualTo(field.top - 0.5));
+  });
+
+  group('find in the note', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    final bar = find.byKey(const ValueKey('note-find-bar'));
+    final field = find.byKey(const ValueKey('note-find-field'));
+
+    TextEditingController words(WidgetTester tester) =>
+        tester.widget<TextField>(field).controller!;
+
+    String? count(WidgetTester tester) =>
+        tester.widget<Text>(find.byKey(const ValueKey('note-find-count'))).data;
+
+    Future<void> openFind(WidgetTester tester, [String? text]) async {
+      tester.state<NoteEditorState>(find.byType(NoteEditor)).openFind();
+      await tester.pumpAndSettle();
+      if (text == null) return;
+      await tester.enterText(field, text);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> press(
+      WidgetTester tester,
+      LogicalKeyboardKey key, {
+      bool shift = false,
+      bool meta = false,
+    }) async {
+      if (meta) await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(key);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      if (meta) await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('counts the matches, marks them, and steps through them', (
+      tester,
+    ) async {
+      const body = 'Camping\nPack the tent\nTent pegs\nA tent for two';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+
+      await openFind(tester, 'tent');
+      expect(bar, findsOneWidget);
+      expect(count(tester), '1 of 3');
+      final found = NoteDriver(tester).state.layout.marks.found!;
+      expect(found.ranges, [
+        for (final at in [
+          body.indexOf('tent'),
+          body.indexOf('Tent'),
+          body.lastIndexOf('tent'),
+        ])
+          TextRange(start: at, end: at + 4),
+      ]);
+      expect(found.current, 0);
+      // The match it is on filled as the selection is, which is what esc
+      // leaves of it.
+      expect(found.currentColor, KapyTheme.darkPalette.selection);
+      expect(found.color, isNot(found.currentColor));
+
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '2 of 3');
+      expect(NoteDriver(tester).state.layout.marks.found!.current, 1);
+      await press(tester, LogicalKeyboardKey.enter, shift: true);
+      expect(count(tester), '1 of 3');
+      await press(tester, LogicalKeyboardKey.enter, shift: true);
+      expect(count(tester), '3 of 3');
+      await press(tester, LogicalKeyboardKey.f3);
+      expect(count(tester), '1 of 3');
+      await press(tester, LogicalKeyboardKey.f3, shift: true);
+      expect(count(tester), '3 of 3');
+      await press(tester, LogicalKeyboardKey.keyG, meta: true);
+      expect(count(tester), '1 of 3');
+      await press(tester, LogicalKeyboardKey.keyG, meta: true, shift: true);
+      expect(count(tester), '3 of 3');
+      await tester.tap(find.byKey(const ValueKey('note-find-next')));
+      await tester.pumpAndSettle();
+      expect(count(tester), '1 of 3');
+
+      // Enter that ends a word an input method is still putting together
+      // belongs to the input method.
+      final query = words(tester);
+      query.value = query.value.copyWith(
+        composing: const TextRange(start: 0, end: 4),
+      );
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '1 of 3');
+
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+      expect(NoteDriver(tester).value.text, body);
+    });
+
+    testWidgets('esc closes it on its match, back in the note', (tester) async {
+      const body = 'Camping\nPack the tent\nTent pegs';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      await openFind(tester, 'tent');
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '2 of 2');
+
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(bar, findsNothing);
+      final note = NoteDriver(tester);
+      expect(note.state.layout.marks.found, isNull);
+      final at = body.indexOf('Tent');
+      expect(
+        note.value.selection,
+        TextSelection(baseOffset: at, extentOffset: at + 4),
+      );
+      expect(note.state.widget.focusNode.hasFocus, isTrue);
+      expect(note.value.text, body);
+
+      // It opens again on the words the note has selected, ready to type
+      // over.
+      await openFind(tester);
+      expect(words(tester).text, 'Tent');
+      expect(
+        words(tester).selection,
+        const TextSelection(baseOffset: 0, extentOffset: 4),
+      );
+      expect(count(tester), '2 of 2');
+
+      await tester.tap(find.byKey(const ValueKey('note-find-close')));
+      await tester.pumpAndSettle();
+      expect(bar, findsNothing);
+    });
+
+    testWidgets('the bar pushes the note down, never over what it finds', (
+      tester,
+    ) async {
+      const body = 'Camping\nPack the tent';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      Rect title() => note
+          .caretRect(const TextPosition(offset: 0))
+          .shift(note.toGlobal(Offset.zero));
+      final closed = title();
+
+      await openFind(tester, 'tent');
+      final strip = tester.getRect(bar);
+      expect(strip.top, tester.getRect(find.byType(NoteEditor)).top);
+      expect(title().top, moreOrLessEquals(closed.top + strip.height));
+      expect(title().top, greaterThan(strip.bottom));
+      // The words start where the writing does.
+      expect(
+        tester.getRect(field).left,
+        moreOrLessEquals(closed.left, epsilon: 3),
+      );
+
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(title().top, moreOrLessEquals(closed.top));
+    });
+
+    testWidgets('a selection over more than one line is not what it finds', (
+      tester,
+    ) async {
+      const body = 'Camping\nPack the tent\nTent pegs';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      note.controller.selection = TextSelection(
+        baseOffset: body.indexOf('the'),
+        extentOffset: body.indexOf('pegs'),
+      );
+      await tester.pump();
+
+      await openFind(tester);
+      expect(words(tester).text, isEmpty);
+      expect(find.byKey(const ValueKey('note-find-count')), findsNothing);
+    });
+
+    testWidgets('finds the words the note shows, not its markdown', (
+      tester,
+    ) async {
+      // Bold's stars and the link's brackets and address draw as nothing,
+      // so the link's words read as one with the letters after it.
+      const body = 'Plans\n**Bold** move, and [bo](https://example.com)ld too';
+      await tester.pumpWidget(harness(body, autofocus: true, markdown: true));
+      await tester.pumpAndSettle();
+
+      await openFind(tester, 'bold');
+      expect(count(tester), '1 of 2');
+      expect(
+        NoteDriver(tester).state.layout.marks.found!.ranges.last,
+        TextRange(
+          start: body.indexOf('[bo') + 1,
+          end: body.indexOf('ld too') + 2,
+        ),
+      );
+
+      await tester.enterText(field, 'example');
+      await tester.pumpAndSettle();
+      expect(count(tester), 'No matches');
+
+      await tester.enterText(field, '**');
+      await tester.pumpAndSettle();
+      expect(count(tester), 'No matches');
+      expect(NoteDriver(tester).state.layout.marks.found, isNull);
+      for (final key in ['note-find-next', 'note-find-previous']) {
+        expect(
+          tester.widget<CompactIconButton>(find.byKey(ValueKey(key))).onPressed,
+          isNull,
+        );
+      }
+    });
+
+    testWidgets('the count keeps up as the note changes', (tester) async {
+      const body = 'Camping\nPack the tent';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      await openFind(tester, 'tent');
+      expect(count(tester), '1 of 1');
+
+      NoteDriver(tester).controller.text = '$body\nA second tent';
+      await tester.pumpAndSettle();
+      expect(count(tester), '1 of 2');
+      expect(NoteDriver(tester).state.layout.marks.found!.ranges, hasLength(2));
+    });
+
+    testWidgets('a match below the page is scrolled into sight', (
+      tester,
+    ) async {
+      final body = [
+        'Long',
+        for (var line = 0; line < 80; line++) 'line $line',
+        'the needle',
+      ].join('\n');
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      Rect needle() => note
+          .caretRect(TextPosition(offset: body.indexOf('needle')))
+          .shift(note.toGlobal(Offset.zero));
+      final page = tester.getRect(find.byType(NoteEditor));
+      expect(needle().top, greaterThan(page.bottom));
+
+      await openFind(tester, 'needle');
+      expect(count(tester), '1 of 1');
+      expect(needle().top, greaterThanOrEqualTo(page.top));
+      expect(needle().bottom, lessThanOrEqualTo(page.bottom));
+    });
+
+    testWidgets('phones have no find bar', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await tester.pumpWidget(harness('Camping\nPack the tent'));
+      await tester.pumpAndSettle();
+
+      tester.state<NoteEditorState>(find.byType(NoteEditor)).openFind();
+      await tester.pumpAndSettle();
+      expect(bar, findsNothing);
+    });
   });
 }

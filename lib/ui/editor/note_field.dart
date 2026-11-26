@@ -49,6 +49,7 @@ class NoteField extends StatefulWidget {
     this.trailingOf,
     this.selectionOf,
     this.adjustSpan,
+    this.found,
   });
 
   final HighlightingController controller;
@@ -107,6 +108,9 @@ class NoteField extends StatefulWidget {
   /// Where the selection shows on a line its writing doesn't draw: see
   /// [NoteLayout.selectionOf].
   final List<Rect>? Function(int line, TextRange selected)? selectionOf;
+
+  /// What a find in the note found, filled under the writing.
+  final NoteFound? found;
 
   @override
   State<NoteField> createState() => NoteFieldState();
@@ -784,6 +788,7 @@ class NoteFieldState extends State<NoteField>
           : null,
       caret: caret,
       handles: _overlay == null ? null : (start: _startLink, end: _endLink),
+      found: widget.found,
     );
   }
 
