@@ -35,8 +35,9 @@ Duration? momentFor(
 }
 
 /// The moments [answer] draws on, in the order they were said: where each
-/// of its sentences was said, by [momentFor], at most [max] of them and
-/// none twice. Empty when no sentence matches well enough, so an answer
+/// of its sentences and clauses was said, by [momentFor], at most [max] of
+/// them and none twice. Clauses count because an answer often lists what it
+/// found in one sentence. Empty when no sentence matches well enough, so an answer
 /// never points to a moment it did not come from.
 List<Duration> momentsIn(
   String answer,
@@ -52,7 +53,7 @@ List<Duration> momentsIn(
   return found.toList()..sort();
 }
 
-final RegExp _sentenceEnd = RegExp(r'(?<=[.!?])\s+|\n+');
+final RegExp _sentenceEnd = RegExp(r'(?<=[.!?;:,])\s+|\n+');
 
 /// The silences between [segments] longer than [longerThan], each trimmed by
 /// [cushion] at both ends so a jump never clips the first or last word.

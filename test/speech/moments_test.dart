@@ -81,6 +81,17 @@ void main() {
       );
     });
 
+    test('come from each clause of a sentence that lists them', () {
+      expect(
+        momentsIn(
+          'Two things: the annual plan first with the monthly price '
+          'underneath, and the first invoice split across two months.',
+          paragraphs,
+        ),
+        const [Duration(seconds: 8), Duration(seconds: 38)],
+      );
+    });
+
     test('are none when nothing matches well', () {
       expect(momentsIn('Sounds good. Talk soon.', paragraphs), isEmpty);
     });
