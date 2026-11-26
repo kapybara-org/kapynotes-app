@@ -18,6 +18,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
+import 'kapy_ai_notice_test.dart' as kapy_ai_notice;
 import 'kapy_ai_page_test.dart' as kapy_ai_page;
 import 'kapy_ai_sheet_test.dart' as kapy_ai_sheet;
 import 'phone_about_test.dart' as phone_about;
@@ -36,6 +37,7 @@ import 'phone_video_test.dart' as phone_video;
 import 'phone_voice_chip_test.dart' as phone_voice_chip;
 
 const _tests = <String, void Function()>{
+  'kapy_ai_notice': kapy_ai_notice.main,
   'kapy_ai_page': kapy_ai_page.main,
   'kapy_ai_sheet': kapy_ai_sheet.main,
   'phone_about': phone_about.main,
