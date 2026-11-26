@@ -110,11 +110,17 @@ class MemoryStore extends LocalStore {
   @override
   Future<void> flush() async {}
 
-  /// Writes straight through: no delay timer to outlive the test. [putNow]
-  /// stays the store's own, so a note switch still flushes, which is how a
-  /// test sees that what was typed got written.
+  /// Writes straight through: no delay timer to outlive the test.
   @override
   void put(String key, Object? value) => data[key] = value;
+
+  /// Still asks for [flush], so a note switch reaches a store that logs its
+  /// writes, and leaves [writes] as it was: this store has no disk to wait on.
+  @override
+  void putNow(String key, Object? value) {
+    data[key] = value;
+    unawaited(flush());
+  }
 }
 
 class DeferredMemoryStore extends MemoryStore {
