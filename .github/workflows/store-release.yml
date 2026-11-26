@@ -226,6 +226,11 @@ jobs:
       - run: flutter pub get --enforce-lockfile
         if: ${{ !inputs.ios_submit_only }}
 
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh ios_arm64
+        if: ${{ !inputs.ios_submit_only }}
+
       # Where altool looks for AuthKey_<id>.p8, and the file xcodebuild and
       # asc_submit.py are pointed at.
       - name: Write the App Store Connect API key
@@ -371,6 +376,10 @@ jobs:
           cache: false
 
       - run: flutter pub get --enforce-lockfile
+
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh android_arm64
 
       # key.properties is gitignored and read by android/app/build.gradle.kts.
       # The alias is fixed at "upload", the alias of the Mac's keystore.
