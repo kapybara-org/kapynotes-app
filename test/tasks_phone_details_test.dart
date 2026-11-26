@@ -217,6 +217,33 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('on ${platform.name} a screen reader presses Back as a tap '
+        'does, back to Tasks (KAP-365)', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final semantics = tester.ensureSemantics();
+      await pumpPhone(tester);
+      await openListed(tester);
+      final back = tester.getSemantics(find.byKey(const ValueKey('page-back')));
+      expect(
+        back,
+        isSemantics(
+          label: platform == TargetPlatform.iOS ? 'Back to Tasks' : null,
+          isButton: true,
+          hasTapAction: true,
+        ),
+      );
+      tester.semantics.tap(
+        find.semantics.byPredicate((each) => each.id == back.id),
+      );
+      await tester.pumpAndSettle();
+      expect(page, findsNothing);
+      expect(find.byType(TasksScreen), findsOneWidget);
+      semantics.dispose();
+      await tester.pump(const Duration(seconds: 3));
+    });
+  }
+
   testWidgets('every control on the page is 44 pt to tap, and says what it '
       'does to a screen reader', (tester) async {
     final semantics = tester.ensureSemantics();
