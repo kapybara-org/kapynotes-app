@@ -4001,45 +4001,173 @@ void main() {
         if (row.ofPickedDay) row.note.title,
     ];
 
-    testWidgets('a day in the week opens its note, lit, and the list stays '
-        'whole', (tester) async {
+    /// The titles of the tabs, in the row's order. The row shows while there
+    /// are two or more.
+    List<String> tabTitles(WidgetTester tester) => [
+      for (final tab in tester.widget<NoteTabRow>(find.byType(NoteTabRow)).tabs)
+        tab.title,
+    ];
+
+    testWidgets('a day in the week opens its note as the tab, lit, and the '
+        'list stays whole', (tester) async {
       await library(tester);
       expect(find.byType(DayStrip), findsOneWidget);
+      expect(tester.getSemantics(day(18)), isSemantics(hint: 'Opens its note'));
 
       await tap(tester, day(18));
       expect(openNoteBody(tester), 'Standup notes');
+      expect(find.byType(NoteTabRow), findsNothing, reason: 'one tab');
       expect(rowOf(tester, 'Standup notes').selected, isTrue);
       expect(lit(tester), ['Standup notes']);
       expect(headings(tester), hasLength(4));
       expect(whenChip, findsNothing);
-      expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
+      expect(
+        tester.getSemantics(day(18)),
+        isSemantics(isSelected: true, hint: 'Back to your tabs'),
+      );
+      expect(find.text("Opened yesterday's note"), findsOneWidget);
     });
 
-    testWidgets('a day with several notes opens the latest and lights them '
-        'all, until another day is picked or another day\'s note opens', (
-      tester,
-    ) async {
+    testWidgets('a day with several notes opens them as the tabs, the '
+        'earliest written first and in front, all lit, and Undo brings back '
+        'the tabs from before', (tester) async {
       final days = NoteDayStore(store);
       await days.load();
       await library(tester, days: days);
       days.setDay('October plan', DateTime(2026, 11, 18));
       await tester.pumpAndSettle();
+      await tap(tester, find.widgetWithText(NoteRow, 'Pricing ideas'));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.tap(find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      expect(tabTitles(tester), ['Pricing ideas', 'Call with Arjun']);
+      final kept = {for (final note in notes.allNotes) note.id};
 
       await tap(tester, day(18));
+      expect(tabTitles(tester), ['October plan', 'Standup notes']);
+      expect(openNoteBody(tester), 'October plan');
+      expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
+      expect(find.text("Opened yesterday's 2 notes"), findsOneWidget);
+
+      await tap(tester, find.text('Undo'));
+      expect(tabTitles(tester), ['Pricing ideas', 'Call with Arjun']);
+      expect(openNoteBody(tester), 'Pricing ideas');
+      expect(lit(tester), isEmpty);
+      expect(tester.getSemantics(day(18)), isSemantics(isSelected: false));
+      expect({for (final note in notes.allNotes) note.id}, kept);
+    });
+
+    testWidgets("a note opened from the list keeps the day picked, another "
+        'day takes its place, and a click on the day picked brings the tabs '
+        'back', (tester) async {
+      await library(tester);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tap(tester, day(18));
       expect(openNoteBody(tester), 'Standup notes');
-      expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
 
-      // Another of the day's notes keeps the day lit.
+      // The note takes the tab in front, and the day stays picked, so the
+      // way back stays too.
       await tap(tester, find.widgetWithText(NoteRow, 'October plan'));
-      expect(lit(tester), unorderedEquals(['Standup notes', 'October plan']));
+      expect(openNoteBody(tester), 'October plan');
+      expect(lit(tester), ['Standup notes']);
+      expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
 
+      // Another day's notes take the first day's place. The tabs from before
+      // are a click on it away, so the notice offers no Undo.
       await tap(tester, day(17));
       expect(openNoteBody(tester), 'Pricing ideas');
       expect(lit(tester), ['Pricing ideas']);
+      expect(find.text('Opened the note on Tue 17'), findsOneWidget);
+      expect(find.text('Undo'), findsNothing);
 
-      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tap(tester, day(17));
+      expect(openNoteBody(tester), 'Call with Arjun');
       expect(lit(tester), isEmpty);
       expect(tester.getSemantics(day(17)), isSemantics(isSelected: false));
+    });
+
+    testWidgets('a day with no notes opens a page to write on it in place of '
+        'the tabs, and Undo brings them back with no note left behind', (
+      tester,
+    ) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, days: days);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      final kept = {for (final note in notes.allNotes) note.id};
+
+      await tap(tester, day(16));
+      expect(find.text('No notes on Mon 16'), findsOneWidget);
+      expect(openNoteBody(tester), isEmpty);
+      expect(tester.getSemantics(day(16)), isSemantics(isSelected: true));
+
+      await tap(tester, find.text('Undo'));
+      expect(openNoteBody(tester), 'Call with Arjun');
+      expect({for (final note in notes.allNotes) note.id}, kept);
+      expect(days.noteIds, isEmpty);
+
+      await tap(tester, day(20));
+      expect(find.text('No notes tomorrow'), findsOneWidget);
+    });
+
+    testWidgets('a day opens its 12 earliest written notes at most, and says '
+        'how many of how many', (tester) async {
+      await library(tester);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      for (var index = 1; index <= 13; index++) {
+        notes.create(body: 'Errand $index');
+      }
+      await tester.pumpAndSettle();
+
+      await tap(tester, day(19));
+      final tabs = tester.widget<NoteTabRow>(find.byType(NoteTabRow)).tabs;
+      expect(tabs, hasLength(EditorWorkspace.dayTabLimit));
+      expect(tabs.first.title, 'Call with Arjun');
+      expect(find.text("Opened 12 of today's 14 notes"), findsOneWidget);
+    });
+
+    testWidgets('Return on a day opens its notes and leaves the keyboard on '
+        'the day, so Return again brings the tabs back', (tester) async {
+      await library(tester);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      Focus.of(
+        tester.element(
+          find.descendant(of: day(18), matching: find.byType(Text)),
+        ),
+      ).requestFocus();
+      await tester.pump();
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Standup notes');
+      bool onTheWeek() =>
+          FocusManager.instance.primaryFocus?.context
+              ?.findAncestorWidgetOfExactType<DayStrip>() !=
+          null;
+      expect(onTheWeek(), isTrue);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Call with Arjun');
+      expect(onTheWeek(), isTrue);
+    });
+
+    testWidgets('what was typed stays when its tab gives way to a day, and is '
+        'there when the tabs come back', (tester) async {
+      await library(tester);
+      await tap(tester, find.widgetWithText(NoteRow, 'Call with Arjun'));
+      await tester.enterNote('Call with Arjun\nBring the contract');
+
+      await tap(tester, day(18));
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(
+        notes.byId('Call with Arjun')!.body,
+        contains('Bring the contract'),
+      );
+
+      await tap(tester, find.text('Undo'));
+      expect(openNoteBody(tester), 'Call with Arjun\nBring the contract');
     });
 
     testWidgets("a later day's note stays off the list until its day, and "
@@ -4126,23 +4254,8 @@ void main() {
       expect(find.byType(DayStrip), findsNothing);
     });
 
-    testWidgets('with the list hidden, a day lists its notes, and a click '
-        'opens one', (tester) async {
-      await library(tester);
-      prefs.toggleSidebar();
-      await tester.pumpAndSettle();
-
-      await tap(tester, day(18));
-      expect(find.text('Wednesday, 18 November'), findsOneWidget);
-      expect(find.text('1 note'), findsOneWidget);
-      await tap(tester, find.byKey(const ValueKey('day-list-Standup notes')));
-      expect(openNoteBody(tester), 'Standup notes');
-      // Nothing was narrowed: there was no list to narrow.
-      expect(whenChip, findsNothing);
-    });
-
     testWidgets('on a folder in front the week counts that folder alone, and '
-        'a day opens its note', (tester) async {
+        "a day's note takes the folder's place until Undo", (tester) async {
       final folders = FolderStore(store);
       await folders.load();
       await library(tester, folders: folders);
@@ -4158,6 +4271,45 @@ void main() {
       expect(dots(18), findsOneWidget);
       await tap(tester, day(18));
       expect(openNoteBody(tester), 'Standup notes');
+      expect(find.byKey(ValueKey('folder-page-${work.id}')), findsNothing);
+
+      await tap(tester, find.text('Undo'));
+      expect(find.byKey(ValueKey('folder-page-${work.id}')), findsOneWidget);
+    });
+
+    testWidgets("an empty day picked on a folder's page writes its page in "
+        'that folder', (tester) async {
+      final folders = FolderStore(store);
+      await folders.load();
+      final days = NoteDayStore(store);
+      await days.load();
+      await library(tester, folders: folders, days: days);
+      final work = folders.create('Work')!;
+      prefs.foldersShown = true;
+      await tester.pumpAndSettle();
+      await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
+
+      await tap(tester, day(16));
+      expect(find.text('No notes on Mon 16'), findsOneWidget);
+      await tester.enterNote('Agenda');
+      await tester.pumpAndSettle();
+      final made = notes.allNotes.singleWhere((note) => note.title == 'Agenda');
+      expect(folders.tree.folderOf(made.id), work.id);
+      expect(days.dayOf(made.id), DateTime(2026, 11, 16));
+    });
+
+    testWidgets("a blank page under a day's tabs stays for Undo to bring "
+        'back', (tester) async {
+      await library(tester);
+      await tap(tester, find.byKey(const ValueKey('sidebar-new-note')));
+      final blank = notes.allNotes.singleWhere((note) => note.isEmpty);
+
+      await tap(tester, day(18));
+      expect(openNoteBody(tester), 'Standup notes');
+      expect(notes.byId(blank.id), isNotNull);
+
+      await tap(tester, find.text('Undo'));
+      expect(openNoteBody(tester), blank.body.trimRight());
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "
@@ -4660,6 +4812,51 @@ void main() {
       expect(find.byKey(const ValueKey('notes-when-chip')), findsNothing);
       expect(headings(tester), hasLength(4));
     });
+  });
+
+  testWidgets('picked notes dragged together promise nothing over the panes, '
+      'and letting go there opens nothing', (tester) async {
+    final folders = FolderStore(store);
+    await folders.load();
+    await pumpApp(tester, size: const Size(1400, 800), folders: folders);
+    notes.create(body: 'Alpha');
+    notes.create(body: 'Bravo');
+    notes.create(body: 'Charlie');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(NoteRow, 'Alpha'));
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.tap(find.widgetWithText(NoteRow, 'Bravo'));
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.widgetWithText(NoteRow, 'Bravo')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byType(NoteDragFeedback),
+        matching: find.text('2 notes'),
+      ),
+      findsOneWidget,
+    );
+    final pane = tester.getRect(find.byType(EditorPaneFrame));
+    for (final to in [pane.centerRight - const Offset(24, 0), pane.center]) {
+      await gesture.moveTo(to);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      for (final promise in ['Open on the right', 'Open here', 'Swap places']) {
+        expect(find.text(promise), findsNothing, reason: promise);
+      }
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.byType(EditorPaneFrame), findsOneWidget);
+    expect(bodyInPane(tester, 0), 'Alpha');
   });
 
   testWidgets('dragging a note opens it beside a pane, in place, or moves it', (
@@ -9423,6 +9620,7 @@ void main() {
       Future<void> pumpFolders(
         WidgetTester tester, {
         Size size = const Size(393, 852),
+        TextScaler? textScaler,
         bool tasks = false,
       }) async {
         folders = FolderStore(store);
@@ -9439,6 +9637,7 @@ void main() {
         await pumpApp(
           tester,
           size: size,
+          textScaler: textScaler,
           folders: folders,
           tasks: tasks
               ? TaskLibrary(
@@ -9607,28 +9806,285 @@ void main() {
         );
       });
 
-      testWidgets('Not in a folder is a serif heading over Home rows (M02)', (
+      testWidgets('Folders lists only folders, and the notes inside one opened '
+          'in the tree: a note in no folder waits for Add notes', (
         tester,
       ) async {
         await pumpFolders(tester);
         await tap(tester, barFolders);
-        final heading = find.byKey(const ValueKey('folders-loose-heading'));
-        final words = tester.widget<Text>(
-          find.descendant(
-            of: heading,
-            matching: find.byKey(const ValueKey('phone-day-heading')),
-          ),
-        );
-        expect(words.data, 'Not in a folder');
-        final style = words.style!;
-        expect(style.fontFamily, AppFonts.title);
-        expect(style.fontSize, 19);
+        for (final folder in [work, clients, acme]) {
+          await tap(
+            tester,
+            find.byKey(ValueKey('folder-chevron-${folder.id}')),
+          );
+        }
+        expect(brief, findsOneWidget);
+        expect(groceries, findsNothing);
+        expect(find.text('Not in a folder'), findsNothing);
+      });
+
+      testWidgets('with no folders yet, Folders says so under its tiles', (
+        tester,
+      ) async {
+        folders = FolderStore(store);
+        await folders.load();
+        await notes.load();
+        notes.create(body: 'Groceries\nOat milk');
+        await pumpApp(tester, size: const Size(393, 852), folders: folders);
+        await showNotesList(tester);
+        await tap(tester, barFolders);
+        final empty = find.text('No folders yet');
+        expect(empty, findsOneWidget);
         expect(
-          find.descendant(of: heading, matching: find.text('1')),
+          find.text('Make a folder, then pick the notes that go in it.'),
+          findsOneWidget,
+        );
+        expect(
+          tester.getRect(empty).top,
+          greaterThan(tester.getRect(tile).bottom),
+        );
+        expect(groceries, findsNothing);
+      });
+
+      testWidgets("a folder's page has Add notes after its filter, 44 pt, and "
+          'an empty one says so with Add notes of its own', (tester) async {
+        await pumpFolders(tester);
+        await openFolder(tester, work);
+        final add = find.byKey(const ValueKey('phone-add-notes'));
+        final filters = find.byKey(const ValueKey('phone-filters'));
+        final well = tester.getRect(
+          find.byKey(const ValueKey('sidebar-search-box')),
+        );
+        expect(tester.getSize(add), const Size(44, 44));
+        expect(tester.getRect(filters).left, greaterThan(well.right));
+        expect(
+          tester.getRect(add).left,
+          moreOrLessEquals(tester.getRect(filters).right),
+        );
+        expect(tester.getRect(add).center.dy, moreOrLessEquals(well.center.dy));
+        expect(find.text('Nothing in this folder yet'), findsNothing);
+
+        final personal = folders.create('Personal')!;
+        await tap(tester, find.byKey(const ValueKey('page-back')));
+        await tap(tester, find.byKey(ValueKey('folder-${personal.id}')));
+        expect(find.text('Nothing in this folder yet'), findsOneWidget);
+        await tap(tester, find.byKey(const ValueKey('phone-folder-empty-add')));
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('add-notes')),
+            matching: find.text('Add notes to Personal'),
+          ),
+          findsOneWidget,
+        );
+
+        // Under a filter an empty list may only be filtered, so it doesn't
+        // say the folder is empty or offer to fill it.
+        await tester.tapAt(const Offset(196, 40));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('add-notes')), findsNothing);
+        await openPhoneFilters(tester);
+        await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tap(tester, find.byKey(const ValueKey('media-filter-Voice')));
+        expect(find.text('Nothing in this folder yet'), findsNothing);
+        expect(
+          find.byKey(const ValueKey('phone-folder-empty-add')),
           findsNothing,
         );
-        expect(tester.widget<NoteRow>(groceries).style, NoteRowStyle.touch);
       });
+
+      group('with the keyboard up', () {
+        final sheet = find.byKey(const ValueKey('add-notes'));
+        final field = find.byKey(const ValueKey('add-notes-field'));
+        final add = find.byKey(const ValueKey('add-notes-add'));
+        Future<void> keyboard(WidgetTester tester, double height) async {
+          tester.view.viewInsets = FakeViewPadding(bottom: height);
+          addTearDown(tester.view.resetViewInsets);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+        }
+
+        testWidgets('on a small phone turned on its side, Add notes lets its '
+            'title and field scroll away, and Add stays on the sheet', (
+          tester,
+        ) async {
+          await pumpFolders(tester, size: const Size(375, 667));
+          final groceriesId = notes.notes
+              .firstWhere((note) => note.title == 'Groceries')
+              .id;
+          await openFolder(tester, clients);
+          await tap(tester, find.byKey(const ValueKey('phone-add-notes')));
+          await tester.showKeyboard(field);
+          tester.view.physicalSize = const Size(667, 375);
+          await keyboard(tester, 200);
+          expect(
+            tester.getRect(add).bottom,
+            lessThanOrEqualTo(tester.getRect(sheet).bottom),
+          );
+          final row = find.byKey(ValueKey('add-note-$groceriesId'));
+          await tester.ensureVisible(row);
+          await tester.pumpAndSettle();
+          await tap(tester, row);
+          await tap(tester, add);
+          expect(folders.tree.folderOf(groceriesId), clients.id);
+        });
+
+        testWidgets('at 3.1× text, Add notes with no match reads to its end', (
+          tester,
+        ) async {
+          await pumpFolders(
+            tester,
+            size: const Size(375, 667),
+            textScaler: const TextScaler.linear(3.1),
+          );
+          await openFolder(tester, work);
+          await tap(tester, find.byKey(const ValueKey('phone-add-notes')));
+          await tester.enterText(field, 'zebra');
+          await keyboard(tester, 260);
+          final detail = find.text(
+            'Notes already in a folder aren’t listed here.',
+          );
+          await tester.ensureVisible(detail);
+          await tester.pumpAndSettle();
+          expect(
+            tester.getRect(detail).bottom,
+            lessThanOrEqualTo(tester.getRect(sheet).bottom),
+          );
+        });
+
+        testWidgets("at 3.1× text, an empty folder's Add notes stays in reach "
+            'above it', (tester) async {
+          await pumpFolders(
+            tester,
+            size: const Size(375, 667),
+            textScaler: const TextScaler.linear(3.1),
+          );
+          final personal = folders.create('Personal')!;
+          await openFolder(tester, personal);
+          await keyboard(tester, 260);
+          final empty = find.byKey(const ValueKey('phone-folder-empty-add'));
+          await tester.ensureVisible(empty);
+          await tester.pumpAndSettle();
+          expect(empty.hitTestable(), findsOneWidget);
+          await tap(tester, empty);
+          expect(sheet, findsOneWidget);
+        });
+      });
+
+      testWidgets('Add notes lists the notes in no folder; the ticked ones go '
+          'into the folder together, the sheet closes, and Undo takes them '
+          'back out', (tester) async {
+        await pumpFolders(tester);
+        final fish = notes.create(body: 'Fish market\nSaturday');
+        await openFolder(tester, clients);
+        await tap(tester, find.byKey(const ValueKey('phone-add-notes')));
+        final sheet = find.byKey(const ValueKey('add-notes'));
+        Finder inSheet(String text) =>
+            find.descendant(of: sheet, matching: find.text(text));
+        expect(inSheet('Add notes to Clients'), findsOneWidget);
+        expect(inSheet('2 not in a folder'), findsOneWidget);
+        expect(inSheet('Fish market'), findsOneWidget);
+        expect(inSheet('Groceries'), findsOneWidget);
+        expect(inSheet('Acme brief'), findsNothing);
+        expect(inSheet('Deck flow'), findsNothing);
+        expect(
+          tester.getRect(inSheet('Fish market')).top,
+          lessThan(tester.getRect(inSheet('Groceries')).top),
+        );
+        final add = find.byKey(const ValueKey('add-notes-add'));
+        expect(
+          find.descendant(of: add, matching: find.text('Add notes')),
+          findsOneWidget,
+        );
+        await tap(tester, add);
+        expect(sheet, findsOneWidget);
+
+        await tap(tester, find.byKey(ValueKey('add-note-${fish.id}')));
+        expect(
+          tester.getSemantics(find.byKey(ValueKey('add-note-${fish.id}'))),
+          isSemantics(isChecked: true),
+        );
+        expect(
+          find.descendant(of: add, matching: find.text('Add 1 note')),
+          findsOneWidget,
+        );
+        await tap(tester, find.byKey(const ValueKey('add-notes-select-all')));
+        expect(
+          find.byKey(const ValueKey('add-notes-select-all')),
+          findsNothing,
+        );
+        expect(
+          find.descendant(of: add, matching: find.text('Add 2 notes')),
+          findsOneWidget,
+        );
+        await tap(tester, add);
+        expect(sheet, findsNothing);
+        expect(folders.tree.folderOf(fish.id), clients.id);
+        expect(find.text('Added 2 notes to “Clients”'), findsOneWidget);
+        expect(find.widgetWithText(NoteRow, 'Fish market'), findsOneWidget);
+        expect(groceries, findsOneWidget);
+
+        await tap(tester, find.text('Undo'));
+        expect(folders.tree.folderOf(fish.id), isNull);
+        expect(find.widgetWithText(NoteRow, 'Fish market'), findsNothing);
+        expect(groceries, findsNothing);
+      });
+
+      testWidgets("Add notes' Find a note narrows it, and with a note filed "
+          'meanwhile the sheet keeps up, then says every note is in a '
+          'folder', (tester) async {
+        await pumpFolders(tester);
+        final groceriesId = notes.notes
+            .firstWhere((note) => note.title == 'Groceries')
+            .id;
+        await openFolder(tester, clients);
+        await tap(tester, find.byKey(const ValueKey('phone-add-notes')));
+        final field = find.byKey(const ValueKey('add-notes-field'));
+        await tester.enterText(field, 'zebra');
+        await tester.pumpAndSettle();
+        expect(find.text('No notes match “zebra”'), findsOneWidget);
+        await tester.enterText(field, 'oat');
+        await tester.pumpAndSettle();
+        final row = find.byKey(ValueKey('add-note-$groceriesId'));
+        expect(row, findsOneWidget);
+        await tap(tester, row);
+
+        folders.file([groceriesId], work.id);
+        await tester.pumpAndSettle();
+        expect(row, findsNothing);
+        expect(find.text('Every note is in a folder'), findsOneWidget);
+        expect(find.byKey(const ValueKey('add-notes-add')), findsNothing);
+      });
+
+      for (final scale in [1.3, 3.1]) {
+        testWidgets('on an SE at $scale× text Add notes fits, and its rows, '
+            'Select all, field and Add take at least 44 pt', (tester) async {
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await pumpFolders(tester, size: const Size(375, 667));
+          final groceriesId = notes.notes
+              .firstWhere((note) => note.title == 'Groceries')
+              .id;
+          await openFolder(tester, clients);
+          expect(tester.takeException(), isNull);
+          final add = find.byKey(const ValueKey('phone-add-notes'));
+          expect(tester.getSize(add).height, greaterThanOrEqualTo(44));
+          await tap(tester, add);
+          expect(tester.takeException(), isNull);
+          for (final target in [
+            find.byKey(ValueKey('add-note-$groceriesId')),
+            find.byKey(const ValueKey('add-notes-select-all')),
+            find.byKey(const ValueKey('add-notes-field')),
+            find.byKey(const ValueKey('add-notes-add')),
+          ]) {
+            final size = tester.getSize(target);
+            expect(size.height, greaterThanOrEqualTo(44), reason: '$target');
+          }
+          await tap(tester, find.byKey(ValueKey('add-note-$groceriesId')));
+          await tap(tester, find.byKey(const ValueKey('add-notes-add')));
+          expect(tester.takeException(), isNull);
+          expect(folders.tree.folderOf(groceriesId), clients.id);
+        });
+      }
 
       testWidgets('New folder sits beside Search folders, 44 pt, and names '
           'a folder at the top of the tree (M02)', (tester) async {
@@ -9800,7 +10256,7 @@ void main() {
             tester.getRect(find.byKey(ValueKey('folder-${work.id}'))).top,
           ),
         );
-        expect(find.text('Not in a folder'), findsOneWidget);
+        expect(find.text('Not in a folder'), findsNothing);
         expect(find.byKey(const ValueKey('home-title-notes')), findsNothing);
 
         await tap(tester, barNotes);
@@ -10402,7 +10858,8 @@ void main() {
       });
 
       testWidgets("a folder's page leaves its later day's note out of its "
-          'days, and its title still counts it', (tester) async {
+          "days and its title's count until its day, though pinned it stays "
+          'with Pinned and counts', (tester) async {
         final folders = FolderStore(store);
         await folders.load();
         await pumpLater(tester, folders: folders);
@@ -10417,13 +10874,37 @@ void main() {
         expect(listed('Standup'), findsOneWidget);
         expect(listed('Renewal notes'), findsNothing);
         expect(dayHeadings(tester), [startsWith('Today')]);
+        int? count() =>
+            tester.widget<PhoneListTitle>(find.byType(PhoneListTitle)).count;
+        expect(count(), 1);
+
+        notes.togglePinned(renewal);
+        await tester.pumpAndSettle();
+        expect(listed('Renewal notes'), findsOneWidget);
+        expect(count(), 2);
+
+        notes.togglePinned(renewal);
+        days.setDay(renewal, inDays(0));
+        await tester.pumpAndSettle();
+        expect(listed('Renewal notes'), findsOneWidget);
+        expect(count(), 2);
+      });
+
+      testWidgets("a folder whose only note waits for a later day counts "
+          "none on its page, and doesn't say it is empty", (tester) async {
+        final folders = FolderStore(store);
+        await folders.load();
+        await pumpLater(tester, folders: folders);
+        final work = folders.create('Work')!;
+        folders.file([renewal], work.id);
+        await tap(tester, find.byKey(const ValueKey('bar-folders')));
+        await tap(tester, find.byKey(ValueKey('folder-${work.id}')));
+        expect(listed('Renewal notes'), findsNothing);
         expect(
-          find.descendant(
-            of: find.byType(PhoneListTitle),
-            matching: find.text('2'),
-          ),
-          findsOneWidget,
+          tester.widget<PhoneListTitle>(find.byType(PhoneListTitle)).count,
+          0,
         );
+        expect(find.text('Nothing in this folder yet'), findsNothing);
       });
 
       testWidgets("Home files a note under the day it was given, as the list "
@@ -12586,9 +13067,8 @@ void main() {
     });
 
     testWidgets("a note for a later day stays off the desktop list's days, "
-        "with no Upcoming, and the window's count doesn't change", (
-      tester,
-    ) async {
+        "with no Upcoming, and out of the window's count until its day, "
+        'though pinned it stays under Pinned and counts', (tester) async {
       final days = NoteDayStore(store);
       await days.load();
       final renewal = notes.create(body: 'Renewal notes\nRead the contract');
@@ -12614,7 +13094,48 @@ void main() {
         find.descendant(of: list, matching: find.text('Standup')),
         findsOneWidget,
       );
-      expect(count(), before, reason: 'the count is what it was');
+      expect(count(), before - 1, reason: 'the count is what the list shows');
+
+      notes.togglePinned(renewal.id);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+      );
+      expect(count(), before);
+
+      notes.togglePinned(renewal.id);
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: list, matching: find.text('Renewal notes')),
+        findsOneWidget,
+      );
+      expect(count(), before);
+    });
+
+    testWidgets('Archived Notes lists and counts an archived note for a '
+        'later day, as it does every note in it', (tester) async {
+      final days = NoteDayStore(store);
+      await days.load();
+      final renewal = notes.create(body: 'Renewal notes\nRead the contract');
+      notes.create(body: 'Standup\nShip it');
+      final now = notes.now();
+      days.setDay(renewal.id, DateTime(now.year, now.month, now.day + 2));
+      notes.archive(renewal.id);
+      await pumpApp(tester, size: const Size(1600, 900), days: days);
+      await showInFilter(tester, NotesShow.archive);
+      expect(
+        find.descendant(
+          of: find.byType(Sidebar),
+          matching: find.text('Renewal notes'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<SidebarWindowBar>(find.byType(SidebarWindowBar)).count,
+        1,
+      );
     });
 
     testWidgets("a pinned note for a later day stays under Pinned, naming "

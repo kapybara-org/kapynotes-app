@@ -195,6 +195,17 @@ void main() {
         }),
         isNull,
       );
+      for (final day in ['2026-02-30', '2026-13-01', '2026-02-29']) {
+        expect(
+          NoteDay.fromPayload({
+            'kind': 'noteDay',
+            'noteId': noteA,
+            'day': {'v': day, 'at': 4},
+          }),
+          isNull,
+          reason: day,
+        );
+      }
       days.applyRemote(
         NoteDay(noteId: noteB, day: const Stamped('2026-11-21', 4)),
         4,

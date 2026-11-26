@@ -1223,9 +1223,10 @@ void main() {
     );
   });
 
-  // The Folders tab as r3's corrected 2GX5-0 draws it: a folder open two
-  // levels down with the open note inside, closed folders with their
-  // counts, New folder, then the notes in no folder.
+  // The Folders tab as KAPY-72's boards draw it: New folder across the list
+  // under the search, a folder open two levels down with the open note
+  // inside, and closed folders with their counts. The notes in no folder stay
+  // in the notes list, out of the tree.
   testWidgets('desktop dark folders', (tester) async {
     await pumpForGolden(
       tester,
@@ -1271,9 +1272,69 @@ void main() {
     );
   });
 
-  // r5's folder in a tab (26IU-0): a note's tab and the folder's in front,
-  // the page with the folder inside as a card and the notes at any depth,
-  // and the folder marked in the tree.
+  // KAPY-72's d3: two notes ticked in Add notes beside Clients and carried
+  // onto Personal in the tree: the folder under the pointer lit and ringed
+  // in sage, with its count, the ticked notes faded where they are listed,
+  // and the card that follows the pointer saying how many.
+  testWidgets('desktop dark folders, notes dragged onto a folder', (
+    tester,
+  ) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(1440, 900),
+      brightness: Brightness.dark,
+      withNote: false,
+    );
+    final folders = goldenFolders;
+    final work = folders.create('Work')!;
+    final clients = folders.create('Clients', parentId: work.id)!;
+    final personal = folders.create('Personal')!;
+    final ids = <String, String>{};
+    for (final (body, folder) in [
+      ('Call with Arjun\nPricing page by Friday', clients),
+      ('Quote for the deck\n40 seats × 12 = 480 a month', clients),
+      ('Gym plan\nVoice note', personal),
+      ('Dentist\nThursday 4pm', null),
+      ('Morning pages\nSlept badly, but the walk helped', null),
+      ('Lisbon budget\n180 EUR + 232 EUR', null),
+    ]) {
+      final note = goldenNotes.create(body: body);
+      ids[note.title] = note.id;
+      if (folder != null) folders.file([note.id], folder.id);
+    }
+    goldenPrefs
+      ..setFolderOpen(work.id, true)
+      ..setFolderOpen(clients.id, true)
+      ..foldersShown = true;
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(ValueKey('folder-${clients.id}')));
+    await tester.pumpAndSettle();
+    Finder tick(String title) => find.byKey(ValueKey('add-note-${ids[title]}'));
+    await tester.tap(tick('Dentist'));
+    await tester.tap(tick('Lisbon budget'));
+    await tester.pumpAndSettle();
+    final drag = await tester.startGesture(
+      tester.getCenter(tick('Dentist')),
+      kind: PointerDeviceKind.mouse,
+    );
+    await drag.moveBy(const Offset(12, 2));
+    await tester.pump();
+    await drag.moveTo(
+      tester.getCenter(find.byKey(ValueKey('folder-${personal.id}'))),
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_folders_drag.png'),
+    );
+    await drag.up();
+    await tester.pumpAndSettle();
+  });
+
+  // r5's folder in a tab (26IU-0) with KAPY-72's Add notes beside it (d1): a
+  // note's tab and the folder's in front, the page with the folder inside as
+  // a card and the notes at any depth, the folder marked in the tree, and the
+  // notes in no folder at the right, one ticked.
   testWidgets('desktop dark folder in a tab', (tester) async {
     await pumpForGolden(
       tester,
@@ -1324,6 +1385,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    final dentist = goldenNotes.notes.singleWhere(
+      (note) => note.title == 'Dentist',
+    );
+    await tester.tap(find.byKey(ValueKey('add-note-${dentist.id}')));
+    await tester.pumpAndSettle();
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_folder_in_a_tab.png'),
@@ -1333,8 +1399,8 @@ void main() {
   // The pinned cards Paper's 5TS-0 draws: a checklist under a title too
   // long for one line, View all at the heading's end, and amounts in mono.
   // r5's week in row 1, to header r3 and Day cell r2: Mon 31 picked, so its
-  // note opens, lit in the whole list, and the fill has left today, whose
-  // weekday stays sage.
+  // notes are the tabs, lit in the whole list, with the notice that offers
+  // Undo, and the fill has left today, whose weekday stays sage.
   for (final brightness in Brightness.values) {
     testWidgets('desktop ${brightness.name} week, a day picked', (
       tester,
@@ -1372,24 +1438,6 @@ void main() {
     await expectLater(
       find.byType(KapyNotesApp),
       matchesGoldenFile('goldens/desktop_dark_week_month_open.png'),
-    );
-  });
-
-  // With the list hidden there is nothing to narrow, so a day lists its
-  // notes under the week.
-  testWidgets('desktop dark week, a day listed', (tester) async {
-    await pumpForGolden(
-      tester,
-      size: const Size(1280, 800),
-      brightness: Brightness.dark,
-      withWeek: true,
-      sidebarVisible: false,
-    );
-    await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(KapyNotesApp),
-      matchesGoldenFile('goldens/desktop_dark_week_day_listed.png'),
     );
   });
 

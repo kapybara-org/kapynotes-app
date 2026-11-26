@@ -1,14 +1,14 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart' show Drag;
+import 'package:flutter/physics.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
-import 'context_menu.dart';
-import 'note_tabs.dart' show clickOpensTabBehind;
 import 'notes_grouping.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart' show PopoverAtPoint;
@@ -49,10 +49,12 @@ typedef PlaceDays = Widget Function(Widget month, Widget? week);
 /// is Wed 19), and five, three, or today alone on a narrower page. ‹ and ›
 /// move a week at a time. A day has a dot for each of its notes, up to three.
 ///
-/// A click on a day picks it: the page opens its latest note, or a page to
-/// write on that day when it has none, and the list stays whole. The month
-/// opens a calendar that picks a day the same way. On a narrow page one button for the day
-/// stands in the month's place with no week.
+/// A click on a day picks it, with the notes on it, and the list stays whole.
+/// With [opensTabs] the page opens them as its tabs, or a page to write on
+/// that day when it has none, and a click on the picked day brings back the
+/// tabs from before. The month opens a calendar that picks a day the same
+/// way. On a narrow page one button for the day stands in the month's place
+/// with no week.
 class DayStrip extends StatefulWidget {
   const DayStrip({
     super.key,
@@ -64,9 +66,9 @@ class DayStrip extends StatefulWidget {
     required this.displayTime,
     required this.firstWeekday,
     this.ownDay,
-    this.onOpenNote,
     this.compact = false,
     this.phone = false,
+    this.opensTabs = false,
   });
 
   /// The day the list shows as today.
@@ -76,8 +78,8 @@ class DayStrip extends StatefulWidget {
   /// mark it.
   final DateTime? picked;
 
-  /// A day picked in the week or the calendar, with the notes on it, latest
-  /// edit first.
+  /// A day picked in the week or the calendar, with the notes on it, the
+  /// earliest written first.
   final void Function(DateTime day, List<Note> notes) onPick;
 
   /// What the days count: the notes the list or the folder in front shows
@@ -92,11 +94,6 @@ class DayStrip extends StatefulWidget {
   /// The [DateTime.weekday] the calendar's weeks start on.
   final int firstWeekday;
 
-  /// Set while there is no list on screen to narrow: a day then lists its
-  /// notes under the strip, and the one picked there opens, in a tab behind
-  /// on ⌘-click.
-  final void Function(String noteId, {required bool behind})? onOpenNote;
-
   /// Puts the month and the week where the bar has them.
   final PlaceDays place;
 
@@ -105,10 +102,17 @@ class DayStrip extends StatefulWidget {
 
   /// A phone note's week: always seven days, the calendar week from
   /// [firstWeekday] that holds the picked day, each day its weekday over its
-  /// date across the whole width, and no month. A day with one note opens
-  /// it, a day with several lists them, and a day with none opens a page to
-  /// write on it.
+  /// date across the whole width, and no month. A day picked goes to
+  /// [onPick], which opens its one note, its several as tabs, or with none a
+  /// page to write on it. A swipe on it turns the weeks under the finger, a
+  /// fling carries on for as many as its speed would, and it comes to rest on
+  /// a whole week; ‹ and › turn one.
   final bool phone;
+
+  /// Whether a day picked opens its notes as the page's tabs, as a screen
+  /// reader is told, and a click on the [picked] day brings back the tabs
+  /// from before, as its tooltip says.
+  final bool opensTabs;
 
   /// A phone's arrows: the strip's height to press, and this wide, or down
   /// to the least where a narrower phone needs the room for its days.
@@ -150,32 +154,26 @@ class _DayStripState extends State<DayStrip> {
   /// How many days the week is paged away from today's, in days.
   int _shift = 0;
 
-  /// The day whose notes are listed under the strip, filled while they are.
-  DateTime? _listing;
-
   /// Whether the calendar is open, which turns its button tonal.
   bool _choosing = false;
 
-  /// The week, or with none the month's button, which a day's list opens
-  /// under.
-  final _weekRow = GlobalKey();
-  final _monthButton = GlobalKey();
+  /// A phone's weeks, one a page, from the week that holds 1 January 1900.
+  PageController? _weeks;
+
+  /// The page an arrow is turning the weeks to, until they are there.
+  int? _turning;
+
+  /// A swipe begun on an arrow, which turns the weeks as one on the days
+  /// does.
+  Drag? _drag;
 
   /// The days on show, oldest first, with today in the middle and the whole
   /// window moved [_shift] days.
   List<DateTime> get _shown => _week(days);
 
-  /// The [count] days in view, today in the middle until paged away, or on a
-  /// phone the calendar week that holds today, paged by whole weeks.
+  /// The [count] days in view, today in the middle until paged away.
   List<DateTime> _week(int count) {
     final today = widget.today;
-    if (widget.phone) {
-      final start = _weekStart(today);
-      return [
-        for (var index = 0; index < 7; index++)
-          DateTime(start.year, start.month, start.day + _shift + index),
-      ];
-    }
     final centre = (count - 1) ~/ 2;
     return [
       for (var index = 0; index < count; index++)
@@ -190,12 +188,45 @@ class _DayStripState extends State<DayStrip> {
     day.day - (day.weekday - widget.firstWeekday) % 7,
   );
 
+  /// The first day of a phone's first page.
+  DateTime get _firstWeek => _weekStart(DateTime(1900));
+
+  /// The page of the week that holds [day].
+  int _pageOf(DateTime day) {
+    final first = _firstWeek;
+    final week = _weekStart(day);
+    return DateTime.utc(
+          week.year,
+          week.month,
+          week.day,
+        ).difference(DateTime.utc(first.year, first.month, first.day)).inDays ~/
+        7;
+  }
+
+  /// The seven days of [page]'s week.
+  List<DateTime> _weekOn(int page) {
+    final first = _firstWeek;
+    return [
+      for (var index = 0; index < 7; index++)
+        DateTime(first.year, first.month, first.day + 7 * page + index),
+    ];
+  }
+
   @override
   void initState() {
     super.initState();
     if (!widget.phone) return;
     days = 7;
-    if (widget.picked case final picked?) _bringIntoView(picked);
+    _weeks = PageController(
+      initialPage: _pageOf(widget.picked ?? widget.today),
+      keepPage: false,
+    );
+  }
+
+  @override
+  void dispose() {
+    _weeks?.dispose();
+    super.dispose();
   }
 
   /// A day picked in the calendar brings its week into view.
@@ -209,18 +240,15 @@ class _DayStripState extends State<DayStrip> {
 
   /// Pages the week to the one that holds [day].
   void _bringIntoView(DateTime day) {
-    if (_shown.contains(day)) return;
-    final today = widget.today;
-    if (widget.phone) {
-      final from = _weekStart(today);
-      final to = _weekStart(day);
-      _shift = DateTime.utc(
-        to.year,
-        to.month,
-        to.day,
-      ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+    if (_weeks case final weeks?) {
+      final page = _pageOf(day);
+      if (weeks.hasClients && weeks.page?.round() != page) {
+        weeks.jumpToPage(page);
+      }
       return;
     }
+    if (_shown.contains(day)) return;
+    final today = widget.today;
     final apart = DateTime.utc(
       day.year,
       day.month,
@@ -229,138 +257,47 @@ class _DayStripState extends State<DayStrip> {
     _shift = (apart ~/ 7) * 7;
   }
 
-  /// How many of the notes fall on each of [days].
-  Map<DateTime, int> _counts(Iterable<DateTime> days) {
-    final counts = {for (final day in days) day: 0};
+  /// How many of the notes fall on each day that has any.
+  Map<DateTime, int> _countsByDay() {
+    final counts = <DateTime, int>{};
     for (final note in widget.notes) {
       final day = noteDay(
         note,
         widget.displayTime,
         ownDay: widget.ownDay?.call(note),
       );
-      if (counts[day] case final count?) counts[day] = count + 1;
+      counts[day] = (counts[day] ?? 0) + 1;
     }
     return counts;
   }
 
-  /// A click on [day] in the week or the calendar: lists its notes where
-  /// there is no list beside the page, and otherwise picks it. On a phone it
-  /// opens a day's one note, lists several, or opens a page to write on a day
-  /// that holds none.
-  void _choose(DateTime day, {BuildContext? at}) {
-    if (widget.phone) {
-      final notes = _notesOn(day);
-      final onOpen = widget.onOpenNote;
-      if (notes.isEmpty) {
-        widget.onPick(day, notes);
-      } else if (notes.length == 1 && onOpen != null) {
-        onOpen(notes.single.id, behind: false);
-      } else {
-        unawaited(_list(day, at: at));
-      }
-      return;
-    }
-    if (widget.onOpenNote != null) {
-      unawaited(_list(day, at: at));
-      return;
-    }
-    widget.onPick(day, _notesOn(day));
+  /// How many of the notes fall on each of [days].
+  Map<DateTime, int> _counts(Iterable<DateTime> days) {
+    final counts = _countsByDay();
+    return {for (final day in days) day: counts[day] ?? 0};
   }
 
-  /// The notes on [day], in the order the strip was given them.
-  List<Note> _notesOn(DateTime day) => [
-    for (final note in widget.notes)
-      if (noteDay(note, widget.displayTime, ownDay: widget.ownDay?.call(note)) ==
-          day)
-        note,
-  ];
+  /// A click on [day] in the week or the calendar picks it.
+  void _choose(DateTime day) => widget.onPick(day, _notesOn(day));
 
-  /// Lists [day]'s notes 4 under the week, from the left of the day tapped
-  /// [at], or under the button that stands in for it, and opens the one
-  /// picked.
-  Future<void> _list(DateTime day, {BuildContext? at}) async {
-    final box =
-        (days > 0 ? _weekRow : _monthButton).currentContext?.findRenderObject()
-            as RenderBox?;
-    final tapped = at?.findRenderObject() as RenderBox?;
-    final onOpen = widget.onOpenNote;
-    if (box == null || onOpen == null) return;
-    final palette = context.palette;
-    final notes = _notesOn(day);
-    setState(() {
-      _bringIntoView(day);
-      _listing = day;
-    });
-    final noteId = await showKapyContextMenu<String>(
-      context: context,
-      globalPosition: box.localToGlobal(
-        Offset(
-          tapped == null
-              ? 0
-              : box.globalToLocal(tapped.localToGlobal(Offset.zero)).dx,
-          box.size.height + 4,
-        ),
-      ),
-      items: [
-        PopupMenuItem(
-          enabled: false,
-          height: 32,
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  SidebarTimestamp.fullDay(day),
-                  maxLines: 1,
-                  style: _figtree(13, 16, FontWeight.w500, palette.textPrimary),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Text(
-                _noteCount(notes.length),
-                style: _figtree(12, 16, FontWeight.w400, palette.textTertiary),
-              ),
-            ],
-          ),
-        ),
-        for (final note in notes)
-          PopupMenuItem(
-            key: ValueKey('day-list-${note.id}'),
-            value: note.id,
-            height: 32,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    note.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _figtree(
-                      13,
-                      16,
-                      FontWeight.w400,
-                      palette.textPrimary,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Text(
-                  SidebarTimestamp.clock(widget.displayTime(note.updatedAt)),
-                  style: _figtree(
-                    12,
-                    16,
-                    FontWeight.w400,
-                    palette.textTertiary,
-                  ).copyWith(fontFeatures: _figures),
-                ),
-              ],
-            ),
-          ),
-      ],
-    );
-    if (!mounted) return;
-    setState(() => _listing = null);
-    if (noteId != null) onOpen(noteId, behind: clickOpensTabBehind());
-  }
+  /// The notes on [day], the earliest written first, so editing one never
+  /// moves it.
+  List<Note> _notesOn(DateTime day) =>
+      [
+        for (final note in widget.notes)
+          if (noteDay(
+                note,
+                widget.displayTime,
+                ownDay: widget.ownDay?.call(note),
+              ) ==
+              day)
+            note,
+      ]..sort(
+        (a, b) => switch (a.createdAt.compareTo(b.createdAt)) {
+          0 => a.id.compareTo(b.id),
+          final order => order,
+        },
+      );
 
   /// Opens the calendar 4 under [button], on the month of the picked day or
   /// of the latest day in view, and does with the day picked there what a
@@ -456,10 +393,7 @@ class _DayStripState extends State<DayStrip> {
         builder: (context, constraints) =>
             _buttonWidth(context, label, compact: compact) <=
                 constraints.maxWidth
-            ? KeyedSubtree(
-                key: _monthButton,
-                child: _calendarButton(label, palette, compact: compact),
-              )
+            ? _calendarButton(label, palette, compact: compact)
             : const SizedBox.shrink(),
       ),
       compact
@@ -481,9 +415,8 @@ class _DayStripState extends State<DayStrip> {
                 final today = widget.today;
                 final shown = _shown;
                 final counts = _counts(shown);
-                final filled = _listing ?? picked ?? today;
+                final filled = picked ?? today;
                 return Row(
-                  key: _weekRow,
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CompactIconButton(
@@ -501,16 +434,15 @@ class _DayStripState extends State<DayStrip> {
                     const SizedBox(width: DayStrip._arrowGap),
                     for (final (index, day) in shown.indexed) ...[
                       if (index > 0) const SizedBox(width: DayStrip._dayGap),
-                      Builder(
-                        builder: (tapped) => _Day(
-                          key: ValueKey('day-strip-${_date(day)}'),
-                          day: day,
-                          today: day == today,
-                          picked: day == picked,
-                          filled: day == filled,
-                          count: counts[day]!,
-                          onTap: () => _choose(day, at: tapped),
-                        ),
+                      _Day(
+                        key: ValueKey('day-strip-${_date(day)}'),
+                        day: day,
+                        today: day == today,
+                        picked: day == picked,
+                        filled: day == filled,
+                        count: counts[day]!,
+                        opensTabs: widget.opensTabs,
+                        onTap: () => _choose(day),
                       ),
                     ],
                     const SizedBox(width: DayStrip._arrowGap),
@@ -534,42 +466,54 @@ class _DayStripState extends State<DayStrip> {
   }
 
   /// A phone's week across the whole width: ‹, the seven days sharing what
-  /// is left, ›.
+  /// is left, ›. The days are pages of weeks, which a swipe that starts
+  /// anywhere on the strip turns, on an arrow too.
   Widget _phoneWeek() {
+    final weeks = _weeks!;
     final today = widget.today;
-    final shown = _shown;
-    final counts = _counts(shown);
+    final counts = _countsByDay();
     final picked = widget.picked;
-    final filled = _listing ?? picked ?? today;
+    final filled = picked ?? today;
+    final height = _Day.stackedHeight(MediaQuery.textScalerOf(context));
     // As narrow as M09 draws them, and narrower on a small phone, so each of
     // the seven days keeps 44 to tap; the arrows keep the strip's whole
-    // height.
-    Widget arrow(
-      String key,
-      String label,
-      KapyIconData icon,
-      int by,
-      double width,
-    ) => Semantics(
-      button: true,
-      label: label,
-      excludeSemantics: true,
-      child: InkResponse(
-        key: ValueKey(key),
-        onTap: () => setState(() => _shift += by),
-        radius: width,
-        child: SizedBox(
-          width: width,
-          height: _Day.phoneHeight,
-          child: Center(
-            child: KapyIcon(
-              icon,
-              size: 16,
-              color: context.palette.textSecondary,
+    // height. Under 44 wide they are no target for a screen reader, which
+    // turns the week with a scroll over the days.
+    Widget arrow(String key, KapyIconData icon, int by, double width) =>
+        ExcludeSemantics(
+          child: InkResponse(
+            key: ValueKey(key),
+            onTap: () => _turn(by),
+            radius: width,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Center(
+                child: KapyIcon(
+                  icon,
+                  size: 16,
+                  color: context.palette.textSecondary,
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+    Widget week(BuildContext context, int page) => Row(
+      children: [
+        for (final day in _weekOn(page))
+          Expanded(
+            child: _Day(
+              key: ValueKey('day-strip-${_date(day)}'),
+              day: day,
+              today: day == today,
+              picked: day == picked,
+              filled: day == filled,
+              count: counts[day] ?? 0,
+              stacked: true,
+              onTap: () => _choose(day),
+            ),
+          ),
+      ],
     );
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -577,41 +521,65 @@ class _DayStripState extends State<DayStrip> {
           DayStrip._phoneArrowMin,
           DayStrip._phoneArrowWidth,
         );
-        return Row(
-          key: _weekRow,
-          children: [
-            arrow(
-              'day-strip-back',
-              'The week before',
-              KapyIcons.chevronLeftRounded,
-              -7,
-              width,
-            ),
-            for (final day in shown)
-              Expanded(
-                child: Builder(
-                  builder: (tapped) => _Day(
-                    key: ValueKey('day-strip-${_date(day)}'),
-                    day: day,
-                    today: day == today,
-                    picked: day == picked,
-                    filled: day == filled,
-                    count: counts[day]!,
-                    stacked: true,
-                    onTap: () => _choose(day, at: tapped),
+        return GestureDetector(
+          onHorizontalDragStart: (details) =>
+              _drag = weeks.position.drag(details, () => _drag = null),
+          onHorizontalDragUpdate: (details) => _drag?.update(details),
+          onHorizontalDragEnd: (details) => _drag?.end(details),
+          onHorizontalDragCancel: () => _drag?.cancel(),
+          child: SizedBox(
+            height: height,
+            child: Row(
+              children: [
+                arrow(
+                  'day-strip-back',
+                  KapyIcons.chevronLeftRounded,
+                  -1,
+                  width,
+                ),
+                Expanded(
+                  child: PageView.builder(
+                    controller: weeks,
+                    pageSnapping: false,
+                    physics: const _WeekScrollPhysics(),
+                    itemBuilder: week,
                   ),
                 ),
-              ),
-            arrow(
-              'day-strip-forward',
-              'The week after',
-              KapyIcons.chevronRightRounded,
-              7,
-              width,
+                arrow(
+                  'day-strip-forward',
+                  KapyIcons.chevronRightRounded,
+                  1,
+                  width,
+                ),
+              ],
             ),
-          ],
+          ),
         );
       },
+    );
+  }
+
+  /// An arrow's turn: [by] weeks on from the week the weeks are already
+  /// turning to, or else the one in view, sliding there unless animations
+  /// are off.
+  void _turn(int by) {
+    final weeks = _weeks!;
+    final to = (_turning ?? weeks.page!.round()) + by;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      weeks.jumpToPage(to);
+      return;
+    }
+    _turning = to;
+    unawaited(
+      weeks
+          .animateToPage(
+            to,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() {
+            if (_turning == to) _turning = null;
+          }),
     );
   }
 
@@ -683,10 +651,21 @@ class _Day extends StatefulWidget {
     required this.count,
     required this.onTap,
     this.stacked = false,
+    this.opensTabs = false,
   });
 
   /// How tall a phone's day is: its weekday, its date and its dots.
   static const double phoneHeight = 52;
+
+  /// How tall a phone's day is with its text scaled by [scaler]: the
+  /// weekday's 16 line, the date's 22, the 3 under them and the dots' 3, or
+  /// [phoneHeight] where that is more. A whole number of points, so no
+  /// fraction of the text's own rounding overflows it.
+  static double stackedHeight(TextScaler scaler) => math.max(
+    phoneHeight,
+    (scaler.scale(13) * 16 / 13 + scaler.scale(17) * 22 / 17 + 6)
+        .ceilToDouble(),
+  );
 
   final DateTime day;
   final bool today;
@@ -703,6 +682,10 @@ class _Day extends StatefulWidget {
   final bool filled;
   final int count;
   final VoidCallback onTap;
+
+  /// Whether a click opens the day's notes as the page's tabs, or on the
+  /// picked day brings back the tabs from before.
+  final bool opensTabs;
 
   @override
   State<_Day> createState() => _DayState();
@@ -816,6 +799,15 @@ class _DayState extends State<_Day> {
               ],
             ),
           );
+    final hint = !widget.opensTabs
+        ? null
+        : widget.picked
+        ? 'Back to your tabs'
+        : widget.count == 0
+        ? 'Opens a page to write on it'
+        : widget.count == 1
+        ? 'Opens its note'
+        : 'Opens its notes as tabs';
     return TextButton(
       onPressed: widget.onTap,
       onHover: (hovered) => setState(() => _hovered = hovered),
@@ -833,9 +825,72 @@ class _DayState extends State<_Day> {
       child: Semantics(
         selected: widget.picked,
         label: _spoken(day, today: widget.today, notes: widget.count),
+        hint: hint,
         excludeSemantics: true,
-        child: column,
+        child: widget.opensTabs && widget.picked
+            ? Tooltip(message: hint, child: column)
+            : column,
       ),
+    );
+  }
+}
+
+/// How a phone's weeks scroll: under the finger, and let go, on to rest on
+/// the whole week nearest to where the fling's [_reach] takes them, and at
+/// least the next one in its direction, as a page does. Up to the next week
+/// they spring there; further, they slow to a stop on the week.
+class _WeekScrollPhysics extends ScrollPhysics {
+  const _WeekScrollPhysics({super.parent});
+
+  /// How far a fling carries the weeks on: as far as it goes in this many
+  /// seconds at its speed. An everyday swipe turns one week, a firm one two,
+  /// and the hardest four. A scroll's own momentum goes much further (two
+  /// weeks for an everyday swipe on an iPhone, months on Android), too far
+  /// for a week with no month on it.
+  static const double _reach = 0.15;
+
+  @override
+  _WeekScrollPhysics applyTo(ScrollPhysics? ancestor) =>
+      _WeekScrollPhysics(parent: buildParent(ancestor));
+
+  @override
+  Simulation? createBallisticSimulation(
+    ScrollMetrics position,
+    double velocity,
+  ) {
+    final from = position.pixels;
+    if ((velocity <= 0 && from <= position.minScrollExtent) ||
+        (velocity >= 0 && from >= position.maxScrollExtent)) {
+      return super.createBallisticSimulation(position, velocity);
+    }
+    final tolerance = toleranceFor(position);
+    final week = position.viewportDimension;
+    final page = from / week;
+    var target = ((from + velocity * _reach) / week).roundToDouble();
+    if (velocity > tolerance.velocity) {
+      target = math.max(target, page.floorToDouble() + 1);
+    } else if (velocity < -tolerance.velocity) {
+      target = math.min(target, page.ceilToDouble() - 1);
+    }
+    final to = (target * week).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if (to == from) return null;
+    if ((to - from).abs() > week && (to - from).sign == velocity.sign) {
+      return FrictionSimulation.through(
+        from,
+        to,
+        velocity,
+        tolerance.velocity * velocity.sign,
+      );
+    }
+    return ScrollSpringSimulation(
+      spring,
+      from,
+      to,
+      velocity,
+      tolerance: tolerance,
     );
   }
 }

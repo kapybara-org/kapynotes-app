@@ -196,6 +196,14 @@ class Vault {
 
   List<int>? _noteDayIdKey;
 
+  /// The id of the record holding the order of [day]'s tabs, `YYYY-MM-DD`, in
+  /// the same way under a key of its own. Mirrors
+  /// `packages/contract/src/days.ts`.
+  String dayTabsRecordId(String day) =>
+      _recordId(_dayTabsIdKey ??= _idKey('kapynotes day tabs ids v1'), day);
+
+  List<int>? _dayTabsIdKey;
+
   /// The id of the record holding a Kapy AI chat, in the same way under a key
   /// of its own. Mirrors `packages/contract/src/chats.ts`.
   String chatRecordId(String chatId) => _recordId(
