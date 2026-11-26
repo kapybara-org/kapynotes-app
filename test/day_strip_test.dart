@@ -29,7 +29,6 @@ void main() {
     bool compact = false,
     double room = 1200,
     DateTime? Function(Note note)? ownDay,
-    ValueChanged<String>? onOpenNote,
     bool phone = false,
     bool opensTabs = false,
   }) async {
@@ -60,7 +59,6 @@ void main() {
                   displayTime: (at) => at,
                   firstWeekday: DateTime.monday,
                   ownDay: ownDay,
-                  onOpenNote: onOpenNote,
                   compact: compact,
                   phone: phone,
                   opensTabs: opensTabs,
@@ -306,38 +304,6 @@ void main() {
     semantics.dispose();
   });
 
-  testWidgets('on a phone a day with several notes lists them, the earliest '
-      'written first, and the one picked opens; a day with one opens it at '
-      'once', (tester) async {
-    final opened = <String>[];
-    final picks = await pumpStrip(
-      tester,
-      phone: true,
-      notes: [
-        note('ideas', 'Book ideas', DateTime(2026, 11, 18, 22, 10)),
-        note('standup', 'Standup notes', DateTime(2026, 11, 18, 10, 5)),
-        note('pricing', 'Pricing ideas', DateTime(2026, 11, 17, 16, 20)),
-      ],
-      onOpenNote: opened.add,
-    );
-
-    await tap(tester, day(18));
-    expect(find.text('Wednesday, 18 November'), findsOneWidget);
-    expect(find.text('2 notes'), findsOneWidget);
-    expect(find.text('10:05'), findsOneWidget);
-    expect(
-      tester.getTopLeft(find.text('Standup notes')).dy,
-      lessThan(tester.getTopLeft(find.text('Book ideas')).dy),
-    );
-    expect(find.text('Pricing ideas'), findsNothing);
-    await tap(tester, find.text('Book ideas'));
-    expect(opened.single, 'ideas');
-
-    await tap(tester, day(17));
-    expect(opened.last, 'pricing');
-    expect(picks, isEmpty);
-  });
-
   testWidgets('narrow, it is one button for the day that opens the month', (
     tester,
   ) async {
@@ -421,22 +387,5 @@ void main() {
         }
       }
     }
-  });
-
-  testWidgets('a day lists its notes from under that day', (tester) async {
-    await pumpStrip(
-      tester,
-      phone: true,
-      notes: [
-        note('ideas', 'Book ideas', DateTime(2026, 11, 17, 9)),
-        note('trip', 'Trip plan', DateTime(2026, 11, 17, 11)),
-      ],
-      onOpenNote: (_) {},
-    );
-    await tap(tester, day(17));
-    expect(
-      tester.getTopLeft(find.text('Book ideas')).dx,
-      greaterThan(tester.getTopLeft(day(17)).dx),
-    );
   });
 }
