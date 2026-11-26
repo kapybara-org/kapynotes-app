@@ -61,7 +61,7 @@ void main() {
   test('the default writing font titles a note in Newsreader', () {
     final base = EditorMetrics.textStyle(lightInk, WritingFont.clean);
     final title = noteTitleStyle(base, writingFont: WritingFont.clean);
-    expect(title.fontFamily, AppFonts.title);
+    expect(title.fontFamily, AppFonts.ui);
     expect(title.fontWeight, FontWeight.w400);
     expect(title.fontFamilyFallback!.first, base.fontFamily);
     expect(title.fontSize, EditorMetrics.titleFontSize);

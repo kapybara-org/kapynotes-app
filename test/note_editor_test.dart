@@ -2818,7 +2818,7 @@ void main() {
             .color!;
     TextStyle styleOf(String text) =>
         tester.widget<Text>(find.text(text)).style!;
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
 
     expect(fillOf('42'), palette.totalPillBackground);
     expect(styleOf('42').color, palette.totalPillText);

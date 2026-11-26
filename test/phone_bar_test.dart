@@ -180,7 +180,7 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpBar(tester, scale: 1, size: const Size(393, 852));
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     BoxDecoration decorationOf(Finder finder) =>
         tester.widget<Container>(finder).decoration! as BoxDecoration;
 
@@ -311,7 +311,7 @@ void main() {
       AppPlatform.debugTargetPlatformOverride = platform;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpBar(tester, scale: 1, size: const Size(393, 852));
-      const palette = KapyTheme.darkPalette;
+      final palette = KapyTheme.darkPalette;
       KapyIcon icon(String tab, KapyIconData data) => tester.widget<KapyIcon>(
         find.descendant(
           of: find.byKey(ValueKey('bar-$tab')),

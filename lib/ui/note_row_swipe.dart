@@ -308,8 +308,8 @@ class _SwipeActionFace extends StatelessWidget {
             style: TextStyle(
               fontFamily: AppFonts.ui,
               fontSize: 12.5,
-              fontWeight: AppWeight.font(AppWeight.button),
-              fontVariations: AppWeight.wght(AppWeight.button),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               color: foreground,
             ),
           ),

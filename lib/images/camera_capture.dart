@@ -496,8 +496,8 @@ class _CameraTopBar extends StatelessWidget {
             style: TextStyle(
               color: Colors.white,
               fontSize: 16,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
             ),
           ),
           Align(
@@ -563,7 +563,7 @@ class _CameraBottomBar extends StatelessWidget {
               child: InkWell(
                 key: const ValueKey('camera-library'),
                 onTap: openingLibrary ? null : onLibrary,
-                borderRadius: BorderRadius.circular(AppRadii.dialog),
+                borderRadius: BorderRadius.circular(AppRadii.surface),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,

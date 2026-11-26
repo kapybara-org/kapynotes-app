@@ -10,13 +10,13 @@ void main() {
     expect(AppWeight.axisOf(FontWeight.w500), 500);
     expect(AppWeight.axisOf(FontWeight.w600), 520);
     expect(AppWeight.axisOf(FontWeight.w700), 600);
-    expect(AppWeight.selected, 460);
+    expect(AppWeight.regular, 460);
     expect(AppWeight.axisOf(FontWeight.w300), 300);
 
     final style = chromeStyle(
       size: 13,
       line: 20,
-      weight: AppWeight.rowTitle,
+      weight: AppWeight.regular,
       color: const Color(0xFF2A2620),
       tabular: true,
     );
@@ -27,13 +27,13 @@ void main() {
   });
 
   test('font and wght give a style its step, and Bold Text raises both', () {
-    expect(AppWeight.font(AppWeight.section), FontWeight.w600);
-    expect(AppWeight.wght(AppWeight.section), [
+    expect(AppWeight.font(AppWeight.regular), FontWeight.w600);
+    expect(AppWeight.wght(AppWeight.regular), [
       const FontVariation('wght', 520),
     ]);
     expect(
       AppWeight.wght(
-        AppWeight.button,
+        AppWeight.regular,
         extra: const [FontVariation('INFM', 0), FontVariation('wght', 300)],
       ),
       [const FontVariation('INFM', 0), const FontVariation('wght', 500)],
@@ -43,10 +43,10 @@ void main() {
     binding.platformDispatcher.accessibilityFeaturesTestValue =
         FakeAccessibilityFeatures.allOn;
     addTearDown(binding.platformDispatcher.clearAccessibilityFeaturesTestValue);
-    expect(AppWeight.font(AppWeight.body), FontWeight.w700);
-    expect(AppWeight.wght(AppWeight.body), [const FontVariation('wght', 600)]);
-    expect(AppWeight.font(AppWeight.section), FontWeight.w700);
-    expect(AppWeight.wght(AppWeight.section), [
+    expect(AppWeight.font(AppWeight.regular), FontWeight.w700);
+    expect(AppWeight.wght(AppWeight.regular), [const FontVariation('wght', 600)]);
+    expect(AppWeight.font(AppWeight.regular), FontWeight.w700);
+    expect(AppWeight.wght(AppWeight.regular), [
       const FontVariation('wght', 700),
     ]);
   });
@@ -88,12 +88,12 @@ void main() {
           }
           expect(
             style.fontWeight,
-            AppWeight.font(AppWeight.body),
+            AppWeight.font(AppWeight.regular),
             reason: reason,
           );
           expect(
             style.fontVariations,
-            AppWeight.wght(AppWeight.body),
+            AppWeight.wght(AppWeight.regular),
             reason: reason,
           );
         }

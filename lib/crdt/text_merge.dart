@@ -40,7 +40,9 @@ List<TextHunk> diffHunks(String a, String b, {int maxCost = 1000}) {
   final n = a.length;
   final m = b.length;
   var prefix = 0;
-  while (prefix < n && prefix < m && a.codeUnitAt(prefix) == b.codeUnitAt(prefix)) {
+  while (prefix < n &&
+      prefix < m &&
+      a.codeUnitAt(prefix) == b.codeUnitAt(prefix)) {
     prefix++;
   }
   var suffix = 0;

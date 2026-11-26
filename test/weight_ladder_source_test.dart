@@ -223,7 +223,7 @@ final lit = TextStyle(
 final style = TextStyle(
   fontSize: 13,
   height: 18 / 13,
-  fontWeight: AppWeight.font(AppWeight.section),
+  fontWeight: AppWeight.font(AppWeight.regular),
   color: ink,
 );
 ''',
@@ -235,15 +235,15 @@ final style = TextStyle(
   test('wght set without AppWeight.bold outside theme.dart is caught', () {
     const skipped = '''
 final style = TextStyle(
-  fontWeight: AppWeight.named(AppWeight.section),
-  fontVariations: AppWeight.variations(AppWeight.section),
+  fontWeight: AppWeight.named(AppWeight.regular),
+  fontVariations: AppWeight.variations(AppWeight.regular),
 );
 ''';
     const wrapped = '''
 final style = TextStyle(
-  fontWeight: AppWeight.named(AppWeight.bold(AppWeight.section)),
+  fontWeight: AppWeight.named(AppWeight.bold(AppWeight.regular)),
   fontVariations: AppWeight.variations(
-    AppWeight.bold(AppWeight.section),
+    AppWeight.bold(AppWeight.regular),
   ),
 );
 ''';

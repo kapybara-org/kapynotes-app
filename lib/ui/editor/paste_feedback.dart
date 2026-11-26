@@ -271,7 +271,7 @@ class _Chip extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.controlBackground,
               border: Border.all(color: palette.selectedBorder),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,

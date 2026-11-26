@@ -409,7 +409,7 @@ class TaskDetailPicture extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerLeft,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           child: SizedBox(width: width ?? size, height: size, child: child),
         ),
       ),

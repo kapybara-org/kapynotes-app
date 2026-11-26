@@ -265,21 +265,25 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     }
     final keyboard = HardwareKeyboard.instance;
     final key = event.logicalKey;
-    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.numpadEnter) {
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
       if (keyboard.isShiftPressed || _draft.value.composing.isValid) {
         return KeyEventResult.ignored;
       }
       if (_isRecording) {
         unawaited(_stopRecording());
       } else {
-        unawaited(_submit(open: keyboard.isMetaPressed || keyboard.isControlPressed));
+        unawaited(
+          _submit(open: keyboard.isMetaPressed || keyboard.isControlPressed),
+        );
       }
       return KeyEventResult.handled;
     }
     if (key == LogicalKeyboardKey.arrowDown && _rowCount > 0) {
       final text = _draft.text;
       final caret = _draft.selection.extentOffset;
-      if (_tab == _Tab.notes && text.substring(caret.clamp(0, text.length)).contains('\n')) {
+      if (_tab == _Tab.notes &&
+          text.substring(caret.clamp(0, text.length)).contains('\n')) {
         return KeyEventResult.ignored;
       }
       setState(() => _cursor = 0);
@@ -365,7 +369,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     if (!mounted) return;
     if (open) {
       return widget.inWindow(
-        (window) => noteId == null ? window.openTasks() : window.openNote(noteId),
+        (window) =>
+            noteId == null ? window.openTasks() : window.openNote(noteId),
       );
     }
     if (id != null) _taskOrder?.add(id);
@@ -381,7 +386,10 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
   /// The note the Tasks field adds to, while it may still be added to.
   Note? get _taskNote {
     final note = widget.notes.byId(widget.controller.taskNoteId);
-    if (note == null || note.isHidden || note.isArchived || !widget.canEdit(note)) {
+    if (note == null ||
+        note.isHidden ||
+        note.isArchived ||
+        !widget.canEdit(note)) {
       return null;
     }
     return note;
@@ -499,10 +507,18 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final meta = AppPlatform.isMacOS;
     return CallbackShortcuts(
       bindings: {
-        SingleActivator(LogicalKeyboardKey.digit1, meta: meta, control: !meta):
-            () => _show(_Tab.notes),
-        SingleActivator(LogicalKeyboardKey.digit2, meta: meta, control: !meta):
-            () => _show(_Tab.tasks),
+        SingleActivator(
+          LogicalKeyboardKey.digit1,
+          meta: meta,
+          control: !meta,
+        ): () =>
+            _show(_Tab.notes),
+        SingleActivator(
+          LogicalKeyboardKey.digit2,
+          meta: meta,
+          control: !meta,
+        ): () =>
+            _show(_Tab.tasks),
         const SingleActivator(LogicalKeyboardKey.escape): _escape,
       },
       child: Material(
@@ -529,7 +545,9 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                     color: palette.editorBackground,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: dark ? const Color(0x17E2DCCF) : const Color(0x1A2A2620),
+                      color: dark
+                          ? const Color(0x17E2DCCF)
+                          : const Color(0x1A2A2620),
                     ),
                   ),
                   child: Column(
@@ -583,58 +601,62 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
       builder: (context, _) {
         final focused = _field.hasFocus && _cursor == null;
         return AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        constraints: const BoxConstraints(minHeight: 37),
-        padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
-        decoration: BoxDecoration(
-          color: dark ? palette.wellBackground : palette.sidebarBackground,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: focused ? sage : palette.controlBorder),
-          boxShadow: [
-            if (focused)
-              BoxShadow(color: sage.withValues(alpha: 0.2), spreadRadius: 3),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                key: const ValueKey('menu-bar-field'),
-                controller: _draft,
-                focusNode: _field,
-                onTap: () => setState(() => _cursor = null),
-                minLines: 1,
-                maxLines: notes ? 5 : 1,
-                keyboardType: notes ? TextInputType.multiline : TextInputType.text,
-                textInputAction: notes ? TextInputAction.newline : TextInputAction.done,
-                cursorColor: sage,
-                style: TextStyle(
-                  fontFamily: AppFonts.ui,
-                  fontSize: 14,
-                  height: 20 / 14,
-                  color: palette.textPrimary,
-                ),
-                decoration: InputDecoration.collapsed(
-                  hintText: notes ? 'Write a note…' : 'Add a task…',
-                  hintStyle: TextStyle(
+          duration: const Duration(milliseconds: 120),
+          constraints: const BoxConstraints(minHeight: 37),
+          padding: const EdgeInsets.fromLTRB(12, 4, 6, 4),
+          decoration: BoxDecoration(
+            color: dark ? palette.wellBackground : palette.sidebarBackground,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: focused ? sage : palette.controlBorder),
+            boxShadow: [
+              if (focused)
+                BoxShadow(color: sage.withValues(alpha: 0.2), spreadRadius: 3),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('menu-bar-field'),
+                  controller: _draft,
+                  focusNode: _field,
+                  onTap: () => setState(() => _cursor = null),
+                  minLines: 1,
+                  maxLines: notes ? 5 : 1,
+                  keyboardType: notes
+                      ? TextInputType.multiline
+                      : TextInputType.text,
+                  textInputAction: notes
+                      ? TextInputAction.newline
+                      : TextInputAction.done,
+                  cursorColor: sage,
+                  style: TextStyle(
                     fontFamily: AppFonts.ui,
                     fontSize: 14,
                     height: 20 / 14,
-                    color: palette.textTertiary,
+                    color: palette.textPrimary,
+                  ),
+                  decoration: InputDecoration.collapsed(
+                    hintText: notes ? 'Write a note…' : 'Add a task…',
+                    hintStyle: TextStyle(
+                      fontFamily: AppFonts.ui,
+                      fontSize: 14,
+                      height: 20 / 14,
+                      color: palette.textTertiary,
+                    ),
                   ),
                 ),
               ),
-            ),
-            if (notes && widget.recording != null)
-              _IconButton(
-                key: const ValueKey('menu-bar-mic'),
-                icon: KapyIcons.micRounded,
-                tooltip: 'Record a voice note',
-                onPressed: () => unawaited(_record()),
-              ),
-            if (!notes) _noteChip(context),
-          ],
-        ),
+              if (notes && widget.recording != null)
+                _IconButton(
+                  key: const ValueKey('menu-bar-mic'),
+                  icon: KapyIcons.micRounded,
+                  tooltip: 'Record a voice note',
+                  onPressed: () => unawaited(_record()),
+                ),
+              if (!notes) _noteChip(context),
+            ],
+          ),
         );
       },
     );
@@ -656,7 +678,10 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
       child: Row(
         children: [
           DecoratedBox(
-            decoration: BoxDecoration(color: palette.clay, shape: BoxShape.circle),
+            decoration: BoxDecoration(
+              color: palette.clay,
+              shape: BoxShape.circle,
+            ),
             child: const SizedBox.square(dimension: 8),
           ),
           const SizedBox(width: 10),
@@ -726,18 +751,29 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  KapyIcon(KapyIcons.noteOutlined, size: 15, color: palette.textSecondary),
+                  KapyIcon(
+                    KapyIcons.noteOutlined,
+                    size: 15,
+                    color: palette.textSecondary,
+                  ),
                   const SizedBox(width: 6),
                   Flexible(
                     child: Text(
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 13, color: palette.textSecondary),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: palette.textSecondary,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 4),
-                  KapyIcon(KapyIcons.chevronDownRounded, size: 14, color: palette.textSecondary),
+                  KapyIcon(
+                    KapyIcons.chevronDownRounded,
+                    size: 14,
+                    color: palette.textSecondary,
+                  ),
                 ],
               ),
             ),
@@ -763,55 +799,85 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
 
   Widget _hintRow(BuildContext context) {
     final palette = context.palette;
-    final style = TextStyle(fontSize: 11.5, height: 14 / 11.5, color: palette.textTertiary);
+    final style = TextStyle(
+      fontSize: 11.5,
+      height: 14 / 11.5,
+      color: palette.textTertiary,
+    );
     final link = style.copyWith(
       color: palette.textSecondary,
-      fontWeight: AppWeight.font(AppWeight.rowTitle),
-      fontVariations: AppWeight.wght(AppWeight.rowTitle),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     final notes = _tab == _Tab.notes;
     final Widget? line = switch (_notice) {
-      _Saved(:final noteId) => _Hint(children: [
-        Text('Saved to Notes', style: style),
-        Text('  ·  ', style: style),
-        _Link('Open', style: link, onTap: () => unawaited(widget.inWindow((window) => window.openNote(noteId)))),
-      ]),
-      _Added(:final taskId) => _Hint(children: [
-        Text('Added to Tasks', style: style),
-        Text('  ·  ', style: style),
-        _Link('Undo', style: link, onTap: () => unawaited(_undoAdd(taskId))),
-      ]),
-      _AtLimit(:final limit) => _Hint(children: [
-        Flexible(
-          child: Text(
-            limit == null
-                ? 'Your plan has no room for another note.'
-                : 'The Free plan keeps $limit notes.',
-            style: style,
+      _Saved(:final noteId) => _Hint(
+        children: [
+          Text('Saved to Notes', style: style),
+          Text('  ·  ', style: style),
+          _Link(
+            'Open',
+            style: link,
+            onTap: () =>
+                unawaited(widget.inWindow((window) => window.openNote(noteId))),
           ),
-        ),
-        const SizedBox(width: 6),
-        _Link('Upgrade', style: link, onTap: () => unawaited(widget.inWindow((window) => window.explainNoteLimit()))),
-      ]),
-      _MicrophoneRefused() => _Hint(children: [
-        Text('Kapy Notes needs microphone access to record', style: style),
-      ]),
-      _NoMicrophone() => _Hint(children: [
-        Text('No microphone found', style: style),
-      ]),
-      null when _draft.text.trim().isNotEmpty && !_isRecording => _Hint(children: [
-        const Keycap('↵'),
-        const SizedBox(width: 6),
-        Text(notes ? 'Save' : 'Add to Tasks', style: style),
-        const SizedBox(width: 14),
-        Keycap('${AppPlatform.isMacOS ? '⌘' : 'Ctrl+'}↵'),
-        const SizedBox(width: 6),
-        Text(notes ? 'Save and open' : 'Add and open', style: style),
-      ]),
+        ],
+      ),
+      _Added(:final taskId) => _Hint(
+        children: [
+          Text('Added to Tasks', style: style),
+          Text('  ·  ', style: style),
+          _Link('Undo', style: link, onTap: () => unawaited(_undoAdd(taskId))),
+        ],
+      ),
+      _AtLimit(:final limit) => _Hint(
+        children: [
+          Flexible(
+            child: Text(
+              limit == null
+                  ? 'Your plan has no room for another note.'
+                  : 'The Free plan keeps $limit notes.',
+              style: style,
+            ),
+          ),
+          const SizedBox(width: 6),
+          _Link(
+            'Upgrade',
+            style: link,
+            onTap: () => unawaited(
+              widget.inWindow((window) => window.explainNoteLimit()),
+            ),
+          ),
+        ],
+      ),
+      _MicrophoneRefused() => _Hint(
+        children: [
+          Text('Kapy Notes needs microphone access to record', style: style),
+        ],
+      ),
+      _NoMicrophone() => _Hint(
+        children: [Text('No microphone found', style: style)],
+      ),
+      null when _draft.text.trim().isNotEmpty && !_isRecording => _Hint(
+        children: [
+          const Keycap('↵'),
+          const SizedBox(width: 6),
+          Text(notes ? 'Save' : 'Add to Tasks', style: style),
+          const SizedBox(width: 14),
+          Keycap('${AppPlatform.isMacOS ? '⌘' : 'Ctrl+'}↵'),
+          const SizedBox(width: 6),
+          Text(notes ? 'Save and open' : 'Add and open', style: style),
+        ],
+      ),
       null => null,
     };
     return Padding(
-      padding: EdgeInsets.fromLTRB(12, line == null ? 13 : 8, 12, line == null ? 0 : 10),
+      padding: EdgeInsets.fromLTRB(
+        12,
+        line == null ? 13 : 8,
+        12,
+        line == null ? 0 : 10,
+      ),
       child: line,
     );
   }
@@ -824,7 +890,11 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final done = board.doneSince(DateTime(now.year, now.month, now.day));
     final shownOpen = rows.where((item) => !item.line.done).length;
     final more = board.open.length - shownOpen;
-    final meta = TextStyle(fontSize: 12, height: 16 / 12, color: palette.textTertiary);
+    final meta = TextStyle(
+      fontSize: 12,
+      height: 16 / 12,
+      color: palette.textTertiary,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -837,8 +907,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                 style: TextStyle(
                   fontSize: 12,
                   height: 16 / 12,
-                  fontWeight: AppWeight.font(AppWeight.section),
-                  fontVariations: AppWeight.wght(AppWeight.section),
+                  fontWeight: AppWeight.font(AppWeight.regular),
+                  fontVariations: AppWeight.wght(AppWeight.regular),
                   color: palette.textSecondary,
                 ),
               ),
@@ -860,10 +930,13 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
             key: ValueKey('menu-bar-task-${item.id}'),
             item: item,
             doNow: item.id == _doNowId,
-            noteLabel: item.note.id == board.home?.id ? 'No note' : item.note.title,
+            noteLabel: item.note.id == board.home?.id
+                ? 'No note'
+                : item.note.title,
             editable: widget.canEdit(item.note),
             highlighted: _cursor == index || _hovered == index,
-            onHover: (hovering) => setState(() => _hovered = hovering ? index : null),
+            onHover: (hovering) =>
+                setState(() => _hovered = hovering ? index : null),
             onCheck: (done) => _check(item, done: done),
             onOpen: () => _openTask(item),
           ),
@@ -871,13 +944,24 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
           _Row(
             key: const ValueKey('menu-bar-all-tasks'),
             highlighted: false,
-            onTap: () => unawaited(widget.inWindow((window) => window.openTasks())),
+            onTap: () =>
+                unawaited(widget.inWindow((window) => window.openTasks())),
             child: Row(
               children: [
-                Text('All tasks', style: TextStyle(color: palette.textSecondary)),
-                Text(' · $more more', style: TextStyle(color: palette.textTertiary)),
+                Text(
+                  'All tasks',
+                  style: TextStyle(color: palette.textSecondary),
+                ),
+                Text(
+                  ' · $more more',
+                  style: TextStyle(color: palette.textTertiary),
+                ),
                 const Spacer(),
-                KapyIcon(KapyIcons.chevronRightRounded, size: 15, color: palette.textTertiary),
+                KapyIcon(
+                  KapyIcons.chevronRightRounded,
+                  size: 15,
+                  color: palette.textTertiary,
+                ),
               ],
             ),
           ),
@@ -893,14 +977,15 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final head = TextStyle(
       fontSize: 12,
       height: 16 / 12,
-      fontWeight: AppWeight.font(AppWeight.section),
-      fontVariations: AppWeight.wght(AppWeight.section),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       color: palette.textSecondary,
     );
     final children = <Widget>[];
     String? section;
     for (final (index, note) in rows.indexed) {
-      final heading = pinned.contains(note.id) && index < MenuBarPanel.pinnedRows
+      final heading =
+          pinned.contains(note.id) && index < MenuBarPanel.pinnedRows
           ? 'Pinned'
           : 'Recent';
       if (heading != section) {
@@ -916,8 +1001,10 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
         _Row(
           key: ValueKey('menu-bar-note-${note.id}'),
           highlighted: _cursor == index || _hovered == index,
-          onHover: (hovering) => setState(() => _hovered = hovering ? index : null),
-          onTap: () => unawaited(widget.inWindow((window) => window.openNote(note.id))),
+          onHover: (hovering) =>
+              setState(() => _hovered = hovering ? index : null),
+          onTap: () =>
+              unawaited(widget.inWindow((window) => window.openNote(note.id))),
           child: Row(
             children: [
               KapyIcon(
@@ -931,19 +1018,30 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(note.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                child: Text(
+                  note.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
               const SizedBox(width: 10),
               Text(
                 _ago(note.updatedAt),
-                style: TextStyle(fontSize: 12, height: 16 / 12, color: palette.textTertiary),
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 16 / 12,
+                  color: palette.textTertiary,
+                ),
               ),
             ],
           ),
         ),
       );
     }
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
+    );
   }
 
   Widget _empty(BuildContext context) {
@@ -968,8 +1066,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
             'No notes yet',
             style: TextStyle(
               fontSize: 14,
-              fontWeight: AppWeight.font(AppWeight.rowTitle),
-              fontVariations: AppWeight.wght(AppWeight.rowTitle),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               color: palette.textPrimary,
             ),
           ),
@@ -1020,7 +1118,10 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                     excludeFromSemantics: true,
                   ),
                   const SizedBox(width: 8),
-                  Text('Open Kapy Notes', style: TextStyle(color: palette.textSecondary)),
+                  Text(
+                    'Open Kapy Notes',
+                    style: TextStyle(color: palette.textSecondary),
+                  ),
                   if (open != null) ...[
                     const SizedBox(width: 8),
                     Text(
@@ -1042,8 +1143,11 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
           _IconButton(
             key: const ValueKey('menu-bar-search'),
             icon: KapyIcons.searchRounded,
-            tooltip: find == null ? 'Find notes' : 'Find notes ${find.keycapLabel}',
-            onPressed: () => unawaited(widget.inWindow((window) => window.find())),
+            tooltip: find == null
+                ? 'Find notes'
+                : 'Find notes ${find.keycapLabel}',
+            onPressed: () =>
+                unawaited(widget.inWindow((window) => window.find())),
           ),
         ],
       ),
@@ -1081,7 +1185,11 @@ class _Tabs extends StatelessWidget {
                 borderRadius: BorderRadius.circular(6),
                 boxShadow: [
                   if (selected && light)
-                    BoxShadow(color: palette.shadow, blurRadius: 2, offset: const Offset(0, 1)),
+                    BoxShadow(
+                      color: palette.shadow,
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
                 ],
               ),
               child: Row(
@@ -1093,10 +1201,10 @@ class _Tabs extends StatelessWidget {
                       fontSize: 13,
                       height: 16 / 13,
                       fontWeight: AppWeight.font(
-                        selected ? AppWeight.section : AppWeight.body,
+                        selected ? AppWeight.regular : AppWeight.regular,
                       ),
                       fontVariations: AppWeight.wght(
-                        selected ? AppWeight.section : AppWeight.body,
+                        selected ? AppWeight.regular : AppWeight.regular,
                       ),
                       color: selected
                           ? palette.textPrimary
@@ -1269,7 +1377,11 @@ class _TaskRow extends StatelessWidget {
               noteLabel,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, height: 16 / 12, color: palette.textTertiary),
+              style: TextStyle(
+                fontSize: 12,
+                height: 16 / 12,
+                color: palette.textTertiary,
+              ),
             ),
           ),
         ],
@@ -1290,8 +1402,8 @@ class _TaskRow extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 10.5,
                     height: 13 / 10.5,
-                    fontWeight: AppWeight.font(AppWeight.section),
-                    fontVariations: AppWeight.wght(AppWeight.section),
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                     letterSpacing: 0.63,
                     color: palette.accentText,
                   ),
@@ -1306,7 +1418,10 @@ class _TaskRow extends StatelessWidget {
             bottom: 2,
             child: Container(
               width: 3,
-              decoration: BoxDecoration(color: sage, borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(
+                color: sage,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
           ),
         ],
@@ -1316,7 +1431,11 @@ class _TaskRow extends StatelessWidget {
 }
 
 class _NotePicker extends StatefulWidget {
-  const _NotePicker({required this.notes, required this.chosen, required this.onPick});
+  const _NotePicker({
+    required this.notes,
+    required this.chosen,
+    required this.onPick,
+  });
 
   final List<Note> notes;
   final String? chosen;
@@ -1360,7 +1479,13 @@ class _NotePickerState extends State<_NotePicker> {
         color: palette.editorBackground,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: palette.controlBorder),
-        boxShadow: [BoxShadow(color: palette.shadow, blurRadius: 12, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: palette.shadow,
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1374,10 +1499,18 @@ class _NotePickerState extends State<_NotePicker> {
               autofocus: true,
               onChanged: (_) => setState(() {}),
               onSubmitted: (_) => widget.onPick(matches.firstOrNull?.id),
-              style: TextStyle(fontFamily: AppFonts.ui, fontSize: 13, color: palette.textPrimary),
+              style: TextStyle(
+                fontFamily: AppFonts.ui,
+                fontSize: 13,
+                color: palette.textPrimary,
+              ),
               decoration: InputDecoration.collapsed(
                 hintText: 'Find a note',
-                hintStyle: TextStyle(fontFamily: AppFonts.ui, fontSize: 13, color: palette.textTertiary),
+                hintStyle: TextStyle(
+                  fontFamily: AppFonts.ui,
+                  fontSize: 13,
+                  color: palette.textTertiary,
+                ),
               ),
             ),
           ),
@@ -1395,10 +1528,8 @@ class _Hint extends StatelessWidget {
   final List<Widget> children;
 
   @override
-  Widget build(BuildContext context) => SizedBox(
-    height: 22,
-    child: Row(children: children),
-  );
+  Widget build(BuildContext context) =>
+      SizedBox(height: 22, child: Row(children: children));
 }
 
 class _Link extends StatelessWidget {
@@ -1434,8 +1565,8 @@ class _TextButton extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(
-          fontWeight: AppWeight.font(AppWeight.rowTitle),
-          fontVariations: AppWeight.wght(AppWeight.rowTitle),
+          fontWeight: AppWeight.font(AppWeight.regular),
+          fontVariations: AppWeight.wght(AppWeight.regular),
           color: context.palette.textPrimary,
         ),
       ),
@@ -1477,11 +1608,14 @@ class _ReportHeight extends SingleChildRenderObjectWidget {
   final ValueChanged<double> onHeight;
 
   @override
-  RenderObject createRenderObject(BuildContext context) => _RenderReportHeight(onHeight);
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderReportHeight(onHeight);
 
   @override
-  void updateRenderObject(BuildContext context, _RenderReportHeight renderObject) =>
-      renderObject.onHeight = onHeight;
+  void updateRenderObject(
+    BuildContext context,
+    _RenderReportHeight renderObject,
+  ) => renderObject.onHeight = onHeight;
 }
 
 class _RenderReportHeight extends RenderProxyBox {

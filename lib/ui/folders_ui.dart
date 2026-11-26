@@ -608,7 +608,7 @@ class _FolderRowState extends State<_FolderRow> {
                           : selected
                           ? palette.textPrimary
                           : palette.textSecondary,
-                      axis: selected ? AppWeight.selected : AppWeight.body,
+                      axis: selected ? AppWeight.regular : AppWeight.regular,
                     ),
                   ),
                 ),
@@ -901,7 +901,7 @@ class TreeNoteFace extends StatelessWidget {
                 16,
                 FontWeight.w400,
                 colour,
-                axis: selected ? AppWeight.selected : AppWeight.body,
+                axis: selected ? AppWeight.regular : AppWeight.regular,
               ),
             ),
           ),
@@ -1387,7 +1387,7 @@ class _FolderPickerState extends State<_FolderPicker> {
               padding: EdgeInsets.only(left: 8 + (depth - 1) * 12.0, right: 8),
               decoration: BoxDecoration(
                 color: index == at && on ? palette.hover : null,
-                borderRadius: BorderRadius.circular(AppRadii.compact),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               child: Row(
                 children: [
@@ -1844,7 +1844,7 @@ class FolderPage extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontFamily: AppFonts.title,
+                      fontFamily: AppFonts.ui,
                       fontSize: 30,
                       height: 38 / 30,
                       leadingDistribution: TextLeadingDistribution.even,
@@ -2190,7 +2190,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
           phone ? 22 : 20,
           FontWeight.w600,
           palette.textPrimary,
-          axis: AppWeight.section,
+          axis: AppWeight.regular,
         ),
       ),
     );

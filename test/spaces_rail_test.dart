@@ -126,7 +126,7 @@ void main() {
 
   testWidgets('icons and captions rest in T2, light to T1 under the pointer, '
       'and take the tonal ink when open', (tester) async {
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     await tester.pumpWidget(harness(rail()));
     final drawings = find.byKey(const ValueKey('rail-drawings'));
     Color? icon(Finder item, KapyIconData data) => tester

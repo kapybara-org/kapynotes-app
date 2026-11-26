@@ -10,7 +10,7 @@ import 'package:kapy_notes/data/layout_prefs.dart';
 
 void main() {
   test('dark theme keeps a restrained warm-neutral palette', () {
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
 
     expect(palette.editorBackground, const Color(0xFF1C1A17));
     expect(palette.gutterBackground, palette.editorBackground);
@@ -205,8 +205,8 @@ void main() {
   });
 
   test('the Riverbank tokens copy and blend like every other colour', () {
-    const dark = KapyTheme.darkPalette;
-    const light = KapyTheme.lightPalette;
+    final dark = KapyTheme.darkPalette;
+    final light = KapyTheme.lightPalette;
     final tokens = <String, Color Function(CalcPalette)>{
       'railBackground': (p) => p.railBackground,
       'railBorder': (p) => p.railBorder,

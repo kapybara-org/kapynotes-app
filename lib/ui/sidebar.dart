@@ -37,8 +37,7 @@ import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
-import 'tasks/task_marks.dart'
-    show dayTitleStyle, handStyle, metaStyle, uiStyle;
+import 'tasks/task_marks.dart' show dayTitleStyle, metaStyle, uiStyle;
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
@@ -2006,8 +2005,8 @@ class _PickActions extends StatelessWidget {
       DefaultTextStyle.of(context).style.merge(
         TextStyle(
           fontSize: AppTypeScale.small,
-          fontWeight: AppWeight.font(AppWeight.body),
-          fontVariations: AppWeight.wght(AppWeight.body),
+          fontWeight: AppWeight.font(AppWeight.regular),
+          fontVariations: AppWeight.wght(AppWeight.regular),
           color: context.palette.textSecondary,
         ),
       );
@@ -2110,7 +2109,7 @@ class SidebarWindowBar extends StatelessWidget {
     final titleStyle = chromeStyle(
       size: AppTypeScale.spaceTitle,
       line: AppTypeScale.spaceTitle * 1.3,
-      weight: AppWeight.button,
+      weight: AppWeight.regular,
       color: palette.textPrimary,
       family: handwritten.fontFamily,
       fallback: handwritten.fontFamilyFallback,
@@ -2120,7 +2119,7 @@ class SidebarWindowBar extends StatelessWidget {
     final countStyle = chromeStyle(
       size: AppTypeScale.small,
       line: 16,
-      weight: AppWeight.body,
+      weight: AppWeight.regular,
       color: palette.textTertiary,
       tabular: true,
     );
@@ -2476,8 +2475,8 @@ class _InvitationCard extends StatelessWidget {
       fontFamilyFallback: AppFonts.uiFallback,
       fontSize: touch ? 15 : 13,
       height: touch ? 20 / 15 : 18 / 13,
-      fontWeight: AppWeight.font(AppWeight.button),
-      fontVariations: AppWeight.wght(AppWeight.button),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     final buttonStyle = TextButton.styleFrom(
       minimumSize: Size(0, button),
@@ -2488,7 +2487,7 @@ class _InvitationCard extends StatelessWidget {
       textStyle: label,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(
-          touch ? AppRadii.control : AppRadii.compact,
+          touch ? AppRadii.control : AppRadii.control,
         ),
       ),
     );
@@ -2522,8 +2521,8 @@ class _InvitationCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: touch ? 14 : 12,
                       height: touch ? 18 / 14 : 16 / 12,
-                      fontWeight: AppWeight.font(AppWeight.button),
-                      fontVariations: AppWeight.wght(AppWeight.button),
+                      fontWeight: AppWeight.font(AppWeight.regular),
+                      fontVariations: AppWeight.wght(AppWeight.regular),
                       color: palette.textPrimary,
                     ),
                   ),
@@ -2719,8 +2718,8 @@ class SidebarSearchField extends StatelessWidget {
             fontFamilyFallback: AppFonts.monoFallback,
             fontSize: 11,
             height: 14 / 11,
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
             color: palette.textTertiary,
           ),
         ),
@@ -3291,7 +3290,7 @@ class _NoteRowState extends State<NoteRow> {
             decoration: BoxDecoration(
               color: palette.surfaceBackground,
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppRadii.dialog),
+                top: Radius.circular(AppRadii.surface),
               ),
             ),
             child: SafeArea(
@@ -3321,8 +3320,8 @@ class _NoteRowState extends State<NoteRow> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: AppTypeScale.body,
-                            fontWeight: AppWeight.font(AppWeight.body),
-                            fontVariations: AppWeight.wght(AppWeight.body),
+                            fontWeight: AppWeight.font(AppWeight.regular),
+                            fontVariations: AppWeight.wght(AppWeight.regular),
                             color: palette.textPrimary,
                           ),
                         ),
@@ -3804,8 +3803,8 @@ class _ShareGroupHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: AppTypeScale.caption,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               letterSpacing: 0.3,
               color: palette.textTertiary,
             ),
@@ -3856,7 +3855,7 @@ class _ShareGroupHeader extends StatelessWidget {
         child: ExcludeSemantics(
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(AppRadii.compact),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 4, 6, 3),
               child: heading,
@@ -3892,7 +3891,7 @@ class _DrawingsEmpty extends StatelessWidget {
               decoration: BoxDecoration(
                 color: palette.editorBackground,
                 border: Border.all(color: palette.separator),
-                borderRadius: BorderRadius.circular(AppRadii.dialog),
+                borderRadius: BorderRadius.circular(AppRadii.surface),
               ),
               alignment: Alignment.center,
               child: KapyIcon(
@@ -3911,9 +3910,9 @@ class _DrawingsEmpty extends StatelessWidget {
               fontFamilyFallback: handwritten.fontFamilyFallback,
               fontSize: 16,
               height: 22 / 16,
-              fontWeight: AppWeight.font(AppWeight.button),
+              fontWeight: AppWeight.font(AppWeight.regular),
               fontVariations: AppWeight.wght(
-                AppWeight.button,
+                AppWeight.regular,
                 extra: handwritten.fontVariations ?? const [],
               ),
               color: palette.textSubheading,
@@ -3929,8 +3928,8 @@ class _DrawingsEmpty extends StatelessWidget {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 height: 18 / 13,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: palette.textTertiary,
               ),
             ),
@@ -4405,7 +4404,7 @@ class PhoneListTitle extends StatelessWidget {
               key: const ValueKey('phone-list-title'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: handStyle(26, 32, FontWeight.w600, palette.textPrimary),
+              style: uiStyle(26, 32, FontWeight.w600, palette.textPrimary),
             ),
           ),
           if (count != null) ...[

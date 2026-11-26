@@ -2880,7 +2880,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     // The rail needs the room a wide dialog has; a Windows window resized
     // narrow stacks its sections like any other.
     final paned = width >= _railBreakpoint;
-    const corners = BorderRadius.all(Radius.circular(AppRadii.dialog));
+    const corners = BorderRadius.all(Radius.circular(AppRadii.surface));
 
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
@@ -2947,7 +2947,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                   style: chromeStyle(
                     size: 20,
                     line: 26,
-                    weight: AppWeight.page,
+                    weight: AppWeight.semibold,
                     color: palette.textPrimary,
                   ),
                 ),
@@ -3182,7 +3182,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                     style: chromeStyle(
                       size: 13,
                       line: 18,
-                      weight: AppWeight.button,
+                      weight: AppWeight.regular,
                       color: palette.textPrimary,
                     ),
                   ),
@@ -3578,7 +3578,7 @@ class _AppearancePreview extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   color: palette.tonalBackground,
                                   borderRadius: BorderRadius.circular(
-                                    AppRadii.compact,
+                                    AppRadii.control,
                                   ),
                                 ),
                                 child: Text(
@@ -3926,7 +3926,7 @@ class _Keycap extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: recording ? 9 : 8),
       decoration: BoxDecoration(
         color: recording ? null : palette.surfaceBackground,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(
           color: recording
               ? Theme.of(context).colorScheme.primary
@@ -4100,7 +4100,7 @@ class _ShortcutRow extends StatelessWidget {
       child: InkWell(
         key: ValueKey('shortcut-${action.name}'),
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         child: Opacity(
           opacity: onPressed == null ? 0.45 : 1,
           child: _Keycap(
@@ -4432,8 +4432,8 @@ class _AccountRow extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         height: 20 / 15,
-                        fontWeight: AppWeight.font(AppWeight.button),
-                        fontVariations: AppWeight.wght(AppWeight.button),
+                        fontWeight: AppWeight.font(AppWeight.regular),
+                        fontVariations: AppWeight.wght(AppWeight.regular),
                         color: palette.textPrimary,
                       ),
                     ),
@@ -4643,7 +4643,9 @@ class _RailItem extends StatelessWidget {
                       style: chromeStyle(
                         size: 13.5,
                         line: 18,
-                        weight: selected ? AppWeight.selected : AppWeight.body,
+                        weight: selected
+                            ? AppWeight.regular
+                            : AppWeight.regular,
                         color: palette.textPrimary,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -4746,8 +4748,8 @@ class _SheetPage extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 17,
                             height: 22 / 17,
-                            fontWeight: AppWeight.font(AppWeight.page),
-                            fontVariations: AppWeight.wght(AppWeight.page),
+                            fontWeight: AppWeight.font(AppWeight.semibold),
+                            fontVariations: AppWeight.wght(AppWeight.semibold),
                             color: palette.textPrimary,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -4758,7 +4760,7 @@ class _SheetPage extends StatelessWidget {
                             title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: handStyle(
+                            style: uiStyle(
                               26,
                               32,
                               FontWeight.w400,
@@ -4776,7 +4778,9 @@ class _SheetPage extends StatelessWidget {
                     textStyle: chromeStyle(
                       size: 15,
                       line: 20,
-                      weight: back == null ? AppWeight.button : AppWeight.page,
+                      weight: back == null
+                          ? AppWeight.regular
+                          : AppWeight.semibold,
                       color: done,
                     ),
                   ),
@@ -5217,7 +5221,7 @@ class _UpdateRow extends StatelessWidget {
                       : palette.controlBackground,
                   foregroundColor: palette.textPrimary,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadii.compact),
+                    borderRadius: BorderRadius.circular(AppRadii.control),
                   ),
                 ),
                 child: Text(
@@ -5581,7 +5585,7 @@ class _StoreAboutPaneState extends State<_StoreAboutPane> {
               textStyle: chromeStyle(
                 size: 15,
                 line: 20,
-                weight: AppWeight.button,
+                weight: AppWeight.regular,
                 color: palette.tonalForeground,
               ),
               shape: RoundedRectangleBorder(

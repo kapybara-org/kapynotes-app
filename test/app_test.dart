@@ -2306,7 +2306,7 @@ void main() {
     expect(styleOf('Opening').fontFamily, isNot('Shantell Sans'));
     expect(
       styleOf('Opening').fontVariations,
-      AppWeight.variations(AppWeight.section),
+      AppWeight.variations(AppWeight.regular),
     );
     expect(styleOf('Daily separators').fontFamily, isNot('Shantell Sans'));
     expect(
@@ -6107,7 +6107,7 @@ void main() {
       TextStyle title() => tester
           .widget<TextField>(find.byKey(const ValueKey('drawing-title')))
           .style!;
-      expect(title().fontFamily, AppFonts.title);
+      expect(title().fontFamily, AppFonts.ui);
       expect(title().fontWeight, FontWeight.w400);
 
       prefs.writingFont = WritingFont.handwritten;
@@ -11906,7 +11906,7 @@ void main() {
         find.descendant(of: heading, matching: find.text('Today')),
       );
       final date = find.descendant(of: heading, matching: find.text('Thu 19'));
-      expect(today.style?.fontFamily, AppFonts.title);
+      expect(today.style?.fontFamily, AppFonts.ui);
       expect(today.style?.fontSize, 19);
       expect(today.style?.color, palette.textPrimary);
       final style = tester.widget<Text>(date).style;

@@ -1263,7 +1263,7 @@ void main() {
       await setUpTasks(tester, errands);
       await pumpScreen(tester, phone: true);
 
-      const palette = KapyTheme.darkPalette;
+      final palette = KapyTheme.darkPalette;
       final row = find.byKey(const ValueKey('tasks-add-row'));
       final field = tester.widget<Container>(row).decoration! as BoxDecoration;
       expect(tester.getSize(row).height, 44);

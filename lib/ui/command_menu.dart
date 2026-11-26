@@ -845,7 +845,7 @@ class _CommandMenuState extends State<CommandMenu> {
                   ? palette.controlBackground
                   : palette.surfaceBackground,
               border: Border.all(color: palette.separator),
-              borderRadius: BorderRadius.circular(AppRadii.dialog),
+              borderRadius: BorderRadius.circular(AppRadii.surface),
               boxShadow: [
                 BoxShadow(
                   color: dark
@@ -987,8 +987,8 @@ class _CommandMenuState extends State<CommandMenu> {
                 'Cancel',
                 style: TextStyle(
                   fontSize: 16,
-                  fontWeight: AppWeight.font(AppWeight.button),
-                  fontVariations: AppWeight.wght(AppWeight.button),
+                  fontWeight: AppWeight.font(AppWeight.regular),
+                  fontVariations: AppWeight.wght(AppWeight.regular),
                   color: palette.accentText,
                 ),
               ),
@@ -1038,8 +1038,8 @@ class _CommandMenuState extends State<CommandMenu> {
                           scope.label,
                           style: TextStyle(
                             fontSize: 15,
-                            fontWeight: AppWeight.font(AppWeight.button),
-                            fontVariations: AppWeight.wght(AppWeight.button),
+                            fontWeight: AppWeight.font(AppWeight.regular),
+                            fontVariations: AppWeight.wght(AppWeight.regular),
                             color: scope == _scope
                                 ? palette.paperColor
                                 : palette.textPrimary,
@@ -1096,15 +1096,15 @@ class _CommandMenuState extends State<CommandMenu> {
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: palette.separator,
-                borderRadius: BorderRadius.circular(AppRadii.compact),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               child: Text(
                 'Tag note · ${widget.tagNote!.title}',
                 style: TextStyle(
                   fontSize: 12,
                   height: 16 / 12,
-                  fontWeight: AppWeight.font(AppWeight.button),
-                  fontVariations: AppWeight.wght(AppWeight.button),
+                  fontWeight: AppWeight.font(AppWeight.regular),
+                  fontVariations: AppWeight.wght(AppWeight.regular),
                   color: palette.textPrimary,
                 ),
               ),
@@ -1173,8 +1173,8 @@ class _CommandMenuState extends State<CommandMenu> {
           style: TextStyle(
             fontSize: 12,
             height: 16 / 12,
-            fontWeight: AppWeight.font(AppWeight.button),
-            fontVariations: AppWeight.wght(AppWeight.button),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
             color: palette.textTertiary,
           ),
         ),
@@ -1281,10 +1281,10 @@ class _CommandMenuState extends State<CommandMenu> {
                                 fontSize: 14,
                                 height: 18 / 14,
                                 fontWeight: AppWeight.font(
-                                  lit ? AppWeight.button : AppWeight.body,
+                                  lit ? AppWeight.regular : AppWeight.regular,
                                 ),
                                 fontVariations: AppWeight.wght(
-                                  lit ? AppWeight.button : AppWeight.body,
+                                  lit ? AppWeight.regular : AppWeight.regular,
                                 ),
                                 color: line.muted || done
                                     ? palette.textSecondary
@@ -1375,8 +1375,8 @@ class _CommandMenuState extends State<CommandMenu> {
     }
     final mark = TextStyle(
       color: palette.accentText,
-      fontWeight: AppWeight.font(AppWeight.section),
-      fontVariations: AppWeight.wght(AppWeight.section),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     final spans = <TextSpan>[];
     var start = 0;
@@ -1439,8 +1439,8 @@ class _CommandMenuState extends State<CommandMenu> {
                           style: TextStyle(
                             fontSize: 14,
                             height: 18 / 14,
-                            fontWeight: AppWeight.font(AppWeight.body),
-                            fontVariations: AppWeight.wght(AppWeight.body),
+                            fontWeight: AppWeight.font(AppWeight.regular),
+                            fontVariations: AppWeight.wght(AppWeight.regular),
                             color: palette.textPrimary,
                           ),
                         ),
@@ -1518,8 +1518,8 @@ class _CommandMenuState extends State<CommandMenu> {
                       style: TextStyle(
                         fontSize: 12,
                         height: 16 / 12,
-                        fontWeight: AppWeight.font(AppWeight.body),
-                        fontVariations: AppWeight.wght(AppWeight.body),
+                        fontWeight: AppWeight.font(AppWeight.regular),
+                        fontVariations: AppWeight.wght(AppWeight.regular),
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),

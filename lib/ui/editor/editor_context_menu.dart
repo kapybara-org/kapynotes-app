@@ -107,8 +107,8 @@ class _EditorContextMenuButton extends StatelessWidget {
             style: TextStyle(
               color: enabled ? palette.textPrimary : palette.textTertiary,
               fontSize: AppTypeScale.control,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
             ),
           ),
         ),

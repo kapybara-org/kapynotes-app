@@ -163,7 +163,7 @@ class NoteGlance {
 }
 
 const _cardRadius = BorderRadius.only(
-  topLeft: Radius.circular(AppRadii.compact),
+  topLeft: Radius.circular(AppRadii.control),
   topRight: Radius.circular(6),
   bottomLeft: Radius.circular(6),
   bottomRight: Radius.circular(14),
@@ -389,7 +389,7 @@ class NoteCardFace extends StatelessWidget {
                               ? chromeStyle(
                                   size: 12,
                                   line: 16,
-                                  weight: AppWeight.page,
+                                  weight: AppWeight.semibold,
                                   color: palette.resultPillText,
                                   tabular: true,
                                 )
@@ -1223,7 +1223,7 @@ class PhoneDrawingRowFace extends StatelessWidget {
                 Colors.black.withValues(alpha: 0.18),
                 palette.sidebarBackground,
               ),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: DrawingThumbnail(drawing: note.drawing),
           ),
@@ -1318,7 +1318,7 @@ class DrawingListRowFace extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.editorBackground,
               border: Border.all(color: palette.separator),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: DrawingThumbnail(drawing: note.drawing),
           ),
@@ -1478,7 +1478,7 @@ class ViewAllLink extends StatelessWidget {
 TextStyle _sectionLabel(CalcPalette palette) => chromeStyle(
   size: 12,
   line: 16,
-  weight: AppWeight.section,
+  weight: AppWeight.regular,
   color: palette.textTertiary,
 );
 
@@ -1486,7 +1486,7 @@ TextStyle _sectionLabel(CalcPalette palette) => chromeStyle(
 TextStyle _sectionDetail(CalcPalette palette) => chromeStyle(
   size: 12,
   line: 16,
-  weight: AppWeight.body,
+  weight: AppWeight.regular,
   color: palette.textTertiary,
   tabular: true,
 );
@@ -1940,7 +1940,7 @@ class NotesListControls extends StatelessWidget {
                 decoration: on
                     ? BoxDecoration(
                         color: palette.selectedBackground,
-                        borderRadius: BorderRadius.circular(AppRadii.compact),
+                        borderRadius: BorderRadius.circular(AppRadii.control),
                         boxShadow: framed
                             ? [
                                 BoxShadow(
@@ -2956,7 +2956,7 @@ class _ShowMenuRowState extends State<_ShowMenuRow> {
                   : _hovering
                   ? palette.hover
                   : null,
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               children: [
@@ -3033,7 +3033,7 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _hovering ? palette.hover : null,
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               children: [
@@ -3229,7 +3229,7 @@ class _TagsMenuState extends State<_TagsMenu> {
                     padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
                       color: palette.cardBackground,
-                      borderRadius: BorderRadius.circular(AppRadii.compact),
+                      borderRadius: BorderRadius.circular(AppRadii.control),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -3381,7 +3381,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _hovering ? palette.hover : null,
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               children: [
@@ -3621,7 +3621,7 @@ class _FilterPopoverState extends State<_FilterPopover> {
           border: Border.all(
             color: on ? palette.tonalKeyBackground : palette.controlBorder,
           ),
-          borderRadius: BorderRadius.circular(AppRadii.dialog),
+          borderRadius: BorderRadius.circular(AppRadii.surface),
         ),
         child: Center(
           widthFactor: 1,
@@ -3902,9 +3902,9 @@ class _FilterPopoverState extends State<_FilterPopover> {
                               'Filter',
                               style: link.copyWith(
                                 color: palette.textSecondary,
-                                fontWeight: AppWeight.font(AppWeight.button),
+                                fontWeight: AppWeight.font(AppWeight.regular),
                                 fontVariations: AppWeight.wght(
-                                  AppWeight.button,
+                                  AppWeight.regular,
                                 ),
                               ),
                             ),

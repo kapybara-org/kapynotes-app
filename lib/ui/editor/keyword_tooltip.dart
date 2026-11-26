@@ -83,8 +83,8 @@ class _KeywordTooltipBody extends StatelessWidget {
             keyword,
             style: TextStyle(
               fontSize: AppTypeScale.caption,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               color: palette.keyword,
             ),
           ),

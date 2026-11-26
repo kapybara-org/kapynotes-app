@@ -919,7 +919,7 @@ class TasksScreenState extends State<TasksScreen> {
             children: [
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final titleStyle = handStyle(
+                  final titleStyle = uiStyle(
                     32,
                     40,
                     FontWeight.w700,
@@ -975,7 +975,7 @@ class TasksScreenState extends State<TasksScreen> {
                 Flexible(
                   child: Text(
                     SidebarTimestamp.doneDay(day, now: now),
-                    style: handStyle(
+                    style: uiStyle(
                       15,
                       22,
                       FontWeight.w600,
@@ -1334,7 +1334,7 @@ class _NotePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
     final target = this.target;
-    final radius = phone ? AppRadii.control : AppRadii.compact;
+    final radius = phone ? AppRadii.control : AppRadii.control;
     return Tooltip(
       message: 'Add to a note',
       child: InkWell(
@@ -1914,7 +1914,7 @@ class _Box extends StatelessWidget {
               border: done
                   ? null
                   : Border.all(color: palette.checkboxBorder, width: 1.5),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: done
                 ? KapyIcon(

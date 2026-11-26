@@ -66,7 +66,7 @@ void main() {
     expect(style.fontFamily, AppFonts.ui);
     expect(style.fontSize, 12);
     expect(style.height, 16 / 12);
-    expect(style.fontVariations, AppWeight.variations(AppWeight.page));
+    expect(style.fontVariations, AppWeight.variations(AppWeight.semibold));
     expect(style.color, KapyTheme.darkPalette.resultPillText);
     expect(style.fontFeatures, const [FontFeature.tabularFigures()]);
   });

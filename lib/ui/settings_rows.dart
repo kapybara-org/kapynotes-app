@@ -41,7 +41,7 @@ class SettingsMetrics {
   static double get noteSize =>
       AppPlatform.isWindows ? AppTypeScale.caption : 11;
   static double get buttonLabelSize => _touch ? 12 : 13;
-  static FontWeight get titleWeight => AppWeight.named(AppWeight.rowTitle);
+  static FontWeight get titleWeight => AppWeight.named(AppWeight.regular);
   static double get chevronSize => _touch ? 21 : 13;
 
   /// The height of a control at the end of a row: a button, a menu, a well.
@@ -91,7 +91,7 @@ class SettingsLabel extends StatelessWidget {
                 style: chromeStyle(
                   size: SettingsMetrics.sectionLabelSize,
                   line: 18,
-                  weight: AppWeight.section,
+                  weight: AppWeight.regular,
                   color: palette.textSubheading,
                 ),
               ),
@@ -139,8 +139,8 @@ class SettingsLabel extends StatelessWidget {
       text.toUpperCase(),
       style: TextStyle(
         fontSize: SettingsMetrics.sectionLabelSize,
-        fontWeight: AppWeight.font(AppWeight.body),
-        fontVariations: AppWeight.wght(AppWeight.body),
+        fontWeight: AppWeight.font(AppWeight.regular),
+        fontVariations: AppWeight.wght(AppWeight.regular),
         letterSpacing: 0.65,
         color: palette.textTertiary,
       ),
@@ -298,7 +298,7 @@ class SettingsRowCopy extends StatelessWidget {
                 style: chromeStyle(
                   size: SettingsMetrics.titleSize,
                   line: pointer ? 18 : null,
-                  weight: AppWeight.rowTitle,
+                  weight: AppWeight.regular,
                   color: titleColor ?? palette.textPrimary,
                 ),
               ),
@@ -567,8 +567,8 @@ class SettingsRowButton extends StatelessWidget {
         label,
         style: TextStyle(
           fontSize: SettingsMetrics.buttonLabelSize,
-          fontWeight: AppWeight.font(AppWeight.body),
-          fontVariations: AppWeight.wght(AppWeight.body),
+          fontWeight: AppWeight.font(AppWeight.regular),
+          fontVariations: AppWeight.wght(AppWeight.regular),
           height: pointer ? 16 / 12.5 : null,
         ),
       ),
@@ -704,7 +704,7 @@ class SettingsResetButton extends StatelessWidget {
       style: IconButton.styleFrom(
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+          borderRadius: BorderRadius.circular(AppRadii.control),
         ),
       ),
     );
@@ -761,7 +761,7 @@ class SettingsSegmented<T> extends StatelessWidget {
         child: InkWell(
           key: keyFor(option),
           onTap: enabled && !chosen ? () => onSelected(option) : null,
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOutCubic,
@@ -770,7 +770,7 @@ class SettingsSegmented<T> extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
               color: chosen ? palette.segmentSelected : null,
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
               boxShadow: chosen
                   ? [
                       BoxShadow(
@@ -904,8 +904,8 @@ class SettingsStepper extends StatelessWidget {
                 fontFamily: AppPlatform.monoFontFallback.first,
                 fontFamilyFallback: AppPlatform.monoFontFallback,
                 fontSize: 12,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 fontFeatures: const [FontFeature.tabularFigures()],
                 color: palette.textPrimary,
               ),

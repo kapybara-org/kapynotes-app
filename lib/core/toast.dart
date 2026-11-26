@@ -470,8 +470,8 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
     final textStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       fontSize: AppTypeScale.body,
       color: palette.textPrimary,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       height: 1.2,
     );
     final text = Text(
@@ -490,8 +490,8 @@ class _ToastBodyState extends State<_ToastBody> with TickerProviderStateMixin {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           textStyle: textStyle?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.button),
-            fontVariations: AppWeight.wght(AppWeight.button),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
         ),
         child: Text(label),

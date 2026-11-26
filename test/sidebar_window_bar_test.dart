@@ -270,7 +270,7 @@ void main() {
   testWidgets("the search field's keycap is T3, which Riverbank dark keeps "
       'apart from T2', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     expect(palette.textTertiary, isNot(palette.textSecondary));
     await tester.pumpWidget(
       MaterialApp(
@@ -296,7 +296,7 @@ void main() {
   testWidgets('the Mac search field is 32 high, 10 in, radius 9, with its '
       '14 px icon in T3', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),

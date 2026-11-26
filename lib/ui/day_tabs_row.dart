@@ -153,7 +153,7 @@ class _DayTabsRowState extends State<DayTabsRow>
     return chromeStyle(
       size: AppTypeScale.control,
       line: 20,
-      weight: open ? AppWeight.button : AppWeight.body,
+      weight: open ? AppWeight.regular : AppWeight.regular,
       color: open ? palette.textPrimary : palette.textSecondary,
     );
   }
@@ -666,7 +666,7 @@ class _DayTabsRowState extends State<DayTabsRow>
                     style: chromeStyle(
                       size: AppTypeScale.small,
                       line: 18,
-                      weight: AppWeight.button,
+                      weight: AppWeight.regular,
                       color: palette.textPrimary,
                       tabular: true,
                     ),
@@ -804,9 +804,9 @@ Future<String?> showDayNotes(
                         style: chromeStyle(
                           size: 19,
                           line: 24,
-                          weight: AppWeight.body,
+                          weight: AppWeight.regular,
                           color: palette.textPrimary,
-                          family: AppFonts.title,
+                          family: AppFonts.ui,
                         ),
                       ),
                     ),
@@ -816,7 +816,7 @@ Future<String?> showDayNotes(
                       style: chromeStyle(
                         size: AppTypeScale.caption,
                         line: 16,
-                        weight: AppWeight.body,
+                        weight: AppWeight.regular,
                         color: palette.textTertiary,
                         tabular: true,
                       ),
@@ -862,7 +862,7 @@ Future<String?> showDayNotes(
                                   style: chromeStyle(
                                     size: 16,
                                     line: 22,
-                                    weight: AppWeight.body,
+                                    weight: AppWeight.regular,
                                     color: palette.textPrimary,
                                     family: handwritten.fontFamily,
                                     fallback: handwritten.fontFamilyFallback,
@@ -878,7 +878,7 @@ Future<String?> showDayNotes(
                                 style: chromeStyle(
                                   size: AppTypeScale.caption,
                                   line: 16,
-                                  weight: AppWeight.body,
+                                  weight: AppWeight.regular,
                                   color: palette.textTertiary,
                                   tabular: true,
                                 ),

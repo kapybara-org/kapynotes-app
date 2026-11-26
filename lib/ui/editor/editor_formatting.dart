@@ -107,7 +107,7 @@ TextStyle paragraphTextStyle(
 }
 
 /// The note's first line, its title, at [EditorMetrics.titleFontSize]: in
-/// [AppFonts.title] over the default writing font, falling back to the
+/// [AppFonts.ui] over the default writing font, falling back to the
 /// writing face for scripts it lacks, and in the person's own face when they
 /// chose another, the handwritten one when it is mixed. Emphasis in it stays.
 TextStyle noteTitleStyle(
@@ -123,7 +123,7 @@ TextStyle noteTitleStyle(
       : EditorMetrics.titleRow / EditorMetrics.titleFontSize;
   if (writingFont == WritingFont.clean) {
     return base.copyWith(
-      fontFamily: AppFonts.title,
+      fontFamily: AppFonts.ui,
       fontFamilyFallback: [?base.fontFamily, ...?base.fontFamilyFallback],
       fontVariations: const [],
       fontSize: size,

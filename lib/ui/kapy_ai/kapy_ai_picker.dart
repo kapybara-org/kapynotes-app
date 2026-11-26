@@ -349,7 +349,7 @@ class KapyAiModelButton extends StatelessWidget {
         model.kind == KapyModelKind.cloud && kapyAi.cloudUsage?.remaining == 0;
     return Material(
       color: open ? palette.kapyHighlight : Colors.transparent,
-      borderRadius: BorderRadius.circular(AppRadii.compact),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: const ValueKey('kapy-ai-model-button'),

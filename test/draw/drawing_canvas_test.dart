@@ -253,7 +253,7 @@ void main() {
         'default writing font', (tester) async {
       await _pump(tester);
       final style = titleStyle(tester);
-      expect(style.fontFamily, AppFonts.title);
+      expect(style.fontFamily, AppFonts.ui);
       expect(style.fontSize, EditorMetrics.titleFontSize);
       expect(style.fontSize! * style.height!, EditorMetrics.titleRow);
       expect(style.fontWeight, FontWeight.w400);

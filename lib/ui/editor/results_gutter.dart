@@ -135,7 +135,7 @@ class ResultChip extends StatefulWidget {
     bool total = false,
     Color? color,
   }) {
-    final step = total ? AppWeight.section : AppWeight.button;
+    final step = total ? AppWeight.regular : AppWeight.regular;
     return TextStyle(
       fontFamily: AppFonts.mono,
       fontFamilyFallback: AppFonts.monoFallback,

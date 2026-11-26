@@ -95,8 +95,8 @@ class _DropHint extends StatelessWidget {
                   'Drop files to add to this note',
                   style: TextStyle(
                     fontSize: AppTypeScale.control,
-                    fontWeight: AppWeight.font(AppWeight.body),
-                    fontVariations: AppWeight.wght(AppWeight.body),
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                     color: palette.textPrimary,
                   ),
                 ),

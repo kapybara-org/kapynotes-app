@@ -146,15 +146,15 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
     final title = TextStyle(
       fontSize: 13,
       height: 18 / 13,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       color: palette.textPrimary,
     );
     final body = TextStyle(
       fontSize: 12.5,
       height: _lineHeight / 12.5,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       color: palette.textDescription,
     );
     Widget card(Widget child, {double padding = _pad}) => KapyControlSurface(
@@ -196,8 +196,8 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: AppTypeScale.caption,
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
         ),
       );

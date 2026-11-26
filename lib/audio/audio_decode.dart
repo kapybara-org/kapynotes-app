@@ -49,8 +49,9 @@ class DecodedAudio {
   /// `frames / sampleRate` seconds.
   final int frames;
 
-  Duration get duration =>
-      Duration(milliseconds: sampleRate <= 0 ? 0 : (frames * 1000) ~/ sampleRate);
+  Duration get duration => Duration(
+    milliseconds: sampleRate <= 0 ? 0 : (frames * 1000) ~/ sampleRate,
+  );
 
   /// Throws away the decoded copy. The caller owns it: it is a derived file in
   /// a temporary directory, and leaving 57 MB behind after every transcript

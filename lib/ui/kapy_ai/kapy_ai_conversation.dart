@@ -522,7 +522,7 @@ class _NoteRow extends StatelessWidget {
     final title = this.title;
     return Material(
       type: MaterialType.transparency,
-      borderRadius: BorderRadius.circular(AppRadii.compact),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: ValueKey('kapy-ai-read-$noteId'),

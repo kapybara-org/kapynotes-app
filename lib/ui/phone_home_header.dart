@@ -157,7 +157,7 @@ class _Title extends StatelessWidget {
                     label,
                     maxLines: 1,
                     softWrap: false,
-                    style: handStyle(
+                    style: uiStyle(
                       26,
                       32,
                       FontWeight.w600,

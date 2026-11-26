@@ -521,8 +521,8 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                           fontFamily: 'Shantell Sans',
                           fontSize: 17,
                           height: 22 / 17,
-                          fontWeight: AppWeight.font(AppWeight.section),
-                          fontVariations: AppWeight.wght(AppWeight.section),
+                          fontWeight: AppWeight.font(AppWeight.regular),
+                          fontVariations: AppWeight.wght(AppWeight.regular),
                           color: palette.textPrimary,
                         ),
                 ),
@@ -618,7 +618,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
               decoration: BoxDecoration(
                 color: palette.editorBackground,
                 border: Border.all(color: palette.separator, width: 1.5),
-                borderRadius: BorderRadius.circular(AppRadii.dialog),
+                borderRadius: BorderRadius.circular(AppRadii.surface),
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
@@ -729,7 +729,7 @@ class _NoteChip extends StatelessWidget {
       padding: const EdgeInsets.only(left: 7, right: 3),
       decoration: BoxDecoration(
         color: palette.kapyHighlight,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

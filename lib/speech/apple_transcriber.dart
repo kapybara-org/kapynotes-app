@@ -92,7 +92,8 @@ class AppleTranscriber implements Transcriber {
     try {
       answer = await _channel.invokeMethod<Object?>('transcribe', {
         'path': audio.path,
-        if ((language ?? _language()) != null) 'language': language ?? _language(),
+        if ((language ?? _language()) != null)
+          'language': language ?? _language(),
         if (_forcedEngine.isNotEmpty) 'engine': _forcedEngine,
       });
     } on PlatformException catch (error) {
@@ -109,7 +110,8 @@ class AppleTranscriber implements Transcriber {
       if (error.code == 'denied') {
         throw TranscriberUnavailable(
           TranscriberReadiness.needsSystemFeature,
-          error.message ?? 'Kapy Notes was not allowed to use speech recognition.',
+          error.message ??
+              'Kapy Notes was not allowed to use speech recognition.',
         );
       }
       rethrow;

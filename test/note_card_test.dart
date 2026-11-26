@@ -14,7 +14,7 @@ import 'test_fonts.dart';
 void main() {
   setUpAll(loadTestFonts);
 
-  const palette = KapyTheme.darkPalette;
+  final palette = KapyTheme.darkPalette;
   const travel = (name: 'Travel', colour: TagColour.sage);
   const money = (name: 'Money', colour: TagColour.rust);
 
@@ -133,7 +133,7 @@ void main() {
       return card(tester).color!.toARGB32();
     }
 
-    const light = KapyTheme.lightPalette;
+    final light = KapyTheme.lightPalette;
     expect(await fill(KapyTheme.light()), light.cardBackground.toARGB32());
     expect(await fill(KapyTheme.light()), 0xFFF6F2E8);
     expect(await fill(KapyTheme.light(), hovering: true), 0xFFEEEAE0);
@@ -156,7 +156,7 @@ void main() {
     expect(title.fontFamily, AppFonts.ui);
     expect(title.fontSize, 13);
     expect(title.height, 18 / 13);
-    expect(title.fontVariations, AppWeight.variations(AppWeight.button));
+    expect(title.fontVariations, AppWeight.variations(AppWeight.regular));
     expect(title.color, palette.textPrimary);
     expect(styleOf(tester, 'Today, 11:15').color, palette.textTertiary);
   });
@@ -292,7 +292,7 @@ void main() {
     expect(preview.fontFamily, AppFonts.ui);
     expect(preview.fontSize, 12);
     expect(preview.height, 16 / 12);
-    expect(preview.fontVariations, AppWeight.variations(AppWeight.body));
+    expect(preview.fontVariations, AppWeight.variations(AppWeight.regular));
     expect(preview.color, palette.textSecondary);
   });
 
@@ -338,11 +338,11 @@ void main() {
     final label = styleOf(tester, 'Yesterday');
     expect(label.fontSize, 12);
     expect(label.height, 16 / 12);
-    expect(label.fontVariations, AppWeight.variations(AppWeight.section));
+    expect(label.fontVariations, AppWeight.variations(AppWeight.regular));
     expect(label.color, palette.textTertiary);
     final count = styleOf(tester, '2');
     expect(count.fontSize, 12);
-    expect(count.fontVariations, AppWeight.variations(AppWeight.body));
+    expect(count.fontVariations, AppWeight.variations(AppWeight.regular));
     expect(count.color, palette.textTertiary);
     expect(
       find.descendant(

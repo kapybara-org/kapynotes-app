@@ -351,7 +351,7 @@ class _TagPickerState extends State<TagPicker> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: index == _picker.at ? palette.hover : null,
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               children: [

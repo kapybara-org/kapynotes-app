@@ -161,7 +161,7 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                           foregroundColor: palette.textPrimary,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(
-                              AppRadii.compact,
+                              AppRadii.control,
                             ),
                           ),
                         ),
@@ -169,8 +169,8 @@ class _LinkPopoverBodyState extends State<_LinkPopoverBody>
                           'Open link',
                           style: TextStyle(
                             fontSize: AppTypeScale.caption,
-                            fontWeight: AppWeight.font(AppWeight.body),
-                            fontVariations: AppWeight.wght(AppWeight.body),
+                            fontWeight: AppWeight.font(AppWeight.regular),
+                            fontVariations: AppWeight.wght(AppWeight.regular),
                           ),
                         ),
                       ),

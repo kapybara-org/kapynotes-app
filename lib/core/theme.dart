@@ -102,6 +102,10 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color textMuted;
   final Color textDescription;
 
+  /// The quietest words, still at 4.5:1: a sidebar's group labels, a
+  /// count beside a heading, the version line.
+  final Color textQuiet;
+
   /// A card of rows inside a dialog, a step off the pane it sits on, and the
   /// edge between a dialog's navigation and its pane.
   final Color cardBackground;
@@ -289,6 +293,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       textSecondary: secondary,
       keycapText: secondary,
       textDescription: _mix(textDescription, ink, 0.5),
+      textQuiet: _mix(textQuiet, ink, 0.45),
       textMuted: _mix(textMuted, ink, 0.45),
       textTertiary: faint,
       controlBorder: border,
@@ -358,6 +363,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.textSubheading,
     required this.textMuted,
     required this.textDescription,
+    required this.textQuiet,
     required this.cardBackground,
     required this.paneEdge,
     this.raisedBackground,
@@ -439,6 +445,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? textSubheading,
     Color? textMuted,
     Color? textDescription,
+    Color? textQuiet,
     Color? cardBackground,
     Color? paneEdge,
     Color? raisedBackground,
@@ -517,6 +524,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     textSubheading: textSubheading ?? this.textSubheading,
     textMuted: textMuted ?? this.textMuted,
     textDescription: textDescription ?? this.textDescription,
+    textQuiet: textQuiet ?? this.textQuiet,
     cardBackground: cardBackground ?? this.cardBackground,
     paneEdge: paneEdge ?? this.paneEdge,
     raisedBackground: raisedBackground ?? this.raisedBackground,
@@ -604,6 +612,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       textSubheading: mix(textSubheading, other.textSubheading),
       textMuted: mix(textMuted, other.textMuted),
       textDescription: mix(textDescription, other.textDescription),
+      textQuiet: mix(textQuiet, other.textQuiet),
       cardBackground: mix(cardBackground, other.cardBackground),
       paneEdge: mix(paneEdge, other.paneEdge),
       raisedBackground: t < 0.5 ? raisedBackground : other.raisedBackground,
@@ -841,21 +850,20 @@ class EditorMetrics {
   }
 }
 
-/// The small radius system shared by controls and surfaces.
+/// The radii of the design system (handoffs/design-system/tokens.md).
 ///
-/// Keeping these steps close makes the app feel friendly without turning
-/// every panel into a pill. Borders, never shadows, separate one layer from
-/// another. Controls of every kind share one radius: buttons, icon actions,
-/// fields and toggles. Menus, floating panels and the cards inside a dialog
-/// share the next.
+/// Controls and selected rows share [control]. A card of settings rows is
+/// [group], a card of notes in a list is [card], and a dialog, menu or
+/// floating panel is [surface]. Chips are full pills. Fills one or two steps
+/// apart separate one layer from another: no borders, no shadows.
 class AppRadii {
   const AppRadii._();
 
   static const double small = 4;
-  static const double compact = 6;
-  static const double control = 9;
+  static const double control = 7;
+  static const double group = 10;
   static const double surface = 12;
-  static const double dialog = 18;
+  static const double card = 20;
   static const double pill = 999;
 }
 
@@ -1119,27 +1127,42 @@ class AppTypeScale {
       ? 14
       : 13;
 
-  /// Section titles, the app-bar title, an empty state's first line.
+  /// A window's, a pane's or a dialog's own title, set semibold.
   static double get title => _touch
       ? 17
       : _windows
-      ? 16
-      : 15;
+      ? 15.5
+      : 14.5;
 
-  /// Dialog titles — the largest step in ordinary chrome.
+  /// A dialog's title: the same step as [title] on a desktop, where the
+  /// references set "Preferences" at 14.5, and larger on a phone.
   static double get heading => _touch
       ? 20
       : _windows
-      ? 19
-      : 16;
+      ? 15.5
+      : 14.5;
 
-  /// The name of the space the notes list is showing, over the list: the
-  /// window's own heading, set in Shantell Sans.
+  /// The name of the space the notes list is showing, over the list. On a
+  /// phone it is the screen's large title, the same 26 as an open note's.
   static double get spaceTitle => _touch
-      ? 20
+      ? 26
       : _windows
-      ? 21
-      : 20;
+      ? 15.5
+      : 14.5;
+
+  /// A row's title in a list card or a settings card.
+  static double get row => _touch
+      ? 16
+      : _windows
+      ? 14
+      : 14;
+
+  /// A chip's words: a date, a tag, a count.
+  static double get chip => _touch
+      ? 12
+      : _windows
+      ? 11
+      : 10.5;
 
   /// The brand lockup, which is set in its own face and carries its own
   /// optical size a half point off [title].
@@ -1153,24 +1176,28 @@ class AppTypeScale {
   static double get display => _touch ? 34 : 32;
 }
 
-/// The two faces the interface is set in, bundled so that every platform
-/// renders the same letters. The writing surface has its own: see
+/// The faces the interface is set in. The writing surface has its own: see
 /// [WritingFont].
 class AppFonts {
   const AppFonts._();
 
-  /// Every control and label: menus, buttons, fields, lists.
-  static const String ui = 'Figtree';
+  /// Every control and label: San Francisco through the system face on a Mac
+  /// or an iPhone, which its licence keeps out of the bundle, and Inter,
+  /// bundled, on Windows, Android and Linux.
+  static String get ui => AppPlatform.isMacOS || AppPlatform.isIOS
+      ? AppPlatform.uiFontFamily
+      : inter;
 
-  /// A note's title in the default writing font.
-  static const String title = 'Newsreader';
+  static const String inter = 'Inter';
+
+  /// The handwritten accent's face: see [handAccent].
+  static const String hand = 'Shantell Sans';
 
   /// Figures that have to line up and keys that have to look like keys:
-  /// calculation results and keycaps.
+  /// calculation results, keycaps and code.
   static const String mono = 'Geist Mono';
 
-  /// What draws the scripts and symbols Figtree does not have: the system's
-  /// own interface face first.
+  /// What draws the scripts and symbols the interface face does not have.
   static List<String> get uiFallback => [
     AppPlatform.uiFontFamily,
     ...AppPlatform.uiFontFallback,
@@ -1180,73 +1207,40 @@ class AppFonts {
   static const List<String> monoFallback = AppPlatform.monoFontFallback;
 }
 
-/// The weight ladder for interface text.
-///
-/// Figtree, Geist Mono and Shantell Sans are variable on `wght` (300–900,
-/// 100–900 and 300–800). The in-between steps are real on those faces.
-/// Newsreader titles are a static 400 cut and ignore the axis. Odin Rounded
-/// is a static bold and is only the wordmark.
-///
-/// What the eye should land on decides the step:
-/// body, task names and note rows at 400, a selected or hovered row at 460,
-/// a button or chip at 500, a section label at 520, a page title or a key
-/// number at 600.
+/// The interface's two weights: [regular] for everything people read, and
+/// [semibold] for a window's, a dialog's or a page's title. Hierarchy
+/// otherwise comes from size and grey level, never from weight.
 class AppWeight {
   const AppWeight._();
 
-  static const double body = 400;
-  static const double selected = 460;
-  static const double button = 500;
+  static const double regular = 400;
+  static const double semibold = 600;
 
-  /// Old name for [button]. Buttons and chips sit here, not rows.
-  static const double rowTitle = button;
-  static const double section = 520;
-  static const double page = 600;
+  /// A Flutter weight on this ladder: w600 and up is a title, the rest reads.
+  static double axisOf(FontWeight weight) =>
+      weight.value >= 600 ? semibold : regular;
 
-  /// What a named weight means on the ladder.
-  ///
-  /// w400 is a row. w500 is a button, a chip, or a handwriting title that is
-  /// not a page title. w600 is a section label. w700 is a page title or a
-  /// key number. A selected row does not use this: it is [selected], and no
-  /// higher. Anything under 400, the display cut, is left alone.
-  static double axisOf(FontWeight weight) {
-    final value = weight.value;
-    if (value < 400) return value.toDouble();
-    if (value <= 400) return body;
-    if (value <= 500) return button;
-    if (value <= 600) return section;
-    return page;
-  }
-
-  /// Nearest named weight, for a fallback face with no `wght` axis.
+  /// Nearest named weight, for a face with no `wght` axis.
   static FontWeight named(double axis) {
-    if (axis < 350) return FontWeight.w300;
-    if (axis < 450) return FontWeight.w400;
-    if (axis < 510) return FontWeight.w500;
-    if (axis < 560) return FontWeight.w600;
+    if (axis < 500) return FontWeight.w400;
+    if (axis < 650) return FontWeight.w600;
     return FontWeight.w700;
   }
 
   /// [axis] as the platform's Bold Text setting wants it.
   ///
   /// `Text` honours Bold Text by merging `fontWeight: bold`, and an explicit
-  /// `wght` axis outranks that merge. A style built here therefore carries
-  /// its own bold step, or the whole interface would ignore the setting.
-  /// It rebuilds with the rest of the app on
-  /// `didChangeAccessibilityFeatures`.
-  ///
-  /// A consequence, taken deliberately: with Bold Text on, every step from
-  /// 500 up reaches 700, so a section label and a page title read alike.
-  /// Weight stops carrying their difference there; size and colour still do.
+  /// `wght` axis outranks that merge, so a style built here carries its own
+  /// bold step: regular becomes semibold, and a title becomes bold. It
+  /// rebuilds with the rest of the app on `didChangeAccessibilityFeatures`.
   static double bold(double axis) {
-    final features = WidgetsBinding.instance.platformDispatcher
-        .accessibilityFeatures;
+    final features =
+        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures;
     if (!features.boldText) return axis;
     return math.min(axis + 200, 700);
   }
 
-  /// A style's `fontWeight` for [step], Bold Text included: the named weight
-  /// a fallback face with no `wght` axis draws.
+  /// A style's `fontWeight` for [step], Bold Text included.
   static FontWeight font(double step) => named(bold(step));
 
   /// A style's `fontVariations` for [step], Bold Text included, keeping any
@@ -1256,8 +1250,7 @@ class AppWeight {
     List<FontVariation> extra = const [],
   }) => variations(bold(step), extra: extra);
 
-  /// `wght` at [axis], keeping any other axes already set (the handwriting
-  /// face's informality pins, for instance).
+  /// `wght` at [axis], keeping any other axes already set.
   static List<FontVariation> variations(
     double axis, {
     List<FontVariation> extra = const [],
@@ -1303,6 +1296,20 @@ TextStyle chromeStyle({
     fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
   );
 }
+
+/// The handwritten accent: one line in Shantell Sans at 17/24, regular, in
+/// the secondary grey, the same on a desktop and a phone. Only for the three
+/// friendly moments the design names (handoffs/design-system/tokens.md): an
+/// empty list's line, an empty Kapy AI chat and a cleared Tasks list. Never a
+/// list, tab, heading, button, Settings or a note's title.
+TextStyle handAccent(CalcPalette palette) => chromeStyle(
+  size: 17,
+  line: 24,
+  weight: AppWeight.regular,
+  color: palette.textSecondary,
+  family: AppFonts.hand,
+  extra: WritingFont.handwritten.faceVariations,
+);
 
 /// The same ladder, applied to a style the theme already built.
 TextStyle? ladder(TextStyle? style, double weight) {
@@ -1423,191 +1430,13 @@ class KapyTheme {
     AppTheme.fjord: (_fromTones(_fjordDark), _fromTones(_fjordLight)),
   };
 
-  /// Riverbank dark: warm charcoal, cream ink and a sage accent.
-  ///
-  /// The window is a step behind the page and the rail a step behind the
-  /// window, so the note is the clearest layer. Nothing light is used for an
-  /// edge or a shadow: borders and dividers are warm darks, and buttons are
-  /// flat sage tints. In a calculation the names and figures stay in the
-  /// note's ink, and only the operators and units step back.
-  static const CalcPalette darkPalette = CalcPalette(
-    number: Color(0xFFE2DCCF),
-    keyword: Color(0xFFE2DCCF),
-    unit: Color(0xFF968E7F),
-    currency: Color(0xFF968E7F),
-    function: Color(0xFFE2DCCF),
-    variable: Color(0xFFE2DCCF),
-    operator: Color(0xFF968E7F),
-    comment: Color(0xFF968E7F),
-    chipNumber: Color(0xFFB3C79C),
-    chipCurrency: Color(0xFFB3C79C),
-    chipUnit: Color(0xFFB3C79C),
-    chipBoolean: Color(0xFFB3C79C),
-    chipOther: Color(0xFFB3C79C),
-    textPrimary: Color(0xFFE2DCCF),
-    textSecondary: Color(0xFFA29A8A),
-    textTertiary: Color(0xFF968E7F),
-    separator: Color(0x0FE2DCCF),
-    sidebarBackground: Color(0xFF1C1A17),
-    editorBackground: Color(0xFF1C1A17),
-    gutterBackground: Color(0xFF1C1A17),
-    surfaceBackground: Color(0xFF1C1A17),
-    controlBackground: Color(0xFF24221E),
-    controlBorder: Color(0x0FE2DCCF),
-    selectedBackground: Color(0xFF2A2824),
-    selectedBorder: Color(0xFF7D9468),
-    selection: Color(0x4D7D9468),
-    hover: Color(0xFF282622),
-    paperFiber: Color(0x00000000),
-    paperRuling: Color(0xFF2E2A25),
-    railBackground: Color(0xFF1C1A17),
-    railBorder: Color(0x0FE2DCCF),
-    tonalBackground: Color(0xFF2E3828),
-    tonalForeground: Color(0xFFC2D6AC),
-    tonalKeyBackground: Color(0xFF3A4733),
-    tonalKeyText: Color(0xFFA9C08F),
-    keycapBackground: Color(0xFF2B2823),
-    keycapBorder: Color(0xFF36322B),
-    keycapText: Color(0xFFA29A8A),
-    scrim: Color(0xB30B0A09),
-    resultPillBackground: Color(0xFF2B3326),
-    resultPillText: Color(0xFFB3C79C),
-    totalPillBackground: Color(0xFF7D9468),
-    totalPillText: Color(0xFF1C1A17),
-    clay: Color(0xFFCF7A57),
-    clayText: Color(0xFFE0A285),
-    textHeading: Color(0xFFDAD4C7),
-    textSubheading: Color(0xFFD3CCBE),
-    textMuted: Color(0xFFB2AA9A),
-    textDescription: Color(0xFF9C9485),
-    cardBackground: Color(0xFF24221E),
-    paneEdge: Color(0x0FE2DCCF),
-    raisedBackground: Color(0xFF2A2722),
-    raisedBorder: Color(0xFF312D27),
-    switchTrackOff: Color(0xFF3A362F),
-    checkboxBorder: Color(0xFF645D51),
-    lineCommand: Color(0xFF6B6458),
-    cardTitle: Color(0xFFD9D3C6),
-    accentText: Color(0xFF9DB384),
-    pageBorder: Color(0x0FE2DCCF),
-    textDivider: Color(0xFF554F47),
-    switchThumb: Color(0xFFE2DCCF),
-    wellBackground: Color(0xFF24221E),
-    segmentSelected: Color(0xFF2A2824),
-    shadow: Color(0x00000000),
-    accent: Color(0xFF7D9468),
-    onAccent: Color(0xFF1C1A17),
-    codeKeyword: Color(0xFFCF7A57),
-    codeString: Color(0xFFB3C79C),
-    codeNumber: Color(0xFFD4B26A),
-    codeBuiltIn: Color(0xFF8FB3B0),
-    codePanel: Color(0xFF1E1C19),
-    codeChip: Color(0xFF2E2A25),
-    quoteBar: Color(0xFF4A453D),
-    tagDots: [
-      Color(0xFFC9A447),
-      Color(0xFFC4734F),
-      Color(0xFF8F9B55),
-      Color(0xFF4F9A9B),
-      Color(0xFF5FA071),
-      Color(0xFF6D88BE),
-      Color(0xFF9C77B4),
-      Color(0xFFC46F84),
-    ],
-  );
-
-  /// Riverbank light: warm paper, ink-brown text and a deeper sage.
-  ///
-  /// The dark palette turned over, from the light page in Paper: the page is
-  /// the lightest layer, the window a step behind it and the rail a step
-  /// behind that. Edges are warm tints rather than grey lines, shadows come
-  /// from the ink at low alpha, and sage and clay deepen so that what sits on
-  /// them keeps its contrast.
-  static const CalcPalette lightPalette = CalcPalette(
-    number: Color(0xFF2A2620),
-    keyword: Color(0xFF2A2620),
-    unit: Color(0xFF666054),
-    currency: Color(0xFF666054),
-    function: Color(0xFF2A2620),
-    variable: Color(0xFF2A2620),
-    operator: Color(0xFF666054),
-    comment: Color(0xFF666054),
-    chipNumber: Color(0xFF445A2F),
-    chipCurrency: Color(0xFF445A2F),
-    chipUnit: Color(0xFF445A2F),
-    chipBoolean: Color(0xFF445A2F),
-    chipOther: Color(0xFF445A2F),
-    textPrimary: Color(0xFF2A2620),
-    textSecondary: Color(0xFF666054),
-    textTertiary: Color(0xFF666054),
-    separator: Color(0xFFD9D2C1),
-    sidebarBackground: Color(0xFFF3EFE4),
-    editorBackground: Color(0xFFFCFAF4),
-    gutterBackground: Color(0xFFFCFAF4),
-    surfaceBackground: Color(0xFFFCFAF4),
-    controlBackground: Color(0xFFEFEADD),
-    controlBorder: Color(0xFFE2DCCB),
-    selectedBackground: Color(0xFFE2DCCB),
-    selectedBorder: Color(0xFF56703C),
-    selection: Color(0x3356703C),
-    hover: Color(0xFFEBE5D6),
-    // The optional notepad style keeps a barely visible fibre. Plain remains
-    // the default, and dark paper stays completely clean.
-    paperFiber: Color(0x085B5148),
-    paperRuling: Color(0xFFE6E0D0),
-    railBackground: Color(0xFFECE6D8),
-    railBorder: Color(0x0F2A2620),
-    tonalBackground: Color(0xFFE6ECDB),
-    tonalForeground: Color(0xFF445A2F),
-    tonalKeyBackground: Color(0xFFD3DEC2),
-    tonalKeyText: Color(0xFF4E6536),
-    keycapBackground: Color(0xFFEFEADD),
-    keycapBorder: Color(0xFFD9D2C1),
-    keycapText: Color(0xFF666054),
-    scrim: Color(0x332A2620),
-    resultPillBackground: Color(0xFFE3EBD8),
-    resultPillText: Color(0xFF445A2F),
-    totalPillBackground: Color(0xFF56703C),
-    totalPillText: Color(0xFFFCFAF4),
-    clay: Color(0xFFD0663B),
-    clayText: Color(0xFFB5552F),
-    textHeading: Color(0xFF2A2620),
-    textSubheading: Color(0xFF3A352D),
-    textMuted: Color(0xFF4A453B),
-    textDescription: Color(0xFF666054),
-    cardBackground: Color(0xFFF6F2E8),
-    paneEdge: Color(0xFFE2DCCB),
-    switchTrackOff: Color(0xFFDCD5C4),
-    checkboxBorder: Color(0xFFB1A996),
-    lineCommand: Color(0xFFA39B8A),
-    cardTitle: Color(0xFF2A2620),
-    accentText: Color(0xFF56703C),
-    pageBorder: Color(0xFFE6E0D0),
-    textDivider: Color(0xFFBDB6A6),
-    switchThumb: Color(0xFFFCFAF4),
-    wellBackground: Color(0xFFEFEADD),
-    segmentSelected: Color(0xFFFCFAF4),
-    shadow: Color(0x662A2620),
-    accent: Color(0xFF56703C),
-    onAccent: Color(0xFFFCFAF4),
-    codeKeyword: Color(0xFFB5552F),
-    codeString: Color(0xFF56703C),
-    codeNumber: Color(0xFF8A6A1E),
-    codeBuiltIn: Color(0xFF3F7470),
-    codePanel: Color(0xFFF6F2E8),
-    codeChip: Color(0xFFEFEADD),
-    quoteBar: Color(0xFFD0C8B5),
-    tagDots: [
-      Color(0xFFA88424),
-      Color(0xFFB5643F),
-      Color(0xFF6F7B38),
-      Color(0xFF3D8586),
-      Color(0xFF4B8A5D),
-      Color(0xFF5873A8),
-      Color(0xFF8A64A3),
-      Color(0xFFB25C72),
-    ],
-  );
+  /// Riverbank, the default: the neutral near-blacks and greys of Sanjay's
+  /// references (handoffs/design-system/tokens.md) with the brand orange as
+  /// the one accent. Surfaces sit a step or two apart, so layers part by
+  /// fill rather than by a border or a shadow, and text steps down by grey
+  /// level alone.
+  static final CalcPalette darkPalette = _fromTones(_riverbankDark);
+  static final CalcPalette lightPalette = _fromTones(_riverbankLight);
 
   /// Transparency mode.
   ///
@@ -1664,138 +1493,33 @@ class KapyTheme {
     defaultGlassAmount,
   );
 
-  // The other five themes, by the roles Themes r2 names (p-N-0). Each value
-  // is the spec's, except rose, the eighth tag colour, which the spec leaves
-  // out: it moves the way plum and rust move in that theme, and stays at
-  // least ΔE 15 from every other tag. Tags are in tag order: mustard, rust,
-  // olive, teal, sage, slate, plum and rose.
+  // The other five themes are the same ladder moved a little: Graphite a
+  // step lighter, Midnight down to true black, and Dusk, Lamplight and Fjord
+  // with a trace of violet, amber and teal in their surfaces. Text, the
+  // accent and the contrast floors are shared. Each keeps its own tag
+  // colours, in tag order: mustard, rust, olive, teal, sage, slate, plum and
+  // rose.
 
-  static const _graphiteDark = _Tones(
-    canvas: Color(0xFF151515),
-    rail: Color(0xFF111111),
-    page: Color(0xFF1B1B1B),
-    raised: Color(0xFF252525),
-    card: Color(0xFF212121),
-    key: Color(0xFF242424),
-    keyEdge: Color(0xFF2F2F2F),
-    border: Color(0xFF2A2A2A),
-    hair: Color(0xFF272727),
-    menuEdge: Color(0xFF2E2E2E),
-    divider: Color(0xFF505050),
-    switchOff: Color(0xFF333333),
-    text: Color(0xFFE6E6E6),
-    head: Color(0xFFDEDEDE),
-    subhead: Color(0xFFD7D7D7),
-    cardTitle: Color(0xFFDDDDDD),
-    muted: Color(0xFFBEBEBE),
-    sec: Color(0xFFA3A3A3),
-    faint: Color(0xFF979797),
-    dim: Color(0xFF5A5A5A),
-    dim2: Color(0xFF555555),
-    box: Color(0xFF4B4B4B),
-    accent: Color(0xFFC2C2C2),
-    link: Color(0xFFB3C2D6),
-    chipText: Color(0xFFCBD2DC),
-    tb: Color(0xFF2D2D2D),
-    tf: Color(0xFFE2E2E2),
-    tkBg: Color(0xFF4B4B4B),
-    tkText: Color(0xFFD0D0D0),
-    onAccent: Color(0xFF151515),
-    clay: Color(0xFFD58B63),
-    codeBg: Color(0xFF292929),
-    tSage: Color(0xFF343434),
-    dots: [
-      Color(0xFFC2A04E),
-      Color(0xFFC77B55),
-      Color(0xFF8F9B55),
-      Color(0xFF4F9A9B),
-      Color(0xFF5FA071),
-      Color(0xFF6F8FD0),
-      Color(0xFF9C7FB8),
-      Color(0xFFC6778B),
-    ],
-  );
-
-  static const _graphiteLight = _Tones(
-    canvas: Color(0xFFF2F2F2),
-    rail: Color(0xFFEBEBEB),
-    page: Color(0xFFFFFFFF),
-    raised: Color(0xFFF0F0F0),
-    card: Color(0xFFF7F7F7),
-    key: Color(0xFFF6F6F6),
-    keyEdge: Color(0xFFE9E9E9),
-    border: Color(0xFFEFEFEF),
-    hair: Color(0xFFF2F2F2),
-    menuEdge: Color(0xFFEAEAEA),
-    divider: Color(0xFFC5C5C5),
-    switchOff: Color(0xFFE4E4E4),
-    text: Color(0xFF1E1E1E),
-    head: Color(0xFF262626),
-    subhead: Color(0xFF2C2C2C),
-    cardTitle: Color(0xFF272727),
-    muted: Color(0xFF434343),
-    sec: Color(0xFF5C5C5C),
-    faint: Color(0xFF686868),
-    dim: Color(0xFFADADAD),
-    dim2: Color(0xFFB5B5B5),
-    box: Color(0xFFC0C0C0),
-    accent: Color(0xFF3A3A3A),
-    link: Color(0xFF2F5D99),
-    chipText: Color(0xFF2B4260),
-    tb: Color(0xFFE8E8E8),
-    tf: Color(0xFF262626),
-    tkBg: Color(0xFFC5C5C5),
-    tkText: Color(0xFF313131),
-    onAccent: Color(0xFFFFFFFF),
-    clay: Color(0xFFB5552E),
-    codeBg: Color(0xFFEFEFEF),
-    tSage: Color(0xFFE1E1E1),
-    dots: [
-      Color(0xFF8F7420),
-      Color(0xFFB0582F),
-      Color(0xFF6A7530),
-      Color(0xFF2C7778),
-      Color(0xFF3E7F50),
-      Color(0xFF4A68A6),
-      Color(0xFF7A579B),
-      Color(0xFFA94E6A),
-    ],
-  );
-
-  static const _midnightDark = _Tones(
-    canvas: Color(0xFF000000),
-    rail: Color(0xFF000000),
-    page: Color(0xFF000000),
-    raised: Color(0xFF151515),
-    card: Color(0xFF0F0F0F),
-    key: Color(0xFF151515),
-    keyEdge: Color(0xFF2E2E2E),
-    border: Color(0xFF2A2A2A),
-    hair: Color(0xFF1F1F1F),
-    menuEdge: Color(0xFF2E2E2E),
-    divider: Color(0xFF3C3B39),
-    switchOff: Color(0xFF1C1B1A),
-    text: Color(0xFFE6E2DA),
-    head: Color(0xFFDEDAD2),
-    subhead: Color(0xFFD8D4CB),
-    cardTitle: Color(0xFFDDD9D1),
-    muted: Color(0xFFC1BCB4),
-    sec: Color(0xFFA8A39A),
-    faint: Color(0xFF9A958C),
-    dim: Color(0xFF4F4C48),
-    dim2: Color(0xFF484641),
-    box: Color(0xFF3C3A37),
-    accent: Color(0xFF8BA374),
-    link: Color(0xFFA6BC8E),
-    chipText: Color(0xFFB4C99D),
-    tb: Color(0xFF1B2416),
-    tf: Color(0xFFC2D6AC),
-    tkBg: Color(0xFF313D29),
-    tkText: Color(0xFFA4BA8D),
-    onAccent: Color(0xFF000000),
-    clay: Color(0xFFCF7A57),
-    codeBg: Color(0xFF10100F),
-    tSage: Color(0xFF1C2117),
+  static const _riverbankDark = _Tones(
+    window: Color(0xFF0D0D0D),
+    pane: Color(0xFF0F0E0E),
+    card: Color(0xFF131313),
+    raised: Color(0xFF20201F),
+    selected: Color(0xFF191918),
+    hairline: Color(0xFF202020),
+    divider: Color(0xFF252524),
+    chip: Color(0xFF1E1E1E),
+    switchOff: Color(0xFF2A2A28),
+    ring: Color(0xFF4D4D4D),
+    text: Color(0xFFDBDBDB),
+    title: Color(0xFFDADADA),
+    secondary: Color(0xFF969696),
+    tertiary: Color(0xFF878787),
+    quiet: Color(0xFF7C7C7B),
+    mark: Color(0xFF494948),
+    accent: Color(0xFFE8772E),
+    onAccent: Color(0xFF1A0E06),
+    accentText: Color(0xFFE8772E),
     dots: [
       Color(0xFFC9A447),
       Color(0xFFC4734F),
@@ -1808,40 +1532,81 @@ class KapyTheme {
     ],
   );
 
-  static const _duskDark = _Tones(
-    canvas: Color(0xFF15151F),
-    rail: Color(0xFF111119),
-    page: Color(0xFF1A1A26),
-    raised: Color(0xFF232330),
-    card: Color(0xFF20202C),
-    key: Color(0xFF21212D),
-    keyEdge: Color(0xFF2B2B37),
-    border: Color(0xFF262633),
-    hair: Color(0xFF242430),
-    menuEdge: Color(0xFF2A2A36),
-    divider: Color(0xFF464653),
-    switchOff: Color(0xFF2E2E3B),
-    text: Color(0xFFC4C2D2),
-    head: Color(0xFFBFBDCE),
-    subhead: Color(0xFFBBB9CA),
-    cardTitle: Color(0xFFBEBCCD),
-    muted: Color(0xFFACAABC),
-    sec: Color(0xFF9C9AAE),
-    faint: Color(0xFF9391A6),
-    dim: Color(0xFF595869),
-    dim2: Color(0xFF535263),
-    box: Color(0xFF4A4959),
-    accent: Color(0xFF9B92C9),
-    link: Color(0xFFB2AADA),
-    chipText: Color(0xFFBEB7E2),
-    tb: Color(0xFF2A2840),
-    tf: Color(0xFFC9C3EA),
-    tkBg: Color(0xFF413D5B),
-    tkText: Color(0xFFB0A8D8),
-    onAccent: Color(0xFF15151F),
-    clay: Color(0xFFC08A78),
-    codeBg: Color(0xFF262632),
-    tSage: Color(0xFF2D2C3E),
+  /// The dark ladder turned over, each text tier at the contrast its dark
+  /// twin has: about 13.4, 6.2, 5.3 and 4.6 to 1.
+  static const _riverbankLight = _Tones(
+    window: Color(0xFFF3F3F2),
+    pane: Color(0xFFFFFFFF),
+    card: Color(0xFFF9F9F8),
+    raised: Color(0xFFEBEBEA),
+    selected: Color(0xFFECECEB),
+    hairline: Color(0xFFE6E6E5),
+    divider: Color(0xFFDEDEDD),
+    chip: Color(0xFFEFEFEE),
+    switchOff: Color(0xFFDCDCDA),
+    ring: Color(0xFFADADAB),
+    text: Color(0xFF2B2B2B),
+    title: Color(0xFF262626),
+    secondary: Color(0xFF5E5E5E),
+    tertiary: Color(0xFF666666),
+    quiet: Color(0xFF6E6E6D),
+    mark: Color(0xFFB5B5B3),
+    accent: Color(0xFFD9692A),
+    onAccent: Color(0xFF1A0E06),
+    accentText: Color(0xFFB9551A),
+    dots: [
+      Color(0xFFA88424),
+      Color(0xFFB5643F),
+      Color(0xFF6F7B38),
+      Color(0xFF3D8586),
+      Color(0xFF4B8A5D),
+      Color(0xFF5873A8),
+      Color(0xFF8A64A3),
+      Color(0xFFB25C72),
+    ],
+  );
+
+  static final _graphiteDark = _riverbankDark.moved(
+    (c) => _mix(c, const Color(0xFFFFFFFF), 0.04),
+    dots: [
+      Color(0xFFC2A04E),
+      Color(0xFFC77B55),
+      Color(0xFF8F9B55),
+      Color(0xFF4F9A9B),
+      Color(0xFF5FA071),
+      Color(0xFF6F8FD0),
+      Color(0xFF9C7FB8),
+      Color(0xFFC6778B),
+    ],
+  );
+  static final _graphiteLight = _riverbankLight.moved(
+    (c) => _mix(c, const Color(0xFF000000), 0.03),
+    dots: [
+      Color(0xFF8F7420),
+      Color(0xFFB0582F),
+      Color(0xFF6A7530),
+      Color(0xFF2C7778),
+      Color(0xFF3E7F50),
+      Color(0xFF4A68A6),
+      Color(0xFF7A579B),
+      Color(0xFFA94E6A),
+    ],
+  );
+  static final _midnightDark = _riverbankDark.moved(
+    (c) => _darker(c, 13),
+    dots: [
+      Color(0xFFC9A447),
+      Color(0xFFC4734F),
+      Color(0xFF8F9B55),
+      Color(0xFF4F9A9B),
+      Color(0xFF5FA071),
+      Color(0xFF6D88BE),
+      Color(0xFF9C77B4),
+      Color(0xFFC46F84),
+    ],
+  );
+  static final _duskDark = _riverbankDark.moved(
+    (c) => _mix(c, const Color(0xFF6B5CA5), 0.07),
     dots: [
       Color(0xFFBBA468),
       Color(0xFFBE8670),
@@ -1853,41 +1618,8 @@ class KapyTheme {
       Color(0xFFC58595),
     ],
   );
-
-  static const _duskLight = _Tones(
-    canvas: Color(0xFFECEBF2),
-    rail: Color(0xFFE5E4EC),
-    page: Color(0xFFF4F3F8),
-    raised: Color(0xFFE8E7EF),
-    card: Color(0xFFEFEEF4),
-    key: Color(0xFFECEBF1),
-    keyEdge: Color(0xFFE2E1E7),
-    border: Color(0xFFE6E5EB),
-    hair: Color(0xFFE9E8EE),
-    menuEdge: Color(0xFFE3E2E8),
-    divider: Color(0xFFC4C3CB),
-    switchOff: Color(0xFFDEDDE3),
-    text: Color(0xFF3B3A4A),
-    head: Color(0xFF3F3E4E),
-    subhead: Color(0xFF424051),
-    cardTitle: Color(0xFF3F3E4E),
-    muted: Color(0xFF4C4B5B),
-    sec: Color(0xFF585667),
-    faint: Color(0xFF626072),
-    dim: Color(0xFFA4A2AE),
-    dim2: Color(0xFFABAAB5),
-    box: Color(0xFFB7B5C0),
-    accent: Color(0xFF5E569A),
-    link: Color(0xFF5E569A),
-    chipText: Color(0xFF4F4789),
-    tb: Color(0xFFE2DFF0),
-    tf: Color(0xFF3F3878),
-    tkBg: Color(0xFFC8C4DF),
-    tkText: Color(0xFF50498B),
-    onAccent: Color(0xFFF4F3F8),
-    clay: Color(0xFFA65A3A),
-    codeBg: Color(0xFFE7E6EC),
-    tSage: Color(0xFFDEDBEA),
+  static final _duskLight = _riverbankLight.moved(
+    (c) => _mix(c, const Color(0xFF6B5CA5), 0.06),
     dots: [
       Color(0xFF866F25),
       Color(0xFFA55A3A),
@@ -1899,41 +1631,8 @@ class KapyTheme {
       Color(0xFF9E546B),
     ],
   );
-
-  static const _lamplightDark = _Tones(
-    canvas: Color(0xFF1A130C),
-    rail: Color(0xFF150F09),
-    page: Color(0xFF20180F),
-    raised: Color(0xFF2A2016),
-    card: Color(0xFF261D13),
-    key: Color(0xFF292015),
-    keyEdge: Color(0xFF342A1D),
-    border: Color(0xFF2F2519),
-    hair: Color(0xFF2C2217),
-    menuEdge: Color(0xFF33291C),
-    divider: Color(0xFF554734),
-    switchOff: Color(0xFF382D20),
-    text: Color(0xFFEBCB9E),
-    head: Color(0xFFE6C69A),
-    subhead: Color(0xFFE2C296),
-    cardTitle: Color(0xFFE6C699),
-    muted: Color(0xFFD4B488),
-    sec: Color(0xFFC4A47A),
-    faint: Color(0xFFAC8E68),
-    dim: Color(0xFF6C583F),
-    dim2: Color(0xFF65523B),
-    box: Color(0xFF5A4934),
-    accent: Color(0xFFC89550),
-    link: Color(0xFFDDB173),
-    chipText: Color(0xFFE4BD82),
-    tb: Color(0xFF3A2A16),
-    tf: Color(0xFFEBC891),
-    tkBg: Color(0xFF563F22),
-    tkText: Color(0xFFD8AC6D),
-    onAccent: Color(0xFF1A130C),
-    clay: Color(0xFFD9804F),
-    codeBg: Color(0xFF2E2519),
-    tSage: Color(0xFF392B19),
+  static final _lamplightDark = _riverbankDark.moved(
+    (c) => _mix(c, const Color(0xFFC8893A), 0.06),
     dots: [
       Color(0xFFE2B94E),
       Color(0xFFD9784A),
@@ -1945,41 +1644,8 @@ class KapyTheme {
       Color(0xFFDC7D6A),
     ],
   );
-
-  static const _lamplightLight = _Tones(
-    canvas: Color(0xFFEFE4CF),
-    rail: Color(0xFFE8DCC4),
-    page: Color(0xFFF7EEDC),
-    raised: Color(0xFFECE0C8),
-    card: Color(0xFFF2E7D2),
-    key: Color(0xFFEFE6D4),
-    keyEdge: Color(0xFFE4DAC9),
-    border: Color(0xFFE9E0CE),
-    hair: Color(0xFFECE3D1),
-    menuEdge: Color(0xFFE5DCCA),
-    divider: Color(0xFFC6BBAA),
-    switchOff: Color(0xFFE0D6C5),
-    text: Color(0xFF3A2A1A),
-    head: Color(0xFF3F2E1D),
-    subhead: Color(0xFF433220),
-    cardTitle: Color(0xFF402F1D),
-    muted: Color(0xFF533E28),
-    sec: Color(0xFF634B32),
-    faint: Color(0xFF6E5640),
-    dim: Color(0xFFAC9A86),
-    dim2: Color(0xFFB3A28E),
-    box: Color(0xFFBDAE9A),
-    accent: Color(0xFF8A5A1E),
-    link: Color(0xFF8A5A1E),
-    chipText: Color(0xFF744B18),
-    tb: Color(0xFFEBD9B6),
-    tf: Color(0xFF5E3C12),
-    tkBg: Color(0xFFD8C098),
-    tkText: Color(0xFF6D4717),
-    onAccent: Color(0xFFF7EEDC),
-    clay: Color(0xFFA84A22),
-    codeBg: Color(0xFFEAE0CE),
-    tSage: Color(0xFFE7D8C0),
+  static final _lamplightLight = _riverbankLight.moved(
+    (c) => _mix(c, const Color(0xFFC8893A), 0.07),
     dots: [
       Color(0xFF8A6A12),
       Color(0xFFA84A22),
@@ -1991,41 +1657,8 @@ class KapyTheme {
       Color(0xFFA6493D),
     ],
   );
-
-  static const _fjordDark = _Tones(
-    canvas: Color(0xFF0F1A1C),
-    rail: Color(0xFF0C1517),
-    page: Color(0xFF132124),
-    raised: Color(0xFF1B2B2E),
-    card: Color(0xFF182729),
-    key: Color(0xFF1B292C),
-    keyEdge: Color(0xFF273537),
-    border: Color(0xFF223032),
-    hair: Color(0xFF1F2D2F),
-    menuEdge: Color(0xFF263436),
-    divider: Color(0xFF475556),
-    switchOff: Color(0xFF2B393B),
-    text: Color(0xFFDCE8E6),
-    head: Color(0xFFD4E1DF),
-    subhead: Color(0xFFCEDCDA),
-    cardTitle: Color(0xFFD3E1DE),
-    muted: Color(0xFFB6C8C6),
-    sec: Color(0xFF9DB3B0),
-    faint: Color(0xFF86A09C),
-    dim: Color(0xFF526766),
-    dim2: Color(0xFF4D6160),
-    box: Color(0xFF435656),
-    accent: Color(0xFF5FB3A6),
-    link: Color(0xFF7FC9BD),
-    chipText: Color(0xFF9BD6CC),
-    tb: Color(0xFF1D3A38),
-    tf: Color(0xFFB6E3DB),
-    tkBg: Color(0xFF2A524E),
-    tkText: Color(0xFF86C9BE),
-    onAccent: Color(0xFF0F1A1C),
-    clay: Color(0xFFE08E6D),
-    codeBg: Color(0xFF212F32),
-    tSage: Color(0xFF1E3738),
+  static final _fjordDark = _riverbankDark.moved(
+    (c) => _mix(c, const Color(0xFF3F8A8C), 0.07),
     dots: [
       Color(0xFFD3B05A),
       Color(0xFFD7865F),
@@ -2037,41 +1670,8 @@ class KapyTheme {
       Color(0xFFD98396),
     ],
   );
-
-  static const _fjordLight = _Tones(
-    canvas: Color(0xFFEDF4F3),
-    rail: Color(0xFFE5EFEE),
-    page: Color(0xFFFAFDFC),
-    raised: Color(0xFFE8F1F0),
-    card: Color(0xFFF2F8F7),
-    key: Color(0xFFF1F4F3),
-    keyEdge: Color(0xFFE3E9E7),
-    border: Color(0xFFEAEEED),
-    hair: Color(0xFFEDF1F0),
-    menuEdge: Color(0xFFE5EAE9),
-    divider: Color(0xFFBFC8C6),
-    switchOff: Color(0xFFDFE4E3),
-    text: Color(0xFF18302E),
-    head: Color(0xFF1D3634),
-    subhead: Color(0xFF223B39),
-    cardTitle: Color(0xFF1E3734),
-    muted: Color(0xFF314D4A),
-    sec: Color(0xFF42605C),
-    faint: Color(0xFF506C68),
-    dim: Color(0xFF9DADAB),
-    dim2: Color(0xFFA5B5B2),
-    box: Color(0xFFB3C0BE),
-    accent: Color(0xFF1F7A70),
-    link: Color(0xFF1D6C64),
-    chipText: Color(0xFF195E57),
-    tb: Color(0xFFD7EDE9),
-    tf: Color(0xFF145049),
-    tkBg: Color(0xFFB2D6D1),
-    tkText: Color(0xFF196159),
-    onAccent: Color(0xFFFFFFFF),
-    clay: Color(0xFFB5552E),
-    codeBg: Color(0xFFEAEFEE),
-    tSage: Color(0xFFD9E9E7),
+  static final _fjordLight = _riverbankLight.moved(
+    (c) => _mix(c, const Color(0xFF3F8A8C), 0.06),
     dots: [
       Color(0xFF87701C),
       Color(0xFFAF5530),
@@ -2105,7 +1705,17 @@ class KapyTheme {
           onPrimary: onAccent,
           surface: palette.editorBackground,
           onSurface: palette.textPrimary,
-          error: dark ? const Color(0xFFFF716A) : const Color(0xFFB42318),
+          primaryContainer: dark
+              ? const Color(0xFF2B1C12)
+              : const Color(0xFFFBEADF),
+          onPrimaryContainer: palette.accentText,
+          error: dark ? const Color(0xFFEB534E) : const Color(0xFFC0332E),
+          errorContainer: dark
+              ? const Color(0xFF291919)
+              : const Color(0xFFFBE9E8),
+          onErrorContainer: dark
+              ? const Color(0xFFEB534E)
+              : const Color(0xFFB02D28),
         );
 
     final base = ThemeData(
@@ -2125,69 +1735,67 @@ class KapyTheme {
     final textTheme = base.textTheme
         .copyWith(
           displayLarge: base.textTheme.displayLarge?.copyWith(
-            fontWeight: FontWeight.w300,
-            letterSpacing: -0.5,
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           displayMedium: base.textTheme.displayMedium?.copyWith(
-            fontWeight: FontWeight.w300,
-            letterSpacing: -0.4,
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           displaySmall: base.textTheme.displaySmall?.copyWith(
-            fontWeight: FontWeight.w300,
-            letterSpacing: -0.3,
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           headlineLarge: base.textTheme.headlineLarge?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
-            letterSpacing: -0.3,
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           headlineMedium: base.textTheme.headlineMedium?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
-            letterSpacing: -0.2,
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           headlineSmall: base.textTheme.headlineSmall?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           titleLarge: base.textTheme.titleLarge?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           titleMedium: base.textTheme.titleMedium?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           titleSmall: base.textTheme.titleSmall?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           bodyLarge: base.textTheme.bodyLarge?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           bodyMedium: base.textTheme.bodyMedium?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           bodySmall: base.textTheme.bodySmall?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
             fontSize: AppPlatform.isWindows ? AppTypeScale.caption : null,
             height: AppPlatform.isWindows ? 1.3 : null,
           ),
           labelLarge: base.textTheme.labelLarge?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
           labelMedium: base.textTheme.labelMedium?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
             fontSize: AppPlatform.isWindows ? AppTypeScale.caption : null,
           ),
           labelSmall: base.textTheme.labelSmall?.copyWith(
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
             fontSize: AppPlatform.isWindows ? AppTypeScale.micro : null,
             height: AppPlatform.isWindows ? 1.2 : null,
           ),
@@ -2235,7 +1843,7 @@ class KapyTheme {
             fontSize: AppTypeScale.title,
             letterSpacing: 0,
           ),
-          AppWeight.page,
+          AppWeight.semibold,
         ),
       ),
       drawerTheme: DrawerThemeData(
@@ -2255,10 +1863,10 @@ class KapyTheme {
             color: palette.textPrimary,
             fontSize: AppTypeScale.heading,
           ),
-          AppWeight.page,
+          AppWeight.semibold,
         ),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadii.dialog),
+          borderRadius: BorderRadius.circular(AppRadii.surface),
           side: BorderSide(color: palette.controlBorder),
         ),
       ),
@@ -2324,7 +1932,7 @@ class KapyTheme {
                 base.textTheme.labelLarge?.copyWith(
                   fontSize: AppTypeScale.control,
                 ),
-                AppWeight.rowTitle,
+                AppWeight.regular,
               ),
             ).copyWith(
               backgroundColor: fillStates(
@@ -2349,7 +1957,6 @@ class KapyTheme {
               elevation: 0,
               shadowColor: Colors.transparent,
               foregroundColor: palette.textPrimary,
-              side: BorderSide(color: palette.controlBorder),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadii.control),
               ),
@@ -2357,26 +1964,30 @@ class KapyTheme {
                 base.textTheme.labelLarge?.copyWith(
                   fontSize: AppTypeScale.control,
                 ),
-                AppWeight.rowTitle,
+                AppWeight.regular,
               ),
             ).copyWith(
+              // A quiet fill, no border. Keyboard focus is the shared ring,
+              // not a border here, so focus does not also change the fill.
               backgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.pressed)) {
-                  return accent.withValues(alpha: 0.13);
-                }
-                if (states.contains(WidgetState.hovered)) {
-                  return palette.hover;
-                }
-                return Colors.transparent;
-              }),
-              side: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.disabled)) {
-                  return BorderSide(
-                    color: palette.controlBorder.withValues(alpha: 0.55),
+                  return palette.controlBackground.withValues(alpha: 0.55);
+                }
+                if (states.contains(WidgetState.pressed)) {
+                  return Color.alphaBlend(
+                    palette.textPrimary.withValues(alpha: 0.13),
+                    palette.controlBackground,
                   );
                 }
-                return BorderSide(color: palette.controlBorder);
+                if (states.contains(WidgetState.hovered)) {
+                  return Color.alphaBlend(
+                    palette.textPrimary.withValues(alpha: 0.07),
+                    palette.controlBackground,
+                  );
+                }
+                return palette.controlBackground;
               }),
+              side: const WidgetStatePropertyAll(BorderSide.none),
               overlayColor: const WidgetStatePropertyAll(Colors.transparent),
               animationDuration: const Duration(milliseconds: 120),
             ),
@@ -2391,7 +2002,7 @@ class KapyTheme {
               ),
               visualDensity: VisualDensity.standard,
               tapTargetSize: tapTarget,
-              foregroundColor: accent,
+              foregroundColor: palette.accentText,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppRadii.control),
               ),
@@ -2399,7 +2010,7 @@ class KapyTheme {
                 base.textTheme.labelLarge?.copyWith(
                   fontSize: AppTypeScale.control,
                 ),
-                AppWeight.rowTitle,
+                AppWeight.regular,
               ),
             ).copyWith(
               backgroundColor: WidgetStateProperty.resolveWith((states) {
@@ -2419,8 +2030,8 @@ class KapyTheme {
         style: SegmentedButton.styleFrom(
           foregroundColor: palette.textSecondary,
           backgroundColor: palette.surfaceBackground,
-          selectedForegroundColor: onAccent,
-          selectedBackgroundColor: accent,
+          selectedForegroundColor: palette.textPrimary,
+          selectedBackgroundColor: palette.segmentSelected,
           disabledForegroundColor: palette.textTertiary,
           disabledBackgroundColor: palette.controlBackground,
           shadowColor: Colors.transparent,
@@ -2433,16 +2044,14 @@ class KapyTheme {
             vertical: AppControlMetrics.buttonVerticalPadding,
           ),
           visualDensity: VisualDensity.standard,
-          side: BorderSide(color: palette.controlBorder),
+          side: BorderSide.none,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           tapTargetSize: tapTarget,
           textStyle: ladder(
-            base.textTheme.labelLarge?.copyWith(
-              fontSize: AppTypeScale.control,
-            ),
-            AppWeight.rowTitle,
+            base.textTheme.labelLarge?.copyWith(fontSize: AppTypeScale.control),
+            AppWeight.regular,
           ),
           overlayColor: Colors.transparent,
           animationDuration: const Duration(milliseconds: 120),
@@ -2466,27 +2075,65 @@ class KapyTheme {
         ),
         prefixIconColor: palette.textTertiary,
         suffixIconColor: palette.textTertiary,
-        border: fieldBorder(palette.controlBorder),
+        border: fieldBorder(Colors.transparent),
+        enabledBorder: fieldBorder(Colors.transparent),
+        focusedBorder: fieldBorder(accent, width: 1.25),
+        errorBorder: fieldBorder(scheme.error),
+        focusedErrorBorder: fieldBorder(scheme.error, width: 1.25),
       ),
       switchTheme: SwitchThemeData(
         materialTapTargetSize: tapTarget,
         splashRadius: 16,
-        thumbColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.selected)
-              ? onAccent
-              : palette.textTertiary,
-        ),
+        thumbColor: WidgetStatePropertyAll(palette.switchThumb),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
               ? accent
-              : palette.controlBackground,
+              : palette.switchTrackOff,
         ),
-        trackOutlineColor: WidgetStateProperty.resolveWith(
+        trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
+      ),
+      checkboxTheme: CheckboxThemeData(
+        materialTapTargetSize: tapTarget,
+        shape: const CircleBorder(),
+        side: WidgetStateBorderSide.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? Colors.transparent
-              : palette.controlBorder,
+              ? BorderSide.none
+              : BorderSide(color: palette.checkboxBorder, width: 1.5),
         ),
-        trackOutlineWidth: const WidgetStatePropertyAll(0.5),
+        fillColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? accent
+              : Colors.transparent,
+        ),
+        checkColor: WidgetStatePropertyAll(onAccent),
+      ),
+      radioTheme: RadioThemeData(
+        materialTapTargetSize: tapTarget,
+        fillColor: WidgetStateProperty.resolveWith(
+          (states) => states.contains(WidgetState.selected)
+              ? accent
+              : palette.checkboxBorder,
+        ),
+      ),
+      chipTheme: ChipThemeData(
+        backgroundColor: palette.resultPillBackground,
+        selectedColor: scheme.primaryContainer,
+        side: BorderSide.none,
+        shape: const StadiumBorder(),
+        labelStyle: base.textTheme.labelSmall?.copyWith(
+          fontSize: AppTypeScale.chip,
+          color: palette.textTertiary,
+        ),
+      ),
+      dividerTheme: DividerThemeData(
+        color: palette.pageBorder,
+        thickness: 0.5,
+        space: 0.5,
+      ),
+      progressIndicatorTheme: ProgressIndicatorThemeData(
+        color: accent,
+        linearTrackColor: palette.switchTrackOff,
+        circularTrackColor: palette.switchTrackOff,
       ),
       scrollbarTheme: ScrollbarThemeData(
         thickness: WidgetStatePropertyAll(compactControls ? 4 : 6),
@@ -2536,171 +2183,205 @@ extension MultipliedColorAlpha on Color {
       withValues(alpha: (a * factor).clamp(0.0, 1.0));
 }
 
-/// One theme on one side, by the roles Themes r2 names (p-N-0). The palette
-/// the app reads is worked out from these in [_fromTones].
+/// One theme on one side, by the roles of the design system's ladder
+/// (handoffs/design-system/tokens.md). The palette the app reads is worked
+/// out from these in [_fromTones].
 class _Tones {
   const _Tones({
-    required this.canvas,
-    required this.rail,
-    required this.page,
-    required this.raised,
+    required this.window,
+    required this.pane,
     required this.card,
-    required this.key,
-    required this.keyEdge,
-    required this.border,
-    required this.hair,
-    required this.menuEdge,
+    required this.raised,
+    required this.selected,
+    required this.hairline,
     required this.divider,
+    required this.chip,
     required this.switchOff,
+    required this.ring,
     required this.text,
-    required this.head,
-    required this.subhead,
-    required this.cardTitle,
-    required this.muted,
-    required this.sec,
-    required this.faint,
-    required this.dim,
-    required this.dim2,
-    required this.box,
+    required this.title,
+    required this.secondary,
+    required this.tertiary,
+    required this.quiet,
+    required this.mark,
     required this.accent,
-    required this.link,
-    required this.chipText,
-    required this.tb,
-    required this.tf,
-    required this.tkBg,
-    required this.tkText,
     required this.onAccent,
-    required this.clay,
-    required this.codeBg,
-    required this.tSage,
+    required this.accentText,
     required this.dots,
   });
 
-  final Color canvas;
-  final Color rail;
-  final Color page;
-  final Color raised;
+  /// The sidebar, the rail and the list behind the cards.
+  final Color window;
+
+  /// The open note and a dialog's content side.
+  final Color pane;
+
+  /// A card of notes or of settings rows.
   final Color card;
-  final Color key;
-  final Color keyEdge;
-  final Color border;
-  final Color hair;
-  final Color menuEdge;
+
+  /// A quiet button's fill, a field, a keycap.
+  final Color raised;
+
+  /// A selected or hovered row.
+  final Color selected;
+
+  /// The line between rows inside a card, inset to the text.
+  final Color hairline;
+
+  /// The line between panes, and a floating surface's edge.
   final Color divider;
+  final Color chip;
   final Color switchOff;
+
+  /// An empty checkbox's ring.
+  final Color ring;
+
   final Color text;
-  final Color head;
-  final Color subhead;
-  final Color cardTitle;
-  final Color muted;
-  final Color sec;
-  final Color faint;
-  final Color dim;
-  final Color dim2;
-  final Color box;
+  final Color title;
+  final Color secondary;
+  final Color tertiary;
+
+  /// The quietest words: group labels, counts, the version line.
+  final Color quiet;
+
+  /// Dots and chevrons between words, never words themselves.
+  final Color mark;
+
   final Color accent;
-  final Color link;
-  final Color chipText;
-  final Color tb;
-  final Color tf;
-  final Color tkBg;
-  final Color tkText;
   final Color onAccent;
-  final Color clay;
-  final Color codeBg;
-  final Color tSage;
+  final Color accentText;
   final List<Color> dots;
+
+  /// This ladder with every surface, line and ring passed through [move]:
+  /// how the other themes shift Riverbank's. Text and the accent stay.
+  _Tones moved(Color Function(Color) move, {required List<Color> dots}) =>
+      _Tones(
+        window: move(window),
+        pane: move(pane),
+        card: move(card),
+        raised: move(raised),
+        selected: move(selected),
+        hairline: move(hairline),
+        divider: move(divider),
+        chip: move(chip),
+        switchOff: move(switchOff),
+        ring: move(ring),
+        text: text,
+        title: title,
+        secondary: secondary,
+        tertiary: tertiary,
+        quiet: quiet,
+        mark: mark,
+        accent: accent,
+        onAccent: onAccent,
+        accentText: accentText,
+        dots: dots,
+      );
 }
 
-/// A theme's palette from its roles, the way Paper's frames swapped
-/// Riverbank's colours role by role. The few colours the spec gives no role
-/// keep Riverbank's relation to the roles it does: the well and a code
-/// block's panel sit halfway between the window and the page in the dark,
-/// descriptions halfway between secondary and faint text, and a code
-/// block's colours and clay as words are deepened only as far as they need
-/// to read at 4.5:1.
+/// A theme's palette from its ladder. Every word reads at 4.5:1 or better
+/// on every surface it can sit on, and the accent at 3:1 against the
+/// surfaces it fills on: a tier that falls short in a shifted theme is moved
+/// toward the text only as far as that takes.
 CalcPalette _fromTones(_Tones t) {
-  final dark = ThemeData.estimateBrightnessForColor(t.page) == Brightness.dark;
-  final well = dark ? _mix(t.canvas, t.page, 0.5) : t.raised;
-  final panel = dark ? well : t.card;
-  Color code(Color ink) => _legible(ink, [panel], toward: t.text);
+  final dark = ThemeData.estimateBrightnessForColor(t.pane) == Brightness.dark;
+  final grounds = [t.window, t.pane, t.card, t.selected];
+  Color read(Color ink) => _legible(ink, grounds, toward: t.text);
+  final secondary = read(t.secondary);
+  final tertiary = read(t.tertiary);
+  final quiet = read(t.quiet);
+  final accentText = read(t.accentText);
+  final accent = _legible(
+    t.accent,
+    [t.window, t.pane, t.card],
+    toward: t.text,
+    ratio: 3,
+  );
+  Color code(Color ink) => _legible(ink, [t.card], toward: t.text);
   return CalcPalette(
     number: t.text,
     keyword: t.text,
-    unit: t.faint,
-    currency: t.faint,
+    unit: tertiary,
+    currency: tertiary,
     function: t.text,
     variable: t.text,
-    operator: t.faint,
-    comment: t.faint,
-    chipNumber: t.chipText,
-    chipCurrency: t.chipText,
-    chipUnit: t.chipText,
-    chipBoolean: t.chipText,
-    chipOther: t.chipText,
+    operator: tertiary,
+    comment: tertiary,
+    chipNumber: t.text,
+    chipCurrency: t.text,
+    chipUnit: t.text,
+    chipBoolean: t.text,
+    chipOther: t.text,
     textPrimary: t.text,
-    textSecondary: t.sec,
-    textTertiary: t.faint,
-    separator: t.menuEdge,
-    sidebarBackground: t.canvas,
-    editorBackground: t.page,
-    gutterBackground: t.page,
-    surfaceBackground: t.page,
+    textSecondary: secondary,
+    textTertiary: tertiary,
+    separator: t.divider,
+    sidebarBackground: t.window,
+    editorBackground: t.pane,
+    gutterBackground: t.pane,
+    surfaceBackground: t.pane,
     controlBackground: t.raised,
-    controlBorder: t.border,
-    selectedBackground: t.keyEdge,
-    selectedBorder: t.accent,
-    selection: t.accent.withAlpha(dark ? 0x4D : 0x33),
-    hover: t.hair,
-    paperFiber: dark ? const Color(0x00000000) : t.muted.withAlpha(0x08),
-    paperRuling: t.hair,
-    railBackground: t.rail,
-    railBorder: t.text.withAlpha(0x0F),
-    tonalBackground: t.tb,
-    tonalForeground: t.tf,
-    tonalKeyBackground: t.tkBg,
-    tonalKeyText: t.tkText,
-    keycapBackground: t.key,
-    keycapBorder: t.keyEdge,
-    keycapText: t.sec,
-    scrim: dark
-        ? _mix(t.rail, const Color(0xFF000000), 0.5).withAlpha(0xB3)
-        : t.text.withAlpha(0x33),
-    resultPillBackground: t.tSage,
-    resultPillText: t.chipText,
-    totalPillBackground: t.accent,
+    controlBorder: t.divider,
+    selectedBackground: t.selected,
+    selectedBorder: accent,
+    selection: accent.withAlpha(dark ? 0x4D : 0x40),
+    hover: t.selected,
+    paperFiber: const Color(0x00000000),
+    paperRuling: t.hairline,
+    railBackground: t.window,
+    railBorder: t.divider,
+    tonalBackground: t.raised,
+    tonalForeground: t.text,
+    tonalKeyBackground: t.divider,
+    tonalKeyText: secondary,
+    keycapBackground: t.raised,
+    keycapBorder: t.raised,
+    keycapText: secondary,
+    scrim: dark ? const Color(0xB3000000) : t.text.withAlpha(0x33),
+    resultPillBackground: t.chip,
+    resultPillText: t.text,
+    totalPillBackground: accent,
     totalPillText: t.onAccent,
-    clay: t.clay,
-    clayText: _legible(t.clay, [t.page, t.card], toward: t.text),
-    textHeading: t.head,
-    textSubheading: t.subhead,
-    textMuted: t.muted,
-    textDescription: _mix(t.sec, t.faint, 0.5),
+    clay: accent,
+    clayText: accentText,
+    textHeading: t.title,
+    textSubheading: t.text,
+    textMuted: secondary,
+    textDescription: secondary,
+    textQuiet: quiet,
     cardBackground: t.card,
-    paneEdge: dark ? t.hair : t.border,
+    paneEdge: t.divider,
     switchTrackOff: t.switchOff,
-    checkboxBorder: t.dim2,
-    lineCommand: t.dim,
-    cardTitle: t.cardTitle,
-    accentText: t.link,
-    pageBorder: t.hair,
-    textDivider: t.divider,
-    switchThumb: dark ? t.text : t.page,
-    wellBackground: well,
-    segmentSelected: dark ? t.menuEdge : t.page,
+    checkboxBorder: t.ring,
+    lineCommand: quiet,
+    cardTitle: t.text,
+    accentText: accentText,
+    pageBorder: t.hairline,
+    textDivider: t.mark,
+    switchThumb: const Color(0xFFFFFFFF),
+    wellBackground: t.raised,
+    segmentSelected: t.raised,
     shadow: dark ? const Color(0xFF000000) : t.text.withAlpha(0x66),
-    accent: t.accent,
+    accent: accent,
     onAccent: t.onAccent,
-    codeKeyword: code(t.clay),
-    codeString: code(dark ? t.chipText : t.link),
+    codeKeyword: accentText,
+    codeString: code(t.dots[4]),
     codeNumber: code(t.dots[0]),
     codeBuiltIn: code(t.dots[3]),
-    codePanel: panel,
-    codeChip: t.codeBg,
-    quoteBar: t.box,
+    codePanel: t.card,
+    codeChip: t.chip,
+    quoteBar: t.ring,
     tagDots: t.dots,
   );
 }
+
+/// [c] with every channel [by] steps darker, as far as black.
+Color _darker(Color c, int by) => Color.fromARGB(
+  (c.a * 255).round(),
+  math.max(0, (c.r * 255).round() - by),
+  math.max(0, (c.g * 255).round() - by),
+  math.max(0, (c.b * 255).round() - by),
+);
 
 /// [a] moved [t] of the way to [b], channel by channel in whole steps.
 Color _mix(Color a, Color b, double t) {
@@ -2717,9 +2398,14 @@ Color _mix(Color a, Color b, double t) {
   );
 }
 
-/// [ink] where it already reads at 4.5:1 on every one of [grounds], and
+/// [ink] where it already reads at [ratio] on every one of [grounds], and
 /// otherwise moved toward [toward] only as far as that takes.
-Color _legible(Color ink, List<Color> grounds, {required Color toward}) {
+Color _legible(
+  Color ink,
+  List<Color> grounds, {
+  required Color toward,
+  double ratio = 4.5,
+}) {
   double contrast(Color a, Color b) {
     final x = a.computeLuminance(), y = b.computeLuminance();
     return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05);
@@ -2727,7 +2413,7 @@ Color _legible(Color ink, List<Color> grounds, {required Color toward}) {
 
   for (var step = 0; step <= 20; step++) {
     final candidate = _mix(ink, toward, step / 20);
-    if (grounds.every((ground) => contrast(candidate, ground) >= 4.5)) {
+    if (grounds.every((ground) => contrast(candidate, ground) >= ratio)) {
       return candidate;
     }
   }
