@@ -20,13 +20,15 @@
 # PHONE_TESTS, when set, names the only tests to run, such as
 # `phone_recording_away`, for a run that checks one test.
 #
-# On an Android emulator, a file whose run the emulator spoiled rather than a
-# test (the app's VM Service refused or never answered, or the emulator went
-# offline before the results came back) gets adb restarted and runs once more,
-# as long as fewer than PHONE_RETRY_MINUTES (0 by default) have gone by. A
-# VM Service that isn't answering is given up on within about a minute and a
-# half instead of after the file's whole limit. A file with a failing test is
-# never run again.
+# On an Android emulator, a file whose run the emulator spoiled before its
+# tests finished (the app's VM Service refused or never answered, or the
+# emulator went offline mid-test) gets adb restarted and runs once more, as
+# long as fewer than PHONE_RETRY_MINUTES (0 by default) have gone by. A VM
+# Service that isn't answering is given up on within about a minute and a half
+# instead of after the file's whole limit. A file whose app logged "All tests
+# passed!" and then lost only the results, with the emulator gone, counts as
+# passed, with a warning that its Flutter screenshots are missing. A file with
+# a failing test is never run again.
 set -u
 
 device=$1
@@ -125,6 +127,11 @@ drive() {
     limit=$(( ${PHONE_FILE_MINUTES:-20} * 60 ))
     if (( code == 0 )); then return 0; fi
     sleep 1
+    if $android && spoiled && grep -q 'All tests passed!' "$log"; then
+      echo "::warning::$1_test.dart passed, but the emulator dropped before its results came back, so its Flutter screenshots are missing; restarting adb"
+      reconnect
+      return 0
+    fi
     if ! $android || (( tries > 0 || SECONDS >= retry_until )) || ! spoiled; then
       status=1
       return
