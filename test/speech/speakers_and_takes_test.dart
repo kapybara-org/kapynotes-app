@@ -151,10 +151,22 @@ void main() {
   });
 
   group('making something from the transcript', () {
+    // Posts are made from Ask's starters and bar now. With no Kapy AI here,
+    // the bar takes a post's instruction, as it does in a hidden note.
+    Future<void> open(WidgetTester tester, Widget window) async {
+      tester.view
+        ..physicalSize = const Size(900, 900)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(window);
+      await tester.pumpAndSettle();
+    }
+
     testWidgets('a preset writes a post and keeps it', (tester) async {
       String? asked;
       NoteVoiceRef? saved;
-      await tester.pumpWidget(
+      await open(
+        tester,
         harness(
           recording(transcript: conversation(), summary: aSummary()),
           actions: VoiceNoteActions(
@@ -166,9 +178,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Post for X'));
+      await tester.tap(find.text('Create X Post'));
       await tester.pumpAndSettle();
 
       expect(asked, contains('260 characters'));
@@ -177,36 +188,42 @@ void main() {
       expect(saved!.takes.single.text, 'Shipped the export fix today.');
     });
 
-    testWidgets('a custom instruction is asked for, and recorded', (
+    testWidgets('the bar\'s own words are the instruction, and are recorded', (
       tester,
     ) async {
       NoteVoiceRef? saved;
-      await tester.pumpWidget(
+      String? asked;
+      await open(
+        tester,
         harness(
           recording(transcript: conversation(), summary: aSummary()),
           actions: VoiceNoteActions(
             onChanged: (next) => saved = next,
-            onRewrite: (instruction) async => 'A note to the team.',
+            onRewrite: (instruction) async {
+              asked = instruction;
+              return 'A note to the team.';
+            },
           ),
         ),
       );
-      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Your own words…'));
-      await tester.pumpAndSettle();
+      expect(find.text('What should it create?'), findsOneWidget);
       await tester.enterText(find.byType(TextField), 'Write it as a haiku.');
-      await tester.tap(find.text('Write it'));
+      await tester.testTextInput.receiveAction(TextInputAction.send);
       await tester.pumpAndSettle();
 
+      expect(asked, 'Write it as a haiku.');
       expect(saved!.takes.single.kind, VoiceTakeKind.custom);
-      // Kept so the card still says what was asked for, days later.
+      // Kept so the post still says what was asked for, days later.
       expect(saved!.takes.single.instruction, 'Write it as a haiku.');
       expect(find.text('Write it as a haiku.'), findsOneWidget);
+      expect(find.text('A note to the team.'), findsOneWidget);
     });
 
     testWidgets('a failure says why, and keeps nothing', (tester) async {
       NoteVoiceRef? saved;
-      await tester.pumpWidget(
+      await open(
+        tester,
         harness(
           recording(transcript: conversation(), summary: aSummary()),
           actions: VoiceNoteActions(
@@ -215,9 +232,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Post for X'));
+      await tester.tap(find.text('Create X Post'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('did not work'), findsOneWidget);
@@ -228,7 +244,8 @@ void main() {
       // Recordings transcribed before the job id was kept on the note cannot
       // be billed against anything, and "not made by the server" is baffling
       // to somebody whose transcript plainly was.
-      await tester.pumpWidget(
+      await open(
+        tester,
         harness(
           recording(transcript: monologue(), summary: aSummary()),
           actions: VoiceNoteActions(
@@ -240,9 +257,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Post for X'));
+      await tester.tap(find.text('Create X Post'));
       await tester.pumpAndSettle();
       expect(
         find.text('Transcribe this recording again to write from it.'),
@@ -253,7 +269,8 @@ void main() {
     testWidgets('a spent cloud AI allowance says when it returns', (
       tester,
     ) async {
-      await tester.pumpWidget(
+      await open(
+        tester,
         harness(
           recording(transcript: conversation(), summary: aSummary()),
           actions: VoiceNoteActions(
@@ -266,9 +283,8 @@ void main() {
           ),
         ),
       );
-      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Post for X'));
+      await tester.tap(find.text('Create X Post'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Cloud summaries reset on'), findsOneWidget);
@@ -278,14 +294,15 @@ void main() {
     testWidgets('there is nothing to make one from without a transcript', (
       tester,
     ) async {
-      await tester.pumpWidget(
+      await open(
+        tester,
         harness(
           recording(summary: aSummary()),
           actions: VoiceNoteActions(onRewrite: (instruction) async => 'x'),
         ),
       );
-      await tester.pumpAndSettle();
-      expect(find.text('Post for X'), findsNothing);
+      expect(find.text('Create X Post'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
     });
   });
 
@@ -338,9 +355,9 @@ void main() {
 
   group('it fits', () {
     // A pane that overflows throws in a test, so these are real assertions
-    // rather than a gesture: the summary tab carries a summary, three chips,
-    // a caption with a button beside it and a card, and the phone gets the
-    // same content in two thirds of the width.
+    // rather than a gesture: the summary tab carries a summary, a caption with
+    // a button beside it, and the starters and bar under it, and the phone
+    // gets the same content in two thirds of the width.
     for (final size in const [Size(560, 640), Size(360, 720)]) {
       testWidgets('at ${size.width.toInt()} by ${size.height.toInt()}', (
         tester,
@@ -376,8 +393,9 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // The summary tab, with everything on it.
-        expect(find.text('Post for X'), findsNWidgets(2));
+        // The summary tab, with everything on it, and the starters under it.
+        expect(find.text('Create X Post'), findsOneWidget);
+        expect(find.byKey(const ValueKey('voice-ask-earlier')), findsOneWidget);
         expect(find.text('Instructions'), findsOneWidget);
         expect(tester.takeException(), isNull);
 

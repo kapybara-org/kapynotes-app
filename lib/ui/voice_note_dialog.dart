@@ -12,10 +12,7 @@ import '../core/theme.dart';
 import '../data/note_attachment.dart';
 import '../data/voice_prefs.dart' show speechLanguages;
 import '../speech/moments.dart';
-import '../speech/speech_errors.dart';
-import '../speech/summarizer.dart';
 import '../speech/summary_instructions.dart';
-import '../sync/sync_api.dart';
 import 'context_menu.dart';
 import 'editor/voice_chip.dart';
 import 'settings_rows.dart' show SettingsPie, SettingsSegmented;
@@ -173,11 +170,6 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
   /// writing a post has to show up immediately, so the edit is made here and
   /// handed to [VoiceNoteActions.onChanged] to persist.
   late NoteVoiceRef _live;
-
-  /// The rewrite being written, if one is. Only ever one at a time: they
-  /// cost a model call and two at once would race to be saved.
-  VoiceTakeKind? _rewriting;
-  String? _rewriteError;
 
   /// The transcript as rows, and when each summary point was said, worked
   /// out once per transcript and summary rather than on every build: a long
@@ -406,6 +398,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     final insertable = _textOf(summary: _onSummary);
     final insert = widget.actions.onInsert;
     final ask = widget.actions.ask;
+    final posting = widget.actions.onRewrite != null && _ref.transcript != null;
     final body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -435,13 +428,13 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                 },
         ),
         Expanded(
-          child: ask == null
+          child: ask == null && !posting
               ? _content(palette)
               : VoiceAsk(
                   actions: ask,
                   ref: _ref,
                   page: _content(palette),
-                  unavailable: _askUnavailable(ask),
+                  unavailable: ask == null ? null : _askUnavailable(ask),
                   compact: widget.asSheet,
                   onPlay: (at) => unawaited(_seekTo(at)),
                   onCited: _cite,
@@ -452,6 +445,10 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                           Navigator.of(context).maybePop();
                         },
                   onCopy: (text) => unawaited(_copy(text)),
+                  onWrite: posting ? _write : null,
+                  onRemove: widget.actions.onChanged == null
+                      ? null
+                      : (take) => _apply(_ref.withoutTake(take)),
                 ),
         ),
       ],
@@ -602,7 +599,6 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
   Widget _summary(CalcPalette palette) {
     final summary = _ref.summary!;
     final moments = _summaryMoments();
-    final takes = _ref.takes.reversed.toList(growable: false);
     return ListView(
       padding: const EdgeInsets.fromLTRB(22, 14, 22, 20),
       children: [
@@ -657,65 +653,6 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
               ),
           ],
         ),
-        if (_ref.transcript != null && widget.actions.onRewrite != null) ...[
-          const SizedBox(height: 18),
-          Divider(height: 1, color: palette.separator),
-          const SizedBox(height: 16),
-          Text(
-            'MAKE SOMETHING FROM THIS',
-            style: TextStyle(
-              fontSize: AppTypeScale.micro,
-              letterSpacing: 0.8,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
-              color: palette.textTertiary,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final kind in VoiceTakeKind.values)
-                _RewriteChip(
-                  label: switch (kind) {
-                    VoiceTakeKind.x => 'Post for X',
-                    VoiceTakeKind.linkedin => 'Post for LinkedIn',
-                    VoiceTakeKind.custom => 'Your own words…',
-                  },
-                  busy: _rewriting == kind,
-                  // One at a time: each costs a model call, and two racing
-                  // would both try to be the newest take.
-                  onPressed: _rewriting != null
-                      ? null
-                      : () => unawaited(_rewrite(kind)),
-                ),
-            ],
-          ),
-          if (_rewriteError case final String reason) ...[
-            const SizedBox(height: 10),
-            Text(
-              reason,
-              style: TextStyle(
-                fontSize: AppTypeScale.small,
-                color: palette.textSecondary,
-              ),
-            ),
-          ],
-          for (final take in takes) ...[
-            const SizedBox(height: 12),
-            _TakeCard(
-              take: take,
-              onCopy: () => unawaited(_copy(take.text)),
-              onRemove: () => _apply(_ref.withoutTake(take)),
-              onAgain: _rewriting != null
-                  ? null
-                  : () => unawaited(
-                      _rewrite(take.kind, custom: take.instruction),
-                    ),
-            ),
-          ],
-        ],
       ],
     );
   }
@@ -730,73 +667,23 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     _say('Copied');
   }
 
-  /// Writes one take, and keeps it.
-  ///
-  /// A custom instruction is asked for first, pre-filled with whatever was
-  /// asked last time so that trying a wording again is an edit rather than a
-  /// retype.
-  Future<void> _rewrite(VoiceTakeKind kind, {String? custom}) async {
-    final rewrite = widget.actions.onRewrite;
-    final transcript = _ref.transcript;
-    if (rewrite == null || transcript == null) return;
-
-    var instruction = instructionFor(kind, custom: custom);
-    if (kind == VoiceTakeKind.custom) {
-      final asked = await _askForInstruction(
-        initial: custom ?? _lastCustomInstruction ?? '',
-      );
-      if (asked == null || asked.trim().isEmpty) return;
-      instruction = asked.trim();
-      _lastCustomInstruction = instruction;
-    }
-
-    setState(() {
-      _rewriting = kind;
-      _rewriteError = null;
-    });
-    try {
-      final text = await rewrite(instruction);
-      if (!mounted) return;
-      _apply(
-        _ref.withTake(
-          VoiceTake(
-            kind: kind,
-            text: text,
-            engine: _ref.summary?.engine ?? transcript.engine,
-            at: DateTime.now().millisecondsSinceEpoch,
-            instruction: kind == VoiceTakeKind.custom ? instruction : null,
-          ),
-        ),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _rewriteError = _describe(error));
-    } finally {
-      if (mounted) setState(() => _rewriting = null);
-    }
+  /// Writes a post from the transcript the way takes always have been, and
+  /// keeps it on the recording.
+  Future<VoiceTake> _write(VoiceTakeKind kind, String? instruction) async {
+    final transcript = _ref.transcript!;
+    final text = await widget.actions.onRewrite!(
+      instructionFor(kind, custom: instruction),
+    );
+    final take = VoiceTake(
+      kind: kind,
+      text: text,
+      engine: _ref.summary?.engine ?? transcript.engine,
+      at: DateTime.now().millisecondsSinceEpoch,
+      instruction: kind == VoiceTakeKind.custom ? instruction : null,
+    );
+    if (mounted) _apply(_ref.withTake(take));
+    return take;
   }
-
-  /// Kept for the session rather than saved: a one-off instruction is one
-  /// somebody is still trying out, and the saved one is the summary's.
-  String? _lastCustomInstruction;
-
-  static String _describe(Object error) => switch (error) {
-    SummarizerUnavailable(:final message) => message,
-    SyncException() => describeSpeechError(error),
-    _ => 'That did not work. Try again in a moment.',
-  };
-
-  Future<String?> _askForInstruction({required String initial}) =>
-      showInstructionSheet(
-        context,
-        title: 'What should it create?',
-        help:
-            'Create a message, task list, or shorter version using only the '
-            'transcript.',
-        hint: 'Write a short message for my team',
-        initial: initial,
-        confirmLabel: 'Write it',
-      );
 
   /// Changes how every summary from now on is written.
   Future<void> _editSummaryInstruction() async {
@@ -2166,166 +2053,6 @@ class _QuietButton extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// One thing the transcript can be turned into.
-class _RewriteChip extends StatelessWidget {
-  const _RewriteChip({required this.label, required this.busy, this.onPressed});
-
-  final String label;
-  final bool busy;
-  final VoidCallback? onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    final enabled = onPressed != null;
-    return Semantics(
-      button: true,
-      enabled: enabled,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(AppRadii.pill),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: palette.controlBackground,
-            borderRadius: BorderRadius.circular(AppRadii.pill),
-            border: Border.all(color: palette.controlBorder),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (busy) ...[
-                SizedBox(
-                  width: 11,
-                  height: 11,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.6,
-                    color: palette.textTertiary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: AppTypeScale.small,
-                  fontWeight: AppWeight.font(AppWeight.body),
-                  fontVariations: AppWeight.wght(AppWeight.body),
-                  color: enabled ? palette.textPrimary : palette.textTertiary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// A post the model wrote, ready to be copied out.
-class _TakeCard extends StatelessWidget {
-  const _TakeCard({
-    required this.take,
-    required this.onCopy,
-    required this.onRemove,
-    this.onAgain,
-  });
-
-  final VoiceTake take;
-  final VoidCallback onCopy;
-  final VoidCallback onRemove;
-  final VoidCallback? onAgain;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = context.palette;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 8, 12),
-      decoration: BoxDecoration(
-        color: palette.controlBackground,
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        border: Border.all(color: palette.controlBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  take.kind.label,
-                  style: TextStyle(
-                    fontSize: AppTypeScale.caption,
-                    fontWeight: AppWeight.font(AppWeight.body),
-                    fontVariations: AppWeight.wght(AppWeight.body),
-                    color: palette.textSecondary,
-                  ),
-                ),
-              ),
-              if (onAgain != null)
-                IconButton(
-                  onPressed: onAgain,
-                  visualDensity: VisualDensity.compact,
-                  tooltip: 'Regenerate',
-                  icon: KapyIcon(
-                    KapyIcons.refreshRounded,
-                    size: 16,
-                    color: palette.textTertiary,
-                  ),
-                ),
-              IconButton(
-                onPressed: onCopy,
-                visualDensity: VisualDensity.compact,
-                tooltip: 'Copy',
-                icon: KapyIcon(
-                  KapyIcons.copyAllOutlined,
-                  size: 16,
-                  color: palette.textTertiary,
-                ),
-              ),
-              IconButton(
-                onPressed: onRemove,
-                visualDensity: VisualDensity.compact,
-                tooltip: 'Remove',
-                icon: KapyIcon(
-                  KapyIcons.closeRounded,
-                  size: 16,
-                  color: palette.textTertiary,
-                ),
-              ),
-            ],
-          ),
-          // The instruction, so a card somebody comes back to still says what
-          // was asked for. Only the custom ones carry it; a preset would only
-          // be repeating its own label.
-          if (take.instruction case final String asked) ...[
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(
-                asked,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: AppTypeScale.caption,
-                  fontStyle: FontStyle.italic,
-                  color: palette.textTertiary,
-                ),
-              ),
-            ),
-          ],
-          Padding(
-            padding: const EdgeInsets.only(right: 4),
-            child: SelectableText(
-              take.text,
-              style: TextStyle(color: palette.textPrimary, height: 1.45),
-            ),
-          ),
-        ],
       ),
     );
   }

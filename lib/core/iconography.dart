@@ -647,4 +647,12 @@ class KapyIcons {
     0xE0F1,
     HugeIcons.strokeRoundedMessageQuestion,
   );
+  static const newTwitter = KapyIconData(
+    0xE0F2,
+    HugeIcons.strokeRoundedNewTwitter,
+  );
+  static const linkedin = KapyIconData(
+    0xE0F3,
+    HugeIcons.strokeRoundedLinkedin01,
+  );
 }

@@ -97,6 +97,8 @@ Widget _window(
   bool asSheet = false,
   VoiceChipState state = VoiceChipState.done,
   void Function(String text)? onInsert,
+  Future<String> Function(String instruction)? onRewrite,
+  void Function(NoteVoiceRef next)? onChanged,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   // As in the app, where the window is a route of its own, nothing around
@@ -109,6 +111,8 @@ Widget _window(
       asSheet: asSheet,
       actions: VoiceNoteActions(
         onInsert: onInsert,
+        onRewrite: onRewrite,
+        onChanged: onChanged,
         ask: VoiceAskActions(
           kapyAi: ai,
           noteId: _link.noteId,
@@ -474,6 +478,244 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
     expect(ai.calls.last, 'openChat:panel');
+  });
+
+  group('posts', () {
+    late List<String> asked;
+    late NoteVoiceRef? saved;
+    var written = 0;
+
+    Future<String> write(String instruction) async {
+      asked.add(instruction);
+      written++;
+      return 'Post number $written.';
+    }
+
+    setUp(() {
+      asked = [];
+      saved = null;
+      written = 0;
+    });
+
+    double left(WidgetTester tester, String label) =>
+        tester.getTopLeft(find.text(label)).dx;
+
+    testWidgets('sit among the questions in the starters, in order', (
+      tester,
+    ) async {
+      await _show(tester, _window(FakeKapyAi(), onRewrite: write));
+      final labels = [
+        'What did we decide?',
+        'Create X Post',
+        'What are the next steps?',
+        'Create LinkedIn Post',
+        'What did Arjun ask for?',
+        'Your own words…',
+      ];
+      for (var i = 1; i < labels.length; i++) {
+        await tester.dragUntilVisible(
+          find.text(labels[i]),
+          find.byKey(const ValueKey('voice-ask-starters')),
+          const Offset(-120, 0),
+        );
+        expect(
+          left(tester, labels[i]),
+          greaterThan(left(tester, labels[i - 1])),
+          reason: labels[i],
+        );
+      }
+      expect(find.text('MAKE SOMETHING FROM THIS'), findsNothing);
+    });
+
+    testWidgets(
+      'a starter writes one into the drawer, where it can be tried again or removed',
+      (tester) async {
+        await _show(
+          tester,
+          _window(
+            FakeKapyAi(),
+            onRewrite: write,
+            onChanged: (next) => saved = next,
+            onInsert: (_) {},
+          ),
+        );
+        await tester.tap(find.text('Create X Post'));
+        await tester.pumpAndSettle();
+        expect(asked.single, contains('260 characters'));
+        expect(
+          find.descendant(of: _drawer, matching: find.text('Create X Post')),
+          findsOneWidget,
+        );
+        expect(find.text('Post number 1.'), findsOneWidget);
+        expect(saved!.takes.single.kind, VoiceTakeKind.x);
+        for (final key in [
+          'voice-ask-insert',
+          'voice-ask-copy',
+          'voice-ask-again',
+          'voice-ask-remove',
+        ]) {
+          expect(find.byKey(ValueKey(key)), findsOneWidget, reason: key);
+        }
+        expect(_hint(tester), 'Ask about this recording');
+
+        await tester.tap(find.byKey(const ValueKey('voice-ask-again')));
+        await tester.pumpAndSettle();
+        expect(asked, hasLength(2));
+        expect(asked.last, asked.first, reason: 'the same instruction');
+        expect(find.text('Post number 2.'), findsOneWidget);
+        expect(saved!.takes, hasLength(2));
+
+        await tester.tap(find.byKey(const ValueKey('voice-ask-remove')));
+        await tester.pumpAndSettle();
+        expect(saved!.takes.single.text, 'Post number 1.');
+        expect(_drawer, findsNothing);
+
+        await tester.ensureVisible(find.text('Create LinkedIn Post'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Create LinkedIn Post'));
+        await tester.pumpAndSettle();
+        expect(asked.last, contains('LinkedIn'));
+        expect(saved!.takes.last.kind, VoiceTakeKind.linkedin);
+      },
+    );
+
+    testWidgets('Your own words… takes the instruction from the bar', (
+      tester,
+    ) async {
+      await _show(
+        tester,
+        _window(
+          FakeKapyAi(),
+          onRewrite: write,
+          onChanged: (next) => saved = next,
+        ),
+      );
+      await tester.dragUntilVisible(
+        find.text('Your own words…'),
+        find.byKey(const ValueKey('voice-ask-starters')),
+        const Offset(-120, 0),
+      );
+      await tester.ensureVisible(find.text('Your own words…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Your own words…'));
+      await tester.pumpAndSettle();
+      expect(_hint(tester), 'What should it create?');
+      expect(find.byKey(const ValueKey('voice-ask-own-words')), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Ask a question instead'));
+      await tester.pumpAndSettle();
+      expect(_hint(tester), 'Ask about this recording');
+      expect(find.text('What did we decide?'), findsOneWidget);
+
+      await tester.dragUntilVisible(
+        find.text('Your own words…'),
+        find.byKey(const ValueKey('voice-ask-starters')),
+        const Offset(-120, 0),
+      );
+      await tester.ensureVisible(find.text('Your own words…'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Your own words…'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('voice-ask-field')),
+        'A two-line update for the team',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('voice-ask-send')));
+      await tester.pumpAndSettle();
+      expect(asked.single, 'A two-line update for the team');
+      expect(saved!.takes.single.instruction, 'A two-line update for the team');
+      expect(
+        find.descendant(
+          of: _drawer,
+          matching: find.text('A two-line update for the team'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('Earlier lists old takes beside the questions, newest first', (
+      tester,
+    ) async {
+      final ref = _recording();
+      final withTakes = ref
+          .withTake(
+            VoiceTake(
+              kind: VoiceTakeKind.x,
+              text: 'Reworking our pricing page.',
+              engine: 'test',
+              at: DateTime(2026, 11, 19, 10, 50).millisecondsSinceEpoch,
+            ),
+          )
+          .withTake(
+            VoiceTake(
+              kind: VoiceTakeKind.custom,
+              instruction: 'A two-line update for the team',
+              text: 'Pricing page: annual first.',
+              engine: 'test',
+              at: DateTime(2026, 11, 19, 10, 31).millisecondsSinceEpoch,
+            ),
+          );
+      final ai = FakeKapyAi(
+        chatList: [
+          _chat('c1', 'What did Arjun ask for?', answer: 'Three things.'),
+        ],
+      );
+      await _show(tester, _window(ai, ref: withTakes, onRewrite: write));
+      expect(find.text('Reworking our pricing page.'), findsNothing);
+      await tester.tap(_earlier);
+      await tester.pumpAndSettle();
+      final rows = [
+        'Create X Post',
+        'What did Arjun ask for?',
+        'A two-line update for the team',
+      ];
+      for (var i = 1; i < rows.length; i++) {
+        expect(
+          tester.getTopLeft(find.text(rows[i])).dy,
+          greaterThan(tester.getTopLeft(find.text(rows[i - 1])).dy),
+          reason: rows[i],
+        );
+      }
+      await tester.tap(find.text('Create X Post'));
+      await tester.pumpAndSettle();
+      expect(find.text('Reworking our pricing page.'), findsOneWidget);
+      expect(find.byKey(const ValueKey('voice-ask-again')), findsOneWidget);
+    });
+
+    testWidgets('keep working in a hidden note, where questions are off', (
+      tester,
+    ) async {
+      await _show(
+        tester,
+        _window(
+          FakeKapyAi(),
+          hidden: true,
+          onRewrite: write,
+          onChanged: (next) => saved = next,
+        ),
+      );
+      expect(find.text('What did we decide?'), findsNothing);
+      expect(find.text('Your own words…'), findsNothing);
+      expect(find.text('Create LinkedIn Post'), findsOneWidget);
+      expect(_hint(tester), 'What should it create?');
+      await tester.tap(find.text('Create X Post'));
+      await tester.pumpAndSettle();
+      expect(saved!.takes.single.kind, VoiceTakeKind.x);
+    });
+
+    testWidgets('keep working when Kapy AI is out of answers', (tester) async {
+      final ai = FakeKapyAi(pro: true)
+        ..set(pending: KapyLimitReached(resetsAt: DateTime(2026, 12, 1)));
+      await _show(
+        tester,
+        _window(ai, onRewrite: write, onChanged: (next) => saved = next),
+      );
+      await tester.tap(find.text('Create X Post'));
+      await tester.pumpAndSettle();
+      expect(saved!.takes.single.text, 'Post number 1.');
+      expect(find.textContaining('No answers left'), findsNothing);
+    });
   });
 
   group('questions are off', () {
