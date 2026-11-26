@@ -4434,7 +4434,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ownDay: widget.days == null ? null : _ownDayOf,
               ofPickedDay: switch (_workspace.dayInTabs) {
                 null => null,
-                final day => (note) => _dayOfNote(note) == day,
+                final day =>
+                  (note) =>
+                      _dayOfNote(note) == day ||
+                      _workspace.dayNoteIds.contains(note.id),
               },
               when: _when,
               onWhenChanged: _setWhen,
