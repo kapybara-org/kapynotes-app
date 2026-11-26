@@ -71,9 +71,11 @@ jobs:
 
       - name: Screenshots on an Android 16 emulator
         # The job has 45 minutes; a file that hangs gives up 15 or 12 of them.
+        # A file the emulator spoils runs once more within the first 30.
         env:
           PHONE_FIRST_FILE_MINUTES: 15
           PHONE_FILE_MINUTES: 12
+          PHONE_RETRY_MINUTES: 30
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36
