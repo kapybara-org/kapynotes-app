@@ -62,7 +62,7 @@ void main() {
     int unloadedPictures = 0,
     List<SpaceMember> members = const [],
     List<KapyMenuAction> moreActions = const [],
-    void Function(String value, Offset at)? onMore,
+    void Function(String value, MenuSpot at)? onMore,
     VoidCallback? onShowList,
     VoidCallback? onNew,
     void Function(String folderId, {required bool behind})? onOpenFolder,
