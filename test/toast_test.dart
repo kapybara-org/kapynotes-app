@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
@@ -494,6 +496,199 @@ void main() {
           .resolve({}),
       KapyTheme.darkPalette.accentText,
     );
+  });
+
+  group("a desktop's notice beside the notes list", () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    final surface = find.byKey(const ValueKey('toast-surface'));
+
+    /// A window [width] wide laid out as Home's: the 76 wide rail, the notes
+    /// list as wide as [list] says beside it, the page, and Kapy AI's panel
+    /// [panel] wide at the right.
+    Future<BuildContext> window(
+      WidgetTester tester, {
+      double width = 820,
+      ValueNotifier<double>? list,
+      double panel = 0,
+    }) async {
+      Toast.debugAnimateLifetimeInTests = false;
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = Size(width, 800);
+      addTearDown(tester.view.reset);
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          key: ValueKey((width, list?.value, panel)),
+          theme: KapyTheme.dark(),
+          home: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(width: 76),
+              if (list != null)
+                ToastClearance.beside(
+                  child: ValueListenableBuilder(
+                    valueListenable: list,
+                    builder: (_, value, _) => SizedBox(width: value),
+                  ),
+                ),
+              Expanded(
+                child: Builder(
+                  builder: (value) {
+                    context = value;
+                    return const SizedBox.expand();
+                  },
+                ),
+              ),
+              if (panel > 0)
+                ToastClearance.beside(child: SizedBox(width: panel)),
+            ],
+          ),
+        ),
+      );
+      return context;
+    }
+
+    ValueNotifier<double> listOf(double width) {
+      final list = ValueNotifier(width);
+      addTearDown(list.dispose);
+      return list;
+    }
+
+    void opened(BuildContext context) => Toast.show(
+      context,
+      "Opened yesterday's 3 notes",
+      action: 'Undo',
+      onAction: () {},
+    );
+
+    testWidgets('centres on the page beside the list, clear of it, at every '
+        'width the list stands beside the page', (tester) async {
+      // 720 is the narrowest window with the list beside the page, which
+      // then has the least the list ever leaves it: 324 and 320.
+      for (final (width, list) in [
+        (720.0, 324.0),
+        (820.0, 336.0),
+        (1280.0, 336.0),
+      ]) {
+        opened(await window(tester, width: width, list: listOf(list)));
+        await tester.pumpAndSettle();
+
+        final page = 76 + list;
+        expect(
+          tester.getCenter(surface).dx,
+          (page + width) / 2,
+          reason: '$width',
+        );
+        expect(
+          tester.getRect(surface).left,
+          greaterThanOrEqualTo(page + 16),
+          reason: '$width',
+        );
+      }
+    });
+
+    testWidgets("and between the list and Kapy AI's panel", (tester) async {
+      opened(await window(tester, width: 1280, list: listOf(336), panel: 360));
+      await tester.pumpAndSettle();
+
+      expect(tester.getCenter(surface).dx, (412 + 920) / 2);
+      expect(tester.getRect(surface).right, lessThanOrEqualTo(920 - 16));
+    });
+
+    testWidgets('wraps its words inside the narrowest page rather than '
+        'reach over the list', (tester) async {
+      final context = await window(tester, width: 720, list: listOf(324));
+      Toast.show(
+        context,
+        'Moved 12 notes to Hidden Notes. Choose Hidden in the notes filter to '
+        'find them.',
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.getSize(surface).width, 320 - 32);
+      expect(tester.getRect(surface).left, 400 + 16);
+    });
+
+    testWidgets('centres on the window where the room beside what it keeps '
+        'beside is narrower than the least page the list leaves', (
+      tester,
+    ) async {
+      for (final (width, list, panel, centre) in [
+        // 319 beside the list, then 320.
+        (731.0, 336.0, 0.0, 731 / 2),
+        (732.0, 336.0, 0.0, (412 + 732) / 2),
+        // The list open over a new window's page.
+        (600.0, 336.0, 0.0, 300.0),
+        // The list beside the page and Kapy AI over it.
+        (1100.0, 336.0, 372.0, 550.0),
+      ]) {
+        opened(
+          await window(tester, width: width, list: listOf(list), panel: panel),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.getCenter(surface).dx, centre, reason: '$width');
+      }
+    });
+
+    testWidgets('centres on the window with the list slid shut, as with no '
+        'list at all', (tester) async {
+      for (final list in [listOf(0), null]) {
+        opened(await window(tester, list: list));
+        await tester.pumpAndSettle();
+
+        expect(tester.getCenter(surface).dx, 410);
+      }
+    });
+
+    testWidgets('follows the list as it opens and shuts', (tester) async {
+      final list = listOf(0);
+      opened(await window(tester, list: list));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, 410);
+
+      list.value = 336;
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, (412 + 820) / 2);
+
+      list.value = 0;
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, 410);
+    });
+
+    testWidgets('centres on the window under a dialog, and on the page again '
+        'once it closes', (tester) async {
+      final context = await window(tester, list: listOf(336));
+      late BuildContext dialog;
+      unawaited(
+        showDialog<void>(
+          context: context,
+          builder: (value) {
+            dialog = value;
+            return const SizedBox(width: 200, height: 200);
+          },
+        ),
+      );
+      await tester.pumpAndSettle();
+      Toast.show(dialog, 'Copied');
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, 410);
+
+      Navigator.pop(dialog);
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, (412 + 820) / 2);
+    });
+
+    testWidgets("leaves a phone's card on the window", (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      opened(await window(tester, width: 1024, list: listOf(336)));
+      await tester.pumpAndSettle();
+
+      expect(tester.getCenter(surface).dx, 512);
+      expect(tester.getSize(surface).width, 480);
+    });
   });
 
   for (final (platform, size) in [

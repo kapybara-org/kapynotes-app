@@ -22,6 +22,7 @@ import 'package:kapy_notes/core/quick_capture.dart';
 import 'package:kapy_notes/core/status_bar.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/auto_titles.dart';
 import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -12253,6 +12254,54 @@ void main() {
 
       // None of it touched the list a wide window shows.
       expect(prefs.sidebarVisible, isTrue);
+    });
+
+    // Parity item 63: at 820 a notice centred on the window sat over the
+    // list's Notes and Folders switch.
+    testWidgets('a notice centres on the page beside the list, clear of it, '
+        'and on the window once the list is hidden', (tester) async {
+      await notes.load();
+      notes.create(body: 'Narrow note');
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      for (final width in [720.0, 820.0, 1280.0]) {
+        await pumpApp(tester, size: Size(width, 760));
+        await pickPageAction(tester, 'pin');
+
+        expect(
+          tester.getCenter(notice).dx,
+          tester.getCenter(find.byType(PagePane)).dx,
+          reason: '$width',
+        );
+        expect(
+          tester.getRect(notice).left,
+          greaterThan(tester.getRect(find.byType(Sidebar)).right),
+          reason: '$width',
+        );
+      }
+
+      await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(notice).dx, 640);
+    });
+
+    testWidgets('a notice keeps beside the list open over the page where '
+        'that leaves it room, and on the window where not', (tester) async {
+      await notes.load();
+      notes.create(body: 'Narrow note');
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      await pumpApp(tester, size: const Size(700, 720));
+      await tester.tap(notesToggleWithLabel('Show notes'));
+      await tester.pumpAndSettle();
+      expect(barrier, findsOneWidget);
+      Toast.show(tester.element(find.byType(Sidebar)), 'Note pinned');
+      await tester.pumpAndSettle();
+      // 288 beside a list 336 wide.
+      expect(tester.getCenter(notice).dx, 350);
+
+      prefs.sidebarWidth = 150;
+      await tester.pumpAndSettle();
+      expect(tester.getRect(find.byType(Sidebar)).right, 226);
+      expect(tester.getCenter(notice).dx, (226 + 700) / 2);
     });
   });
 
