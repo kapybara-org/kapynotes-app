@@ -6,7 +6,7 @@ class CountNote {
   CountNote(String text, {this.mark = false}) : _build = (() => text);
 
   /// A note whose text is worked out only when it is first read.
-  CountNote.lazy(this._build) : mark = false;
+  CountNote.lazy(this._build, {this.mark = false});
 
   final String Function() _build;
 
@@ -24,6 +24,10 @@ class CountedAmount {
   final CalcValue amount;
   final String? name;
 
+  /// Whether the amount is a count of things the line names, as `7 nights`
+  /// is: a plain number that a total in money leaves out.
+  final bool counts;
+
   /// False once a later line took the amount's place.
   bool live = true;
 
@@ -33,7 +37,7 @@ class CountedAmount {
   /// Why the amount is no longer in the total, once it is not.
   CountNote? note;
 
-  CountedAmount(this.line, this.amount, this.name);
+  CountedAmount(this.line, this.amount, this.name, {this.counts = false});
 }
 
 /// What one line adds to the note's total, worked out from what the line

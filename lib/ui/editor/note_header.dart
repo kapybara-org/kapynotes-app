@@ -11,6 +11,7 @@ import '../checklist_pie.dart';
 import '../collaborator_colors.dart';
 import '../sidebar_timestamp.dart';
 import 'note_footer.dart' show typingStatusText;
+import 'results_gutter.dart' show DashedOutline;
 
 /// The note title's hand-drawn underline, under its last word: Paper's clay
 /// stroke, a little longer than the word and rising slightly into it.
@@ -114,6 +115,7 @@ class NoteMetaRow extends StatelessWidget {
     this.tasks = 0,
     this.total,
     this.describeTotal,
+    this.totalLeavesOut = false,
     this.typing = const [],
     this.readOnlyLabel,
     this.readOnlyIcon,
@@ -142,6 +144,10 @@ class NoteMetaRow extends StatelessWidget {
   /// Writes what the total counted and how, for the hover on it; called only
   /// once someone hovers, since the note is read on every keystroke.
   final String Function()? describeTotal;
+
+  /// Whether the total left out a line it could not join: the total is then
+  /// marked the way that line's result is.
+  final bool totalLeavesOut;
   final List<Collaborator> typing;
 
   /// Set only when the note cannot be changed: what that is called here.
@@ -279,13 +285,23 @@ class NoteMetaRow extends StatelessWidget {
       if (total case final total?)
         _TotalHover(
           describe: describeTotal,
-          child: Text.rich(
-            key: const ValueKey('note-total'),
-            TextSpan(
-              text: 'Total: ',
-              children: [TextSpan(text: total, style: strong)],
+          child: DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: totalLeavesOut
+                ? DashedOutline(
+                    palette.textSecondary.withValues(alpha: 0.45),
+                    5,
+                    outset: 3,
+                  )
+                : const BoxDecoration(),
+            child: Text.rich(
+              key: const ValueKey('note-total'),
+              TextSpan(
+                text: 'Total: ',
+                children: [TextSpan(text: total, style: strong)],
+              ),
+              style: quiet,
             ),
-            style: quiet,
           ),
         ),
       if (typingText != null)

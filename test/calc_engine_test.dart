@@ -892,15 +892,21 @@ void main() {
 
     test('leaves out an amount of another kind, and marks it', () {
       const body = 'a = 12 eur\nb = 5 kg\nc = 7';
-      expect(total(body), '12.00 EUR');
+      expect(total(body), '19.00 EUR', reason: 'the plain 7 is in euros');
       expect(hover(body, 1), "Not in the total: kg doesn't add to EUR");
       expect(marked(body, 1), isTrue);
-      expect(
-        hover(body, 2),
-        "Not in the total: it has no unit, so it doesn't add to EUR",
-      );
-      expect(marked(body, 2), isTrue);
+      expect(marked(body, 2), isNull);
       expect(marked(body, 0), isNull);
+    });
+
+    test('leaves a plain number out of a total in a unit other than money', () {
+      const body = 'a = 5 kg\nb = 3';
+      expect(total(body), '5 kg');
+      expect(
+        hover(body, 1),
+        "Not in the total: it has no unit, so it doesn't add to kg",
+      );
+      expect(marked(body, 1), isTrue);
     });
 
     test('adds bare numbers as before where no amount has a unit', () {
@@ -989,6 +995,67 @@ void main() {
           reason: body,
         );
       }
+    });
+  });
+
+  group('a total in money', () {
+    DocumentEvaluation read(String body) =>
+        engine.evaluateDocumentWithSummary(body);
+
+    test("counts plain numbers in the money's currency, as Sanjay wrote", () {
+      const lines = '5 lakh INR\nrent: 1200\nfood: 300';
+      final listed = read('$lines\ntotal');
+      expect(listed.results[3]!.text, '501,500.00 INR');
+      expect(listed.results[1]!.count, isNull, reason: 'rent is in it');
+      expect(listed.results[2]!.count, isNull, reason: 'food is in it');
+      expect(
+        listed.results[3]!.count!.text,
+        '3 amounts · INR\nline 1 500,000.00 INR, rent 1,200, food 300',
+      );
+      expect(listed.results[3]!.count!.mark, isFalse);
+      final footer = read(lines);
+      expect(footer.totalText, '501,500.00 INR', reason: 'the header total');
+      expect(footer.totalLeavesOut, isFalse);
+    });
+
+    test('counts plain numbers written before the money too', () {
+      expect(
+        read('rent: 1200\n5 lakh INR\ntotal').results[2]!.text,
+        '501,200.00 INR',
+      );
+      expect(
+        read('rent = 1200\n\$10\ntotal to eur').results[2]!.text,
+        '605.00 EUR',
+      );
+    });
+
+    test('reads sum and avg from the same amounts', () {
+      final results = read('10 usd\n20\nsum\navg').results;
+      expect(results[2]!.text, '30.00 USD');
+      expect(results[3]!.text, '15.00 USD');
+    });
+
+    test('leaves a count of something out, and the total unmarked', () {
+      final evaluation = read('Hotel: 7 nights\nnightly = 128 eur\ntotal');
+      expect(evaluation.results[2]!.text, '128.00 EUR');
+      expect(evaluation.results[0]!.count!.mark, isTrue);
+      expect(evaluation.results[2]!.count!.mark, isFalse);
+    });
+
+    test('marks the total, as a line and in the header, when it leaves out '
+        'a line it cannot join', () {
+      final listed = read('5 lakh INR\nrent: 1200\nboxes = 4 kg\ntotal');
+      expect(listed.results[3]!.text, '501,200.00 INR');
+      expect(listed.results[2]!.count!.mark, isTrue);
+      expect(listed.results[3]!.count!.mark, isTrue);
+      expect(
+        listed.results[3]!.count!.text,
+        endsWith("Not in the total: line 3 (kg doesn't add to INR)"),
+      );
+      final footer = read('5 lakh INR\nrent: 1200\nboxes = 4 kg');
+      expect(footer.totalText, '501,200.00 INR');
+      expect(footer.totalLeavesOut, isTrue);
+      expect(read('5 lakh INR\nrent: 1200').totalLeavesOut, isFalse);
     });
   });
 
@@ -1223,6 +1290,69 @@ void main() {
             .totalText,
         '24.75 USD',
       );
+    });
+
+    test('reads a plain amount after a label in a block a total closes', () {
+      expect(doc('rent 1200\nfood 300\ntotal'), {
+        0: '1,200',
+        1: '300',
+        2: '1,500',
+      });
+      expect(doc('Flat\n5 lakh INR\nrent 1200\nfood 300\ntotal'), {
+        1: '500,000.00 INR',
+        2: '1,200',
+        3: '300',
+        4: '501,500.00 INR',
+      });
+      expect(doc('car-insurance 300\nrent 1,200\nsum')[2], '1,500');
+      expect(doc('rent 1200\n= total in usd')[1], '1,200.00 USD');
+    });
+
+    test('reads a plain amount after a label nowhere else', () {
+      expect(doc('rent 1200\nfood 300'), isEmpty, reason: 'no total line');
+      expect(doc('rent 1200\n\ntotal'), isEmpty, reason: 'another block');
+      expect(doc('total\nrent 1200'), isEmpty, reason: 'under the total');
+      expect(doc('rent 1200\ntotal spend\n5 + 5'), {
+        2: '10',
+      }, reason: 'total spend is prose');
+    });
+
+    test('refuses a sentence, a date or a numbering even above a total', () {
+      const lines = [
+        'Meeting at 3',
+        'Chapter 12',
+        'Nov 27',
+        'September 2026',
+        'Monday 4',
+        'Room 12',
+        'Dinner for 4',
+        'Page 4',
+        'Q3 2026',
+        'Room 12 floor 3',
+      ];
+      for (final text in lines) {
+        expect(doc('$text\nrent 100\ntotal'), {
+          1: '100',
+          2: '100',
+        }, reason: text);
+      }
+    });
+
+    test('follows a total line written under the list and taken away', () {
+      const list = 'rent 1200\nfood 300';
+      for (final (body, expected) in [
+        (list, <int, String>{}),
+        ('$list\ntotal', {0: '1,200', 1: '300', 2: '1,500'}),
+        (list, <int, String>{}),
+        ('$list\n\ntotal', <int, String>{}),
+        ('$list\nsum', {0: '1,200', 1: '300', 2: '1,500'}),
+      ]) {
+        expect(doc(body), expected, reason: body);
+        final fresh = CalcEngine(
+          ratesPerUsd: _rates,
+        ).evaluateDocument(body).map((key, value) => MapEntry(key, value.text));
+        expect(doc(body), fresh, reason: '$body, as a fresh engine');
+      }
     });
 
     test('a name the note has defined keeps its meaning', () {
