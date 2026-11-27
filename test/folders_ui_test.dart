@@ -15,7 +15,7 @@ import 'package:kapy_notes/ui/editor_panes.dart' show NoteDragFeedback;
 import 'package:kapy_notes/ui/folders_ui.dart';
 import 'package:kapy_notes/ui/note_tabs.dart' show NoteTabRow;
 import 'package:kapy_notes/ui/notes_list.dart'
-    show NoteCardFace, NoteListRowFace, NotesGroupHeading, NotesListControls;
+    show NoteCardFace, NoteListRowFace, NotesGroupHeading;
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -180,14 +180,11 @@ void main() {
       goldenFolders.create('Work');
       goldenNotes.create(body: 'Dentist');
       await tester.pumpAndSettle();
-      expect(
-        find.byKey(const ValueKey('sidebar-notes-filter')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('notes-view')), findsOneWidget);
 
       await tapKey(tester, 'notes-switch-folders');
       expect(goldenPrefs.foldersShown, isTrue);
-      expect(find.byKey(const ValueKey('sidebar-notes-filter')), findsNothing);
+      expect(find.byKey(const ValueKey('notes-view')), findsNothing);
       expect(inTab(find.text('Work')), findsOneWidget);
       // Beside the rail, the notes in no folder are in the notes list and in
       // a folder's Add notes, not under the tree.
@@ -197,10 +194,7 @@ void main() {
       await tapKey(tester, 'notes-switch-notes');
       expect(goldenPrefs.foldersShown, isFalse);
       expect(find.byKey(const ValueKey('folders-tab')), findsNothing);
-      expect(
-        find.byKey(const ValueKey('sidebar-notes-filter')),
-        findsOneWidget,
-      );
+      expect(find.byKey(const ValueKey('notes-view')), findsOneWidget);
     });
 
     testWidgets('Drawings and Archive hold no folders, so they have no '
@@ -220,7 +214,7 @@ void main() {
       expect(find.byKey(const ValueKey('folders-tab')), findsOneWidget);
 
       await tapKey(tester, 'notes-switch-notes');
-      await tapKey(tester, 'sidebar-notes-filter');
+      await tapKey(tester, 'notes-view');
       await tapKey(tester, 'notes-filter-archive');
       expect(find.byKey(const ValueKey('notes-folders-switch')), findsNothing);
     });
@@ -683,17 +677,16 @@ void main() {
       );
     });
 
-    testWidgets('the search field says it finds folders, and ⌘K shows one in '
-        'the tab in front, from Archive too', (tester) async {
+    testWidgets('⌘K shows a folder in the tab in front, from Archive too', (
+      tester,
+    ) async {
       await pumpWindow(tester);
       final work = goldenFolders.create('Work')!;
       goldenNotes.archive(goldenNotes.create(body: 'Old receipts').id);
       await tester.pumpAndSettle();
-      expect(find.text('Search notes and folders'), findsOneWidget);
 
-      await tapKey(tester, 'sidebar-notes-filter');
+      await tapKey(tester, 'notes-view');
       await tapKey(tester, 'notes-filter-archive');
-      expect(find.text('Search notes and folders'), findsNothing);
 
       await press(tester, ShortcutAction.findNotes);
       await tester.enterText(
@@ -703,7 +696,6 @@ void main() {
       await tester.pumpAndSettle();
       await tapKey(tester, 'command-menu-row-${work.name}');
       expect(pageTitle(tester), 'Work');
-      expect(find.text('Search notes and folders'), findsOneWidget);
     });
 
     testWidgets('a note made while a folder is in front goes into it and '
@@ -1272,80 +1264,65 @@ void main() {
       expect(page(), findsNothing, reason: "the deleted folder's tab closed");
     });
 
-    testWidgets("the sort sits in the controls row before the switch, in the "
-        "list and on a folder's page, and on no day's heading", (tester) async {
+    testWidgets("the View icon sits beside the search in the list and at the "
+        "end of a folder's page header, and Group by is in its menu, on no "
+        "day's heading", (tester) async {
       await pumpWindow(tester);
       final work = goldenFolders.create('Work')!;
       goldenFolders.file([goldenNotes.create(body: 'Roadmap').id], work.id);
       await tester.pumpAndSettle();
-      final sort = find.byKey(const ValueKey('notes-grouping'));
-      void besideTheSwitch() {
-        expect(
-          find.descendant(of: find.byType(NotesListControls), matching: sort),
-          findsOneWidget,
-        );
-        expect(
-          find.descendant(of: find.byType(NotesGroupHeading), matching: sort),
-          findsNothing,
-        );
-        expect(
-          tester.getRect(sort).left,
-          greaterThan(
-            tester
-                .getRect(find.byKey(const ValueKey('sidebar-notes-filter')))
-                .right,
-          ),
-        );
-        expect(
-          tester.getRect(sort).right,
-          lessThan(
-            tester
-                .getRect(find.byKey(const ValueKey('sidebar-view-list')))
-                .left,
-          ),
-        );
-      }
+      final view = find.byKey(const ValueKey('notes-view'));
+      final search = tester.getRect(
+        find.byKey(const ValueKey('sidebar-search-box')),
+      );
+      expect(tester.getCenter(view).dy, closeTo(search.center.dy, 0.5));
+      expect(tester.getRect(view).left, greaterThan(search.right));
+      expect(
+        find.descendant(of: find.byType(NotesGroupHeading), matching: view),
+        findsNothing,
+      );
 
-      besideTheSwitch();
       await tapKey(tester, 'notes-switch-folders');
       await tapKey(tester, 'folder-${work.id}');
-      expect(onPage(sort), findsOneWidget);
-      besideTheSwitch();
+      expect(onPage(view), findsOneWidget);
+      await tester.tap(onPage(view));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('notes-grouping-byDate')),
+        findsOneWidget,
+      );
+      // A folder's page leaves out Archive and Hidden, whose notes are in no
+      // folder.
+      expect(find.byKey(const ValueKey('notes-filter-archive')), findsNothing);
     });
 
-    testWidgets("the sort and the switch keep to the filter's line when a "
-        "span's chip drops under it, and the archive has no sort", (
-      tester,
-    ) async {
+    testWidgets("a span's chip sits under the search, and the archive's View "
+        'menu has no Group by', (tester) async {
       await pumpWindow(tester);
       goldenNotes.archive(goldenNotes.create(body: 'Old receipts').id);
       goldenNotes.create(body: 'Dentist');
       await tester.pumpAndSettle();
       for (final key in [
-        'sidebar-notes-filter',
+        'notes-view',
         'notes-filter-when',
         'notes-filter-when-thisMonth',
       ]) {
         await tapKey(tester, key);
       }
-      final filter = tester.getRect(
-        find.byKey(const ValueKey('sidebar-notes-filter')),
+      final search = tester.getRect(
+        find.byKey(const ValueKey('sidebar-search-box')),
       );
-      expect(
-        tester.getRect(find.byKey(const ValueKey('notes-when-chip'))).top,
-        greaterThanOrEqualTo(filter.bottom),
-        reason: 'at the default width the chip takes a line of its own',
+      final chip = tester.getRect(
+        find.byKey(const ValueKey('notes-filter-chip')),
       );
-      for (final key in ['notes-grouping', 'sidebar-view-list']) {
-        expect(
-          tester.getCenter(find.byKey(ValueKey(key))).dy,
-          filter.center.dy,
-        );
-      }
+      expect(chip.top, greaterThanOrEqualTo(search.bottom));
+      expect(chip.left, search.left);
 
-      await tapKey(tester, 'sidebar-notes-filter');
+      await tapKey(tester, 'notes-view');
       await tapKey(tester, 'notes-filter-archive');
-      expect(find.byKey(const ValueKey('notes-grouping')), findsNothing);
+      await tapKey(tester, 'notes-view');
+      expect(find.byKey(const ValueKey('notes-filter-menu')), findsOneWidget);
+      expect(find.byKey(const ValueKey('notes-grouping-byDate')), findsNothing);
     });
 
     testWidgets('an empty folder and a note keep the chevron slot, so their '
@@ -1422,12 +1399,13 @@ void main() {
       );
       expect(tester.getSize(rowOf(filed.id)).height, 32);
 
+      // KAP-408's switch: words alone, 32 tall, with no track round them.
       final bar = find.byKey(const ValueKey('notes-folders-switch'));
-      expect(tester.getSize(bar).height, 40);
-      // D01's track: #2A2722 with a 1 px #312D27 line, in Riverbank dark.
-      final track = tester.widget<Container>(bar).decoration! as BoxDecoration;
-      expect(track.color, const Color(0xFF2A2722));
-      expect(track.border, Border.all(color: const Color(0xFF312D27)));
+      expect(tester.getSize(bar).height, 32);
+      expect(
+        find.descendant(of: bar, matching: find.byType(KapyIcon)),
+        findsNothing,
+      );
       expect(
         tester
             .getSize(find.byKey(const ValueKey('notes-switch-folders')))

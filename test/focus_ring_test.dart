@@ -15,6 +15,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/focus_ring.dart';
+import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -251,6 +252,16 @@ Future<List<FocusNode>> _round(
   fail('Tab never came back round');
 }
 
+/// Whether [node] belongs to the notes list.
+bool _inList(FocusNode node) {
+  var inside = false;
+  (node.context as Element?)?.visitAncestorElements((element) {
+    inside = element.widget is Sidebar;
+    return !inside;
+  });
+  return inside;
+}
+
 /// How many separate runs of stops [inside] picks out, going round.
 int _runs(List<FocusNode> stops, bool Function(FocusNode) inside) {
   var runs = 0;
@@ -293,7 +304,19 @@ void main() {
           final note = tester.getRect(find.byType(NoteEditor));
           expect(note.contains(stops.last.rect.center), isTrue);
           expect(stops.last, isA<NoRingFocusNode>());
-          final toolbar = stops.sublist(railStops.length, stops.length - 1);
+          final listStops = stops
+              .skip(railStops.length)
+              .takeWhile(_inList)
+              .toList();
+          expect(
+            _runs(stops, _inList),
+            listShown ? 1 : 0,
+            reason: 'the list in one go, after the rail',
+          );
+          final toolbar = stops.sublist(
+            railStops.length + listStops.length,
+            stops.length - 1,
+          );
           expect(toolbar, isNotEmpty);
           for (var i = 0; i < toolbar.length; i++) {
             expect(toolbar[i].rect.bottom, lessThanOrEqualTo(note.top));
@@ -525,7 +548,10 @@ void main() {
     await tester.pumpAndSettle();
     final stops = await _round(tester);
     final note = tester.getRect(find.byType(NoteEditor));
-    expect(stops.where((node) => note.contains(node.rect.center)), isEmpty);
+    expect(
+      stops.where((node) => note.contains(node.rect.center) && !_inList(node)),
+      isEmpty,
+    );
   });
 
   testWidgets('Settings takes its categories in one go, then the pane, and '

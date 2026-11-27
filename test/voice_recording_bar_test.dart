@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
@@ -14,6 +15,8 @@ VoiceRecordingSession session({
   bool paused = false,
   bool interrupted = false,
   bool finishing = false,
+  bool starting = false,
+  bool silent = false,
 }) => VoiceRecordingSession(
   noteId: 'note-1',
   level: level,
@@ -22,6 +25,8 @@ VoiceRecordingSession session({
   paused: paused,
   interrupted: interrupted,
   finishing: finishing,
+  starting: starting,
+  silent: silent,
 );
 
 Widget harness(
@@ -132,6 +137,59 @@ void main() {
       const Size.square(48),
     );
     expect(tester.takeException(), isNull);
+  });
+
+  group('a silent microphone (KAP-424)', () {
+    for (final width in [600.0, 320.0]) {
+      testWidgets('is told in words, whole, at ${width.toInt()} px', (
+        tester,
+      ) async {
+        tester.view.physicalSize = Size(width, 100);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+
+        await tester.pumpWidget(
+          harness(session(elapsed: const Duration(seconds: 4), silent: true)),
+        );
+        await tester.pump(const Duration(milliseconds: 200));
+
+        final status = find.text('Microphone is silent');
+        expect(status, findsOneWidget);
+        expect(find.text('Recording'), findsNothing);
+        expect(
+          tester.renderObject<RenderParagraph>(status).didExceedMaxLines,
+          isFalse,
+          reason: 'cut short to an ellipsis',
+        );
+        expect(find.text('0:04'), findsOneWidget);
+        expect(find.byKey(const ValueKey('recording-stop')), findsOneWidget);
+        expect(
+          tester
+              .getSemantics(find.byType(VoiceRecordingBar))
+              .getSemanticsData()
+              .flagsCollection
+              .isLiveRegion,
+          isTrue,
+        );
+      });
+    }
+  });
+
+  testWidgets('says nothing of recording until the microphone has started', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(600, 100);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      harness(session(elapsed: Duration.zero, starting: true)),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('Starting…'), findsOneWidget);
+    expect(find.text('Recording'), findsNothing);
+    expect(waveform(tester).active, isFalse);
   });
 
   testWidgets('replaces actions with calm progress while saving', (

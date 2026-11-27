@@ -63,6 +63,7 @@ import 'mcp/mcp_service.dart';
 import 'sync/account.dart';
 import 'sync/key_store.dart';
 import 'ui/app_logo.dart';
+import 'ui/focus_reveal.dart';
 import 'ui/focus_ring.dart';
 import 'ui/home_page.dart';
 import 'ui/hidden_notes_gate.dart';
@@ -833,7 +834,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           builder: (context, child) {
             final asks = _systemAsksForContrast;
             final solid = !_glassBehindWindow || asks;
-            Widget result = FocusRing(child: child ?? const SizedBox.shrink());
+            Widget result = FocusRing(
+              child: FocusReveal(child: child ?? const SizedBox.shrink()),
+            );
             if (widget.prefs.transparencyEnabled && solid) {
               final theme = Theme.of(context);
               final palette = theme.extension<CalcPalette>()!;

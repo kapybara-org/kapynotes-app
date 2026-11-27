@@ -367,6 +367,18 @@ class KapyIcons {
     0xE047,
     HugeIcons.strokeRoundedPause,
   );
+  static const volumeHighRounded = KapyIconData(
+    0xE0ED,
+    HugeIcons.strokeRoundedVolumeHigh,
+  );
+  static const volumeOffRounded = KapyIconData(
+    0xE0EE,
+    HugeIcons.strokeRoundedVolumeOff,
+  );
+  static const fullScreenRounded = KapyIconData(
+    0xE0EF,
+    HugeIcons.strokeRoundedFullScreen,
+  );
   static const groupOutlined = KapyIconData(
     0xE092,
     HugeIcons.strokeRoundedUserMultiple,

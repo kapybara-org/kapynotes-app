@@ -904,21 +904,31 @@ void main() {
     expect(find.textContaining('100 MB attachment limit'), findsOneWidget);
   });
 
-  testWidgets('clicking a video opens its full-screen player', (tester) async {
-    // Linux hands a video to the system's player instead.
+  testWidgets('a video sits in the note with a photo\'s corners, and one '
+      'that is not here yet opens nothing when clicked', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await tester.pumpWidget(harness(anchor, attachments: [videoAt(0)]));
     await tester.pump();
 
+    final clip = tester.widget<ClipRRect>(
+      find
+          .descendant(
+            of: find.byType(NoteVideoView),
+            matching: find.byType(ClipRRect),
+          )
+          .first,
+    );
+    expect(clip.borderRadius, BorderRadius.circular(10));
+
     await tester.tap(find.byType(NoteVideoView));
     await tester.pumpAndSettle();
 
-    expect(find.byType(NoteVideoViewer), findsOneWidget);
+    expect(find.byType(NoteVideoViewer), findsNothing);
   });
 
   testWidgets(
-    'the bar\'s picture button opens capture and inserts its result',
+    'the bar\'s attach button, then Photo, opens capture and inserts its result',
     (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);

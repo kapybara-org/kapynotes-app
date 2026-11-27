@@ -224,6 +224,10 @@ dev_dependencies:
   # comes in with image_picker; named here because a test uses it directly.
   image_picker_platform_interface: ^2.11.1
   plugin_platform_interface: ^2.1.8
+  # Lets a test stand in for the video player, so a video in a note can be
+  # played, paused and scrolled away from without a platform. It comes in
+  # with video_player; named here because a test uses it directly.
+  video_player_platform_interface: ^6.9.0
   # Drives the real app on a real device or simulator, with the real plugins
   # behind it. `flutter test` runs against fakes by design; this is the only
   # way to find out whether the microphone actually works on a platform.

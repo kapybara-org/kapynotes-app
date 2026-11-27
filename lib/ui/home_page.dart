@@ -1,8 +1,6 @@
 import 'dart:async';
 
 import 'package:file_selector/file_selector.dart' show XFile;
-import 'package:flutter/gestures.dart'
-    show kBackMouseButton, kForwardMouseButton;
 import 'package:flutter/services.dart'
     show
         HardwareKeyboard,
@@ -84,6 +82,7 @@ import 'editor/image_insertion.dart';
 import 'editor/slash_commands.dart';
 import 'editor_panes.dart';
 import 'back_entry.dart';
+import 'back_forward.dart';
 import 'billing/note_limit_dialog.dart';
 import 'billing/pro_sheet.dart';
 import 'command_menu.dart';
@@ -123,10 +122,10 @@ import 'tasks/tasks_sidebar.dart';
 import 'sidebar.dart';
 import 'sidebar_timestamp.dart';
 import 'settings_dialog.dart';
+import 'storage_full_sheet.dart';
 import 'settings/sharing_section.dart' show SharingStart;
 import 'tag_colours.dart';
 import 'tag_ui.dart';
-import 'sidebar_swipe.dart';
 import 'spaces_rail.dart';
 import 'split_view.dart';
 import 'draw/drawing_canvas.dart';
@@ -439,6 +438,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? _noteBeforeSpace;
   String? _openedBySpace;
   TaskFilter _taskFilter = const TaskFilter.all();
+
+  /// The steps the page takes, which its tab row's steps slide too.
+  final BackForwardSteps _pageSteps = BackForwardSteps();
+
+  /// The steps Tasks takes, from its filter list or its page.
+  final BackForwardSteps _taskSteps = BackForwardSteps();
+
+  /// The folders a Back over the list stepped up out of, the nearest last,
+  /// for Forward to step back down into.
+  final List<String> _foldersSteppedOut = [];
   final FocusNode _taskAddFocus = FocusNode(debugLabel: 'Add a task');
 
   /// The words in Tasks' add row, kept here so a half-typed task is still
@@ -572,6 +581,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _picks.addListener(_onPicksChanged);
     widget.account?.noteLimit?.addListener(_onNoteLimitChanged);
     widget.account?.addListener(_offerRecoveryKey);
+    widget.account?.addListener(_tellStorageFull);
     // The system-wide new-note shortcut has already raised the window by the
     // time this runs; the note itself is this page's to make.
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
@@ -615,6 +625,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.folders?.removeListener(_onFoldersChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
     widget.account?.removeListener(_offerRecoveryKey);
+    widget.account?.removeListener(_tellStorageFull);
     widget.desktopIntegration?.onNewNoteRequested = null;
     widget.desktopIntegration?.onOpenRequested = null;
     widget.desktopIntegration?.window = null;
@@ -622,6 +633,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _newFolder.dispose();
     _kapyAi?.removeListener(_onKapyAi);
     _kapyPanel.dispose();
+    _pageSteps.dispose();
+    _taskSteps.dispose();
     _taskAddFocus.dispose();
     _taskWords.dispose();
     _findWords.dispose();
@@ -1021,11 +1034,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     try {
       if (stopping) {
-        await recording.finishRecordingAndFlush();
-        if (mounted) {
-          progress.success('Recording stopped');
-        } else {
+        final silent = await recording.finishRecordingAndFlush(
+          discardSilent: true,
+        );
+        if (!mounted) {
           progress.dismiss();
+        } else if (silent) {
+          progress.error('Nothing saved: the microphone was silent');
+        } else {
+          progress.success('Recording stopped');
         }
         return;
       }
@@ -1961,6 +1978,90 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _goForward() {
     if (!_workspace.canGoForward) return;
     _changeTabs(_leavingFor(_workspace.forwardNoteId), _workspace.forward);
+  }
+
+  /// A swipe or the mouse's Back and Forward over the page, and wherever no
+  /// closer place takes them: through the notes shown, as Go back and Go
+  /// forward do.
+  bool _stepNotesShown(BackForwardStep step) {
+    final back = step == BackForwardStep.back;
+    if (!(back ? _workspace.canGoBack : _workspace.canGoForward)) return false;
+    back ? _goBack() : _goForward();
+    return true;
+  }
+
+  /// A step over the tab row: to the tab beside the one in front.
+  bool _stepTabs(BackForwardStep step) {
+    final next =
+        _workspace.frontTabIndex + (step == BackForwardStep.back ? -1 : 1);
+    if (next < 0 || next >= _workspace.tabs.length) return false;
+    _activateTab('${_workspace.tabs[next].id}');
+    return true;
+  }
+
+  /// A step over the list beside the page, where Notes and Folders are two
+  /// tabs and the folder in front is a level of Folders. Back goes up out of
+  /// the folder, then to Notes; Forward goes to Folders, then back down the
+  /// way Back came up. The list stays open, over the page or beside it, and
+  /// slides when it turns; a step between folders slides the page. A list
+  /// with no Folders, such as Drawings', steps as the page does.
+  bool _stepList(BackForwardStep step) {
+    final tree = widget.folders?.tree;
+    if (tree == null || !_offersFolders) {
+      if (_stepNotesShown(step)) _pageSteps.took(step);
+      return false;
+    }
+    final inFront = switch (_folderInFront) {
+      final id? => tree.byId(id),
+      null => null,
+    };
+    void show(String folderId) => _changeTabs(
+      _workspace.openNoteIds,
+      () => _workspace.openFolder(folderId),
+      focus: false,
+    );
+    if (step == BackForwardStep.back) {
+      if (!_foldersShown) return false;
+      if (inFront?.parentId case final parentId?) {
+        _foldersSteppedOut.add(inFront!.id);
+        show(parentId);
+        _pageSteps.took(step);
+        return false;
+      }
+      widget.prefs.foldersShown = false;
+      return true;
+    }
+    if (!_foldersShown) {
+      widget.prefs.foldersShown = true;
+      return true;
+    }
+    final into = _foldersSteppedOut.isEmpty
+        ? null
+        : tree.byId(_foldersSteppedOut.removeLast());
+    if (into == null || inFront == null || into.parentId != inFront.id) {
+      _foldersSteppedOut.clear();
+      return false;
+    }
+    show(into.id);
+    _pageSteps.took(step);
+    return false;
+  }
+
+  /// A step over Tasks, its filter list or its page: to the filter beside the
+  /// one shown, in the list's order.
+  bool _stepTasks(BackForwardStep step) {
+    final controller = _taskController;
+    if (controller == null) return false;
+    final choices = taskFilterChoices(
+      board: controller.read(),
+      today: _todayTasks(controller),
+      labelOf: _taskNoteLabel,
+    );
+    final at = choices.indexWhere((choice) => choice.filter == _taskFilter);
+    final next = at + (step == BackForwardStep.back ? -1 : 1);
+    if (at < 0 || next < 0 || next >= choices.length) return false;
+    setState(() => _taskFilter = choices[next].filter);
+    return true;
   }
 
   /// What ⌘W closes: the focused pane while the tab is split, else the tab
@@ -3231,6 +3332,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  /// Something just added can't sync because the account is full: said once,
+  /// over whatever is on screen unless a sheet or dialog is already up, in
+  /// which case the next change of state tries again.
+  void _tellStorageFull() {
+    final account = widget.account;
+    final refused = account?.storageFull;
+    if (!mounted || account == null || refused == null) return;
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+    account.storageFullShown();
+    unawaited(_showStorageFull(refused));
+  }
+
+  Future<void> _showStorageFull(NoteAttachmentRef refused) async {
+    final see = await showStorageFullSheet(context, refused);
+    if (!see || !mounted) return;
+    _showSettings(
+      section: SettingsSection.account,
+      reveal: 'plan-storage-usage',
+    );
+  }
+
   void _onNoteLimitChanged() {
     if (mounted) setState(() {});
   }
@@ -3484,16 +3606,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  /// What the search fields read: Drawings' names what it finds, and the
-  /// rest offer to ask Kapy AI only while it can be asked.
+  /// What the phone's and Tasks' search fields read: Drawings' names what
+  /// it finds, and the rest offer to ask Kapy AI only while it can be asked.
+  /// The list beside the rail just says Search.
   String get _searchPlaceholder => _kapyAiOn && _space != LibrarySpace.drawings
       ? 'Search or Ask Kapy AI'
-      : _listSearchPlaceholder;
-
-  /// What the desktop list's field reads, Kapy AI or not, as D01 draws it:
-  /// Ask Kapy has its own button beside it, and ⌘K's results still offer to
-  /// ask. Drawings' names what it finds.
-  String get _listSearchPlaceholder => _space == LibrarySpace.drawings
+      : _space == LibrarySpace.drawings
       ? 'Search drawings'
       : _offersFolders && !_usesCompactLayout
       ? 'Search notes and folders'
@@ -3503,11 +3621,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// chip is attached. With [question] it first starts a new chat and asks
   /// it there, which is how ⌘K's Ask row and its Tab reach Kapy AI. On a
   /// phone, the note's own button ([fromNote]) has the sheet rest over the
-  /// note; everything else opens it at full height.
-  void _openKapyAi({String? question, bool fromNote = false}) {
+  /// note; everything else opens it at full height. [typing] opens it with
+  /// its field ready to type in, keyboard up, as the bar's New chat does.
+  /// With [aboutNote] false the chat is about no note, whichever is open
+  /// behind: the Kapy AI tab's + is not a note's own button.
+  void _openKapyAi({
+    String? question,
+    bool fromNote = false,
+    bool typing = false,
+    bool aboutNote = true,
+  }) {
     final ai = _kapyAi;
     if (ai == null || !ai.enabled) return;
-    final shown = _shownNote(_selectedId)?.id;
+    final shown = aboutNote ? _shownNote(_selectedId)?.id : null;
     final noteId = shown != null && _kapyNoteTitle(shown) != null
         ? shown
         : null;
@@ -3526,6 +3652,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       showKapyAiSheet(
         context,
         rest: fromNote && noteId != null,
+        typing: typing,
         panel: (close, expand, compact) => _kapyAiPanel(
           ai,
           onClose: close,
@@ -3725,12 +3852,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _hiddenMode ||
       (widget.prefs.hiddenFolderVisible && widget.notes.hiddenNotes.isNotEmpty);
 
-  /// The notes filter, the sort and the list/cards switch, for the list
-  /// beside the rail. A phone's filter row has the filter and the tags
-  /// instead, and the archive, Hidden Notes and the pinned list keep their
-  /// own order, so they have no sort. On a folder's page the filter sits
-  /// beside the switch, and leaves out Archive and Hidden, whose notes are
-  /// in no folder.
+  /// The View menu, for the list beside the rail: what it shows, how it
+  /// groups the notes, and List or Grid. A phone's filter row has the filter
+  /// and the tags instead, and the archive, Hidden Notes and the pinned list
+  /// keep their own order, so they have no Group by. On a folder's page it
+  /// leaves out Archive and Hidden, whose notes are in no folder.
   Widget _notesControls(
     LibrarySpace space, {
     bool phone = false,
@@ -3747,7 +3873,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     archivedCount: _narrowed(widget.notes.archivedNotes).length,
     media: space == LibrarySpace.drawings ? null : _mediaFilter,
     onMediaChanged: (media) => setState(() => _mediaFilter = media),
-    onClear: _clearFilter,
     tags: widget.tags == null ? null : _tagsNarrowed,
     onTagsChanged: (tags) => setState(() => _tagFilter = tags),
     when: _when,
@@ -3759,9 +3884,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     onGroupingChanged: sort
         ? (grouping) => widget.prefs.notesGrouping = grouping
         : null,
-    alignEnd: onFolder,
     phone: phone,
   );
+
+  /// What narrows the list beside the rail, as one chip under its search
+  /// or before the View icon on a folder's page; null while nothing does.
+  Widget? _notesFilterChip(LibrarySpace space) {
+    final media = space == LibrarySpace.drawings ? null : _mediaFilter;
+    final tags = widget.tags == null ? null : _tagsNarrowed;
+    if (!NotesFilterChip.shows(
+      show: _show,
+      media: media,
+      tags: tags,
+      when: _when,
+    )) {
+      return null;
+    }
+    return NotesFilterChip(
+      show: _show,
+      media: media,
+      tags: tags,
+      when: _when,
+      onClear: _clearFilter,
+    );
+  }
 
   /// The page's days, in My notes and on a folder in front, counting what
   /// the list shows or what the folder holds; a day picked there opens those
@@ -4226,21 +4372,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         final page = _withTags(
           compact ? _buildPhone(context) : _buildWide(context),
         );
-        final gesturePage = AppPlatform.isDesktop
-            ? SidebarSwipe(
-                sidebarVisible: _listShown,
-                onToggle: _toggleList,
-                child: page,
-              )
-            : page;
-        final content = Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (event) {
-            // The mouse's own Back and Forward buttons, as in a browser.
-            if (event.buttons == kBackMouseButton) _goBack();
-            if (event.buttons == kForwardMouseButton) _goForward();
-          },
-          child: gesturePage,
+        // Over the open note, and wherever no closer place takes them, a
+        // swipe and the mouse's Back and Forward walk the notes shown.
+        final content = BackForwardArea(
+          steps: _pageSteps,
+          onStep: _stepNotesShown,
+          child: page,
         );
 
         if (!AppPlatform.isDesktop) return content;
@@ -4421,7 +4558,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               searchShortcut: widget.shortcuts.hintFor(
                 ShortcutAction.findNotes,
               ),
-              searchPlaceholder: _listSearchPlaceholder,
               archiveShortcut: widget.shortcuts.hintFor(
                 ShortcutAction.deleteNote,
               ),
@@ -4434,6 +4570,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 space,
                 sort: !_specialMode && !_showingPinnedOnly,
               ),
+              filterChip: _notesFilterChip(space),
               grouping: widget.prefs.notesGrouping,
               ownDay: widget.days == null ? null : _ownDayOf,
               ofPickedDay: switch (_workspace.dayInTabs) {
@@ -4516,37 +4653,41 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                         widget.prefs.sidebarWidth = value,
                     onHide: () => _setListShown(false),
                     sidebar: tasks != null && taskBoard != null
-                        ? TasksSidebar(
-                            board: taskBoard,
-                            today: taskToday,
-                            filter: _taskFilter,
-                            onFilter: (filter) =>
-                                setState(() => _taskFilter = filter),
-                            labelOf: _taskNoteLabel,
-                            onSearch: _openCommandMenu,
-                            searchShortcut: widget.shortcuts.hintFor(
-                              ShortcutAction.findNotes,
-                            ),
-                            searchPlaceholder: _searchPlaceholder,
-                            onGotIt: switch (_taskFolds) {
-                              final folds? when !folds.howSeen =>
-                                () => setState(folds.markHowSeen),
-                              _ => null,
-                            },
-                            windowBar: SidebarWindowBar(
-                              title: space.title,
-                              count: taskToday.length,
-                              countLabel: 'open',
-                              noun: createNoun,
-                              onCreate: _createInSpace,
-                              newNoteShortcut: newNoteShortcut,
-                              onHide: () => _setListShown(false),
-                              hideShortcut: widget.shortcuts.hintFor(
-                                ShortcutAction.toggleSidebar,
+                        ? BackForwardArea(
+                            steps: _taskSteps,
+                            onStep: _stepTasks,
+                            child: TasksSidebar(
+                              board: taskBoard,
+                              today: taskToday,
+                              filter: _taskFilter,
+                              onFilter: (filter) =>
+                                  setState(() => _taskFilter = filter),
+                              labelOf: _taskNoteLabel,
+                              onSearch: _openCommandMenu,
+                              searchShortcut: widget.shortcuts.hintFor(
+                                ShortcutAction.findNotes,
+                              ),
+                              searchPlaceholder: _searchPlaceholder,
+                              onGotIt: switch (_taskFolds) {
+                                final folds? when !folds.howSeen =>
+                                  () => setState(folds.markHowSeen),
+                                _ => null,
+                              },
+                              windowBar: SidebarWindowBar(
+                                title: space.title,
+                                count: taskToday.length,
+                                countLabel: 'open',
+                                noun: createNoun,
+                                onCreate: _createInSpace,
+                                newNoteShortcut: newNoteShortcut,
+                                onHide: () => _setListShown(false),
+                                hideShortcut: widget.shortcuts.hintFor(
+                                  ShortcutAction.toggleSidebar,
+                                ),
                               ),
                             ),
                           )
-                        : sidebar,
+                        : BackForwardArea(onStep: _stepList, child: sidebar),
                     // No bottom inset here: on a tablet the note's footer
                     // holds its own controls above the home indicator, and
                     // the empty state does the same with its paper.
@@ -4613,34 +4754,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                   shown:
                                       !_specialMode &&
                                       _workspace.tabs.length > 1,
-                                  child: _buildTabRow(),
+                                  child: BackForwardArea(
+                                    steps: _pageSteps,
+                                    onStep: _stepTabs,
+                                    child: _buildTabRow(),
+                                  ),
                                 ),
                                 Expanded(
-                                  child: LayoutBuilder(
-                                    builder: (context, page) => DateLineSaved(
-                                      saved: _savedOnDateLine(
-                                        selected,
-                                        page.maxWidth,
-                                        unloadedPictures: unloaded.length,
-                                        withNew: !listShown,
-                                      ),
-                                      child: switch ((
-                                        widget.folders,
-                                        pageDays,
-                                      )) {
-                                        (final folders?, _?) => NoteFolders(
-                                          tree: folders.tree,
-                                          onOpenFolder: _openFolder,
-                                          child: _buildWideWorkspace(
+                                  child: BackForwardSlide(
+                                    child: LayoutBuilder(
+                                      builder: (context, page) => DateLineSaved(
+                                        saved: _savedOnDateLine(
+                                          selected,
+                                          page.maxWidth,
+                                          unloadedPictures: unloaded.length,
+                                          withNew: !listShown,
+                                        ),
+                                        child: switch ((
+                                          widget.folders,
+                                          pageDays,
+                                        )) {
+                                          (final folders?, _?) => NoteFolders(
+                                            tree: folders.tree,
+                                            onOpenFolder: _openFolder,
+                                            child: _buildWideWorkspace(
+                                              sidebar,
+                                              cramped: cramped,
+                                            ),
+                                          ),
+                                          _ => _buildWideWorkspace(
                                             sidebar,
                                             cramped: cramped,
                                           ),
-                                        ),
-                                        _ => _buildWideWorkspace(
-                                          sidebar,
-                                          cramped: cramped,
-                                        ),
-                                      },
+                                        },
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -4961,48 +5108,54 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         : widget.notes.byId(filter.noteId);
     final home = note != null && tasks.read().home?.id == note.id;
     return Expanded(
-      child: TasksScreen(
-        key: _tasksPage,
-        controller: tasks,
-        filter: filter,
-        addFocus: _taskAddFocus,
-        words: _taskWords,
-        labelOf: _taskNoteLabel,
-        onOpenNote: _openTaskNote,
-        onOpenDone: _openTasksDone,
-        images: widget.notes.blobs,
-        displayTime: widget.prefs.displayTime,
-        newTaskShortcut: widget.shortcuts
-            .hintFor(ShortcutAction.newNote)
-            ?.keycapLabel,
-        toolbar: PageToolbar(
-          path: filter.done
-              ? PagePath(
-                  icon: KapyIcons.tasksOutlined,
-                  root: LibrarySpace.tasks.title,
-                  levels: const [(name: 'Done', folderId: null)],
-                )
-              : null,
-          crumb: filter.done
-              ? null
-              : TasksTodayCrumb(
-                  title: note == null || home ? 'Today' : _taskNoteLabel(note),
-                  now: tasks.now(),
+      child: BackForwardArea(
+        steps: _taskSteps,
+        onStep: _stepTasks,
+        child: TasksScreen(
+          key: _tasksPage,
+          controller: tasks,
+          filter: filter,
+          addFocus: _taskAddFocus,
+          words: _taskWords,
+          labelOf: _taskNoteLabel,
+          onOpenNote: _openTaskNote,
+          onOpenDone: _openTasksDone,
+          images: widget.notes.blobs,
+          displayTime: widget.prefs.displayTime,
+          newTaskShortcut: widget.shortcuts
+              .hintFor(ShortcutAction.newNote)
+              ?.keycapLabel,
+          toolbar: PageToolbar(
+            path: filter.done
+                ? PagePath(
+                    icon: KapyIcons.tasksOutlined,
+                    root: LibrarySpace.tasks.title,
+                    levels: const [(name: 'Done', folderId: null)],
+                  )
+                : null,
+            crumb: filter.done
+                ? null
+                : TasksTodayCrumb(
+                    title: note == null || home
+                        ? 'Today'
+                        : _taskNoteLabel(note),
+                    now: tasks.now(),
+                  ),
+            listVisible: listVisible,
+            underList: underList,
+            onShowList: _toggleList,
+            showListShortcut: _sidebarShortcut,
+            create: create,
+            updates: widget.updates,
+            actions: [
+              if (!filter.done)
+                TasksBandActions(
+                  controller: tasks,
+                  filter: filter,
+                  onChooseAgain: () => _tasksPage.currentState?.chooseAgain(),
                 ),
-          listVisible: listVisible,
-          underList: underList,
-          onShowList: _toggleList,
-          showListShortcut: _sidebarShortcut,
-          create: create,
-          updates: widget.updates,
-          actions: [
-            if (!filter.done)
-              TasksBandActions(
-                controller: tasks,
-                filter: filter,
-                onChooseAgain: () => _tasksPage.currentState?.chooseAgain(),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -5117,7 +5270,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       folderId: folderId,
       filed: filed,
       notes: _filtered(filed),
-      controls: _notesControls(LibrarySpace.notes, onFolder: true),
+      controls: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (_notesFilterChip(LibrarySpace.notes) case final chip?) ...[
+            Flexible(child: chip),
+            const SizedBox(width: 8),
+          ],
+          _notesControls(LibrarySpace.notes, onFolder: true),
+        ],
+      ),
       cards: widget.prefs.noteCards,
       group: (context, notes) => groupNotes(
         notes,
@@ -5574,12 +5736,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           KapyAiPage(
             kapyAi: ai,
             onOpenChat: _openKapyAi,
-            onManageAccounts: () => _showSettings(
-              section: SettingsSection.voice,
-              reveal: ai.accounts.isEmpty
-                  ? 'kapy-ai-toggle'
-                  : kapyAccountRowId(ai.accounts.first.kind),
-            ),
             account: _phoneAccount(),
             now: widget.notes.now,
           ),
@@ -5634,11 +5790,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       showKapyAi: _kapyAiOn,
       createLabel: tasks != null
           ? 'New task'
+          : ai != null
+          ? 'New chat'
           : _drawingsOnly
           ? 'New drawing'
           : 'New note',
       onCreate: tasks != null
           ? _createInSpace
+          : ai != null
+          ? () {
+              ai.newChat();
+              _openKapyAi(typing: true, aboutNote: false);
+            }
           : () => _createNote(drawing: _drawingsOnly),
       createActions: [
         const KapyMenuAction(

@@ -377,7 +377,7 @@ String describeSharingError(Object error) => switch (error) {
     'too many invitations today' => 'Daily invitation limit reached.',
     'too many reports today' => 'Daily report limit reached.',
     'the space is full' => 'This space is full.',
-    'quota exceeded' => 'Not enough storage for this.',
+    storageFullCode => 'Not enough storage for this.',
     'the new owner does not hold the key yet' =>
       'They have to be let in before they can take over.',
     'no such invitation' =>

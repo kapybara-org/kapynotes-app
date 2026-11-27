@@ -1,12 +1,11 @@
-import 'package:flutter/rendering.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
-import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
-import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'test_fonts.dart';
@@ -15,184 +14,97 @@ void main() {
   setUpAll(loadTestFonts);
   tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-  for (final (platform, chord) in [
-    (TargetPlatform.windows, 'Ctrl+N'),
-    (TargetPlatform.macOS, '⌘N'),
+  for (final (platform, keycap, chord) in [
+    (TargetPlatform.windows, 'Ctrl+N', 'Ctrl + N'),
+    (TargetPlatform.macOS, '⌘N', 'Cmd + N'),
   ]) {
-    // Ask Kapy's sparkle and the gap after it take 40 more, so its sweep
-    // starts 40 wider.
-    for (final (scale, ask) in [
-      (1.0, false),
-      (1.3, false),
-      (2.0, false),
-      (1.0, true),
-      (1.3, true),
-      (2.0, true),
-    ]) {
-      testWidgets(
-        '${platform.name} at ${scale}x text${ask ? ', with Ask Kapy' : ''}: '
-        'from ${ask ? 252 : 212} to 440 px New note gives up its keycap, '
-        'then its word and the count below the list\'s own width, and '
-        'before the list title truncates',
-        (tester) async {
-          AppPlatform.debugTargetPlatformOverride = platform;
-          var keycapFrom = 0.0;
-          var labelFrom = 0.0;
-          var keycap = false;
-          var label = false;
-          for (var width = ask ? 252.0 : 212.0; width <= 440; width++) {
-            await tester.pumpWidget(
-              MaterialApp(
-                theme: KapyTheme.light(),
-                builder: (context, child) => MediaQuery(
-                  data: MediaQuery.of(
-                    context,
-                  ).copyWith(textScaler: TextScaler.linear(scale)),
-                  child: child!,
-                ),
-                home: Material(
-                  child: Align(
-                    alignment: Alignment.topLeft,
-                    child: SizedBox(
-                      width: width,
-                      child: SidebarWindowBar(
-                        title: 'My notes',
-                        count: 12,
-                        onCreate: () {},
-                        onHide: () {},
-                        onAskKapy: ask ? () {} : null,
-                        newNoteShortcut: ShortcutBinding(
-                          logicalKey: LogicalKeyboardKey.keyN,
-                          physicalKey: PhysicalKeyboardKey.keyN,
-                          meta: platform == TargetPlatform.macOS,
-                          control: platform != TargetPlatform.macOS,
-                        ),
+    testWidgets('${platform.name}: the bar is the title, then the sparkle, a '
+        '+ and the toggle as icons, with New note, its chord and the count '
+        'in tooltips, from 200 to 440 px and at 2x text', (tester) async {
+      debugDefaultTargetPlatformOverride = platform;
+      AppPlatform.debugTargetPlatformOverride = platform;
+      for (final scale in [1.0, 2.0]) {
+        for (var width = 200.0; width <= 440; width += 40) {
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: KapyTheme.dark(),
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: TextScaler.linear(scale)),
+                child: child!,
+              ),
+              home: Material(
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: SizedBox(
+                    width: width,
+                    child: SidebarWindowBar(
+                      title: 'My notes',
+                      count: 37,
+                      onCreate: () {},
+                      onHide: () {},
+                      onAskKapy: () {},
+                      newNoteShortcut: ShortcutBinding(
+                        logicalKey: LogicalKeyboardKey.keyN,
+                        physicalKey: PhysicalKeyboardKey.keyN,
+                        meta: platform == TargetPlatform.macOS,
+                        control: platform != TargetPlatform.macOS,
                       ),
                     ),
                   ),
                 ),
               ),
-            );
-            expect(tester.takeException(), isNull, reason: 'at $width px');
-            final truncated = tester
-                .renderObject<RenderParagraph>(
-                  find.descendant(
-                    of: find.byKey(const ValueKey('sidebar-space-title')),
-                    matching: find.byType(RichText),
-                  ),
-                )
-                .didExceedMaxLines;
-            keycap = find.text(chord).evaluate().isNotEmpty;
-            label = find.text('New note').evaluate().isNotEmpty;
-            if (keycap && keycapFrom == 0) keycapFrom = width;
-            if (label && labelFrom == 0) labelFrom = width;
-            expect(keycap, keycapFrom > 0, reason: 'keycap at $width px');
-            expect(label, labelFrom > 0, reason: 'label at $width px');
-            expect(
-              find.byKey(const ValueKey('sidebar-space-count')).evaluate(),
-              label ? hasLength(1) : isEmpty,
-              reason: 'count at $width px',
-            );
-            expect(
-              label && width < SidebarWindowBar.fullWidth,
-              isFalse,
-              reason: 'the word stayed below the fold at $width px',
-            );
-            expect(
-              keycap && !label,
-              isFalse,
-              reason: 'a keycap without its word at $width px',
-            );
-            expect(
-              truncated && label,
-              isFalse,
-              reason: 'the word stayed while the title truncated at $width px',
-            );
-            if (scale == 1) {
-              expect(truncated, isFalse, reason: 'at $width px');
-            }
-          }
-          if (scale == 1) {
-            expect(keycap, isTrue);
-            expect(labelFrom, SidebarWindowBar.fullWidth);
-            expect(keycapFrom, greaterThanOrEqualTo(labelFrom));
-          }
-
-          if (!label) return;
-          final button = find.byKey(const ValueKey('sidebar-new-note'));
-          expect(
-            tester.getSize(button).width,
-            closeTo(
-              TonalButton.widthOf(
-                tester.element(button),
-                'New note',
-                shortcut: keycap ? chord : null,
-                tall: true,
-              ),
-              0.01,
             ),
           );
-        },
-      );
-    }
+          expect(tester.takeException(), isNull, reason: 'at $width px');
+          expect(find.text('37'), findsNothing);
+          expect(find.text('New note'), findsNothing);
+          expect(find.text(keycap), findsNothing);
+          expect(find.byTooltip('37 notes'), findsOneWidget);
+          expect(find.byTooltip('New note  $chord'), findsOneWidget);
+          final newNote = find.byKey(const ValueKey('sidebar-new-note'));
+          final ask = find.byKey(const ValueKey('sidebar-ask-kapy'));
+          final hide = find.byKey(const ValueKey('sidebar-hide'));
+          expect(tester.getSize(newNote), const Size(32, 32));
+          expect(tester.getRect(ask).right, tester.getRect(newNote).left);
+          expect(tester.getRect(newNote).right, tester.getRect(hide).left);
+          expect(width - tester.getRect(hide).right, 16);
+        }
+      }
+      debugDefaultTargetPlatformOverride = null;
+    });
   }
 
-  for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
-    testWidgets('${platform.name}: at D03\'s list, 336 wide in its 1440 pt '
-        'window, the bar reads "My notes 37  ✧ + New note ▯", and 1 pt '
-        'narrower the count and the word fold', (tester) async {
-      AppPlatform.debugTargetPlatformOverride = platform;
-      expect(SidebarWindowBar.fullWidth, LayoutPrefs.defaultSidebarWidth);
-      Future<void> bar(double width) => tester.pumpWidget(
-        MaterialApp(
-          theme: KapyTheme.dark(),
-          home: Material(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: SizedBox(
-                width: width,
-                child: SidebarWindowBar(
-                  title: 'My notes',
-                  count: 37,
-                  onCreate: () {},
-                  onHide: () {},
-                  onAskKapy: () {},
-                  newNoteShortcut: ShortcutBinding(
-                    logicalKey: LogicalKeyboardKey.keyN,
-                    physicalKey: PhysicalKeyboardKey.keyN,
-                    meta: platform == TargetPlatform.macOS,
-                    control: platform != TargetPlatform.macOS,
-                  ),
-                ),
-              ),
+  testWidgets('pressing + makes a note, and Tasks says its count in the '
+      "title's tooltip", (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    var made = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Material(
+          child: SizedBox(
+            width: 336,
+            child: SidebarWindowBar(
+              title: 'Tasks',
+              count: 10,
+              countLabel: 'open',
+              noun: 'task',
+              onCreate: () => made++,
+              onHide: () {},
             ),
           ),
         ),
-      );
-      final count = find.byKey(const ValueKey('sidebar-space-count'));
-      final newNote = find.byKey(const ValueKey('sidebar-new-note'));
-      final ask = find.byKey(const ValueKey('sidebar-ask-kapy'));
-      final hide = find.byKey(const ValueKey('sidebar-hide'));
-
-      await bar(SidebarWindowBar.fullWidth);
-      expect(find.text('37'), findsOneWidget);
-      expect(count, findsOneWidget);
-      expect(
-        find.descendant(of: newNote, matching: find.text('New note')),
-        findsOneWidget,
-      );
-      expect(tester.widget<TonalButton>(newNote).shortcut, isNull);
-      expect(tester.getRect(ask).right, tester.getRect(newNote).left);
-      expect(tester.getRect(newNote).right, tester.getRect(hide).left);
-      expect(SidebarWindowBar.fullWidth - tester.getRect(hide).right, 16);
-
-      await bar(SidebarWindowBar.fullWidth - 1);
-      expect(count, findsNothing);
-      expect(find.text('New note'), findsNothing);
-      expect(newNote, findsOneWidget);
-      expect(ask, findsOneWidget);
-    });
-  }
+      ),
+    );
+    expect(find.byTooltip('10 tasks open'), findsOneWidget);
+    expect(find.text('10 open'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('sidebar-new-note')));
+    expect(made, 1);
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   testWidgets("an iPad's bar keeps 8 between its buttons", (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
@@ -203,7 +115,7 @@ void main() {
           child: Align(
             alignment: Alignment.topLeft,
             child: SizedBox(
-              width: SidebarWindowBar.fullWidth + 40,
+              width: 376,
               child: SidebarWindowBar(
                 title: 'My notes',
                 count: 2,
@@ -227,8 +139,8 @@ void main() {
           tester.getRect(newNote).right,
       8,
     );
-    expect(find.text('New note'), findsOneWidget);
-    expect(find.byKey(const ValueKey('sidebar-space-count')), findsOneWidget);
+    expect(find.text('New note'), findsNothing);
+    expect(find.byTooltip('2 notes'), findsOneWidget);
   });
 
   testWidgets('a hairline runs along the bar\'s bottom, as under the band', (
@@ -267,8 +179,8 @@ void main() {
     );
   });
 
-  testWidgets("the search field's keycap is T3, which Riverbank dark keeps "
-      'apart from T2', (tester) async {
+  testWidgets("the search field's keycap waits for the pointer, and is T3, "
+      'which Riverbank dark keeps apart from T2', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     const palette = KapyTheme.darkPalette;
     expect(palette.textTertiary, isNot(palette.textSecondary));
@@ -287,10 +199,19 @@ void main() {
         ),
       ),
     );
-    final keycap = tester.widget<Text>(
-      find.byKey(const ValueKey('sidebar-search-shortcut')),
+    final shortcut = find.byKey(const ValueKey('sidebar-search-shortcut'));
+    expect(shortcut, findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(
+      tester.getCenter(find.byKey(const ValueKey('sidebar-search-box'))),
     );
-    expect(keycap.style!.color, palette.textTertiary);
+    await tester.pump();
+    expect(tester.widget<Text>(shortcut).style!.color, palette.textTertiary);
+    await mouse.moveTo(const Offset(799, 599));
+    await tester.pump();
+    expect(shortcut, findsNothing);
   });
 
   testWidgets('the Mac search field is 32 high, 10 in, radius 9, with its '
