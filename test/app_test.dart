@@ -7023,13 +7023,29 @@ void main() {
         await pumpWithPair(tester);
         await tester.tap(find.byKey(const ValueKey('rail-tasks')));
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+      });
+
+      testWidgets('on ${platform.name}, ↵ stops choosing and starts your pick '
+          'so far', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpWithPair(tester);
+        await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(find.text('Most important so far'), findsOneWidget);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
       });
@@ -7049,10 +7065,10 @@ void main() {
         );
 
         await press(tester, ShortcutAction.showTasks);
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
       });
 
       testWidgets('on ${platform.name}, New task from Notes still puts the '
@@ -7066,15 +7082,15 @@ void main() {
         expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
 
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
       });
     }
   });
@@ -15468,9 +15484,13 @@ void main() {
       (tester) async {
         AppPlatform.debugTargetPlatformOverride = platform;
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        // At 1x no result is longer than the column, so a larger text size
+        // makes one wrap even on a row of its own, under its writing.
+        tester.platformDispatcher.textScaleFactorTestValue = 1.75;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
         final semantics = tester.ensureSemantics();
         await notes.load();
-        notes.create(body: 'Trip\ny = 123456789012 km in mi\ny');
+        notes.create(body: 'Trip\nweek 44 2026');
         await pumpApp(tester, size: const Size(320, 800));
         final chip = find.byType(ResultChip).last;
         final result = tester.widget<ResultChip>(chip).result.text;

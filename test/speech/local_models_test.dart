@@ -5,6 +5,7 @@ void main() {
   final files = <DownloadableModel>[
     ...localSpeechModels,
     ...localSummaryModels,
+    noiseRemovalModel,
   ].expand((model) => model.files).toList();
 
   test('every Hugging Face download is pinned to a revision, so a re-export '

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -48,6 +49,16 @@ void main() {
 
   setUpAll(loadTestFonts);
 
+  final variant = TargetPlatformVariant({
+    TargetPlatform.linux,
+    TargetPlatform.macOS,
+  });
+
+  void testOnBothMacAndLinux(
+    String description,
+    Future<void> Function(WidgetTester tester) body,
+  ) => testWidgets(description, body, variant: variant);
+
   setUp(() {
     store = _Store();
     store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
@@ -68,7 +79,7 @@ void main() {
   });
 
   Future<void> pump(WidgetTester tester) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1500, 800);
@@ -100,17 +111,22 @@ void main() {
     LogicalKeyboardKey key, {
     bool shift = false,
   }) async {
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    final modifier = defaultTargetPlatform == TargetPlatform.macOS
+        ? LogicalKeyboardKey.metaLeft
+        : LogicalKeyboardKey.controlLeft;
+    await tester.sendKeyDownEvent(modifier);
     if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyEvent(key);
     if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyUpEvent(modifier);
   }
 
   Future<void> press(WidgetTester tester, ShortcutAction action) async {
     final binding = shortcuts.bindingFor(action)!;
-    expect(binding.control, isTrue);
-    expect(binding.alt || binding.meta, isFalse);
+    final onMac = defaultTargetPlatform == TargetPlatform.macOS;
+    expect(binding.meta, onMac);
+    expect(binding.control, !onMac);
+    expect(binding.alt, isFalse);
     await chord(tester, binding.logicalKey, shift: binding.shift);
   }
 
@@ -152,7 +168,7 @@ void main() {
       .controller
       .text;
 
-  testWidgets('what is typed right after a new note goes into it', (
+  testOnBothMacAndLinux('what is typed right after a new note goes into it', (
     tester,
   ) async {
     await pump(tester);
@@ -171,24 +187,25 @@ void main() {
     expect(notes.byId(made.id)!.body, startsWith('zz'));
   });
 
-  testWidgets('what is typed right after the menu opens goes into its field', (
-    tester,
-  ) async {
-    await pump(tester);
-    await selectAllOfTheList(tester);
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-    await tester.pumpAndSettle();
+  testOnBothMacAndLinux(
+    'what is typed right after the menu opens goes into its field',
+    (tester) async {
+      await pump(tester);
+      await selectAllOfTheList(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
 
-    await press(tester, ShortcutAction.findNotes);
-    await type(tester, 'milk');
-    await tester.pumpAndSettle();
+      await press(tester, ShortcutAction.findNotes);
+      await type(tester, 'milk');
+      await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
-    expect(focusedText(tester), 'milk');
-    expect(notes.byId(listId)!.body, _list);
-  });
+      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+      expect(focusedText(tester), 'milk');
+      expect(notes.byId(listId)!.body, _list);
+    },
+  );
 
-  testWidgets(
+  testOnBothMacAndLinux(
     "what is typed right after find's own chord opens goes into its field",
     (tester) async {
       await pump(tester);
@@ -205,22 +222,23 @@ void main() {
     },
   );
 
-  testWidgets('what is typed right after Link goes into its address', (
-    tester,
-  ) async {
-    await pump(tester);
-    await selectAllOfTheList(tester);
+  testOnBothMacAndLinux(
+    'what is typed right after Link goes into its address',
+    (tester) async {
+      await pump(tester);
+      await selectAllOfTheList(tester);
 
-    await press(tester, ShortcutAction.formatLink);
-    await type(tester, 'kapy');
-    await tester.pumpAndSettle();
+      await press(tester, ShortcutAction.formatLink);
+      await type(tester, 'kapy');
+      await tester.pumpAndSettle();
 
-    expect(FocusManager.instance.primaryFocus?.debugLabel, 'Link address');
-    expect(focusedText(tester), 'kapy');
-    expect(notes.byId(listId)!.body, _list);
-  });
+      expect(FocusManager.instance.primaryFocus?.debugLabel, 'Link address');
+      expect(focusedText(tester), 'kapy');
+      expect(notes.byId(listId)!.body, _list);
+    },
+  );
 
-  testWidgets('what is typed right after a new task goes into it', (
+  testOnBothMacAndLinux('what is typed right after a new task goes into it', (
     tester,
   ) async {
     await pump(tester);
@@ -235,22 +253,27 @@ void main() {
     expect(notes.byId(listId)!.body, _list);
   });
 
-  testWidgets('what is typed after a new note takes its kept keys carries '
-      'on after them', (tester) async {
-    await pump(tester);
-    await selectAllOfTheList(tester);
+  testOnBothMacAndLinux(
+    'what is typed after a new note takes its kept keys carries '
+    'on after them',
+    (tester) async {
+      await pump(tester);
+      await selectAllOfTheList(tester);
 
-    await press(tester, ShortcutAction.newNote);
-    await type(tester, 'zz');
-    await tester.pumpAndSettle();
-    await type(tester, 'y');
-    await tester.pumpAndSettle();
+      await press(tester, ShortcutAction.newNote);
+      await type(tester, 'zz');
+      await tester.pumpAndSettle();
+      await type(tester, 'y');
+      await tester.pumpAndSettle();
 
-    final made = notes.notes.firstWhere((note) => note.id != listId);
-    expect(notes.byId(made.id)!.body, startsWith('zzy'));
-  });
+      final made = notes.notes.firstWhere((note) => note.id != listId);
+      expect(notes.byId(made.id)!.body, startsWith('zzy'));
+    },
+  );
 
-  testWidgets('↵ typed right after a new task adds it', (tester) async {
+  testOnBothMacAndLinux('↵ typed right after a new task adds it', (
+    tester,
+  ) async {
     await pump(tester);
     await selectAllOfTheList(tester);
 
@@ -266,7 +289,9 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
   });
 
-  testWidgets('esc typed right after the menu opens closes it', (tester) async {
+  testOnBothMacAndLinux('esc typed right after the menu opens closes it', (
+    tester,
+  ) async {
     await pump(tester);
     await selectAllOfTheList(tester);
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
@@ -281,7 +306,9 @@ void main() {
     expect(notes.byId(listId)!.body, _list);
   });
 
-  testWidgets('esc typed right after Link closes the address', (tester) async {
+  testOnBothMacAndLinux('esc typed right after Link closes the address', (
+    tester,
+  ) async {
     await pump(tester);
     await selectAllOfTheList(tester);
 
@@ -337,74 +364,15 @@ void main() {
     Future<void> withControl(WidgetTester tester, LogicalKeyboardKey key) =>
         chord(tester, key);
 
-    testWidgets('keeps letters, takes back what ⌫ erases, and pastes', (
-      tester,
-    ) async {
-      await fields(tester);
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        (call) async => call.method == 'Clipboard.getData'
-            ? <String, Object?>{'text': ' eggs'}
-            : null,
-      );
-      addTearDown(
-        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-          SystemChannels.platform,
-          null,
-        ),
-      );
-
-      open();
-      await type(tester, 'milx');
-      await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
-      await type(tester, 'k');
-      await withControl(tester, LogicalKeyboardKey.keyV);
-      await type(tester, '.');
-      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-      await withControl(tester, LogicalKeyboardKey.keyX);
-      await withControl(tester, LogicalKeyboardKey.keyZ);
-      await tester.pumpAndSettle();
-
-      expect(first.text, _list);
-      expect(secondFocus.hasPrimaryFocus, isTrue);
-      expect(second.text, 'milk eggs.');
-      expect(second.selection, const TextSelection.collapsed(offset: 10));
-    });
-
-    testWidgets('leaves the caret after what it typed, as typing would', (
-      tester,
-    ) async {
-      await fields(tester);
-      TypeAhead.hold();
-      await type(tester, 'oat');
-      await tester.pumpAndSettle();
-
-      expect(
-        first.value,
-        const TextEditingValue(
-          text: 'oat',
-          selection: TextSelection.collapsed(offset: 3),
-        ),
-      );
-      await type(tester, 's');
-      expect(first.text, 'oats');
-    });
-
-    for (final (name, answer, reported) in [
-      (
-        'fails',
-        () => throw PlatformException(code: 'busy'),
-        isA<PlatformException>(),
-      ),
-      ('never answers', () => Completer<Object?>().future, isNull),
-    ]) {
-      testWidgets('a paste that $name still lets the rest of the keys go', (
-        tester,
-      ) async {
+    testOnBothMacAndLinux(
+      'keeps letters, takes back what ⌫ erases, and pastes',
+      (tester) async {
         await fields(tester);
         tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
           SystemChannels.platform,
-          (call) async => call.method == 'Clipboard.getData' ? answer() : null,
+          (call) async => call.method == 'Clipboard.getData'
+              ? <String, Object?>{'text': ' eggs'}
+              : null,
         );
         addTearDown(
           () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -414,21 +382,84 @@ void main() {
         );
 
         open();
-        await type(tester, 'a');
+        await type(tester, 'milx');
+        await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
+        await type(tester, 'k');
         await withControl(tester, LogicalKeyboardKey.keyV);
-        await type(tester, 'b');
-        await tester.pumpAndSettle();
-        await tester.pump(const Duration(seconds: 1));
+        await type(tester, '.');
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await withControl(tester, LogicalKeyboardKey.keyX);
+        await withControl(tester, LogicalKeyboardKey.keyZ);
         await tester.pumpAndSettle();
 
-        expect(second.text, 'ab');
-        expect(tester.takeException(), reported);
-        await type(tester, 'c');
-        expect(second.text, 'abc');
-      });
+        expect(first.text, _list);
+        expect(secondFocus.hasPrimaryFocus, isTrue);
+        expect(second.text, 'milk eggs.');
+        expect(second.selection, const TextSelection.collapsed(offset: 10));
+      },
+    );
+
+    testOnBothMacAndLinux(
+      'leaves the caret after what it typed, as typing would',
+      (tester) async {
+        await fields(tester);
+        TypeAhead.hold();
+        await type(tester, 'oat');
+        await tester.pumpAndSettle();
+
+        expect(
+          first.value,
+          const TextEditingValue(
+            text: 'oat',
+            selection: TextSelection.collapsed(offset: 3),
+          ),
+        );
+        await type(tester, 's');
+        expect(first.text, 'oats');
+      },
+    );
+
+    for (final (name, answer, reported) in [
+      (
+        'fails',
+        () => throw PlatformException(code: 'busy'),
+        isA<PlatformException>(),
+      ),
+      ('never answers', () => Completer<Object?>().future, isNull),
+    ]) {
+      testOnBothMacAndLinux(
+        'a paste that $name still lets the rest of the keys go',
+        (tester) async {
+          await fields(tester);
+          tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            (call) async =>
+                call.method == 'Clipboard.getData' ? answer() : null,
+          );
+          addTearDown(
+            () => tester.binding.defaultBinaryMessenger
+                .setMockMethodCallHandler(SystemChannels.platform, null),
+          );
+
+          open();
+          await type(tester, 'a');
+          await withControl(tester, LogicalKeyboardKey.keyV);
+          await type(tester, 'b');
+          await tester.pumpAndSettle();
+          await tester.pump(const Duration(seconds: 1));
+          await tester.pumpAndSettle();
+
+          expect(second.text, 'ab');
+          expect(tester.takeException(), reported);
+          await type(tester, 'c');
+          expect(second.text, 'abc');
+        },
+      );
     }
 
-    testWidgets('lets go once the field has the keyboard', (tester) async {
+    testOnBothMacAndLinux('lets go once the field has the keyboard', (
+      tester,
+    ) async {
       await fields(tester);
       open();
       await tester.pumpAndSettle();
@@ -439,17 +470,18 @@ void main() {
       expect(first.text, _list);
     });
 
-    testWidgets('gives the keys back to the field that kept the keyboard', (
-      tester,
-    ) async {
-      await fields(tester);
-      TypeAhead.hold();
-      await type(tester, 'oat');
-      expect(first.text, _list);
+    testOnBothMacAndLinux(
+      'gives the keys back to the field that kept the keyboard',
+      (tester) async {
+        await fields(tester);
+        TypeAhead.hold();
+        await type(tester, 'oat');
+        expect(first.text, _list);
 
-      await tester.pumpAndSettle();
-      expect(firstFocus.hasPrimaryFocus, isTrue);
-      expect(first.text, 'oat');
-    });
+        await tester.pumpAndSettle();
+        expect(firstFocus.hasPrimaryFocus, isTrue);
+        expect(first.text, 'oat');
+      },
+    );
   });
 }

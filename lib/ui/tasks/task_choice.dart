@@ -19,6 +19,8 @@ class PairStage extends TaskStage {
     required this.right,
     required this.joined,
     required this.pairsLeft,
+    required this.seen,
+    required this.total,
   });
 
   final TaskItem left;
@@ -32,6 +34,12 @@ class PairStage extends TaskStage {
 
   /// How many more pairs follow this one.
   final int pairsLeft;
+
+  /// [right]'s place among the tasks this round asks about, counting from 1,
+  /// and how many there are: today's list, or after a Done only the tasks
+  /// that joined it since you chose.
+  final int seen;
+  final int total;
 }
 
 /// The one task to work on now.
@@ -125,6 +133,12 @@ class TaskChoice {
       return TaskChoice._(DoNowStage(left), upNext, others({left.id}));
     }
     final right = candidates.first;
+    final asked = since == null
+        ? open
+        : [
+            for (final item in open)
+              if (item.entry.position > since) item,
+          ];
     return TaskChoice._(
       PairStage(
         left: left,
@@ -132,6 +146,8 @@ class TaskChoice {
         right: right,
         joined: since != null,
         pairsLeft: candidates.length - 1,
+        seen: asked.indexWhere((item) => item.id == right.id) + 1,
+        total: asked.length,
       ),
       upNext,
       others({left.id, right.id}),

@@ -136,6 +136,8 @@ void main() {
     expect(first.right.words, 'B');
     expect(first.joined, isFalse);
     expect(first.pairsLeft, 4);
+    expect(first.seen, 2);
+    expect(first.total, 6);
     expect(choice().upNext, isEmpty);
     expect(words(choice().rest), ['C', 'D', 'E', 'F']);
     expect(choice().chosen, isFalse);
@@ -150,6 +152,8 @@ void main() {
     expect(next.chosen, isTrue);
     expect(next.right.words, 'C');
     expect(next.pairsLeft, 3);
+    expect(next.seen, 3);
+    expect(next.total, 6);
     expect(choice().upNext, isEmpty);
     expect(words(choice().rest), ['B', 'D', 'E', 'F']);
     expect(choice().chosen, isTrue);
@@ -190,7 +194,7 @@ void main() {
     expect(words(choice().rest), ['C']);
   });
 
-  test('Start with makes your choice so far Do now; earlier picks stay in Up '
+  test('Stop choosing makes your choice so far Do now; earlier picks stay in Up '
       'next and the tasks not yet shown stay on the list', () async {
     await start(six);
     keep();
@@ -340,6 +344,8 @@ void main() {
     expect(again.right.words, 'D');
     expect(again.joined, isTrue);
     expect(again.pairsLeft, 0);
+    expect(again.seen, 1);
+    expect(again.total, 1);
     expect(tasks.justDone?.words, 'C');
     expect(words(choice().upNext), ['A']);
 
