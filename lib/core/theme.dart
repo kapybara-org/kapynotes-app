@@ -2163,7 +2163,7 @@ class KapyTheme {
         thumbColor: WidgetStatePropertyAll(palette.switchThumb),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? accent
+              ? palette.accentFill
               : palette.switchTrackOff,
         ),
         trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),

@@ -121,7 +121,7 @@ void main() {
     expect(switches.thumbColor!.resolve({}), const Color(0xFFFFFFFF));
     expect(
       switches.trackColor!.resolve({WidgetState.selected}),
-      palette.accent,
+      palette.accentFill,
     );
     expect(switches.trackColor!.resolve({}), palette.switchTrackOff);
     final checkbox = theme.checkboxTheme;

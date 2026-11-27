@@ -77,63 +77,63 @@ class SettingsLabel extends StatelessWidget {
     // The heading yields to the line beside it when the two cannot share
     // the width; at every width they can, it keeps its natural size.
     final heading = LayoutBuilder(
-        builder: (context, box) => Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: math.max(0, box.maxWidth - (detail == null ? 0 : 96)),
+      builder: (context, box) => Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: math.max(0, box.maxWidth - (detail == null ? 0 : 96)),
+            ),
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: chromeStyle(
+                size: SettingsMetrics.sectionLabelSize,
+                line: 16,
+                weight: AppWeight.regular,
+                color: palette.textSecondary,
               ),
+            ),
+          ),
+          if (detail != null) ...[
+            const SizedBox(width: 8),
+            Expanded(
               child: Text(
-                text,
+                detail,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: chromeStyle(
-                  size: SettingsMetrics.sectionLabelSize,
-                  line: 16,
-                  weight: AppWeight.regular,
-                  color: palette.textSecondary,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 16 / 12,
+                  color: palette.textTertiary,
                 ),
               ),
             ),
-            if (detail != null) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          ],
+        ],
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(left: 10, bottom: 8),
+      child: caption == null
+          ? heading
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                heading,
+                const SizedBox(height: 2),
+                Text(
+                  caption,
                   style: TextStyle(
                     fontSize: 12,
                     height: 16 / 12,
                     color: palette.textTertiary,
                   ),
                 ),
-              ),
-            ],
-          ],
-        ),
-      );
-      return Padding(
-        padding: const EdgeInsets.only(left: 10, bottom: 8),
-        child: caption == null
-            ? heading
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  heading,
-                  const SizedBox(height: 2),
-                  Text(
-                    caption,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 16 / 12,
-                      color: palette.textTertiary,
-                    ),
-                  ),
-                ],
-              ),
+              ],
+            ),
     );
   }
 }
@@ -1072,7 +1072,9 @@ class SettingsSwitch extends StatelessWidget {
                       ),
                     ),
                     decoration: BoxDecoration(
-                      color: value ? palette.accent : palette.switchTrackOff,
+                      color: value
+                          ? palette.accentFill
+                          : palette.switchTrackOff,
                       borderRadius: BorderRadius.circular(height / 2),
                     ),
                     child: AnimatedAlign(

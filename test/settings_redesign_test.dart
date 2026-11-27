@@ -429,7 +429,9 @@ void main() {
 
         final palette = tester.element(find.byType(SettingsSwitch)).palette;
         expect(
-          tester.getSize(find.byKey(const ValueKey('compact-switch-indicator'))),
+          tester.getSize(
+            find.byKey(const ValueKey('compact-switch-indicator')),
+          ),
           const Size(36, 16),
         );
         final boxes = find.descendant(
@@ -442,12 +444,17 @@ void main() {
         final knob = face(boxes.last);
         expect(knob.boxShadow, isNull);
         expect(knob.color, palette.switchThumb);
-        final track = tester
-            .widget<AnimatedContainer>(
-              find.byKey(const ValueKey('compact-switch-indicator')),
-            )
-            .decoration! as BoxDecoration;
-        expect(track.color, value ? palette.accent : palette.switchTrackOff);
+        final track =
+            tester
+                    .widget<AnimatedContainer>(
+                      find.byKey(const ValueKey('compact-switch-indicator')),
+                    )
+                    .decoration!
+                as BoxDecoration;
+        expect(
+          track.color,
+          value ? palette.accentFill : palette.switchTrackOff,
+        );
       });
     }
   }
