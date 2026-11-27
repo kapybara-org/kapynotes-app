@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/core/toast.dart';
+import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'test_fonts.dart';
@@ -710,6 +711,114 @@ void main() {
       expect(tester.getCenter(surface).dx, (412 + 820) / 2);
     });
 
+    // Parity item 64: a menu took it to the middle of the window, over the
+    // list, until it closed.
+    testWidgets('keeps its place under a menu and a menu from it, and centres '
+        "on the window under a dialog a menu's item opens", (tester) async {
+      final context = await window(tester, list: listOf(336));
+      opened(context);
+      await tester.pumpAndSettle();
+      const page = (412 + 820) / 2;
+      expect(tester.getCenter(surface).dx, page);
+
+      Future<String?> menu(BuildContext over, String item) =>
+          showKapyContextMenu<String>(
+            context: over,
+            globalPosition: const Offset(500, 200),
+            items: [PopupMenuItem(value: item, child: Text(item))],
+          );
+      unawaited(menu(context, 'Tags'));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+      unawaited(menu(tester.element(find.text('Tags')), 'Work'));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      expect(find.text('Tags'), findsNothing);
+      expect(tester.getCenter(surface).dx, page);
+
+      // As a shortcut can open one over a menu still open.
+      unawaited(menu(context, 'Copy'));
+      await tester.pumpAndSettle();
+      unawaited(
+        showDialog<void>(
+          context: tester.element(find.text('Copy')),
+          builder: (_) => const SizedBox(width: 200, height: 200),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, 410);
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      expect(find.text('Copy'), findsOneWidget);
+      expect(tester.getCenter(surface).dx, page);
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+
+      unawaited(
+        menu(context, 'Rename').then((_) {
+          if (context.mounted) {
+            unawaited(
+              showDialog<void>(
+                context: context,
+                builder: (_) => const SizedBox(width: 200, height: 200),
+              ),
+            );
+          }
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      expect(find.text('Rename'), findsNothing);
+      expect(tester.getCenter(surface).dx, 410);
+    });
+
+    testWidgets("keeps its place under a popover, as the tag list a menu's "
+        'Tags opens', (tester) async {
+      final context = await window(tester, list: listOf(336));
+      opened(context);
+      await tester.pumpAndSettle();
+      const page = (412 + 820) / 2;
+
+      unawaited(
+        showKapyContextMenu<String>(
+          context: context,
+          globalPosition: const Offset(500, 200),
+          items: const [PopupMenuItem(value: 'Tags', child: Text('Tags'))],
+        ).then((_) {
+          if (context.mounted) {
+            unawaited(
+              showKapyPopover<void>(
+                context: context,
+                barrierLabel: 'Close tags',
+                pageBuilder: (_, _, _) => const Center(child: Text('Work')),
+              ),
+            );
+          }
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+      await tester.tap(find.text('Tags'));
+      await tester.pump();
+      expect(tester.getCenter(surface).dx, page);
+      await tester.pumpAndSettle();
+      expect(find.text('Work'), findsOneWidget);
+      expect(tester.getCenter(surface).dx, page);
+
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      expect(find.text('Work'), findsNothing);
+      expect(tester.getCenter(surface).dx, page);
+    });
+
     testWidgets("keeps above the list's foot where it centres on the window "
         'over the list, and not where it keeps beside the list or the list '
         'is slid shut', (tester) async {
@@ -741,6 +850,43 @@ void main() {
 
       expect(tester.getCenter(surface).dx, 512);
       expect(tester.getSize(surface).width, 480);
+    });
+
+    testWidgets("leaves a phone's card stepping down under a menu, as under "
+        'anything over its bar', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      Toast.debugAnimateLifetimeInTests = false;
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(400, 800);
+      addTearDown(tester.view.reset);
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Builder(
+            builder: (value) {
+              context = value;
+              return const Align(
+                alignment: Alignment.bottomCenter,
+                child: ToastClearance(child: SizedBox(width: 400, height: 100)),
+              );
+            },
+          ),
+        ),
+      );
+      Toast.show(context, 'Copied');
+      await tester.pumpAndSettle();
+      expect(tester.getRect(surface).bottom, 800 - 100 - 16);
+
+      unawaited(
+        showKapyContextMenu<void>(
+          context: context,
+          globalPosition: const Offset(200, 300),
+          items: const [PopupMenuItem(child: Text('Copy'))],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getRect(surface).bottom, greaterThan(800 - 100 - 16));
     });
   });
 

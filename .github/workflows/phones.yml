@@ -13,6 +13,9 @@
 # The ios job holds one of the five macOS jobs the organization can run at
 # once, so nothing here runs on a push.
 name: Phones
+# A dispatch that names its tests says so in its title, so a run of some
+# tests is never taken for the run of them all at the same head.
+run-name: "${{ inputs.tests && format('Phones (tests: {0})', inputs.tests) || github.event.pull_request.title || 'Phones' }}"
 
 on:
   pull_request:
@@ -20,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       tests:
-        description: The only tests to run, such as phone_recording_away; empty runs them all
+        description: The only tests to run, such as phone_recording_away; empty runs them all. A run of some tests names them in its title, fails on a name that isn't one of the phone tests, and runs beside a run of them all on the same branch instead of cancelling it
         required: false
         default: ''
 
@@ -28,9 +31,10 @@ permissions:
   contents: read
 
 # Adding any label starts this workflow, so the group names the label: a run
-# for another label, which skips its jobs, never cancels a phones run.
+# for another label, which skips its jobs, never cancels a phones run. It
+# names a dispatch's tests too, so a run of some never cancels one of them all.
 concurrency:
-  group: phones-${{ github.ref }}-${{ github.event.label.name }}
+  group: phones-${{ github.ref }}-${{ github.event.label.name }}-${{ inputs.tests }}
   cancel-in-progress: true
 
 env:
@@ -38,7 +42,19 @@ env:
   PHONE_TESTS: ${{ inputs.tests }}
 
 jobs:
+  # Checks the names in `tests` before either phone job takes a runner, so a
+  # typo fails in seconds rather than after a macOS job's setup.
+  names:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: bash tool/ci/phone_screenshots.sh --check
+
   android:
+    needs: names
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
     runs-on: ubuntu-latest
     # A green run takes 38 to 45 minutes, so 60 leaves room for a slow cold
@@ -63,11 +79,9 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+      - uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
 
       - run: flutter pub get --enforce-lockfile
 
@@ -107,6 +121,7 @@ jobs:
           if-no-files-found: error
 
   ios:
+    needs: names
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
     runs-on: xcode-27
     timeout-minutes: 150
@@ -139,21 +154,10 @@ jobs:
           xcrun simctl boot "$udid" >/dev/null 2>&1 &
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        id: flutter
+      - uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-          pub-cache: false
-
-      # flutter-action keys its own pub cache on hashFiles('**/pubspec.lock'),
-      # a walk of the whole checkout. This keeps its path and key prefix and
-      # adds the digest from Hash the lockfile.
-      - uses: actions/cache@v5
-        with:
-          path: ${{ steps.flutter.outputs.PUB-CACHE-PATH }}
-          key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ steps.lock.outputs.hash }}
+          lock-hash: ${{ steps.lock.outputs.hash }}
 
       - run: flutter pub get --enforce-lockfile
 
@@ -188,7 +192,7 @@ jobs:
           tar -xzf "$RUNNER_TEMP/axe.tar.gz" -C "$RUNNER_TEMP/axe"
           echo "$RUNNER_TEMP/axe" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/axe/axe" --version
-          for try in 1 2 3; do
+          for _ in 1 2 3; do
             "$RUNNER_TEMP/axe/axe" describe-ui --udid "$UDID" >/dev/null && break
             sleep 5
           done
