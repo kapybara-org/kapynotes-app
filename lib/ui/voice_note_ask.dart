@@ -506,8 +506,8 @@ class _VoiceAskState extends State<VoiceAsk> {
           : () => unawaited(_write(kind, null)),
     );
     // In a language that isn't the person's, Translate to it follows the
-    // first question and post, so both stay in view on a phone; otherwise
-    // Translate to… waits at the end, before Your own words….
+    // first question, in view on a phone; otherwise Translate to… waits at
+    // the end, before Your own words….
     final target = _asking
         ? translateTarget(widget.ref.transcript!.lang, _mine())
         : null;
@@ -529,8 +529,8 @@ class _VoiceAskState extends State<VoiceAsk> {
     // Questions and posts in turn, so both are in view on a phone.
     final starters = [
       if (questions.isNotEmpty) question(questions[0]),
-      if (posting) post(VoiceTakeKind.x),
       if (target != null) ?translate,
+      if (posting) post(VoiceTakeKind.x),
       if (questions.length > 1) question(questions[1]),
       if (posting) post(VoiceTakeKind.linkedin),
       if (questions.length > 2) question(questions[2]),

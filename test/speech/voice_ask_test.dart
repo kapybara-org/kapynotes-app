@@ -934,7 +934,7 @@ void main() {
     );
 
     testWidgets(
-      'on a phone a question stays in view before the chip, and its chevron has a 44 pt target',
+      'on a phone the chip starts in view after a question, and its chevron has a 44 pt target',
       (tester) async {
         tester.view
           ..physicalSize = const Size(360, 780)
@@ -955,6 +955,11 @@ void main() {
           lessThanOrEqualTo(360),
           reason: 'the first question is in view',
         );
+        expect(
+          left(tester, chip),
+          lessThan(360),
+          reason: 'the chip starts in view at rest',
+        );
 
         await tester.dragUntilVisible(more, starters, const Offset(-120, 0));
         await tester.pumpAndSettle();
@@ -973,6 +978,13 @@ void main() {
           find.byKey(const ValueKey('voice-translate-yours-en')),
         );
         expect(row.height, greaterThanOrEqualTo(44));
+        expect(
+          tester
+              .getTopLeft(find.byKey(const ValueKey('voice-translate-search')))
+              .dy,
+          lessThan(tester.getTopLeft(find.text('Your languages')).dy),
+          reason: 'search first',
+        );
         expect(ai.calls, isNot(contains(startsWith('askRecording'))));
       },
     );

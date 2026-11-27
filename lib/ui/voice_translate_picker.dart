@@ -147,21 +147,8 @@ class _TranslatePickerState extends State<TranslatePicker> {
             ],
           ),
         ),
-        if (!searching && widget.yours.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
-            child: Text('Your languages', style: label),
-          ),
-          for (final language in widget.yours)
-            _Row(
-              key: ValueKey('voice-translate-yours-${language.code}'),
-              language: language,
-              compact: widget.compact,
-              onPressed: () => _pick(language),
-            ),
-        ],
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
           child: Container(
             constraints: BoxConstraints(minHeight: widget.compact ? 44 : 34),
             padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -194,6 +181,23 @@ class _TranslatePickerState extends State<TranslatePicker> {
             ),
           ),
         ),
+        if (!searching && widget.yours.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
+            child: Text('Your languages', style: label),
+          ),
+          for (final language in widget.yours)
+            _Row(
+              key: ValueKey('voice-translate-yours-${language.code}'),
+              language: language,
+              compact: widget.compact,
+              onPressed: () => _pick(language),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+            child: Text('All languages', style: label),
+          ),
+        ],
         Expanded(
           child: found.isEmpty
               ? Padding(
