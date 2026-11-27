@@ -818,10 +818,27 @@ class _VoiceAskState extends State<VoiceAsk> {
     final insert = widget.onInsert;
     final copy = widget.onCopy;
     final meta = kapyText(11.5, 16, palette.textTertiary);
+    final heard = languageNamed(widget.ref.transcript?.lang ?? '');
     final source = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (model != null)
+        // Made by the device's own translator, which can't be picked: said
+        // as it is, with the languages it went between.
+        if (model == KapyModel.translator)
+          Flexible(
+            child: Text(
+              [
+                'Translated on this device',
+                if (heard != null && translation != null)
+                  '${heard.english} → ${translation.language.english}',
+              ].join(' · '),
+              key: const ValueKey('voice-ask-translated-here'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: meta,
+            ),
+          )
+        else if (model != null)
           Flexible(
             child: InkWell(
               key: const ValueKey('voice-ask-model'),

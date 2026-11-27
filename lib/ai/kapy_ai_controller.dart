@@ -12,6 +12,7 @@ import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/notes_store.dart';
 import '../speech/languages.dart';
+import '../speech/live_translation.dart';
 import '../sync/config.dart';
 import '../sync/key_store.dart';
 import 'answer_engine.dart';
@@ -65,6 +66,7 @@ class KapyAiController extends KapyAi {
     required LocalStore store,
     required NotesStore notes,
     required DeviceModel device,
+    LiveTranslationEngine? translator,
     Billing? billing,
     KapyChatBook? chats,
     String? Function()? token,
@@ -81,6 +83,7 @@ class KapyAiController extends KapyAi {
            chats ?? KapyChatBook(store, ready: () => notes.isLoaded, now: now),
        _notes = notes,
        _device = device,
+       _translator = translator,
        _billing = billing,
        _token = token ?? (() => null),
        _now = now ?? DateTime.now,
@@ -113,6 +116,10 @@ class KapyAiController extends KapyAi {
   final KapyChatBook _book;
   final NotesStore _notes;
   final DeviceModel _device;
+
+  /// The device's own translator, where it has one. Translate to… goes to
+  /// it first, so a pair it has never leaves the device.
+  final LiveTranslationEngine? _translator;
   final Billing? _billing;
   final String? Function() _token;
   final DateTime Function() _now;
@@ -137,9 +144,14 @@ class KapyAiController extends KapyAi {
   KapyTranslationDraft? _draft;
 
   /// The parts of a translation that came back before another failed, by
-  /// the question they answer and what each part sent, so Try again asks
-  /// only for the rest.
-  ({String question, List<String> sent, List<String> done})? _translated;
+  /// the question they answer, what made them and what each part sent, so
+  /// Try again asks only for the rest.
+  ({String question, KapyModel using, List<String> sent, List<String> done})?
+  _translated;
+
+  /// The question the device's translator couldn't translate after all, so
+  /// it and its Try again go to the cloud.
+  String? _declinedOnDevice;
 
   /// The held question's "This note" chip, kept for Try again.
   String? _heldNoteId;
@@ -675,20 +687,29 @@ class KapyAiController extends KapyAi {
       return;
     }
 
-    // A translation is long work that a device's model does poorly, so it
-    // is always made in the cloud: Kapy AI Cloud, or the person's own account.
+    // A translation is made by the device's own translator when it has the
+    // pair, which needs no plan, account or consent. Otherwise it is long
+    // work that a device's model does poorly, so it is made in the cloud:
+    // Kapy AI Cloud, or the person's own account.
     final translation = recording == null
         ? null
         : parseTranslationRequest(question.text);
+    final pair =
+        translation == null ||
+            _translator == null ||
+            _declinedOnDevice == question.id
+        ? null
+        : await _devicePair(voice!.ref, translation.language);
+    if (_answering) return;
     final cloudOnly = translation != null;
-    final using = cloudOnly && model.kind == KapyModelKind.device
+    final using = pair != null
+        ? KapyModel.translator
+        : cloudOnly && model.kind == KapyModelKind.device
         ? KapyModel.cloud
         : model;
-    final held = _holdFor(
-      using,
-      recording: recording != null,
-      cloudOnly: cloudOnly,
-    );
+    final held = pair != null
+        ? null
+        : _holdFor(using, recording: recording != null, cloudOnly: cloudOnly);
     if (held != null) {
       _pending = held;
       _downloadMoved = false;
@@ -702,10 +723,12 @@ class KapyAiController extends KapyAi {
     KapyPending? failed;
     try {
       if (translation != null) {
-        await _translate(chat, voice!, question, translation, using);
+        await _translate(chat, voice!, question, translation, using, pair);
       } else {
         await _reply(chat, question, voice, using);
       }
+    } on _DeviceDeclined {
+      _declinedOnDevice = question.id;
     } on AnswerOffline {
       failed = KapyOffline(
         fallback: cloudOnly ? null : _otherDeviceModel(using),
@@ -744,6 +767,8 @@ class KapyAiController extends KapyAi {
       _answering = false;
       _draft = null;
     }
+    // The device's translator couldn't after all: the cloud makes it.
+    if (_declinedOnDevice == question.id && pair != null) return _answer();
     if (_currentId == chat.id) _pending = failed;
     _notify();
   }
@@ -824,17 +849,18 @@ class KapyAiController extends KapyAi {
     }
   }
 
-  /// Translates [voice] as [asked] says, a part at a time with [using], and
-  /// adds the parts to [chat], each an answer of its own so that every one
-  /// fits a synced record, once all of them are in. A translation that stops
-  /// partway is never kept: the parts that came back wait for Try again,
-  /// which asks only for the rest.
+  /// Translates [voice] as [asked] says, a part at a time with [using], or
+  /// with the device's translator for [pair], and adds the parts to [chat],
+  /// each an answer of its own so that every one fits a synced record, once
+  /// all of them are in. A translation that stops partway is never kept: the
+  /// parts that came back wait for Try again, which asks only for the rest.
   Future<void> _translate(
     KapyChat chat,
     ({Note note, NoteVoiceRef ref}) voice,
     KapyMessage question,
     ({TranslateScope scope, Language language}) asked,
     KapyModel using,
+    ({String from, String to})? pair,
   ) async {
     final sent = translationParts(voice.ref, asked.scope);
     if (sent.isEmpty) {
@@ -848,12 +874,12 @@ class KapyAiController extends KapyAi {
     final done =
         kept != null &&
             kept.question == question.id &&
+            kept.using == using &&
             listEquals(kept.sent, sent)
         ? kept.done
         : <String>[];
-    _translated = (question: question.id, sent: sent, done: done);
-    final named = voice.ref.summary?.title.trim() ?? '';
-    final title = named.isEmpty ? voice.note.title : named;
+    _translated = (question: question.id, using: using, sent: sent, done: done);
+    final title = _recordingTitle(voice);
     for (var i = done.length; i < sent.length; i++) {
       _draft = KapyTranslationDraft(
         text: stitchTranslation(done),
@@ -871,6 +897,12 @@ class KapyAiController extends KapyAi {
       ]);
       if (notes.isEmpty) {
         throw AnswerFailed(_refusal(chat.recording!), retry: false);
+      }
+      if (pair != null) {
+        final part = await _translatedOnDevice(pair, sent[i], voice.ref);
+        if (part == null) throw const _DeviceDeclined();
+        done.add(part);
+        continue;
       }
       final reply = await _engineFor(using).answer(
         using,
@@ -896,29 +928,144 @@ class KapyAiController extends KapyAi {
     _translated = null;
     final now = _chat(chat.id);
     if (now == null) return;
-    final at = _now();
-    final read = KapyNoteRef(
-      noteId: voice.note.id,
-      title: title,
-      edited: voice.note.updatedAt,
-    );
     _replace(
       _edit(
         now,
         messages: [
           ...now.messages,
-          // A millisecond apart, so every device puts them in this order.
-          for (final (index, text) in done.indexed)
-            KapyMessage(
-              id: NotesStore.newId(),
-              role: KapyRole.assistant,
-              text: text,
-              at: at.add(Duration(milliseconds: index)),
-              read: [read],
-              model: using,
-            ),
+          ..._translationAnswers(voice, done, using, _now()),
         ],
       ),
+    );
+  }
+
+  /// [done]'s parts as the answers a translation of [voice] keeps, made by
+  /// [using], from [at] on.
+  List<KapyMessage> _translationAnswers(
+    ({Note note, NoteVoiceRef ref}) voice,
+    List<String> done,
+    KapyModel using,
+    DateTime at,
+  ) {
+    final read = KapyNoteRef(
+      noteId: voice.note.id,
+      title: _recordingTitle(voice),
+      edited: voice.note.updatedAt,
+    );
+    return [
+      // A millisecond apart, so every device puts them in this order.
+      for (final (index, text) in done.indexed)
+        KapyMessage(
+          id: NotesStore.newId(),
+          role: KapyRole.assistant,
+          text: text,
+          at: at.add(Duration(milliseconds: index)),
+          read: [read],
+          model: using,
+        ),
+    ];
+  }
+
+  static String _recordingTitle(({Note note, NoteVoiceRef ref}) voice) {
+    final named = voice.ref.summary?.title.trim() ?? '';
+    return named.isEmpty ? voice.note.title : named;
+  }
+
+  /// The pair of base languages the device's translator would make a
+  /// translation of [ref] into [language] with, when it has that pair on the
+  /// device now; the recording's language is its transcript's.
+  Future<({String from, String to})?> _devicePair(
+    NoteVoiceRef ref,
+    Language language,
+  ) async {
+    final heard = languageNamed(ref.transcript?.lang ?? '');
+    if (heard == null || heard.base == language.base) return null;
+    final pair = (from: heard.base, to: language.base);
+    final status = await _translator!.pairStatus(pair.from, pair.to);
+    return status.status == LivePairStatus.installed ? pair : null;
+  }
+
+  /// [part] of [ref] translated by the device's translator for [pair], or
+  /// null when it couldn't, or what came back isn't whole.
+  Future<String?> _translatedOnDevice(
+    ({String from, String to}) pair,
+    String part,
+    NoteVoiceRef ref,
+  ) async {
+    final text = await translateLines(
+      part,
+      ref,
+      (words) => _translator!.translate(pair.from, pair.to, words),
+    );
+    return text == null ? null : translatedPart(part, text);
+  }
+
+  /// Saves the transcript of the recording [hash] in the note [noteId]
+  /// translated into [to], an ISO 639-1 code, by the device's translator:
+  /// the same chat Translate to… keeps, under Earlier and never opened.
+  /// Nothing happens when the recording already has that translation, or
+  /// the device doesn't have the pair.
+  Future<void> keepTranscriptTranslation(
+    String noteId,
+    String hash,
+    String to,
+  ) async {
+    final language = languageNamed(to);
+    final link = KapyRecordingRef(noteId: noteId, hash: hash);
+    final voice = _recording(link);
+    if (language == null ||
+        voice == null ||
+        _translator == null ||
+        _hasTranslation(link, language)) {
+      return;
+    }
+    final pair = await _devicePair(voice.ref, language);
+    final sent = translationParts(voice.ref, TranslateScope.transcript);
+    if (pair == null || sent.isEmpty) return;
+    final done = <String>[];
+    for (final part in sent) {
+      final translated = await _translatedOnDevice(pair, part, voice.ref);
+      if (translated == null) return;
+      done.add(translated);
+    }
+    // Asked for in the meantime, or hidden: nothing is added.
+    if (_recording(link) == null || _hasTranslation(link, language)) return;
+    final at = _now();
+    _replace(
+      KapyChat(
+        id: NotesStore.newId(),
+        title: translationTitle(TranslateScope.transcript, language),
+        createdAt: at,
+        updatedAt: at,
+        model: defaultModel,
+        messages: [
+          KapyMessage(
+            id: NotesStore.newId(),
+            role: KapyRole.user,
+            text: translationRequest(TranslateScope.transcript, language),
+            at: at,
+          ),
+          ..._translationAnswers(
+            voice,
+            done,
+            KapyModel.translator,
+            at.add(const Duration(milliseconds: 1)),
+          ),
+        ],
+        recording: link,
+      ),
+    );
+  }
+
+  /// Whether a chat about [link] asks for its transcript in [language].
+  bool _hasTranslation(KapyRecordingRef link, Language language) {
+    final asked = translationRequest(TranslateScope.transcript, language);
+    return _all.any(
+      (chat) =>
+          chat.recording == link &&
+          chat.messages.any(
+            (message) => message.role == KapyRole.user && message.text == asked,
+          ),
     );
   }
 
@@ -1157,4 +1304,9 @@ class KapyAiController extends KapyAi {
     _book.removeListener(_notify);
     super.dispose();
   }
+}
+
+/// The device's translator couldn't make a translation it said it could.
+class _DeviceDeclined implements Exception {
+  const _DeviceDeclined();
 }
