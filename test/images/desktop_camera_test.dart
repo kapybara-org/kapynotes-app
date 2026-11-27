@@ -555,6 +555,22 @@ void main() {
         ),
       );
     });
+
+    test('closing mid-recording stops it, deletes what it wrote, and lets '
+        'the camera go', () async {
+      final windows = WindowsCamera();
+      final session = await windows.open(
+        (await windows.cameras()).single,
+        video: true,
+        sound: true,
+      );
+      final path = '${directory.path}/video.mp4';
+      await session.startRecording(path);
+      File(path).writeAsBytesSync(const [1]);
+      await session.close();
+      expect(platform.calls, ['startVideo', 'stopVideo', 'dispose']);
+      expect(File(path).existsSync(), isFalse);
+    });
   });
 
   group('Mac, through camera_macos', () {
@@ -644,6 +660,44 @@ void main() {
       expect((calls.last.arguments as Map)['url'], file);
       expect((await video.stopRecording()).path, file);
       await video.close();
+    });
+
+    test('closing mid-recording stops it, deletes what it wrote, and lets '
+        'the camera go', () async {
+      final mac = MacCamera();
+      final video = await mac.open(
+        (await mac.cameras()).first,
+        video: true,
+        sound: true,
+      );
+      final file = '${directory.path}/video.mp4';
+      await video.startRecording(file);
+      File(file).writeAsBytesSync(const [1]);
+      await video.close();
+      expect(calls.map((call) => call.method).skip(2).toList(), [
+        'startRecording',
+        'stopRecording',
+        'destroy',
+      ]);
+      expect(File(file).existsSync(), isFalse);
+    });
+
+    test('an opening that fails lets go of what it set up', () async {
+      final mac = MacCamera();
+      final camera = (await mac.cameras()).first;
+      answer = (call) => call.method == 'initialize'
+          ? {
+              'error': {
+                'code': 'CAMERA_INITIALIZATION_ERROR',
+                'message': 'Cannot use MacBook Pro Microphone',
+              },
+            }
+          : null;
+      await expectLater(
+        mac.open(camera, video: true, sound: true),
+        throwsA(isA<DesktopCameraException>()),
+      );
+      expect(calls.last.method, 'destroy');
     });
 
     test('a refused camera is access off, anything else is busy', () async {

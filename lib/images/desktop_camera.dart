@@ -253,6 +253,13 @@ class MacCamera implements DesktopCamera {
         isVideoMirrored: false,
       );
     } catch (error) {
+      // camera_macos fails some openings after it has registered the picture
+      // and added the camera, such as a refused microphone, and keeps both.
+      try {
+        await _plugin.destroy();
+      } catch (_) {
+        // Nothing was set up to let go of.
+      }
       throw DesktopCameraException(
         '$error'.contains('Permission not granted')
             ? DesktopCameraTrouble.accessOff

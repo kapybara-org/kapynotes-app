@@ -321,35 +321,32 @@ void main() {
     expect(prefs.writingFont, WritingFont.clean);
   });
 
-  test(
-    'the zoom steps through its levels, stays within them, and persists',
-    () {
-      final store = _MemoryStore();
-      final prefs = LayoutPrefs(store)..load();
-      expect(prefs.zoom, 1);
+  test('the zoom steps through its levels, stays within them, and persists', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.zoom, 1);
 
-      final seen = <double>[];
-      for (var i = 0; i < 8; i++) {
-        prefs.zoomIn();
-        seen.add(prefs.zoom);
-      }
-      expect(seen, [1.1, 1.25, 1.5, 1.75, 2, 2, 2, 2]);
-      expect(store.data['zoom.v1'], 2);
+    final seen = <double>[];
+    for (var i = 0; i < 8; i++) {
+      prefs.zoomIn();
+      seen.add(prefs.zoom);
+    }
+    expect(seen, [1.1, 1.25, 1.5, 1.75, 2, 2, 2, 2]);
+    expect(store.data['zoom.v1'], 2);
 
+    prefs.zoomOut();
+    expect((LayoutPrefs(store)..load()).zoom, 1.75);
+
+    for (var i = 0; i < 10; i++) {
       prefs.zoomOut();
-      expect((LayoutPrefs(store)..load()).zoom, 1.75);
+    }
+    expect(prefs.zoom, 0.8);
 
-      for (var i = 0; i < 10; i++) {
-        prefs.zoomOut();
-      }
-      expect(prefs.zoom, 0.8);
-
-      prefs.resetZoom();
-      expect(prefs.zoom, 1);
-      expect((LayoutPrefs(store)..load()).zoom, 1);
-      expect(prefs.editorTextScale, LayoutPrefs.defaultEditorTextScale);
-    },
-  );
+    prefs.resetZoom();
+    expect(prefs.zoom, 1);
+    expect((LayoutPrefs(store)..load()).zoom, 1);
+    expect(prefs.editorTextScale, LayoutPrefs.defaultEditorTextScale);
+  });
 
   test('a stored zoom off the steps lands on the nearest one', () {
     for (final (stored, zoom) in [

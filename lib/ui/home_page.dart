@@ -883,30 +883,33 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  /// The camera window on a Mac or PC. Its Choose files leaves the app for a
-  /// file dialog, as the pickers do, so a hidden note's session outlasts it.
-  Future<List<XFile>> _openDesktopCamera(BuildContext context, Note note) {
+  /// The camera window on a Mac or PC. Its first use asks for the camera and
+  /// the microphone, and it can send the person to the system's settings or
+  /// to a file dialog, so a hidden note's session outlasts the whole window,
+  /// as it does the phone camera.
+  Future<List<XFile>> _openDesktopCamera(
+    BuildContext context,
+    Note note,
+  ) async {
     final camera = desktopCameraForThisComputer();
-    if (camera == null) return Future.value(const []);
-    return showDesktopCamera(
-      context,
-      camera: camera,
-      attachmentMaxBytes: _videoAttachmentMaxBytes(note),
-      chooseFiles: () async {
-        final protectsHiddenSession =
-            _hiddenMode && (widget.notes.byId(note.id)?.isHidden ?? false);
-        if (protectsHiddenSession) _hiddenSystemUiDepth++;
-        try {
-          return await chooseCameraFiles();
-        } finally {
-          if (protectsHiddenSession) _hiddenSystemUiDepth--;
-        }
-      },
-      startInVideo: widget.prefs.cameraVideo,
-      onVideoChosen: (video) => widget.prefs.cameraVideo = video,
-      cameraId: widget.prefs.cameraDevice,
-      onCameraChosen: (id) => widget.prefs.cameraDevice = id,
-    );
+    if (camera == null) return const [];
+    final protectsHiddenSession =
+        _hiddenMode && (widget.notes.byId(note.id)?.isHidden ?? false);
+    if (protectsHiddenSession) _hiddenSystemUiDepth++;
+    try {
+      return await showDesktopCamera(
+        context,
+        camera: camera,
+        attachmentMaxBytes: _videoAttachmentMaxBytes(note),
+        chooseFiles: chooseCameraFiles,
+        startInVideo: widget.prefs.cameraVideo,
+        onVideoChosen: (video) => widget.prefs.cameraVideo = video,
+        cameraId: widget.prefs.cameraDevice,
+        onCameraChosen: (id) => widget.prefs.cameraDevice = id,
+      );
+    } finally {
+      if (protectsHiddenSession) _hiddenSystemUiDepth--;
+    }
   }
 
   /// The file picker, which leaves the app as the photo pickers do: a hidden
