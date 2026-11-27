@@ -5636,10 +5636,18 @@ void main() {
           ),
         );
 
+        // Pinned, it moves to the row of pinned cards over the list.
         notes.togglePinned('Call with Arjun');
         await tester.pumpAndSettle();
-        expect(cardDate('Call with Arjun'), 'Today, 12:00');
-        expect(ring, findsOneWidget);
+        final pinnedCard = find.byWidgetPredicate(
+          (widget) =>
+              widget is PhoneCardFace && widget.note.title == 'Call with Arjun',
+        );
+        expect(tester.widget<PhoneCardFace>(pinnedCard).date, 'Today, 12:00');
+        expect(
+          find.descendant(of: pinnedCard, matching: find.byType(ChecklistPie)),
+          findsOneWidget,
+        );
 
         prefs.noteCards = false;
         await tester.pumpAndSettle();
@@ -13676,7 +13684,7 @@ void main() {
       },
     );
 
-    testWidgets('Pinned shows four notes, and View all the rest', (
+    testWidgets('Pinned is one row of cards, and View all opens the rest', (
       tester,
     ) async {
       final semantics = tester.ensureSemantics();
@@ -13686,22 +13694,92 @@ void main() {
       }
       await pumpApp(tester);
 
-      expect(rowTitles(tester), hasLength(4));
+      // Two cards fit the list's default width, side by side in one row.
+      final row = find.byKey(const ValueKey('desktop-pinned-row'));
+      expect(row, findsOneWidget);
+      expect(rowTitles(tester), hasLength(2));
+      final cards = tester.widgetList<NoteRow>(find.byType(NoteRow)).toList();
+      expect(cards.map((card) => card.style).toSet(), {NoteRowStyle.phoneCard});
+      final first = tester.getRect(find.byType(NoteRow).first);
+      final second = tester.getRect(find.byType(NoteRow).last);
+      expect(second.top, first.top);
+      expect(second.left, greaterThan(first.right));
+      expect(
+        tester.getRect(row).right,
+        lessThanOrEqualTo(tester.getRect(find.byType(Sidebar)).right),
+      );
+
       final viewAll = find.byKey(const ValueKey('sidebar-view-all-pinned'));
       expect(
-        find.descendant(of: viewAll, matching: find.text('View all')),
+        find.descendant(of: viewAll, matching: find.text('View all 6')),
         findsOneWidget,
       );
-      expect(find.bySemanticsLabel('View all pinned notes'), findsOneWidget);
-      expect(find.text('See all'), findsNothing);
+      expect(find.bySemanticsLabel('View all 6 pinned notes'), findsOneWidget);
       semantics.dispose();
       await tester.tap(viewAll);
       await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
       expect(rowTitles(tester), hasLength(6));
+      expect(row, findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('sidebar-pinned-back')));
       await tester.pumpAndSettle();
-      expect(rowTitles(tester), hasLength(4));
+      expect(rowTitles(tester), hasLength(2));
+      expect(row, findsOneWidget);
+    });
+
+    testWidgets('View all takes Enter, and Esc goes back to Home', (
+      tester,
+    ) async {
+      await notes.load();
+      for (var i = 1; i <= 5; i++) {
+        notes.togglePinned(notes.create(body: 'Pinned $i').id);
+      }
+      await pumpApp(tester);
+      final viewAll = find.byKey(const ValueKey('sidebar-view-all-pinned'));
+
+      Focus.of(
+        tester.element(
+          find.descendant(of: viewAll, matching: find.byType(GestureDetector)),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      final back = find.byKey(const ValueKey('sidebar-pinned-back'));
+      expect(back, findsOneWidget);
+      expect(rowTitles(tester), hasLength(5));
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(back, findsNothing);
+      expect(rowTitles(tester), hasLength(2));
+      expect(viewAll, findsOneWidget);
+    });
+
+    testWidgets('a row with room for every pinned note has no View all', (
+      tester,
+    ) async {
+      await notes.load();
+      for (var i = 1; i <= 3; i++) {
+        notes.togglePinned(notes.create(body: 'Pinned $i').id);
+      }
+      notes.create(body: 'Loose');
+      prefs.sidebarWidth = 480;
+      await pumpApp(tester);
+
+      expect(find.byKey(const ValueKey('desktop-pinned-row')), findsOneWidget);
+      expect(
+        tester
+            .widgetList<NoteRow>(find.byType(NoteRow))
+            .where((row) => row.style == NoteRowStyle.phoneCard),
+        hasLength(3),
+      );
+      expect(rowTitles(tester), contains('Loose'));
+      expect(
+        find.byKey(const ValueKey('sidebar-view-all-pinned')),
+        findsNothing,
+      );
     });
 
     testWidgets('the list and cards switch holds for the whole list', (

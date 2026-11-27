@@ -156,6 +156,7 @@ class Sidebar extends StatelessWidget {
     this.pinnedNoteIds = const {},
     this.lockedNoteIds = const {},
     required this.selectedId,
+    this.width = LayoutPrefs.defaultSidebarWidth,
     required this.query,
     required this.displayTime,
     required this.onSearch,
@@ -393,6 +394,10 @@ class Sidebar extends StatelessWidget {
   /// layout, where the row is always there and there is no button.
   final VoidCallback? onFiltersToggled;
 
+  /// The list's width, which sets how many pinned cards fit Home's one row on
+  /// a desktop.
+  final double width;
+
   /// Whether the list is showing every pinned note, after View all, rather
   /// than the few most recent over the rest.
   final bool pinnedOnly;
@@ -555,7 +560,11 @@ class Sidebar extends StatelessWidget {
                             delta,
                             open: _highlighted?.id,
                           ),
-                    onStopPicking: _picking ? picks!.clear : null,
+                    onEscape: _picking
+                        ? picks!.clear
+                        : pinnedOnly && !phone && onPinnedOnlyChanged != null
+                        ? () => onPinnedOnlyChanged!(false)
+                        : null,
                     archiveShortcut: archiveShortcut,
                     child: BackForwardSlide(
                       child: _foldersTab
@@ -1244,13 +1253,29 @@ extension on Sidebar {
     tab: _tabbed ? tab : null,
   );
 
-  /// The pinned notes the list beside the rail shows over the rest: the four
-  /// most recent, or five in a phone's scroller, unless View all or a search
-  /// asks for every one. A list with no View all shows them all.
+  /// The pinned notes the list beside the rail shows over the rest: as many
+  /// of the most recent as fit Home's one row of cards on a desktop (four as
+  /// rows), or five in a phone's scroller, unless View all or a search asks
+  /// for every one. A list with no View all shows them all.
   List<Note> _shownPinned(SidebarNoteGroups groups) =>
       pinnedOnly || query.trim().isNotEmpty || onPinnedOnlyChanged == null
       ? groups.pinned
-      : groups.pinned.take(phone ? 5 : 4).toList();
+      : groups.pinned
+            .take(
+              phone
+                  ? 5
+                  : _pinnedRow
+                  ? _pinnedFit
+                  : 4,
+            )
+            .toList();
+
+  /// Whether Home's pinned notes sit in a desktop's one row of cards.
+  bool get _pinnedRow =>
+      !phone && cards && !drawings && onPinnedOnlyChanged != null;
+
+  /// How many pinned cards fit Home's row inside the list's margins.
+  int get _pinnedFit => DesktopPinnedRow.fit(width - 2 * 16);
 
   List<Note> get _railOrder {
     if (folders case final folders? when folders.shown) {
@@ -1504,21 +1529,30 @@ extension on Sidebar {
       // The Pinned page, under its own title: every pinned note as a row.
       section(groups.pinned);
     } else if (pinnedOnly) {
+      final leave = onPinnedOnlyChanged == null
+          ? null
+          : () => onPinnedOnlyChanged(false);
       heading(
-        NotesListHeading(
-          label: 'Pinned',
-          count: groups.pinned.length,
-          noun: noun,
-          height: 22,
-          leading: CompactIconButton(
-            key: const ValueKey('sidebar-pinned-back'),
-            tooltip: 'Back to all notes',
-            extent: 22,
-            foregroundColor: palette.textSecondary,
-            onPressed: onPinnedOnlyChanged == null
-                ? null
-                : () => onPinnedOnlyChanged(false),
-            icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
+        CallbackShortcuts(
+          bindings: {const SingleActivator(LogicalKeyboardKey.escape): ?leave},
+          child: Focus(
+            autofocus: true,
+            child: NotesListHeading(
+              label: 'Pinned',
+              count: groups.pinned.length,
+              noun: noun,
+              height: 22,
+              leading: CompactIconButton(
+                key: const ValueKey('sidebar-pinned-back'),
+                tooltip: 'Back to all notes',
+                extent: 22,
+                foregroundColor: palette.textSecondary,
+                onPressed: onPinnedOnlyChanged == null
+                    ? null
+                    : () => onPinnedOnlyChanged(false),
+                icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
+              ),
+            ),
           ),
         ),
         onAxis: false,
@@ -1614,12 +1648,26 @@ extension on Sidebar {
                     onPinnedOnlyChanged != null
                 ? ViewAllLink(
                     key: const ValueKey('sidebar-view-all-pinned'),
+                    count: groups.pinned.length,
                     onPressed: () => onPinnedOnlyChanged(true),
                   )
                 : null,
           ),
         );
-        section(pinned);
+        if (_pinnedRow) {
+          rows.add(
+            (_) => Padding(
+              padding: EdgeInsets.symmetric(horizontal: margin),
+              child: DesktopPinnedRow(
+                key: const ValueKey('desktop-pinned-row'),
+                slots: _pinnedFit,
+                children: [for (final note in pinned) pinnedCard(note)],
+              ),
+            ),
+          );
+        } else {
+          section(pinned);
+        }
       }
       for (final key in groups.groupOrder) {
         heading(_groupHeading(groups, key));
@@ -1738,7 +1786,7 @@ class _NoteListKeys extends StatefulWidget {
     required this.onDeleteSelected,
     required this.onPickAll,
     required this.onExtendPick,
-    required this.onStopPicking,
+    required this.onEscape,
     required this.archiveShortcut,
     required this.child,
   });
@@ -1753,9 +1801,9 @@ class _NoteListKeys extends StatefulWidget {
   /// Shift with ↑ or ↓: the picked range one row further that way.
   final ValueChanged<int>? onExtendPick;
 
-  /// Esc while notes are picked, which lets them go. Null otherwise, so Esc
-  /// goes on to whatever it closes.
-  final VoidCallback? onStopPicking;
+  /// Esc in the list: it lets picked notes go, or leaves the Pinned page for
+  /// Home. Null otherwise, so Esc goes on to whatever it closes.
+  final VoidCallback? onEscape;
 
   /// Moves focus from the selected row into its editor.
   final VoidCallback? onEnterSelected;
@@ -1922,11 +1970,11 @@ class _NoteListKeysState extends State<_NoteListKeys> {
       return KeyEventResult.handled;
     }
 
-    final stopPicking = widget.onStopPicking;
-    if (stopPicking != null &&
+    final escape = widget.onEscape;
+    if (escape != null &&
         event is KeyDownEvent &&
         event.logicalKey == LogicalKeyboardKey.escape) {
-      stopPicking();
+      escape();
       return KeyEventResult.handled;
     }
 
@@ -4338,6 +4386,40 @@ class PhoneDayHeading extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Home's pinned notes on a desktop: one row of cards, as many as fit the
+/// list's width ([fit]), never a second row and never a sideways scroll. The
+/// heading's View all opens the rest. Each card is the phone's pinned card,
+/// so it opens, takes the right-click menu and unpins as a row does.
+class DesktopPinnedRow extends StatelessWidget {
+  const DesktopPinnedRow({
+    super.key,
+    required this.slots,
+    required this.children,
+  });
+
+  /// How many cards the row has room for; fewer pinned notes leave the
+  /// rest of the row empty rather than stretching a card.
+  final int slots;
+  final List<Widget> children;
+
+  static const double gap = 12;
+  static const double minCard = 140;
+
+  /// How many cards fit a row [width] wide: at least one.
+  static int fit(double width) =>
+      math.max(1, ((width + gap) / (minCard + gap)).floor());
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    spacing: gap,
+    children: [
+      for (var i = 0; i < slots; i++)
+        Expanded(child: i < children.length ? children[i] : const SizedBox()),
+    ],
+  );
 }
 
 /// A phone Home's pinned notes: cards in a row that scrolls sideways, two in

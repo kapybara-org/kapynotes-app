@@ -4435,7 +4435,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   : AppControlMetrics.iconButtonExtent,
               pageBar: true,
             );
-            final sidebar = Sidebar(
+            Sidebar sidebar(double width) => Sidebar(
+              width: width,
               notes: _foldersShown ? _folderNotes : _visibleNotes,
               pinnedNoteIds: widget.notes.pinnedNoteIds,
               lockedNoteIds: _noteLimit?.lockedIds ?? const {},
@@ -4616,7 +4617,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                               ),
                             ),
                           )
-                        : BackForwardArea(onStep: _stepList, child: sidebar),
+                        : BackForwardArea(
+                            onStep: _stepList,
+                            child: LayoutBuilder(
+                              builder: (_, box) => sidebar(box.maxWidth),
+                            ),
+                          ),
                     // No bottom inset here: on a tablet the note's footer
                     // holds its own controls above the home indicator, and
                     // the empty state does the same with its paper.
@@ -4706,12 +4712,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                             tree: folders.tree,
                                             onOpenFolder: _openFolder,
                                             child: _buildWideWorkspace(
-                                              sidebar,
+                                              sidebar(
+                                                widget.prefs.sidebarWidth,
+                                              ),
                                               cramped: cramped,
                                             ),
                                           ),
                                           _ => _buildWideWorkspace(
-                                            sidebar,
+                                            sidebar(widget.prefs.sidebarWidth),
                                             cramped: cramped,
                                           ),
                                         },

@@ -1406,32 +1406,60 @@ class NotesListHeading extends StatelessWidget {
 }
 
 /// "View all", at the end of the Pinned heading, a phone's a little larger.
-class ViewAllLink extends StatelessWidget {
-  const ViewAllLink({super.key, required this.onPressed, this.phone = false});
+/// A desktop's shows how many are pinned ("View all 9") and takes Tab, with
+/// Enter or Space to open the list.
+class ViewAllLink extends StatefulWidget {
+  const ViewAllLink({
+    super.key,
+    required this.onPressed,
+    this.count,
+    this.phone = false,
+  });
 
   final VoidCallback onPressed;
+  final int? count;
   final bool phone;
+
+  @override
+  State<ViewAllLink> createState() => _ViewAllLinkState();
+}
+
+class _ViewAllLinkState extends State<ViewAllLink> {
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final ink = palette.textSecondary;
+    final phone = widget.phone;
+    final count = widget.count;
+    final ink = _focused ? palette.textPrimary : palette.textSecondary;
     return Semantics(
       container: true,
       button: true,
-      label: 'View all pinned notes',
+      label: count == null
+          ? 'View all pinned notes'
+          : 'View all $count pinned notes',
       excludeSemantics: true,
-      onTap: onPressed,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
+      onTap: widget.onPressed,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowFocusHighlight: (focused) => setState(() => _focused = focused),
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onPressed();
+              return null;
+            },
+          ),
+        },
         child: GestureDetector(
-          onTap: onPressed,
+          onTap: widget.onPressed,
           behavior: HitTestBehavior.opaque,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'View all',
+                count == null ? 'View all' : 'View all $count',
                 style: phone
                     ? uiStyle(13, 16, FontWeight.w400, ink)
                     : uiStyle(AppTypeScale.small, 16, FontWeight.w400, ink),
