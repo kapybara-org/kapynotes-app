@@ -75,10 +75,11 @@ class PhoneNoteHeader extends StatelessWidget {
   /// buttons steps back, and the week and the tasks line stay as they are.
   final bool typing;
 
-  /// Whether the header ends itself: the room under an open week with no
-  /// tasks line, its [tabs] and its hairline. Where it does not, the page
-  /// under it draws that end as a [PhoneNoteHeaderEnd], so it turns with
-  /// the note while the header stays put.
+  /// Whether the header ends itself: under an open week, its tasks line or
+  /// the room in its place, then its [tabs] and its hairline, everything
+  /// that is the day's. Where it does not, the page under it draws that end
+  /// as a [PhoneNoteHeaderEnd], so it turns with the note while the header,
+  /// the same on every day, stays put.
   final bool ends;
 
   /// The row of buttons, and the line that opens the tasks.
@@ -169,13 +170,17 @@ class PhoneNoteHeader extends StatelessWidget {
             ),
             if (open) ...[
               week,
-              if (tasks > 0 && onTasks != null && day != null && today != null)
-                _TasksLine(
-                  label: tasksLine(tasks, day, today),
-                  onPressed: onTasks,
-                )
-              else if (tabs == null && ends)
-                const SizedBox(height: 8),
+              if (ends)
+                if (tasks > 0 &&
+                    onTasks != null &&
+                    day != null &&
+                    today != null)
+                  _TasksLine(
+                    label: tasksLine(tasks, day, today),
+                    onPressed: onTasks,
+                  )
+                else if (tabs == null)
+                  const SizedBox(height: 8),
             ],
             ?tabs,
           ],
@@ -208,14 +213,22 @@ class PhoneNoteHeader extends StatelessWidget {
 }
 
 /// The end of a [PhoneNoteHeader] that does not end itself, drawn by the
-/// page under it so it turns with the note: the room under an open week
-/// with no tasks line, or the day's notes as tabs, then the hairline.
+/// page under it so it turns with the note: under an open week the day's
+/// tasks line or some room, the day's notes as tabs, then the hairline.
 class PhoneNoteHeaderEnd extends StatelessWidget {
-  const PhoneNoteHeaderEnd({super.key, required this.room, this.tabs});
+  const PhoneNoteHeaderEnd({
+    super.key,
+    required this.weekOpen,
+    this.tasksLine,
+    this.onTasks,
+    this.tabs,
+  });
 
-  /// Whether an open week with no tasks line is over it, which keeps room
-  /// under the week where there are no [tabs].
-  final bool room;
+  /// Whether an open week is over it, under which comes the day's tasks
+  /// line, [tasksLine], or where there is none and no [tabs], some room.
+  final bool weekOpen;
+  final String? tasksLine;
+  final VoidCallback? onTasks;
   final Widget? tabs;
 
   @override
@@ -227,7 +240,14 @@ class PhoneNoteHeaderEnd extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [if (room && tabs == null) const SizedBox(height: 8), ?tabs],
+        children: [
+          if (weekOpen)
+            if ((tasksLine, onTasks) case (final label?, final onPressed?))
+              _TasksLine(label: label, onPressed: onPressed)
+            else if (tabs == null)
+              const SizedBox(height: 8),
+          ?tabs,
+        ],
       ),
     ),
   );
