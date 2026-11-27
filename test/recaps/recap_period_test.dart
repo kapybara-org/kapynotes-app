@@ -159,6 +159,7 @@ void main() {
         firstWeekday: DateTime.sunday,
       );
       expect(spring.days, 7);
+      expect(spring.indexOf(DateTime(2026, 3, 9)), 1);
       expect(spring.label, '8–14 Mar');
       expect(spring.previous.label, '1–7 Mar');
       expect(

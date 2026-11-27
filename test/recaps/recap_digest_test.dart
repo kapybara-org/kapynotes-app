@@ -207,6 +207,49 @@ void main() {
       expect(shown.topics, hasLength(2));
     });
 
+    test('never counts tasks from a note hidden or archived after the tasks '
+        'were read', () {
+      final wednesday = RecapPeriod.containing(
+        DateTime(2026, 11, 18),
+        RecapKind.day,
+        firstWeekday: DateTime.monday,
+      );
+      for (final (hidden, archived) in [(true, false), (false, true)]) {
+        note(
+          'secret',
+          '2026-11-18T07:00:00Z',
+          body: 'Secret\n☑ Hide\n☐ Keep',
+          attachments: [_voice(600)],
+        );
+        final tasks = TaskBoard.read(
+          entries: index.entries,
+          notes: notes,
+          docOf: (id) => docs[id],
+        );
+        note(
+          'secret',
+          '2026-11-18T07:00:00Z',
+          body: 'Secret\n☑ Hide\n☐ Keep',
+          attachments: [_voice(600)],
+          hidden: hidden,
+          archived: archived,
+        );
+        final read = RecapDigest.compute(
+          wednesday,
+          notes: notes,
+          tasks: tasks,
+          tags: tags,
+          folders: folders.tree,
+          displayTime: displayTime,
+        );
+        expect(
+          read.counts,
+          const RecapCounts(notes: 1, voiceNotes: 1, voiceMinutes: 1),
+        );
+        expect(read.tasksOpen, 0);
+      }
+    });
+
     test(
       'names its topics from tags and folders, most notes first, capped',
       () {
@@ -219,6 +262,16 @@ void main() {
         expect(RecapDigest.topicsMax, 3);
       },
     );
+
+    test('counts a tag and a folder with the same name once per note', () {
+      folders.file(['d'], folders.create('garden')!.id);
+      final week = digest(weekOf(DateTime(2026, 11, 19)));
+      expect(week.topics, [
+        (name: 'Work', notes: 3),
+        (name: 'Garden', notes: 1),
+        (name: 'Travel', notes: 1),
+      ]);
+    });
 
     test('carries the week before, for one line of comparison', () {
       final week = digest(weekOf(DateTime(2026, 11, 19)));
