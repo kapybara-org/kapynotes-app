@@ -1992,7 +1992,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     final model = noise.models.stateOf(noise.model);
     if (model.isBusy) return 'Downloading… ${(model.progress * 100).floor()}%';
     if (model.status == LocalModelStatus.failed) {
-      return "Couldn't download it. It tries again with your next recording";
+      return "Couldn't download noise removal. It tries again with your next recording";
     }
     return usual;
   }
