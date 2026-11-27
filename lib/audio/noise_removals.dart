@@ -177,6 +177,10 @@ class NoiseRemovals extends ChangeNotifier {
     if (job.state.stage == NoiseStage.downloading && !sharing) {
       models.cancel(model);
     }
+    // Back to off at once, even while a download it shared runs on for
+    // another recording.
+    job.state = NoiseState.off;
+    _notify();
   }
 
   /// A recording has just been saved: cleaned when the setting asks for it.

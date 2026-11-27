@@ -258,7 +258,11 @@ class VoicePlayer extends ChangeNotifier {
   Future<void> reopen(String hash) async {
     if (_activeHash != hash) return;
     _idle?.cancel();
-    await _open(hash, from: _position, start: _playing);
+    await _open(
+      hash,
+      from: _completed ? Duration.zero : _position,
+      start: _playing,
+    );
   }
 
   Future<void> _open(

@@ -67,6 +67,8 @@ void main() {
   late int fetches;
   late bool offline;
   late Completer<void>? encodeGate;
+  late Completer<void>? downloadGate;
+  late bool noSpace;
   File? original;
 
   final model = LocalSpeechModel(
@@ -97,6 +99,7 @@ void main() {
         client: MockClient((request) async {
           fetches++;
           if (offline) throw http.ClientException('offline');
+          await downloadGate?.future;
           return http.Response.bytes(weights, 200);
         }),
       ),
@@ -110,6 +113,9 @@ void main() {
         decoder: _Decoder(dir),
         encode: (pcm, destination) async {
           await encodeGate?.future;
+          if (noSpace) {
+            throw const FileSystemException('No space left on device');
+          }
           await pcm.copy(destination.path);
         },
       ),
@@ -126,6 +132,8 @@ void main() {
     fetches = 0;
     offline = false;
     encodeGate = null;
+    downloadGate = null;
+    noSpace = false;
     original = await File('${dir.path}/original.m4a').writeAsString('m4a');
   });
   tearDown(() => dir.delete(recursive: true));
@@ -206,6 +214,56 @@ void main() {
     expect(noise.stateOf(hash).stage, NoiseStage.on);
   });
 
+  test('stop while the model downloads says nothing went wrong', () async {
+    downloadGate = Completer();
+    final noise = build();
+    final done = noise.turnOn(hash);
+    await pumpUntil(() => noise.stateOf(hash).stage == NoiseStage.downloading);
+    noise.stop(hash);
+    downloadGate!.complete();
+    expect(await done, isNull);
+    expect(noise.stateOf(hash).stage, NoiseStage.off);
+    expect(switched, isEmpty);
+  });
+
+  test('stopping one recording leaves the download another shares', () async {
+    downloadGate = Completer();
+    final noise = build();
+    final other = 'ef' * 32;
+    final first = noise.turnOn(hash);
+    final second = noise.turnOn(other);
+    await pumpUntil(
+      () =>
+          noise.stateOf(hash).stage == NoiseStage.downloading &&
+          noise.stateOf(other).stage == NoiseStage.downloading,
+    );
+    noise.stop(hash);
+    downloadGate!.complete();
+    expect(await first, isNull);
+    expect(await second, isNull);
+    expect(noise.stateOf(other).stage, NoiseStage.on);
+    expect(noise.stateOf(hash).stage, NoiseStage.off);
+  });
+
+  test('a model damaged on disk is fetched again next time', () async {
+    final noise = build();
+    expect(await noise.turnOn(hash), isNull);
+    final file = File(
+      '${(await noise.models.directoryFor(model)).path}/model.onnx',
+    );
+    await file.writeAsString('not a model');
+    expect(await noise.turnOn('ef' * 32), NoiseProblem.failed);
+    expect(await noise.turnOn('ef' * 32), isNull);
+    expect(fetches, 2);
+  });
+
+  test('says so when there is no room for the copy', () async {
+    noSpace = true;
+    final noise = build();
+    expect(await noise.turnOn(hash), NoiseProblem.noSpace);
+    expect(noise.stateOf(hash).stage, NoiseStage.off);
+  });
+
   test('says so when the recording is not on this device', () async {
     original = null;
     final noise = build();
@@ -255,6 +313,42 @@ void main() {
       file.urls.single,
       contains('/resolve/dd6818d00f50c836fed43a6243ebe49116de5964/'),
     );
+  });
+
+  test('stop shows off at once while a shared download runs on', () async {
+    final held = Completer<void>();
+    final noise = NoiseRemovals(
+      models: LocalModelStore(
+        catalogue: [model],
+        directory: Directory('${dir.path}/models'),
+        client: MockClient((request) async {
+          await held.future;
+          return http.Response.bytes(weights, 200);
+        }),
+      ),
+      model: model,
+      prefs: prefs,
+      copies: copies,
+      originals: (_) async => original,
+      switched: switched.add,
+    );
+    addTearDown(noise.dispose);
+    final other = 'ef' * 32;
+    final first = noise.turnOn(hash);
+    final second = noise.turnOn(other);
+    await pumpUntil(
+      () =>
+          noise.stateOf(hash).stage == NoiseStage.downloading &&
+          noise.stateOf(other).stage == NoiseStage.downloading,
+    );
+
+    noise.stop(hash);
+    expect(noise.stateOf(hash).stage, NoiseStage.off);
+    expect(noise.stateOf(other).stage, NoiseStage.downloading);
+
+    held.complete();
+    expect(await first, isNull);
+    await second;
   });
 }
 

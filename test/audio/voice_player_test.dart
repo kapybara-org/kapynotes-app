@@ -485,4 +485,27 @@ void main() {
     await switching.reopen('b');
     expect(backend.loaded.last, fileA.path);
   });
+
+  test('a recording that played to its end, reopened, plays from the start '
+      'on the next press', () async {
+    var clean = false;
+    final cleanCopy = File('/tmp/a-clean.m4a');
+    final switching = VoicePlayer(
+      backend: backend,
+      files: (hash) async => clean ? cleanCopy : fileA,
+    );
+    addTearDown(switching.dispose);
+
+    await switching.play('a');
+    backend.positionController.add(const Duration(seconds: 10));
+    backend.completionController.add(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(switching.isPlaying('a'), isFalse);
+
+    clean = true;
+    await switching.reopen('a');
+    await switching.play('a');
+    expect(backend.loaded.last, cleanCopy.path);
+    expect(backend.seekedTo, Duration.zero);
+  });
 }
