@@ -23,6 +23,9 @@
 # `phone_recording_away`, for a run that checks one test. A name that isn't
 # one of the phone tests below fails the run, so a typo, or a desktop test
 # this script never drives, can't run nothing and pass.
+# A file whose app never connected, so that no test ran (flutter drive ends
+# with "Error waiting for a debug connection"), runs once more and is listed in
+# the job summary; a test that ran and failed is never run again.
 # PHONE_APP, when set, names an app already built from
 # integration_test/phones.dart, as Phones' iOS job builds it: each file then
 # runs on that build instead of building one of its own, after the script
@@ -72,7 +75,16 @@ if [[ -n ${PHONE_TESTS:-} && -z $picked ]]; then
   exit 1
 fi
 PHONE_TESTS=$picked
-[[ $device == --check ]] && exit 0
+if [[ $device == --check ]]; then
+  map=$(dirname "$0")/../../integration_test/phones.dart
+  for name in $phone_tests; do
+    if ! grep -q "'$name':" "$map"; then
+      echo "::error::$map has no entry for $name, which this script drives"
+      exit 1
+    fi
+  done
+  exit 0
+fi
 
 # Stops file $1's run, process group $2, with a screenshot of where it got to.
 # The shot is put off to one side, in a group of its own: a device stuck
@@ -135,11 +147,7 @@ drive() {
     if [[ -n ${PHONE_APP:-} ]]; then echo "$1" > "$PHONE_TEST_FILE"; fi
     local hung=false
     set -m
-    if $android; then
-      flutter "${args[@]}" > >(tee "$log") 2>&1 &
-    else
-      flutter "${args[@]}" &
-    fi
+    flutter "${args[@]}" > >(tee "$log") 2>&1 &
     local pid=$! waited=0
     set +m
     while kill -0 "$pid" 2>/dev/null; do
@@ -164,6 +172,13 @@ drive() {
     limit=$(( ${PHONE_FILE_MINUTES:-20} * 60 ))
     if (( code == 0 )); then return 0; fi
     sleep 1
+    if (( tries == 0 )) && grep -q 'Error waiting for a debug connection' "$log" &&
+      ! grep -qE '[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
+      tries=1
+      echo "::warning::$1_test.dart never connected to the app, so no test ran; running it again"
+      echo "- $1_test.dart: the app never connected and no test ran, so it ran again" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+      continue
+    fi
     if $android && spoiled && grep -q 'All tests passed!' "$log"; then
       echo "::warning::$1_test.dart passed, but the emulator dropped before its results came back, so its Flutter screenshots are missing; restarting adb"
       reconnect "$1"
