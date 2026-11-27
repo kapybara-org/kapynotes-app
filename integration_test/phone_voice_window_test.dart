@@ -94,7 +94,11 @@ void main() {
     await tester.tap(_translate);
     await tester.pumpAndSettle();
     expect(_picker, findsOneWidget);
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(
+      find.ancestor(of: _picker, matching: find.byType(BottomSheet)),
+      findsOneWidget,
+      reason: 'a sheet over the window',
+    );
     expect(
       tester
           .getSize(find.byKey(const ValueKey('voice-translate-yours-en')))
