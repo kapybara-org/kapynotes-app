@@ -55,6 +55,20 @@ recordings() {
   ' "$1"
 }
 
+# The recogniser asks before it downloads a language ("Download English (US)
+# update"), over the app, as it would ask a person turning live translation
+# on. Taps its Download button, as that person would.
+confirm_download() {
+  adb shell dumpsys window | tr -d '\r' | grep -q 'mCurrentFocus=.*languagepack.ui.DownloadActivity' || return 0
+  adb exec-out screencap -p > "$out/b-download-prompt.png"
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+  local bounds
+  bounds=$(adb shell cat /sdcard/ui.xml | tr -d '\r' | grep -o 'text="Download"[^>]*bounds="[^"]*"' | grep -o 'bounds="[^"]*"' | head -1)
+  [[ $bounds =~ \[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\] ]] || return 0
+  adb shell input tap $(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 )) $(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
+  echo "tapped Download on the recogniser's language prompt"
+}
+
 snapshot() {
   adb shell dumpsys activity services "$pkg" > "$out/$1-services.txt"
   adb shell dumpsys audio > "$out/$1-audio.txt"
@@ -142,6 +156,7 @@ while (( SECONDS < deadline )); do
     during=true
   fi
   grep -q 'LIVE_PROBE done' "$out/probe.txt" && break
+  confirm_download
   if [[ -z $(running) ]]; then
     fail "the probe's process is gone"
     break
@@ -162,13 +177,16 @@ pair=es-en
 prepared=$(value "es-en prepare")
 if [[ $prepared == ready ]]; then
   pass "prepare('es', 'en') answered ready"
-elif [[ $prepared == unsupported && ,$spoken, != *,es,* ]]; then
-  echo "::warning::prepare('es', 'en') answered unsupported because this emulator's recogniser can't hear Spanish (it hears ${spoken:-nothing}); checking English to Spanish instead"
+else
+  if [[ $prepared == unsupported && ,$spoken, != *,es,* ]]; then
+    echo "::warning::prepare('es', 'en') answered unsupported because this emulator's recogniser can't hear Spanish (it hears ${spoken:-nothing})"
+  else
+    fail "prepare('es', 'en') answered ${prepared:-nothing}, with the recogniser hearing ${spoken:-nothing}"
+  fi
+  echo "checking English to Spanish instead"
   pair=en-es
   prepared=$(value "en-es prepare")
   if [[ $prepared == ready ]]; then pass "prepare('en', 'es') answered ready"; else fail "prepare('en', 'es') answered ${prepared:-nothing}"; fi
-else
-  fail "prepare('es', 'en') answered ${prepared:-nothing}, with the recogniser hearing ${spoken:-nothing}"
 fi
 splits > "$out/b-splitcompat.txt"
 cat "$out/b-splitcompat.txt"
