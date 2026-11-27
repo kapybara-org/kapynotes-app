@@ -1880,6 +1880,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             value: AppTimeZones.displayName(prefs.timeZoneId),
             changed: prefs.timeZoneId != null,
             onReset: () => prefs.timeZoneId = null,
+            wide: true,
             control: SettingsMenuButton(
               label: zone,
               onPressed: _chooseTimeZone,

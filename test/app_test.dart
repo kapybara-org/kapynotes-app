@@ -2548,7 +2548,11 @@ void main() {
     expect((LayoutPrefs(store)..load()).writingFont, WritingFont.clean);
   });
 
-  Future<void> openWritingStyles(WidgetTester tester, double width) async {
+  Future<void> openPhoneSettings(
+    WidgetTester tester,
+    double width, {
+    SettingsSection section = SettingsSection.appearance,
+  }) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     tester.view.devicePixelRatio = 1;
@@ -2566,7 +2570,7 @@ void main() {
                 shortcuts: ShortcutPrefs(store)..load(),
                 rates: RatesRepository(store),
                 notes: notes,
-                section: SettingsSection.appearance,
+                section: section,
               ),
               child: const Text('open'),
             ),
@@ -2576,6 +2580,7 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
+    if (section != SettingsSection.appearance) return;
     await tester.ensureVisible(
       find.byKey(const ValueKey('writing-font-pixel')),
     );
@@ -2585,7 +2590,7 @@ void main() {
       'label measured in the face it is drawn in', (tester) async {
     double width(String key) => tester.getSize(find.byKey(ValueKey(key))).width;
 
-    await openWritingStyles(tester, 320);
+    await openPhoneSettings(tester, 320);
     expect({
       for (final paper in PaperStyle.values) width('paper-style-${paper.name}'),
     }, hasLength(1));
@@ -2597,10 +2602,40 @@ void main() {
     }, hasLength(1));
   });
 
+  testWidgets('a phone puts the time zone under its name, so neither line is '
+      'cut', (tester) async {
+    for (final width in [320.0, 390.0]) {
+      await openPhoneSettings(tester, width, section: SettingsSection.notes);
+      final row = find.byKey(const ValueKey('time-zone-setting'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      for (final words in ['Time zone for dates', 'Used by separators']) {
+        final text = find.descendant(
+          of: row,
+          matching: find.textContaining(words),
+        );
+        expect(
+          tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+          isFalse,
+          reason: '$words at $width',
+        );
+      }
+      final menu = find.descendant(
+        of: row,
+        matching: find.byType(SettingsMenuButton),
+      );
+      expect(
+        tester.getRect(menu).top,
+        greaterThan(tester.getRect(find.text('Time zone for dates')).bottom),
+      );
+      await tester.pumpWidget(const SizedBox());
+    }
+  });
+
   testWidgets('on a 320 pt phone all five writing styles keep their letters', (
     tester,
   ) async {
-    await openWritingStyles(tester, 320);
+    await openPhoneSettings(tester, 320);
     for (final font in WritingFont.values) {
       final segment = find.byKey(ValueKey('writing-font-${font.name}'));
       final label = find.descendant(of: segment, matching: find.byType(Text));
