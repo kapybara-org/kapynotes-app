@@ -167,14 +167,14 @@ void main() {
       reason: "D09 draws Tasks' list beside the page",
     );
 
-    // Ask Ana comes back: Start with makes it Do now, and Not finished sends
-    // it to the end of the list with ↺.
-    expect(find.text('First on the list'), findsOneWidget);
+    // Ask Ana comes back: Stop choosing makes it Do now, and Not finished
+    // sends it to the end of the list with ↺.
+    expect(find.text('First on your list'), findsOneWidget);
     await tap(tester, 'tasks-start');
     await tap(tester, 'tasks-not-finished');
     expect(find.byTooltip('Not finished, moved to the end'), findsOneWidget);
 
-    expect(find.text('What do you want to work on next?'), findsOneWidget);
+    expect(find.text('Which is more important?'), findsOneWidget);
     expect(find.byKey(const ValueKey('tasks-how-it-works')), findsOneWidget);
     expect(find.text('Based on FVP by Mark Forster'), findsOneWidget);
     expect(find.text('2 tasks wait for their day'), findsOneWidget);
@@ -199,7 +199,7 @@ void main() {
     await tap(tester, 'tasks-got-it');
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pumpAndSettle();
-    expect(find.text('Your choice so far'), findsOneWidget);
+    expect(find.text('Most important so far'), findsOneWidget);
     expect(find.text('Up next'), findsOneWidget);
     expect(find.byKey(const ValueKey('tasks-choose-again')), findsOneWidget);
     await shot(tester, 'window-d09b');
@@ -228,7 +228,7 @@ void main() {
     clock = clock.add(const Duration(minutes: 30));
     await tap(tester, 'tasks-done');
     expect(find.byKey(const ValueKey('tasks-just-done')), findsOneWidget);
-    expect(find.text('New since you chose'), findsOneWidget);
+    expect(find.text('New since you started'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('tasks-pair-right')),

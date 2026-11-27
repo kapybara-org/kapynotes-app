@@ -1,0 +1,311 @@
+import 'dart:convert';
+import 'dart:math';
+
+import '../ai/kapy_ai.dart';
+import '../data/notes_store.dart';
+import 'recap_digest.dart';
+import 'recap_lines.dart';
+import 'recap_material.dart';
+import 'recap_period.dart';
+
+/// The most a recap's record may take of its chat's record, in UTF-8 bytes
+/// of JSON. A chat record holds about 3 KB, and the rest is the title's and
+/// the model's.
+const int recapRecordMax = 2000;
+
+/// The most tasks each of a recap's lists keeps.
+const int recapTasksMax = 6;
+
+/// The numbers a recap shows, worked out on the device when it was made
+/// ([RecapDigest]), so it opens as it was made.
+class RecapNumbers {
+  const RecapNumbers({
+    required this.counts,
+    required this.tasksOpen,
+    required this.chart,
+    required this.longestRun,
+    required this.topics,
+    required this.previous,
+    this.done = const [],
+    this.open = const [],
+  });
+
+  factory RecapNumbers.of(RecapDigest digest, RecapMaterial material) {
+    List<String> tasks(RecapSource source) => [
+      for (final item in material.items)
+        if (item.source == source) item.taskId!,
+    ].take(recapTasksMax).toList();
+    return RecapNumbers(
+      counts: digest.counts,
+      tasksOpen: digest.tasksOpen,
+      chart: digest.period.kind == RecapKind.year
+          ? digest.perMonth
+          : digest.perDay,
+      longestRun: digest.longestRun,
+      topics: digest.topics,
+      previous: digest.previous,
+      done: tasks(RecapSource.taskDone),
+      open: tasks(RecapSource.taskOpen),
+    );
+  }
+
+  final RecapCounts counts;
+  final int tasksOpen;
+
+  /// Notes a day, from the period's first, or a month in a year: the week's
+  /// chart, the month's calendar, the year's month by month.
+  final List<int> chart;
+  final int longestRun;
+  final List<RecapTopic> topics;
+  final RecapCounts previous;
+
+  /// The ids of the tasks done and still open that the day's card lists.
+  final List<String> done;
+  final List<String> open;
+}
+
+/// What a recap's chat carries beside its messages, in its chat record's
+/// `recap` field: what it covers and how it was worked out, its numbers, a
+/// fingerprint of what it read, and for a month that was over, the digest
+/// a year recap reads instead of asking again.
+class RecapRecord {
+  const RecapRecord({
+    required this.period,
+    required this.timeZone,
+    required this.firstWeekday,
+    required this.madeAt,
+    required this.numbers,
+    required this.fingerprint,
+    this.digest,
+  });
+
+  final RecapPeriod period;
+  final String timeZone;
+  final int firstWeekday;
+  final DateTime madeAt;
+  final RecapNumbers numbers;
+
+  /// [RecapMaterial.fingerprint] as it was.
+  final String fingerprint;
+  final String? digest;
+
+  /// How many of the period's notes changed since it was made: "2 notes
+  /// changed since then". [now] is what the period holds now.
+  int changesSince(RecapMaterial now) {
+    if (now.fingerprint == fingerprint) return 0;
+    final edited = now.edited.values.where((at) => at.isAfter(madeAt)).length;
+    final gone = max(0, numbers.counts.notes - (now.edited.length - edited));
+    return max(1, edited + gone);
+  }
+
+  /// Within [recapRecordMax]: the digest is cut first, then the task lists.
+  /// `at` goes first, so where two devices each made one, the later is the
+  /// greater JSON and every device keeps it (mergeExtra).
+  Map<String, Object?> toJson() {
+    final counts = numbers.counts;
+    final previous = numbers.previous;
+    Map<String, Object?> json({String? digest, int tasks = recapTasksMax}) => {
+      'at': madeAt.millisecondsSinceEpoch,
+      'kind': period.kind.name,
+      'first': _iso(period.first),
+      'last': _iso(period.last),
+      'zone': _cut(timeZone, 64),
+      'weekStart': firstWeekday,
+      'notes': counts.notes,
+      'done': counts.tasksDone,
+      'open': numbers.tasksOpen,
+      'voice': counts.voiceNotes,
+      'minutes': counts.voiceMinutes,
+      'chart': numbers.chart,
+      'run': numbers.longestRun,
+      'topics': [
+        for (final topic in numbers.topics) [_cut(topic.name, 40), topic.notes],
+      ],
+      'before': [
+        previous.notes,
+        previous.tasksDone,
+        previous.voiceNotes,
+        previous.voiceMinutes,
+      ],
+      'doneTasks': numbers.done.take(tasks).toList(),
+      'openTasks': numbers.open.take(tasks).toList(),
+      'material': fingerprint,
+      'digest': ?digest,
+    };
+    int size(Map<String, Object?> value) =>
+        utf8.encode(jsonEncode(value)).length;
+    var tasks = recapTasksMax;
+    while (tasks > 0 && size(json(tasks: tasks)) > recapRecordMax) {
+      tasks--;
+    }
+    final room = recapRecordMax - size(json(tasks: tasks, digest: ''));
+    final digest = this.digest;
+    if (digest == null || room <= 0) return json(tasks: tasks);
+    var kept = digest;
+    while (kept.isNotEmpty &&
+        size(json(tasks: tasks, digest: kept)) > recapRecordMax) {
+      kept = kept.substring(0, max(0, kept.length - (kept.length ~/ 8 + 1)));
+    }
+    return json(tasks: tasks, digest: kept.isEmpty ? null : kept);
+  }
+
+  /// Null for anything that is not a whole record this build can read.
+  static RecapRecord? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final kind = RecapKind.values.asNameMap()[raw['kind']];
+    final first = DateTime.tryParse('${raw['first']}');
+    final last = DateTime.tryParse('${raw['last']}');
+    final weekStart = raw['weekStart'];
+    final at = raw['at'];
+    final zone = raw['zone'];
+    final fingerprint = raw['material'];
+    if (kind == null ||
+        first == null ||
+        last == null ||
+        weekStart is! int ||
+        weekStart < DateTime.monday ||
+        weekStart > DateTime.sunday ||
+        at is! int ||
+        zone is! String ||
+        fingerprint is! String) {
+      return null;
+    }
+    final period = RecapPeriod.containing(first, kind, firstWeekday: weekStart);
+    if (period.first != DateTime(first.year, first.month, first.day) ||
+        period.last != DateTime(last.year, last.month, last.day)) {
+      return null;
+    }
+    int count(String key) => switch (raw[key]) {
+      final int n when n >= 0 => n,
+      _ => 0,
+    };
+    List<int> ints(Object? list) => [
+      for (final n in list is List ? list : const [])
+        n is int && n >= 0 ? n : 0,
+    ];
+    List<String> ids(Object? list) => [
+      for (final id in list is List ? list : const [])
+        if (id is String) id,
+    ].take(recapTasksMax).toList();
+    final before = ints(raw['before']);
+    int was(int i) => i < before.length ? before[i] : 0;
+    final digest = raw['digest'];
+    return RecapRecord(
+      period: period,
+      timeZone: zone,
+      firstWeekday: weekStart,
+      madeAt: DateTime.fromMillisecondsSinceEpoch(at),
+      numbers: RecapNumbers(
+        counts: RecapCounts(
+          notes: count('notes'),
+          tasksDone: count('done'),
+          voiceNotes: count('voice'),
+          voiceMinutes: count('minutes'),
+        ),
+        tasksOpen: count('open'),
+        chart: ints(raw['chart']),
+        longestRun: count('run'),
+        topics: [
+          for (final topic
+              in raw['topics'] is List ? raw['topics'] as List : const [])
+            if (topic case [final String name, final int notes])
+              (name: name, notes: notes),
+        ].take(RecapDigest.topicsMax).toList(),
+        previous: RecapCounts(
+          notes: was(0),
+          tasksDone: was(1),
+          voiceNotes: was(2),
+          voiceMinutes: was(3),
+        ),
+        done: ids(raw['doneTasks']),
+        open: ids(raw['openTasks']),
+      ),
+      fingerprint: fingerprint,
+      digest: digest is String && digest.isNotEmpty ? digest : null,
+    );
+  }
+}
+
+/// The question a recap chat starts with, readable in any build: "Make a
+/// recap of Wed 19".
+String recapRequest(RecapPeriod period) => 'Make a recap of ${period.label}';
+
+RecapRecord? recapOf(KapyChat chat) => RecapRecord.fromJson(chat.recap);
+
+/// The recap of [period] among [chats], the one made last where two
+/// devices each made one.
+KapyChat? recapChatOf(Iterable<KapyChat> chats, RecapPeriod period) {
+  KapyChat? best;
+  RecapRecord? bestRecord;
+  for (final chat in chats) {
+    final record = recapOf(chat);
+    if (record == null || record.period != period) continue;
+    if (bestRecord == null || record.madeAt.isAfter(bestRecord.madeAt)) {
+      best = chat;
+      bestRecord = record;
+    }
+  }
+  return best;
+}
+
+/// The lines of a recap's newest answer: "Make it again" adds one, and the
+/// newest wins.
+String? recapAnswer(KapyChat chat) => chat.messages.reversed
+    .where((message) => message.role == KapyRole.assistant)
+    .firstOrNull
+    ?.text;
+
+/// [chat] with [record] and a new answer holding [answer], or a new recap
+/// chat when there is none yet: its question, then the answer.
+KapyChat recapChat(
+  KapyChat? chat, {
+  required RecapRecord record,
+  required String answer,
+  required KapyModel model,
+  required DateTime now,
+}) {
+  final answered = KapyMessage(
+    id: NotesStore.newId(),
+    role: KapyRole.assistant,
+    text: answer,
+    at: now,
+    model: model,
+  );
+  if (chat != null) {
+    return KapyChat(
+      id: chat.id,
+      title: chat.title,
+      createdAt: chat.createdAt,
+      updatedAt: now,
+      model: chat.model,
+      messages: [...chat.messages, answered],
+      titleAt: chat.titleAt,
+      modelAt: chat.modelAt,
+      recap: record.toJson(),
+    );
+  }
+  return KapyChat(
+    id: NotesStore.newId(),
+    title: recapTitle(record.period),
+    createdAt: now,
+    updatedAt: now,
+    model: model,
+    messages: [
+      KapyMessage(
+        id: NotesStore.newId(),
+        role: KapyRole.user,
+        text: recapRequest(record.period),
+        at: now,
+      ),
+      answered,
+    ],
+    recap: record.toJson(),
+  );
+}
+
+String _iso(DateTime day) =>
+    '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+    '${day.day.toString().padLeft(2, '0')}';
+
+String _cut(String text, int max) =>
+    text.length <= max ? text : text.substring(0, max);

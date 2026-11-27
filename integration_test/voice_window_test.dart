@@ -28,6 +28,11 @@ final _window = find.byType(VoiceNoteView);
 final _starters = find.byKey(const ValueKey('voice-ask-starters'));
 final _drawer = find.byKey(const ValueKey('voice-ask-drawer'));
 final _earlier = find.byKey(const ValueKey('voice-ask-earlier'));
+final _translate = find.descendant(
+  of: _starters,
+  matching: find.text('Translate to…'),
+);
+final _picker = find.byKey(const ValueKey('voice-translate-picker'));
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -84,6 +89,38 @@ void main() {
     await tester.dragUntilVisible(_earlier, _starters, const Offset(120, 0));
     await tester.pumpAndSettle();
   }
+
+  /// Translate to… at the end of the starters, as it is for a recording in
+  /// the person's own language, and the picker it opens. Nothing is sent.
+  Future<void> translate(WidgetTester tester, String look) async {
+    final seed = await open(
+      tester,
+      look == 'dark' ? AppearanceMode.dark : AppearanceMode.light,
+    );
+    await tester.dragUntilVisible(_translate, _starters, const Offset(-120, 0));
+    await tester.pumpAndSettle();
+    await screenshot('voice-window-translate-chip-$look');
+    await tester.tap(_translate);
+    await tester.pumpAndSettle();
+    expect(_picker, findsOneWidget);
+    expect(find.text('Your languages'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('voice-translate-yours-en')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('voice-translate-all-hi')),
+      findsNothing,
+      reason: 'far down the list, until searched for',
+    );
+    await screenshot('voice-window-translate-picker-$look');
+    expect(seed.answers, isEmpty);
+    expect(tester.takeException(), isNull);
+  }
+
+  testWidgets('Translate to…, light', (tester) => translate(tester, 'light'));
+
+  testWidgets('Translate to…, dark', (tester) => translate(tester, 'dark'));
 
   testWidgets('the window, light', (tester) async {
     await open(tester, AppearanceMode.light);
