@@ -1367,6 +1367,16 @@ void main() {
         '1,000.00 USD',
         reason: 'Goa trip 2026 is a heading',
       );
+      expect(
+        dated
+            .evaluateDocument(
+              'Holidays\nGoa trip 2026\nflights \$400\nhotel \$600\ntotal',
+              titled: true,
+            )[4]!
+            .text,
+        '1,000.00 USD',
+        reason: 'the line under a title starts its block',
+      );
       expect(read('rent 2000\nfood 300\ntotal')[2], '2,300');
       expect(read('rent: 2025\nfood 300\ntotal')[2], '2,325');
       expect(read('rent 100\nbonus 2026\ntotal')[2], '2,126');

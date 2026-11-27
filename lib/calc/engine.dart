@@ -226,7 +226,7 @@ class CalcEngine {
     );
     final results = <int, LineResult>{};
     final pass = _memo.begin(body);
-    final cover = _coverByTotal(pass.lines);
+    final cover = _coverByTotal(pass.lines, titled: titled);
 
     for (var i = 0; i < pass.lines.length; i++) {
       final evaluated = _evaluateLine(pass, i, evaluator, scope, cover[i]);
@@ -409,8 +409,12 @@ class CalcEngine {
   );
 
   /// For each line, whether a total line closes the block it is in: comes
-  /// after it with no blank line between.
-  static List<_Cover> _coverByTotal(List<String> lines) {
+  /// after it with no blank line between. With [titled], the line under the
+  /// title starts a block, since the title is a heading of its own.
+  static List<_Cover> _coverByTotal(
+    List<String> lines, {
+    required bool titled,
+  }) {
     final cover = List.filled(lines.length, _Cover.none);
     var closed = false;
     for (var i = lines.length - 1; i >= 0; i--) {
@@ -420,7 +424,7 @@ class CalcEngine {
         continue;
       }
       if (closed) {
-        cover[i] = i == 0 || lines[i - 1].trim().isEmpty
+        cover[i] = i == 0 || (titled && i == 1) || lines[i - 1].trim().isEmpty
             ? _Cover.top
             : _Cover.inside;
       }
