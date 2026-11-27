@@ -7,12 +7,14 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
 import 'package:kapy_notes/ui/notes_grouping.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/tag_colours.dart';
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/back_forward.dart';
 import 'test_fonts.dart';
 
 /// B's calm list (KAP-408): one View menu beside the search, one chip for
@@ -278,6 +280,17 @@ void main() {
     await tester.pump();
     expect(menu, findsOneWidget);
     expect(whenMenu, findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('notes-filter-when')));
+    await tester.pump();
+    await stepOver(tester, whenMenu, BackForwardStep.back, StepBy.button);
+    expect(menu, findsOneWidget, reason: "the mouse's Back goes back too");
+    expect(whenMenu, findsNothing);
+    await stepOver(tester, menu, BackForwardStep.forward, StepBy.button);
+    expect(menu, findsNothing);
+    expect(whenMenu, findsOneWidget);
+    await tester.tap(back);
+    await tester.pump();
 
     await tester.tap(find.byKey(const ValueKey('notes-filter-when')));
     await tester.pump();

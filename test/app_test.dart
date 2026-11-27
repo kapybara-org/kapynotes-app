@@ -894,7 +894,7 @@ void main() {
           await pumpApp(tester, size: const Size(1400, 800));
           notes.create(body: 'Alpha');
           await tester.pumpAndSettle();
-          await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+          await tester.tap(find.byKey(const ValueKey('notes-view')));
           await tester.pumpAndSettle();
           await tester.tap(find.text('When'));
           await tester.pumpAndSettle();
