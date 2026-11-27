@@ -4,7 +4,8 @@
 #
 #   bash tool/ci/phone_screenshots.sh <device id>
 #
-# With --check in place of a device id, it only checks PHONE_TESTS's names.
+# With --check in place of a device id, it only checks PHONE_TESTS's names and
+# that integration_test/phones.dart has an entry for every test below.
 #
 # A shot a test takes with device: true is also read off the device's own
 # screen, keyboard included, as build/screenshots/<name>-device.png.
@@ -172,8 +173,8 @@ drive() {
     limit=$(( ${PHONE_FILE_MINUTES:-20} * 60 ))
     if (( code == 0 )); then return 0; fi
     sleep 1
-    if (( tries == 0 )) && grep -q 'Error waiting for a debug connection' "$log" &&
-      ! grep -qE '[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
+    if (( tries == 0 )) && { ! $android || (( SECONDS < retry_until )); } &&
+      grep -q 'Error waiting for a debug connection' "$log" && ! grep -qE '[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
       tries=1
       echo "::warning::$1_test.dart never connected to the app, so no test ran; running it again"
       echo "- $1_test.dart: the app never connected and no test ran, so it ran again" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
