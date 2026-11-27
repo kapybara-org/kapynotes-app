@@ -13076,6 +13076,55 @@ void main() {
         tester.getCenter(find.byType(PagePane)).dx,
       );
     });
+
+    // Parity item 64: the page's menu took the notice to the window's
+    // centre, over the list, until it closed, and so did the tag list that
+    // a note's menu opens.
+    testWidgets('a notice keeps its place beside the list while a menu is '
+        "open, and the tag list from a note's menu", (tester) async {
+      await notes.load();
+      final tags = TagStore(store);
+      await tags.load();
+      notes.create(body: 'Narrow note');
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      final menu = find.byType(KapyContextMenuSurface);
+      final picker = find.byKey(const ValueKey('tag-picker'));
+      await pumpApp(tester, size: const Size(820, 760), tags: tags);
+      await pickPageAction(tester, 'pin');
+      final place = tester.getRect(notice);
+      expect(
+        place.left,
+        greaterThan(tester.getRect(find.byType(Sidebar)).right),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      expect(menu, findsOneWidget);
+      expect(tester.getRect(notice), place);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(tester.getRect(notice), place);
+
+      await tester.tap(
+        find.widgetWithText(NoteRow, 'Narrow note'),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      expect(menu, findsOneWidget);
+      expect(tester.getRect(notice), place);
+      await tester.tap(find.text('Tags'));
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(picker, findsOneWidget);
+      expect(tester.getRect(notice), place);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(picker, findsNothing);
+      expect(tester.getRect(notice), place);
+    });
   });
 
   group('window chrome', () {
