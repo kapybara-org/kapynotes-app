@@ -451,6 +451,9 @@ void main() {
         label: 'Errands',
         scale: 3.1,
       );
+      _focus.requestFocus();
+      await tester.pump();
+      await tester.pump();
       expectWholeLine(
         tester,
         find.text('Add a task'),

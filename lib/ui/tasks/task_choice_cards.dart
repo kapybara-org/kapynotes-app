@@ -251,7 +251,7 @@ class _TaskPairCardState extends State<TaskPairCard> {
         phone: phone,
       ),
       keyLabel: '←',
-      marked: _startLit && !last,
+      marked: _startLit,
       onPressed: widget.onKeep,
       phone: phone,
     );
@@ -273,6 +273,30 @@ class _TaskPairCardState extends State<TaskPairCard> {
     final quiet = phone
         ? taskText(13, 18, ink.quiet)
         : taskText(12, 16, ink.quiet);
+    Widget count(String label, {required bool pie}) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (pie) ...[
+          ExcludeSemantics(
+            child: ChecklistPie(
+              done: pair.seen,
+              total: pair.total,
+              fill: ink.quiet,
+              check: ink.card,
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Text(
+          label,
+          style: taskText(
+            12,
+            16,
+            ink.quiet,
+          ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+        ),
+      ],
+    );
     final head = Row(
       children: [
         Expanded(
@@ -287,28 +311,25 @@ class _TaskPairCardState extends State<TaskPairCard> {
           ),
         ),
         const SizedBox(width: 8),
-        if (!last) ...[
-          ExcludeSemantics(
-            child: ChecklistPie(
-              done: pair.seen,
-              total: pair.total,
-              fill: ink.quiet,
-              check: ink.card,
+        Stack(
+          alignment: Alignment.centerRight,
+          children: [
+            Visibility(
+              visible: false,
+              maintainState: true,
+              maintainAnimation: true,
+              maintainSize: true,
+              child: count('${pair.total} of ${pair.total} seen', pie: true),
             ),
-          ),
-          const SizedBox(width: 6),
-        ],
-        Text(
-          last
-              ? 'Last one'
-              : pair.joined
-              ? '${pair.seen} of ${pair.total} new'
-              : '${pair.seen} of ${pair.total} seen',
-          style: taskText(
-            12,
-            16,
-            ink.quiet,
-          ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+            count(
+              last
+                  ? 'Last one'
+                  : pair.joined
+                  ? '${pair.seen} of ${pair.total} new'
+                  : '${pair.seen} of ${pair.total} seen',
+              pie: !last,
+            ),
+          ],
         ),
       ],
     );
@@ -322,22 +343,20 @@ class _TaskPairCardState extends State<TaskPairCard> {
     );
     final foot = Text(
       last
-          ? 'Your pick becomes Do now.'
+          ? 'Nothing comes off your list. Your pick becomes Do now.'
           : explain
           ? 'Nothing comes off your list.'
           : 'Nothing comes off your list. Earlier picks wait in Up next.',
       style: quiet,
     );
-    final start = last
-        ? null
-        : _StopButton(
-            task: pair.left.words,
-            onPressed: widget.onStart,
-            onLit: (lit) {
-              if (lit != _startLit) setState(() => _startLit = lit);
-            },
-            phone: phone,
-          );
+    final start = _StopButton(
+      task: pair.left.words,
+      onPressed: widget.onStart,
+      onLit: (lit) {
+        if (lit != _startLit) setState(() => _startLit = lit);
+      },
+      phone: phone,
+    );
     final done = widget.justDone;
     return Container(
       key: const ValueKey('tasks-pair'),
@@ -429,25 +448,23 @@ class _TaskPairCardState extends State<TaskPairCard> {
                 Row(
                   children: [
                     Expanded(child: foot),
-                    if (start != null) ...[
-                      const SizedBox(width: 12),
-                      Flexible(
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 340),
-                            child: start,
-                          ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 340),
+                          child: start,
                         ),
                       ),
-                    ],
+                    ),
                   ],
                 )
               else
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   spacing: phone ? 8 : 10,
-                  children: [foot, ?start],
+                  children: [foot, start],
                 ),
             ],
           );

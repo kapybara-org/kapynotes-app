@@ -234,9 +234,11 @@ void main() {
 
     clock = clock.add(const Duration(minutes: 30));
     final field = find.byKey(const ValueKey('tasks-add-field'));
-    await tester.ensureVisible(field);
-    await tester.pumpAndSettle();
-    await tester.tap(field);
+    expect(field, findsNothing, reason: 'a phone adds from the +, not a row');
+    await tester.tap(find.byKey(const ValueKey('phone-new')));
+    await settleKeyboard(tester, up: true);
+    expect(field, findsOneWidget);
+    await shot('add-over-keyboard');
     await tester.enterText(field, 'Split the Acme invoice in two');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     FocusManager.instance.primaryFocus?.unfocus();
