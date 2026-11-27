@@ -281,6 +281,20 @@ void main() {
       expect(titlesShown(tester), isTrue);
     });
 
+    testWidgets('under reduce motion, goes as soon as a drag short of a turn '
+        'is let go', (tester) async {
+      await _pump(tester, const _Pages(over: true), reduceMotion: true);
+      await tester.timedDragFrom(
+        _middle,
+        const Offset(-60, 0),
+        const Duration(milliseconds: 600),
+      );
+      await tester.pump();
+      expect(_state(tester).turns, isEmpty);
+      expect(find.textContaining('over'), findsNothing);
+      expect(titlesShown(tester), isTrue);
+    });
+
     testWidgets('under reduce motion, goes as the crossfade goes', (
       tester,
     ) async {

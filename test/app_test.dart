@@ -2899,7 +2899,9 @@ void main() {
     expect(prefs.editorTextScale, 1);
   });
 
-  testWidgets('Settings shows the zoom and steps it', (tester) async {
+  testWidgets('Settings shows the zoom and steps it', (
+    tester,
+  ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpApp(tester);
@@ -2912,10 +2914,7 @@ void main() {
       find.descendant(of: row, matching: find.text('The whole window')),
       findsOneWidget,
     );
-    expect(
-      find.descendant(of: row, matching: find.text('100%')),
-      findsOneWidget,
-    );
+    expect(find.descendant(of: row, matching: find.text('100%')), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('note-text-size-setting')),
@@ -2925,17 +2924,11 @@ void main() {
     );
 
     await tester.tap(
-      find.descendant(
-        of: row,
-        matching: find.byKey(const ValueKey('stepper-up')),
-      ),
+      find.descendant(of: row, matching: find.byKey(const ValueKey('stepper-up'))),
     );
     await tester.pumpAndSettle();
     expect(prefs.zoom, 1.1);
-    expect(
-      find.descendant(of: row, matching: find.text('110%')),
-      findsOneWidget,
-    );
+    expect(find.descendant(of: row, matching: find.text('110%')), findsOneWidget);
     expect(prefs.editorTextScale, 1);
   });
 
@@ -2953,8 +2946,7 @@ void main() {
       for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
         AppPlatform.debugTargetPlatformOverride = platform;
         for (final listShown in [true, false]) {
-          final reason =
-              '${(zoom * 100).round()}%, ${platform.name}, list '
+          final reason = '${(zoom * 100).round()}%, ${platform.name}, list '
               '${listShown ? 'shown' : 'hidden'}';
           await pumpApp(tester, sidebarVisible: listShown);
           prefs.zoom = zoom;
@@ -2983,10 +2975,7 @@ void main() {
           await tester.ensureVisible(zoomRow);
           await tester.pumpAndSettle();
           for (final words in ['Zoom', 'The whole window']) {
-            final text = find.descendant(
-              of: zoomRow,
-              matching: find.text(words),
-            );
+            final text = find.descendant(of: zoomRow, matching: find.text(words));
             expect(
               tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
               isFalse,
@@ -4447,9 +4436,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
         }
         expect(
-          tester
-              .widget<Text>(find.byKey(const ValueKey('recording-status')))
-              .data,
+          tester.widget<Text>(find.byKey(const ValueKey('recording-status'))).data,
           'Microphone is silent',
         );
         expect(find.byKey(const ValueKey('recording-elapsed')), findsOneWidget);
@@ -10439,6 +10426,46 @@ void main() {
         expect(tester.getTopLeft(header), at);
         expect(ownShown(), isTrue);
         expect(underlineOf(tasksTitle), findsOneWidget);
+      });
+
+      testWidgets("Home's header fades back to Notes' copy as Tasks turns back "
+          'to Notes (KAP-441)', (tester) async {
+        await pumpHome(tester);
+        final header = find.byType(PhoneHomeHeader);
+        final toTasks = await tester.startGesture(tester.getCenter(header));
+        await toTasks.moveBy(const Offset(-40, 0));
+        await toTasks.moveBy(const Offset(-160, 0));
+        await toTasks.up();
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+
+        final drag = await tester.startGesture(tester.getCenter(header.first));
+        await drag.moveBy(const Offset(40, 0));
+        await drag.moveBy(const Offset(160, 0));
+        await tester.pump();
+        final own = find
+            .descendant(of: find.byType(HiddenWhileTurning), matching: header)
+            .evaluate()
+            .toSet();
+        double opacityOf(bool tasks) => tester
+            .widget<Opacity>(
+              find
+                  .ancestor(
+                    of: find.byElementPredicate(
+                      (e) =>
+                          e.widget is PhoneHomeHeader &&
+                          !own.contains(e) &&
+                          (e.widget as PhoneHomeHeader).tasks == tasks,
+                    ),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+        expect(opacityOf(true), closeTo(1 - 200 / 393, 0.02));
+        expect(opacityOf(false), closeTo(200 / 393, 0.02));
+        await drag.up();
+        await tester.pumpAndSettle();
       });
 
       testWidgets('a short slow swipe stays put, and a short fast one turns '
