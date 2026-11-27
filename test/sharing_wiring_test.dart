@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_days.dart';
@@ -1012,15 +1013,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Delete note?'), findsOneWidget);
       expect(
-        find.text(
-          'Permanently deletes "Trip budget" from every synced device.',
-        ),
+        find.text('Deletes "Trip budget" from every synced device.'),
         findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
       await tester.pumpAndSettle();
-      expect(notes.byId(id), isNull);
       expect(find.text('Note deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.byId(id), isNull);
     });
 
     testWidgets("a guest's row offers Remove, which only takes the note out "
@@ -1034,8 +1035,10 @@ void main() {
       expect(find.text('Remove from your notes?'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
       await tester.pumpAndSettle();
-      expect(notes.byId(id), isNull);
       expect(find.text('Removed from your notes'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.byId(id), isNull);
     });
   });
 }

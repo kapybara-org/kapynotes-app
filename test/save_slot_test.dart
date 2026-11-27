@@ -45,7 +45,7 @@ void main() {
     PathProviderPlatform.instance = _FakePaths(root);
     final store = LocalStore(
       fileName: 'notes.json',
-      debounce: const Duration(hours: 1),
+      delay: const Duration(hours: 1),
     );
     await store.load();
     store.put('a', 1);
@@ -71,6 +71,30 @@ void main() {
     await blocker.delete();
     await Future<void>.delayed(const Duration(milliseconds: 300));
     expect(store.writes.value, StoreWrite.written);
+  });
+
+  test('a keystroke during a failed write cancels the retry and saves on '
+      'the delay', () async {
+    final root = await Directory.systemTemp.createTemp('kapy-store-');
+    addTearDown(() => root.delete(recursive: true));
+    PathProviderPlatform.instance = _FakePaths(root);
+    final store = LocalStore(
+      fileName: 'notes.json',
+      delay: const Duration(milliseconds: 40),
+      retry: const Duration(seconds: 30),
+    );
+    addTearDown(store.dispose);
+    await store.load();
+    final blocker = await Directory('${root.path}/notes.json.tmp').create();
+    store.put('a', 1);
+    await store.flush();
+    expect(store.writes.value, StoreWrite.failed);
+    await blocker.delete();
+
+    store.put('a', 2);
+    await Future<void>.delayed(const Duration(milliseconds: 200));
+    expect(store.writes.value, StoreWrite.written);
+    expect(store.read<int>('a'), 2);
   });
 
   testWidgets('Saving and Saved do not move the week, the avatars or the date line', (

@@ -648,15 +648,21 @@ class KapyAiNotice extends StatelessWidget {
         ? 'Apple Intelligence'
         : 'the on-device model';
     final (icon, title, lines, actions) = switch (pending) {
-      KapyCloudConsent() => (
+      KapyCloudConsent(:final recording) => (
         KapyIcons.cloudRounded,
         'Before the first answer',
-        [
-          'Kapy AI sends your question and only the notes that match it '
-              'through Kapy cloud, where an AI service answers it. Kapy keeps '
-              'nothing, and it is never used to train AI.',
-          'Hidden notes are never used, locked or unlocked.',
-        ],
+        recording
+            ? [
+                'Kapy AI sends your question and this transcript through Kapy '
+                    'cloud, where an AI service answers it. Kapy keeps '
+                    'nothing, and it is never used to train AI.',
+              ]
+            : [
+                'Kapy AI sends your question and only the notes that match it '
+                    'through Kapy cloud, where an AI service answers it. Kapy '
+                    'keeps nothing, and it is never used to train AI.',
+                'Hidden notes are never used, locked or unlocked.',
+              ],
         [
           goAhead,
           if (usable != null)

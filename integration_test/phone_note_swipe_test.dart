@@ -1,15 +1,17 @@
 // Home's swipe on a note row, for KAPY-35 to hold against the boards "Home,
-// swiping a note" and "Home, a note archived": the whole app over notes kept
-// in memory, dark, with each state also read off the device's own screen.
+// swiping a note" and "Home, a note archived", and its Delete with Undo: the
+// whole app over notes kept in memory, dark, with each state also read off
+// the device's own screen.
 //
 //   flutter drive --driver test_driver/integration_test.dart \
 //     --target integration_test/phone_note_swipe_test.dart -d <device> \
 //     --dart-define=KAPYNOTES_SYNC=false
 //
 // The Phones workflow runs it through tool/ci/phone_screenshots.sh, and the
-// device shots land as build/screenshots/swipe-open-row-device.png and
-// swipe-archived-notice-device.png. No sheet or dialog opens under a held
-// press here, so the test's pointer events stay its own.
+// device shots land as build/screenshots/swipe-open-row-device.png,
+// swipe-archived-notice-device.png and swipe-deleted-notice-device.png. No
+// sheet or dialog opens under a held press here, so the test's pointer events
+// stay its own.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -155,6 +157,44 @@ void main() {
     await pumpUntil(tester, () => quote.evaluate().isNotEmpty);
     expect(notes.byId('quote')!.isArchived, isFalse);
     expect(quote, findsOneWidget);
+
+    // Delete asks, then takes the row out at once with Undo on its notice,
+    // and the note goes for good once the notice does.
+    final deleted = find.text('Note deleted');
+    List<String> listed() => [
+      for (final row in tester.widgetList<NoteRow>(find.byType(NoteRow)))
+        row.note.id,
+    ];
+    Future<void> delete(Finder row, String id) async {
+      await tester.drag(row, const Offset(-120, 0));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(ValueKey('swipe-delete-$id')));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete note?'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await pumpUntil(tester, () => shown(tester, deleted));
+      expect(row, findsNothing);
+      expect(deleted, findsOneWidget);
+    }
+
+    final arjun = find.widgetWithText(NoteRow, 'Call with Arjun');
+    await delete(arjun, 'arjun');
+    expect(tester.takeException(), isNull);
+    await screenshot('swipe-deleted-notice', device: true);
+    // The note goes for good once its notice does, on the device's own clock,
+    // and Undo is checked on a second delete.
+    await pumpUntil(tester, () => deleted.evaluate().isEmpty);
+    expect(deleted, findsNothing);
+    expect(notes.byId('arjun'), isNull);
+
+    final before = listed();
+    await delete(quote, 'quote');
+    await tester.tap(undo.last);
+    await pumpUntil(tester, () => quote.evaluate().isNotEmpty);
+    expect(listed(), before);
+    expect(notes.byId('quote'), isNotNull);
+    expect(notes.tombstones.map((stone) => stone.id), ['arjun']);
+    expect(tester.takeException(), isNull);
   });
 }
 

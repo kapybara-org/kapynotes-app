@@ -37,6 +37,11 @@ class KapyAiStore {
   bool get cloudConsent => _settings['cloudConsent'] == true;
   set cloudConsent(bool value) => _set('cloudConsent', value);
 
+  /// The same, agreed to for a recording's transcript: it covers questions
+  /// about a recording only, so the panel still asks before it sends notes.
+  bool get recordingCloudConsent => _settings['recordingCloudConsent'] == true;
+  set recordingCloudConsent(bool value) => _set('recordingCloudConsent', value);
+
   /// "Goes to OpenAI", once per account.
   bool hasAccountConsent(KapyAccountKind account) =>
       (_settings['accountConsent'] as List?)?.contains(account.name) ?? false;
@@ -109,6 +114,7 @@ Map<String, Object?> chatToJson(KapyChat chat) => {
   'modelAt': chat.modelAt.millisecondsSinceEpoch,
   'model': chat.model.toJson(),
   'messages': [for (final message in chat.messages) _messageToJson(message)],
+  if (chat.recording case final recording?) 'recording': recording.toJson(),
 };
 
 KapyChat? chatFromJson(Object? raw) {
@@ -129,6 +135,7 @@ KapyChat? chatFromJson(Object? raw) {
       for (final message in (raw['messages'] as List?) ?? const [])
         ?_messageFromJson(message),
     ],
+    recording: KapyRecordingRef.fromJson(raw['recording']),
   );
 }
 
@@ -148,6 +155,7 @@ Map<String, Object?> _messageToJson(KapyMessage message) => {
     ],
   if (message.matching > 0) 'matching': message.matching,
   if (message.model case final model?) 'model': model.toJson(),
+  if (message.readTo case final readTo?) 'readTo': readTo.inMilliseconds,
 };
 
 KapyMessage? _messageFromJson(Object? raw) {
@@ -173,6 +181,9 @@ KapyMessage? _messageFromJson(Object? raw) {
     ],
     matching: matching is int ? matching : 0,
     model: KapyModel.fromJson(raw['model']),
+    readTo: raw['readTo'] is int
+        ? Duration(milliseconds: raw['readTo'] as int)
+        : null,
   );
 }
 

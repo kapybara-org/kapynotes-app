@@ -1,7 +1,10 @@
-import 'package:flutter_test/flutter_test.dart';
-import 'package:kapy_notes/data/local_store.dart';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/data/blob_store.dart';
+import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/note_format.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -433,5 +436,136 @@ void main() {
       store.updateDocument(note.id, '$anchor\nGroceries', const [], const []);
       expect(store.byId(note.id)!.title, 'Groceries');
     });
+  });
+  group('a delete held for Undo', () {
+    test(
+      'takes notes out of every list and search, and writes nothing',
+      () async {
+        final storage = _MemoryStore();
+        final notes = NotesStore(storage);
+        await notes.load();
+        final kept = notes.create(body: 'Kept');
+        final pinned = notes.create(body: 'Groceries\nMilk');
+        notes.togglePinned(pinned.id);
+        final archived = notes.create(body: 'Old trip');
+        notes.archive(archived.id);
+        final hidden = notes.create(body: 'Diary');
+        notes.hide(hidden.id);
+        final held = [pinned.id, archived.id, hidden.id];
+        final before = {for (final id in held) id: notes.byId(id)};
+        final written = jsonEncode(storage.data);
+        var rebuilds = 0;
+        notes.addListener(() => rebuilds++);
+
+        notes.holdDelete(held);
+
+        expect(notes.notes.map((note) => note.id), [kept.id]);
+        expect(notes.archivedNotes, isEmpty);
+        expect(notes.hiddenNotes, isEmpty);
+        expect(notes.search('Groceries'), isEmpty);
+        expect(notes.searchArchived('trip'), isEmpty);
+        expect(notes.searchHidden('Diary'), isEmpty);
+        expect(held.every(notes.isDeleting), isTrue);
+        expect(notes.isDeleting(kept.id), isFalse);
+        // Every note is still whole, for sync and for Undo.
+        for (final id in held) {
+          expect(notes.byId(id), same(before[id]));
+        }
+        expect(notes.allNotes, hasLength(4));
+        expect(notes.isPinned(pinned.id), isTrue);
+        expect(notes.tombstones, isEmpty);
+        expect(jsonEncode(storage.data), written);
+        expect(rebuilds, 1);
+      },
+    );
+
+    test('Undo puts each note back in its place, the very same note', () async {
+      final storage = _MemoryStore();
+      final notes = NotesStore(storage);
+      await notes.load();
+      for (final body in ['One', 'Two', 'Three', 'Four']) {
+        notes.create(body: body);
+      }
+      final listed = [...notes.notes];
+      final middle = [listed[1].id, listed[2].id];
+      notes.holdDelete(middle);
+      expect(notes.notes, [listed.first, listed.last]);
+
+      notes.undoDelete(middle);
+
+      expect(notes.notes, orderedEquals(listed));
+      for (var i = 0; i < listed.length; i++) {
+        expect(notes.notes[i], same(listed[i]));
+      }
+      expect(middle.any(notes.isDeleting), isFalse);
+      expect(notes.tombstones, isEmpty);
+    });
+
+    test('deleteAll takes a held note for good', () async {
+      final notes = NotesStore(_MemoryStore());
+      await notes.load();
+      final note = notes.create(body: 'Doomed');
+      notes.holdDelete([note.id]);
+
+      expect(notes.deleteAll([note.id]), 1);
+
+      expect(notes.byId(note.id), isNull);
+      expect(notes.isDeleting(note.id), isFalse);
+      expect(notes.tombstones.single.id, note.id);
+    });
+
+    test('one the app closes on is there on the next launch', () async {
+      final storage = _MemoryStore();
+      final notes = NotesStore(storage);
+      await notes.load();
+      final note = notes.create(body: 'Keep me');
+      notes.togglePinned(note.id);
+      notes.holdDelete([note.id]);
+
+      final relaunched = NotesStore(storage);
+      await relaunched.load();
+
+      expect(relaunched.notes.single.id, note.id);
+      expect(relaunched.notes.single.body, 'Keep me');
+      expect(relaunched.isPinned(note.id), isTrue);
+      expect(relaunched.tombstones, isEmpty);
+    });
+
+    test(
+      "its pictures outlast any sweep while it is held, and go with it",
+      () async {
+        final dir = Directory.systemTemp.createTempSync('held-delete-');
+        addTearDown(() => dir.deleteSync(recursive: true));
+        final blobs = BlobStore(directory: dir, sweepGrace: Duration.zero);
+        final notes = NotesStore(_MemoryStore(), blobs: blobs);
+        await notes.load();
+        final hash = await blobs.put(Uint8List.fromList([1, 2, 3]));
+        final note = notes.create();
+        notes.updateDocument(
+          note.id,
+          '${NoteAttachmentRef.placeholder} Receipt',
+          const [],
+          [
+            NoteImageRef(
+              offset: 0,
+              hash: hash,
+              key: Uint8List(32),
+              mime: 'image/png',
+              width: 4,
+              height: 3,
+              bytes: 3,
+            ),
+          ],
+        );
+
+        notes.holdDelete([note.id]);
+        await notes.sweepBlobs();
+        expect(await blobs.has(hash), isTrue);
+
+        notes.deleteAll([note.id]);
+        await notes.sweepBlobs();
+        expect(await blobs.has(hash), isFalse);
+      },
+    );
   });
 }

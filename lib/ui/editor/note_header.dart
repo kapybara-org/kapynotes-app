@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
@@ -117,7 +120,9 @@ class NoteMetaRow extends StatelessWidget {
     this.readOnlyIcon,
     this.onReadOnlyPressed,
     this.tags,
+    this.addTag,
     this.phone = false,
+    this.width = double.infinity,
   });
 
   /// When the note was last edited, or on a phone when it was written, and
@@ -145,12 +150,18 @@ class NoteMetaRow extends StatelessWidget {
   final KapyIconData? readOnlyIcon;
   final VoidCallback? onReadOnlyPressed;
 
-  /// The note's tag chips and + Tag, at the end of the line.
+  /// The note's tag chips, at the end of the line.
   final Widget? tags;
+
+  /// + Tag, after the chips: on a desktop's line, the first to step aside.
+  final Widget? addTag;
 
   /// On a phone's note page (M07): the facts and tags share one line that
   /// wraps, where a tablet keeps the tags on a line of their own.
   final bool phone;
+
+  /// How wide the writing column is, which a desktop's line keeps to.
+  final double width;
 
   static const double _gap = 10;
 
@@ -206,6 +217,8 @@ class NoteMetaRow extends StatelessWidget {
           '${SidebarTimestamp.shortDay(day ?? edited, now: today)} · '
           '${SidebarTimestamp.clock(edited)}',
           key: const ValueKey('note-edited'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: quiet.copyWith(
             fontFeatures: const [FontFeature.tabularFigures()],
           ),
@@ -379,24 +392,41 @@ class NoteMetaRow extends StatelessWidget {
             const SizedBox(height: 8),
             // The tags' own targets are 44 pt tall on a phone, so the row
             // gives them the room rather than clipping them to the pill.
-            SizedBox(height: AppPlatform.hasPointer ? 22 : 44, child: tags),
+            SizedBox(
+              height: AppPlatform.hasPointer ? 22 : 44,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (tags case final tags?) Flexible(child: tags),
+                  ?addTag,
+                ],
+              ),
+            ),
           ],
         ),
       );
     }
     return SizedBox(
       height: EditorMetrics.metaRow,
-      child: Row(
+      child: _MetaLine(
+        width: width,
         children: [
-          for (final (index, item) in items.indexed) ...[
-            if (index > 0 && item.key != const ValueKey('note-saved-slot'))
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text('·', style: quiet),
-              ),
-            item,
-          ],
-          if (tags case final tags?) ...[const SizedBox(width: 6), tags],
+          for (final (index, item) in items.indexed)
+            index == 0 || item.key == const ValueKey('note-saved-slot')
+                ? item
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text('·', style: quiet),
+                      ),
+                      item,
+                    ],
+                  ),
+          if (tags case final tags?)
+            Padding(padding: const EdgeInsets.only(left: 6), child: tags),
+          ?addTag,
         ],
       ),
     );
@@ -447,6 +477,116 @@ class NoteMetaRow extends StatelessWidget {
             ),
     );
   }
+}
+
+/// A desktop's meta line: the facts in order, then the tags, then + Tag, each
+/// whole. Where the column ends before one does, it and everything after it
+/// step aside, as the bar's items do, rather than run into the pane's edge.
+/// Only the date, first, shortens to fit a column too narrow even for it.
+class _MetaLine extends MultiChildRenderObjectWidget {
+  const _MetaLine({required this.width, required super.children});
+
+  final double width;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMetaLine(width);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderMetaLine renderObject) =>
+      renderObject.width = width;
+}
+
+class _MetaLineData extends ContainerBoxParentData<RenderBox> {
+  bool shown = false;
+}
+
+class _RenderMetaLine extends RenderBox
+    with ContainerRenderObjectMixin<RenderBox, _MetaLineData> {
+  _RenderMetaLine(this._width);
+
+  /// How far one already showing may reach past a column that holds still
+  /// before it steps aside: a tag's × as the pointer rests on its chip, so the
+  /// chip never leaves from under the pointer. A column that changes gives
+  /// none, so each width shows the same items however it was reached.
+  static const double _grace = 15;
+
+  double? _column;
+
+  double get width => _width;
+  double _width;
+  set width(double value) {
+    if (value == _width) return;
+    _width = value;
+    markNeedsLayout();
+  }
+
+  Iterable<RenderBox> get _shown sync* {
+    for (var child = firstChild; child != null; child = childAfter(child)) {
+      if ((child.parentData! as _MetaLineData).shown) yield child;
+    }
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _MetaLineData) child.parentData = _MetaLineData();
+  }
+
+  @override
+  void performLayout() {
+    final column = math.min(width, constraints.maxWidth);
+    final grace = column == _column ? _grace : 0.0;
+    _column = column;
+    final height = constraints.maxHeight;
+    var x = 0.0;
+    var fits = true;
+    for (var child = firstChild; child != null; child = childAfter(child)) {
+      child.layout(
+        BoxConstraints(
+          maxWidth: child == firstChild ? column : double.infinity,
+          maxHeight: height,
+        ),
+        parentUsesSize: true,
+      );
+      final data = child.parentData! as _MetaLineData;
+      final reach = x + child.size.width - column;
+      fits = fits && reach <= (data.shown ? grace : 0);
+      data
+        ..shown = fits
+        ..offset = Offset(x, (height - child.size.height) / 2);
+      if (fits) x += child.size.width;
+    }
+    size = constraints.constrain(Size(x, height));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    for (final child in _shown) {
+      context.paintChild(
+        child,
+        (child.parentData! as _MetaLineData).offset + offset,
+      );
+    }
+  }
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
+    for (final child in _shown) {
+      if (result.addWithPaintOffset(
+        offset: (child.parentData! as _MetaLineData).offset,
+        position: position,
+        hitTest: (result, position) =>
+            child.hitTest(result, position: position),
+      )) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @override
+  void visitChildrenForSemantics(RenderObjectVisitor visitor) =>
+      _shown.forEach(visitor);
 }
 
 class _ReadOnly extends StatelessWidget {

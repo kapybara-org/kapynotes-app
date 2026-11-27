@@ -80,6 +80,19 @@ Future<bool> _canRestore(Rect savedBounds) async {
   }
 }
 
+/// The work area of the display holding the middle of [window], or of the
+/// first display when none does. Null when the displays cannot be asked.
+Future<Rect?> workAreaHolding(Rect window) async {
+  try {
+    final areas = (await screenRetriever.getAllDisplays()).map(_visibleBounds);
+    return areas.where((area) => area.contains(window.center)).firstOrNull ??
+        areas.firstOrNull;
+  } catch (error) {
+    debugPrint('KapyNotes: could not read the displays: $error');
+    return null;
+  }
+}
+
 Rect _visibleBounds(Display display) =>
     (display.visiblePosition ?? Offset.zero) &
     (display.visibleSize ?? display.size);

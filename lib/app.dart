@@ -7,6 +7,7 @@ import 'ai/device_model.dart';
 import 'ai/kapy_ai.dart';
 import 'ai/kapy_ai_controller.dart';
 import 'ai/kapy_chat_book.dart';
+import 'core/app_zoom.dart';
 import 'core/keyring.dart';
 import 'core/platform.dart';
 import 'core/popup_keyboard.dart';
@@ -34,6 +35,7 @@ import 'core/quick_capture.dart';
 import 'core/deep_links.dart';
 import 'core/system_contrast.dart';
 import 'core/theme.dart';
+import 'core/toast.dart';
 import 'core/window_material.dart';
 import 'data/auto_titles.dart';
 import 'data/engine_provider.dart';
@@ -563,9 +565,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       unawaited(queue.drain());
     });
 
-    // Stray `voice-*.m4a` from a force quit: unreadable, unrecoverable, and
-    // nothing else will ever clean them up. A walk of the whole temp
-    // directory, so it waits its turn behind the frames that matter.
+    // Stray recordings no marker claims: unrecoverable, and nothing else will
+    // ever clean them up. A walk of the whole temp directory, so it waits its
+    // turn behind the frames that matter.
     _tempSweepTimer?.cancel();
     _tempSweepTimer = Timer(
       _tempSweepDelay,
@@ -724,11 +726,13 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         widget.account?.billing?.refreshIfStale() ?? Future<void>.value(),
       );
     } else {
-      // Leaving the foreground or closing gives up Undo on a removal still
-      // held for it: it goes now, while the app can still send it.
+      // Leaving the foreground or closing gives up Undo on a delete or a
+      // removal still held for it: it goes now, while the app can still save
+      // and send it.
       if (state == AppLifecycleState.hidden ||
           state == AppLifecycleState.paused ||
           state == AppLifecycleState.detached) {
+        Toast.giveUpUndo();
         unawaited(
           widget.account?.sharing?.sendHeldRemovalsQuietly() ??
               Future<void>.value(),
@@ -785,6 +789,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         widget.prefs.transparencyListenable,
         widget.prefs.transparencyAmountListenable,
         widget.prefs.appTextSizeListenable,
+        widget.prefs.zoomListenable,
       ]),
       builder: (context, _) {
         final look = _look(transparency: true);
@@ -819,7 +824,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
             result = JoiningScope(account: widget.account, child: result);
 
-            final media = MediaQuery.of(context);
+            final media = zoomedMediaQuery(
+              MediaQuery.of(context),
+              View.of(context),
+            );
             final negativeInset = media.viewInsets.bottom < 0;
             return MediaQuery(
               data: media.copyWith(

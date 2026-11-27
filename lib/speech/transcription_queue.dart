@@ -35,6 +35,11 @@ class TranscriptionEntry {
   final int nextAttemptAt;
   final String? lastError;
 
+  /// The name the person gave the recording, held while its summary is
+  /// written again (which clears the old one first) and put back on the new
+  /// one.
+  final String? title;
+
   const TranscriptionEntry({
     required this.noteId,
     required this.hash,
@@ -45,6 +50,7 @@ class TranscriptionEntry {
     this.attempts = 0,
     this.nextAttemptAt = 0,
     this.lastError,
+    this.title,
   });
 
   TranscriptionEntry copyWith({
@@ -66,6 +72,7 @@ class TranscriptionEntry {
     lastError: identical(lastError, _keep)
         ? this.lastError
         : lastError as String?,
+    title: title,
   );
 
   static const Object _keep = Object();
@@ -80,6 +87,7 @@ class TranscriptionEntry {
     'attempts': attempts,
     'nextAttemptAt': nextAttemptAt,
     if (lastError != null) 'lastError': lastError,
+    if (title != null) 'title': title,
   };
 
   static TranscriptionEntry? fromJson(Object? raw) {
@@ -106,6 +114,7 @@ class TranscriptionEntry {
       lastError: raw['lastError'] is String
           ? raw['lastError']! as String
           : null,
+      title: raw['title'] is String ? raw['title']! as String : null,
     );
   }
 }
@@ -278,18 +287,20 @@ class TranscriptionQueue extends ChangeNotifier {
   /// Costs a summary from the recording's budget, like the first one did.
   void summarizeAgain(String noteId, String hash) {
     load();
-    _notes.updateAttachment(
-      noteId,
-      hash,
-      (current) =>
-          current is NoteVoiceRef ? current.copyWith(summary: null) : current,
-      touch: true,
-    );
+    String? title;
+    _notes.updateAttachment(noteId, hash, (current) {
+      if (current is! NoteVoiceRef) return current;
+      if (current.summary case VoiceSummary(named: true, title: final name)) {
+        title = name;
+      }
+      return current.copyWith(summary: null);
+    }, touch: true);
     final entry = TranscriptionEntry(
       noteId: noteId,
       hash: hash,
       requestId: _uuid(),
       stage: TranscriptionStage.summarize,
+      title: title,
     );
     final index = _entries.indexWhere(
       (e) => e.noteId == noteId && e.hash == hash,
@@ -626,7 +637,15 @@ class TranscriptionQueue extends ChangeNotifier {
         entry.noteId,
         entry.hash,
         (current) => current is NoteVoiceRef
-            ? current.copyWith(summary: summary)
+            ? current.copyWith(
+                summary: switch (entry.title ?? current.summary) {
+                  final String title => summary.withTitle(title),
+                  VoiceSummary(named: true, :final title) => summary.withTitle(
+                    title,
+                  ),
+                  _ => summary,
+                },
+              )
             : current,
         touch: true,
       );

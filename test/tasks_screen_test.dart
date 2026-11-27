@@ -431,6 +431,48 @@ void main() {
       expect(opened, [item('Plant the bulbs').note.id]);
     });
 
+    for (final (platform, phone) in [
+      (TargetPlatform.macOS, false),
+      (TargetPlatform.windows, false),
+      (TargetPlatform.iOS, true),
+      (TargetPlatform.android, true),
+    ]) {
+      testWidgets('on ${platform.name} a screen reader opens the soonest note '
+          'from Later as a tap does (KAP-365)', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        final semantics = tester.ensureSemantics();
+        await setUpTasks(tester, errands);
+        await addNotes(['Renewal notes\n☐ Renew the domain\n☐ Renew the van']);
+        final days = await waitingFor('Renewal notes', DateTime(2026, 11, 20));
+        final opened = <String>[];
+        await pumpScreen(
+          tester,
+          phone: phone,
+          days: days,
+          onOpenNote: opened.add,
+        );
+        final later = find.byKey(const ValueKey('tasks-later'));
+        await tester.ensureVisible(later);
+        await settle(tester);
+        final node = tester.getSemantics(later);
+        expect(
+          node,
+          isSemantics(
+            label: '2 tasks wait for their day, the first on Fri 20',
+            isButton: true,
+            hasTapAction: true,
+          ),
+        );
+        expect(node.hintOverrides?.onTapHint, 'Open Renewal notes');
+        tester.semantics.tap(
+          find.semantics.byPredicate((each) => each.id == node.id),
+        );
+        await settle(tester);
+        expect(opened, [item('Renew the domain').note.id]);
+        semantics.dispose();
+      });
+    }
+
     testWidgets('every typed word must match, not any one of them', (
       tester,
     ) async {
