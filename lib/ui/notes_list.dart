@@ -2051,7 +2051,7 @@ class _NotesFilterState extends State<_NotesFilter> {
     RenderFlex? rows;
     void find(RenderObject child) {
       if (rows != null) return;
-      if (child is RenderFlex) {
+      if (child is RenderFlex && child.direction == Axis.vertical) {
         rows = child;
       } else {
         child.visitChildren(find);
