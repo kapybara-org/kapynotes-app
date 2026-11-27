@@ -42,16 +42,16 @@ class _MemoryStore extends LocalStore {
 /// The starters, in the order they sit under the page.
 const voiceStarters = [
   'What did we decide?',
-  'Create X Post',
+  'Create X post',
   'What are the next steps?',
-  'Create LinkedIn Post',
+  'Create LinkedIn post',
   'What did Arjun ask for?',
   'Your own words…',
 ];
 
 /// What an X post is called above its text and in Earlier, the same words
 /// as its starter.
-const xPostHeading = 'Create X Post';
+const xPostHeading = 'Create X post';
 
 const voiceTitle = 'Pricing page plan with Arjun';
 

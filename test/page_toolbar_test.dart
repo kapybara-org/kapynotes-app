@@ -130,8 +130,8 @@ void main() {
     expect(style.side, isNull);
   });
 
-  testWidgets('the band has a hairline along its bottom, but none under the '
-      'list', (tester) async {
+  testWidgets("the band has a hairline along its bottom, under the list too, "
+      "since the list's bar draws none", (tester) async {
     BoxDecoration? hairline() =>
         tester.widget<Container>(bar).foregroundDecoration as BoxDecoration?;
 
@@ -144,7 +144,10 @@ void main() {
     await tester.pumpWidget(
       harness(toolbar(listVisible: false, underList: true)),
     );
-    expect(hairline(), isNull);
+    expect(
+      hairline()?.border,
+      Border(bottom: BorderSide(color: KapyTheme.darkPalette.railBorder)),
+    );
   });
 
   testWidgets(

@@ -43,6 +43,10 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color controlBorder;
   final Color selectedBackground;
   final Color selectedBorder;
+
+  /// The keyboard focus ring: the accent, deepened where it would fall under
+  /// 3:1 on a surface a ring can sit on.
+  final Color focusRing;
   final Color selection;
   final Color hover;
   final Color paperFiber;
@@ -306,6 +310,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       quoteBar: outline,
       accent: strongAccent,
       selectedBorder: strongAccent,
+      focusRing: _mix(focusRing, extreme, 0.18),
       totalPillBackground: strongAccent,
       accentText: _mix(accentText, extreme, 0.3),
       tonalForeground: _mix(tonalForeground, extreme, 0.45),
@@ -339,6 +344,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.controlBorder,
     required this.selectedBackground,
     required this.selectedBorder,
+    required this.focusRing,
     required this.selection,
     required this.hover,
     required this.paperFiber,
@@ -421,6 +427,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? controlBorder,
     Color? selectedBackground,
     Color? selectedBorder,
+    Color? focusRing,
     Color? selection,
     Color? hover,
     Color? paperFiber,
@@ -500,6 +507,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     controlBorder: controlBorder ?? this.controlBorder,
     selectedBackground: selectedBackground ?? this.selectedBackground,
     selectedBorder: selectedBorder ?? this.selectedBorder,
+    focusRing: focusRing ?? this.focusRing,
     selection: selection ?? this.selection,
     hover: hover ?? this.hover,
     paperFiber: paperFiber ?? this.paperFiber,
@@ -585,6 +593,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       controlBorder: mix(controlBorder, other.controlBorder),
       selectedBackground: mix(selectedBackground, other.selectedBackground),
       selectedBorder: mix(selectedBorder, other.selectedBorder),
+      focusRing: mix(focusRing, other.focusRing),
       selection: mix(selection, other.selection),
       hover: mix(hover, other.hover),
       paperFiber: mix(paperFiber, other.paperFiber),
@@ -2320,9 +2329,10 @@ CalcPalette _fromTones(_Tones t) {
     controlBorder: t.divider,
     selectedBackground: t.selected,
     selectedBorder: accent,
+    focusRing: _legible(accent, grounds, toward: t.text, ratio: 3),
     selection: accent.withAlpha(dark ? 0x4D : 0x40),
     hover: t.selected,
-    paperFiber: const Color(0x00000000),
+    paperFiber: dark ? const Color(0x00000000) : t.tertiary.withAlpha(0x08),
     paperRuling: t.hairline,
     railBackground: t.window,
     railBorder: t.divider,

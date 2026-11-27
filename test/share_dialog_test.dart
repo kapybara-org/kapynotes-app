@@ -3347,7 +3347,7 @@ void main() {
       expect(label.style!.color, palette.textTertiary);
       expect(
         label.style!.fontVariations,
-        contains(const FontVariation('wght', 520)),
+        contains(const FontVariation('wght', 400)),
       );
 
       final row = find.byKey(ValueKey('member-row-${alice.userId}'));

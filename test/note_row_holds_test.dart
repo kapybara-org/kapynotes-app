@@ -81,8 +81,8 @@ void main() {
     );
   }
 
-  testWidgets("a phone row's third line holds what the note holds, 3 under "
-      'the preview: 14 pt icons in T3, each 6 from its Figtree 12/16 words, '
+  testWidgets("a phone row's third line holds what the note holds, 5 under "
+      'the preview: 14 pt icons in T3, each 6 from its 12.5/16 words, '
       'items 12 apart', (tester) async {
     await pumpRow(tester, morningPages());
     final palette = KapyTheme.darkPalette;
@@ -100,7 +100,7 @@ void main() {
       findsNothing,
       reason: 'the checklist moved off the preview',
     );
-    expect(tester.getTopLeft(holds).dy - tester.getBottomLeft(preview).dy, 3);
+    expect(tester.getTopLeft(holds).dy - tester.getBottomLeft(preview).dy, 5);
     expect(tester.getSize(holds).height, 16);
 
     final pie = find.descendant(of: holds, matching: find.byType(ChecklistPie));
@@ -119,14 +119,14 @@ void main() {
     for (final words in [tasks, length]) {
       final style = tester.widget<Text>(words).style!;
       expect(style.fontFamily, AppFonts.ui);
-      expect(style.fontSize, 12);
-      expect(style.height, 16 / 12);
+      expect(style.fontSize, 12.5);
+      expect(style.height, 16 / 12.5);
       expect(style.color, palette.textTertiary);
     }
   });
 
   testWidgets('a full phone row is 90 tall inside its hairlines: 12, the '
-      '24 title, 3, the 20 preview, 3, the 16 holds, 12', (tester) async {
+      '22 title, 3, the 20 preview, 5, the 16 holds, 12', (tester) async {
     await pumpRow(tester, morningPages());
     expect(tester.getSize(find.byType(NoteListRowFace)).height, 90);
   });
@@ -145,7 +145,7 @@ void main() {
     expect(find.text('For the call with Acme on Friday.'), findsOneWidget);
     expect(
       tester.getSize(find.byType(NoteListRowFace)).height,
-      12 + 24 + 3 + 20 + 12,
+      12 + 22 + 3 + 20 + 12,
     );
   });
 
@@ -227,7 +227,7 @@ void main() {
       if (withPeople) {
         final strip = tester.getRect(peopleStrip);
         expect(strip.size, const Size(38, 16));
-        expect(strip.right, 375 - 20);
+        expect(strip.right, 375 - 16);
         expect(find.descendant(of: holds, matching: peopleStrip), findsOne);
       }
     });
@@ -294,10 +294,10 @@ void main() {
     );
     expect(tester.getTopLeft(typing).dx - tester.getTopRight(dot).dx, 6);
     final style = tester.widget<Text>(typing).style!;
-    expect(style.fontSize, 12);
-    expect(style.height, 16 / 12);
+    expect(style.fontSize, 12.5);
+    expect(style.height, 16 / 12.5);
     expect(style.color, palette.textSecondary);
-    expect(tester.getTopLeft(live).dx, 20);
+    expect(tester.getTopLeft(live).dx, NoteListRowFace.textStart(touch: true));
 
     final tasks = find.descendant(of: holds, matching: find.text('0 of 1'));
     final pie = find.descendant(of: holds, matching: find.byType(ChecklistPie));
@@ -360,14 +360,14 @@ void main() {
         )
         .first;
     expect(find.descendant(of: previewLine, matching: peopleStrip), findsOne);
-    expect(tester.getRect(peopleStrip).right, 393 - 20);
+    expect(tester.getRect(peopleStrip).right, 393 - 16);
   });
 
   Note titleOnly() =>
       Note(id: 'packing', body: 'Packing list', createdAt: now, updatedAt: now);
 
   testWidgets('a title-only row with a bottom line goes straight from its '
-      'title to it, 3 under: 12, the 24 title, 3, the 16 line, 12', (
+      'title to it, 5 under: 12, the 22 title, 5, the 16 line, 12', (
     tester,
   ) async {
     await pumpRow(
@@ -379,14 +379,14 @@ void main() {
     );
     final title = find.text('Packing list');
     expect(holds, findsOne);
-    expect(tester.getTopLeft(holds).dy - tester.getBottomLeft(title).dy, 3);
+    expect(tester.getTopLeft(holds).dy - tester.getBottomLeft(title).dy, 5);
     expect(
       find.descendant(of: holds, matching: find.text('View only')),
       findsOne,
     );
     expect(
       tester.getSize(find.byType(NoteListRowFace)).height,
-      12 + 24 + 3 + 16 + 12,
+      12 + 22 + 5 + 16 + 12,
     );
   });
 
@@ -394,15 +394,15 @@ void main() {
       'under the title', (tester) async {
     await pumpRow(tester, titleOnly(), people: people, shared: true);
     expect(find.descendant(of: holds, matching: peopleStrip), findsOne);
-    expect(tester.getRect(peopleStrip).right, 393 - 20);
+    expect(tester.getRect(peopleStrip).right, 393 - 16);
     expect(
       tester.getSize(find.byType(NoteListRowFace)).height,
-      12 + 24 + 3 + 16 + 12,
+      12 + 22 + 5 + 16 + 12,
     );
   });
 
   testWidgets('a title-only row with no bottom line ends at its title: 12, '
-      'the 24 title, 12', (tester) async {
+      'the 22 title, 12', (tester) async {
     await pumpRow(tester, titleOnly());
     expect(holds, findsNothing);
     expect(
@@ -413,6 +413,6 @@ void main() {
       findsNWidgets(2),
       reason: 'the title and the time, with no empty preview line',
     );
-    expect(tester.getSize(find.byType(NoteListRowFace)).height, 12 + 24 + 12);
+    expect(tester.getSize(find.byType(NoteListRowFace)).height, 12 + 22 + 12);
   });
 }

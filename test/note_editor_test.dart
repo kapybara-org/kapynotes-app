@@ -404,10 +404,8 @@ void main() {
       harness('first line\nsecond line', autofocus: true),
     );
     await tester.pumpAndSettle();
-    final topLeft = tester.getTopLeft(noteField);
-
     await tester.pump(const Duration(seconds: 4));
-    await tester.tapAt(topLeft + const Offset(40, 43));
+    await tester.tapAt(lineRect(tester, 'first line\nsecond line', 0).center);
     await tester.pump();
 
     await tester.pump(const Duration(seconds: 4));
@@ -2822,11 +2820,11 @@ void main() {
 
     expect(fillOf('42'), palette.totalPillBackground);
     expect(styleOf('42').color, palette.totalPillText);
-    expect(styleOf('42').fontWeight, FontWeight.w600);
+    expect(styleOf('42').fontWeight, AppWeight.font(AppWeight.regular));
     for (final text in ['12', '30']) {
       expect(fillOf(text), palette.resultPillBackground);
       expect(styleOf(text).color, palette.resultPillText);
-      expect(styleOf(text).fontWeight, FontWeight.w500);
+      expect(styleOf(text).fontWeight, AppWeight.font(AppWeight.regular));
     }
   });
 

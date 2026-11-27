@@ -8,7 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 
-/// The one mark of keyboard focus: a ring in the theme's accent around
+/// The one mark of keyboard focus: a ring in the theme's focus colour around
 /// whatever a key last moved focus to, drawn over the whole window. On a
 /// phone or tablet only Tab and Shift+Tab bring it, never a touch or the
 /// on-screen keyboard. A press anywhere puts it away until a key moves focus
@@ -111,7 +111,7 @@ class _FocusRingState extends State<FocusRing> {
         _Ring(
           key: const ValueKey('focus-ring'),
           target: _target,
-          color: palette.accent,
+          color: palette.focusRing,
           width: palette.increasedContrast ? 3 : 2,
         ),
       ],

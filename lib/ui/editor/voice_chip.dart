@@ -214,7 +214,7 @@ class NoteVoiceChip extends StatefulWidget {
     VoiceChipState.done || VoiceChipState.idle => null,
     VoiceChipState.transcribing => _transcribing,
     VoiceChipState.summarising => _summarising,
-    VoiceChipState.waiting => 'Waiting for connection',
+    VoiceChipState.waiting => 'Waiting for network',
     VoiceChipState.retrying => 'Trying again soon',
     VoiceChipState.failed when ref.transcript != null => "Couldn't summarise",
     VoiceChipState.failed => "Couldn't transcribe",

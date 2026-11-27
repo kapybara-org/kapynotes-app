@@ -42,6 +42,9 @@ Map<String, Object?> _note(String id, String body, DateTime edited) => {
 };
 
 Finder _row(String title) => find.widgetWithText(NoteRow, title);
+
+/// Where a closed row sits: inside the list's card, 20 in from the edge.
+const _rest = 20.0;
 Finder _button(String key, String id) => find.byKey(ValueKey('swipe-$key-$id'));
 
 /// The titles of the rows on screen, top to bottom.
@@ -201,13 +204,13 @@ void main() {
       await _open(tester, 'Groceries');
       await _drag(tester, _row('Groceries'), 200);
       expect(_button('pin', 'groceries').hitTestable(), findsNothing);
-      expect(tester.getTopLeft(_row('Groceries')).dx, 0);
+      expect(tester.getTopLeft(_row('Groceries')).dx, _rest);
 
       await _open(tester, 'Groceries');
       await _open(tester, 'Budget');
       expect(_button('pin', 'budget').hitTestable(), findsOneWidget);
       expect(_button('pin', 'groceries').hitTestable(), findsNothing);
-      expect(tester.getTopLeft(_row('Groceries')).dx, 0);
+      expect(tester.getTopLeft(_row('Groceries')).dx, _rest);
     });
 
     testWidgets('closes on a tap elsewhere', (tester) async {
@@ -216,13 +219,13 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('home-title-notes')));
       await tester.pumpAndSettle();
       expect(_button('pin', 'groceries').hitTestable(), findsNothing);
-      expect(tester.getTopLeft(_row('Groceries')).dx, 0);
+      expect(tester.getTopLeft(_row('Groceries')).dx, _rest);
 
       // A tap on the open row itself closes it rather than opening the note.
       await _open(tester, 'Groceries');
       await tester.tap(_row('Groceries'));
       await tester.pumpAndSettle();
-      expect(tester.getTopLeft(_row('Groceries')).dx, 0);
+      expect(tester.getTopLeft(_row('Groceries')).dx, _rest);
       expect(find.byKey(const ValueKey('page-home')), findsNothing);
     });
 
@@ -233,7 +236,7 @@ void main() {
       await tester.drag(_row('Groceries'), const Offset(0, -80));
       await tester.pumpAndSettle();
       expect(_button('pin', 'groceries').hitTestable(), findsNothing);
-      expect(tester.getTopLeft(_row('Groceries')).dx, 0);
+      expect(tester.getTopLeft(_row('Groceries')).dx, _rest);
     });
   });
 
@@ -274,7 +277,7 @@ void main() {
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(notes.byId('budget'), isNotNull);
-      expect(tester.getTopLeft(_row('Budget')).dx, 0);
+      expect(tester.getTopLeft(_row('Budget')).dx, _rest);
 
       await _open(tester, 'Budget');
       await tester.tap(_button('delete', 'budget'));
@@ -329,7 +332,7 @@ void main() {
       await tester.tap(find.text('Undo'));
       await tester.pumpAndSettle();
       expect(_titles(tester), before);
-      expect(tester.getTopLeft(_row('Budget')).dx, 0);
+      expect(tester.getTopLeft(_row('Budget')).dx, _rest);
       expect(tester.widgetList<Text>(count).map((t) => t.data), contains('4'));
       expect(notes.byId('budget'), same(budget));
       expect(notes.isPinned('offsite'), isTrue);
@@ -388,7 +391,7 @@ void main() {
       expect(tester.widgetList<Text>(count).map((t) => t.data), contains('4'));
       expect(notes.byId('offsite')!.updatedAt, edited);
       expect(_titles(tester), before);
-      expect(tester.getTopLeft(_row('Team offsite')).dx, 0);
+      expect(tester.getTopLeft(_row('Team offsite')).dx, _rest);
     });
 
     testWidgets("past the point, shows Archive on the Pin tile's tone at "
@@ -672,7 +675,7 @@ void main() {
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(_button('pin', 'budget').hitTestable(), findsNothing);
-      expect(tester.getTopLeft(_row('Budget')).dx, 0);
+      expect(tester.getTopLeft(_row('Budget')).dx, _rest);
       expect(page, findsOneWidget);
 
       await tester.binding.handlePopRoute();

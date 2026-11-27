@@ -103,21 +103,22 @@ void main() {
   testWidgets('Riverbank dark keeps the colours it was drawn in', (
     tester,
   ) async {
+    final palette = KapyTheme.darkPalette;
     final ink = await inkUnder(tester, KapyTheme.dark());
-    expect(ink.card, const Color(0xFF24221E));
-    expect(ink.raised, const Color(0xFF2A2824));
-    expect(ink.lifted, const Color(0xFF2F2D29));
-    expect(ink.rowHover, const Color(0xFF282622));
-    expect(ink.button, const Color(0xFF312F2A));
-    expect(ink.chip, const Color(0xFF34312C));
-    expect(ink.text, const Color(0xFFE2DCCF));
-    expect(ink.secondary, const Color(0xFFA29A8A));
-    expect(ink.quiet, const Color(0xFF968E7F));
-    expect(ink.sage, const Color(0xFF9DB384));
-    expect(ink.doneFill, const Color(0xFF37392E));
-    expect(ink.edge, const Color(0x14E2DCCF));
-    expect(ink.keyEdge, const Color(0x24E2DCCF));
-    expect(ink.hairline, const Color(0x0FE2DCCF));
+    expect(ink.card, palette.cardBackground);
+    expect(ink.raised, palette.selectedBackground);
+    expect(ink.lifted, const Color(0xFF1F1F1F));
+    expect(ink.rowHover, palette.hover);
+    expect(ink.button, const Color(0xFF212121));
+    expect(ink.chip, const Color(0xFF232323));
+    expect(ink.text, palette.textPrimary);
+    expect(ink.secondary, palette.textSecondary);
+    expect(ink.quiet, palette.textTertiary);
+    expect(ink.sage, palette.accentText);
+    expect(ink.doneFill, const Color(0xFF352317));
+    expect(ink.edge, const Color(0x14DBDBDB));
+    expect(ink.keyEdge, const Color(0x24DBDBDB));
+    expect(ink.hairline, palette.separator);
   });
 
   testWidgets('Midnight dark keeps the colours it was drawn in', (
@@ -127,19 +128,19 @@ void main() {
       tester,
       KapyTheme.dark(theme: AppTheme.midnight),
     );
-    expect(ink.card, const Color(0xFF0F0F0F));
-    expect(ink.raised, const Color(0xFF2E2E2E));
-    expect(ink.lifted, const Color(0xFF1C1C1B));
-    expect(ink.rowHover, const Color(0xFF1F1F1F));
-    expect(ink.button, const Color(0xFF1E1E1D));
-    expect(ink.chip, const Color(0xFF212020));
-    expect(ink.text, const Color(0xFFE6E2DA));
-    expect(ink.secondary, const Color(0xFFA8A39A));
-    expect(ink.quiet, const Color(0xFF9A958C));
-    expect(ink.sage, const Color(0xFFA6BC8E));
-    expect(ink.doneFill, const Color(0xFF272B23));
-    expect(ink.edge, const Color(0x14E6E2DA));
-    expect(ink.keyEdge, const Color(0x24E6E2DA));
-    expect(ink.hairline, const Color(0xFF2E2E2E));
+    expect(ink.card, const Color(0xFF060606));
+    expect(ink.raised, const Color(0xFF0C0C0B));
+    expect(ink.lifted, const Color(0xFF131313));
+    expect(ink.rowHover, const Color(0xFF0C0C0B));
+    expect(ink.button, const Color(0xFF151515));
+    expect(ink.chip, const Color(0xFF171717));
+    expect(ink.text, const Color(0xFFDBDBDB));
+    expect(ink.secondary, const Color(0xFF969696));
+    expect(ink.quiet, const Color(0xFF878787));
+    expect(ink.sage, const Color(0xFFE8772E));
+    expect(ink.doneFill, const Color(0xFF2A180C));
+    expect(ink.edge, const Color(0x14DBDBDB));
+    expect(ink.keyEdge, const Color(0x24DBDBDB));
+    expect(ink.hairline, const Color(0xFF181817));
   });
 }

@@ -305,7 +305,7 @@ void main() {
       await queue.drain(now: DateTime.now().add(Duration(hours: i + 1)));
     }
     expect(queue.entries.single.attempts, 0);
-    // Not silence any more: the chip can say "Waiting for connection" instead
+    // Not silence any more: the chip can say "Waiting for network" instead
     // of describing work that is not happening.
     expect(queue.entries.single.lastError, SpeechCodes.offline);
     expect(queue.stateFor(current()!), VoiceChipState.waiting);

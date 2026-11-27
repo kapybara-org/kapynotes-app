@@ -139,9 +139,8 @@ class PageToolbar extends StatelessWidget {
   /// and its New are hidden: [label] is what a screen reader hears.
   final ({String label, String tooltip, VoidCallback onPressed})? create;
 
-  /// Whether the list lies open over the page. The band then leaves its
-  /// hairline to the list's bar, so the dimmed page draws no second line
-  /// below it.
+  /// Whether the list lies open over the page. The band keeps its hairline:
+  /// the list's bar draws none, so it is the one line under the bar.
   final bool underList;
 
   /// Whether there is a note on the page for Saved to speak for.
@@ -242,11 +241,9 @@ class PageToolbar extends StatelessWidget {
       key: const ValueKey('page-toolbar'),
       height: AppControlMetrics.scaleBar(context, height),
       color: palette.isGlass ? palette.paperColor : null,
-      foregroundDecoration: !underList
-          ? BoxDecoration(
-              border: Border(bottom: BorderSide(color: palette.railBorder)),
-            )
-          : null,
+      foregroundDecoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: palette.railBorder)),
+      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;

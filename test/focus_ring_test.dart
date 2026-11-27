@@ -127,15 +127,15 @@ String? _unseen(WidgetTester tester, FocusNode node) {
 
 /// Checks the ring is drawn around [node], or the part of it a
 /// [FocusRingTarget] picks out, or the whole of its field when it is a text
-/// field's, and only just around it, in the theme's accent.
+/// field's, and only just around it, in the theme's focus ring colour.
 void _expectRinged(WidgetTester tester, FocusNode node, {double width = 2}) {
   final ring = _painted(tester);
   expect(ring, isNotNull, reason: 'no ring around ${_name(node)}');
   final (rrect, paint) = ring!;
-  final accent = Theme.of(
+  final colour = Theme.of(
     tester.element(_ring),
-  ).extension<CalcPalette>()!.accent;
-  expect(paint.color, isSameColorAs(accent));
+  ).extension<CalcPalette>()!.focusRing;
+  expect(paint.color, isSameColorAs(colour));
   expect(paint.style, PaintingStyle.stroke);
   expect(paint.strokeWidth, width);
   final field = node.context?.findAncestorStateOfType<State<TextField>>();
@@ -466,8 +466,8 @@ void main() {
     expect(_painted(tester), isNotNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
 
-  testWidgets('on the rail the ring goes round the tile of a space, clear of '
-      'its name', (tester) async {
+  testWidgets('on the rail the ring goes round the tile of a space, with its '
+      'name inside', (tester) async {
     await _pump(tester);
     final name = find.descendant(
       of: find.byType(SpacesRail),
@@ -492,12 +492,11 @@ void main() {
     );
     expect(
       ring.tlRadius,
-      const Radius.circular(AppRadii.surface + FocusRing.gap),
+      const Radius.circular(AppRadii.control + FocusRing.gap),
     );
-    expect(
-      ring.outerRect.bottom + paint.strokeWidth / 2,
-      lessThanOrEqualTo(tester.getRect(name).top),
-    );
+    final label = tester.getRect(name);
+    expect(ring.outerRect.contains(label.topLeft), isTrue);
+    expect(ring.outerRect.contains(label.bottomRight), isTrue);
   });
 
   testWidgets('in a drawing, Tab takes the canvas with no ring around it, and '
@@ -552,9 +551,20 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Settings').first);
     await tester.pumpAndSettle();
     final stops = await _round(tester, width: 3);
+    expect(stops.map(_name), containsAll(['Appearance', 'Increase contrast']));
+    final swatch = find.byKey(const ValueKey('theme-riverbank'));
     expect(
-      stops.map(_name),
-      containsAll(['Appearance', 'Riverbank', 'Increase contrast']),
+      stops.where(
+        (node) => find
+            .descendant(
+              of: swatch,
+              matching: find.byElementPredicate((e) => e == node.context),
+            )
+            .evaluate()
+            .isNotEmpty,
+      ),
+      hasLength(1),
+      reason: 'the Riverbank swatch takes the wider ring too',
     );
   });
 
@@ -587,7 +597,7 @@ void main() {
           surfaces.forEach((surface, color) {
             expect(
               contrast(
-                palette.accent,
+                palette.focusRing,
                 Color.alphaBlend(color, palette.editorBackground),
               ),
               greaterThanOrEqualTo(3),
