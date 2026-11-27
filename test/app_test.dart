@@ -2442,15 +2442,15 @@ void main() {
     );
   });
 
-  testWidgets("the notes list's name is handwritten, Shantell 19/24 at 500, "
+  testWidgets("the notes list's name is handwritten, Shantell 22/28 at 500, "
       'and its count stays in the system face', (tester) async {
     await pumpApp(tester);
     final title = tester
         .widget<Text>(find.byKey(const ValueKey('sidebar-space-title')))
         .style!;
     expect(title.fontFamily, AppFonts.hand);
-    expect(title.fontSize, 19);
-    expect(title.height, 24 / 19);
+    expect(title.fontSize, 22);
+    expect(title.height, 28 / 22);
     expect(title.fontVariations, contains(const FontVariation('wght', 500)));
     final count = tester
         .widget<Text>(find.byKey(const ValueKey('sidebar-space-count')))
@@ -10080,7 +10080,7 @@ void main() {
         );
       });
 
-      testWidgets('Notes and Tasks are handwritten, Shantell 26/32 at 500, '
+      testWidgets('Notes and Tasks are handwritten, Shantell 30/36 at 500, '
           'each a 44 pt target, with the count in the system face', (
         tester,
       ) async {
@@ -10093,8 +10093,8 @@ void main() {
               .first
               .style!;
           expect(words.fontFamily, AppFonts.hand);
-          expect(words.fontSize, 26);
-          expect(words.height, 32 / 26);
+          expect(words.fontSize, 30);
+          expect(words.height, 36 / 30);
           expect(
             words.fontVariations,
             contains(const FontVariation('wght', 500)),
@@ -12363,13 +12363,13 @@ void main() {
       );
       final date = find.descendant(of: heading, matching: find.text('Thu 19'));
       expect(today.style?.fontFamily, AppFonts.ui);
-      expect(today.style?.fontSize, 13);
-      expect(today.style?.color, palette.textSecondary);
+      expect(today.style?.fontSize, 17);
+      expect(today.style?.color, palette.textPrimary);
       final style = tester.widget<Text>(date).style;
       expect(style?.fontFamily, AppFonts.ui);
-      expect(style?.fontSize, 13);
-      expect(style?.height, 18 / 13);
-      expect(style?.color, palette.textQuiet);
+      expect(style?.fontSize, 15);
+      expect(style?.height, 22 / 15);
+      expect(style?.color, palette.textTertiary);
       expect(
         tester.getTopLeft(date).dx -
             tester

@@ -816,7 +816,7 @@ class KapyAiNotice extends StatelessWidget {
                       13.5,
                       16,
                       palette.textPrimary,
-                      weight: FontWeight.w500,
+                      weight: FontWeight.w400,
                     ),
                   ),
                 ),

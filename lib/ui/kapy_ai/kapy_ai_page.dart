@@ -188,7 +188,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
       15,
       20,
       palette.textPrimary,
-      weight: FontWeight.w500,
+      weight: FontWeight.w400,
     );
     return ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 48),

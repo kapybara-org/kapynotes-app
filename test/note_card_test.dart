@@ -150,7 +150,7 @@ void main() {
   });
 
   testWidgets('a card at rest has no outline, its title 14/18 at '
-      '400', (tester) async {
+      '500', (tester) async {
     await pumpCard(tester, note('Reading list\nDeep Work, Dune'));
 
     expect(card(tester).color, palette.cardBackground);
@@ -160,7 +160,7 @@ void main() {
     expect(title.fontFamily, AppFonts.ui);
     expect(title.fontSize, AppTypeScale.row);
     expect(title.height, 18 / AppTypeScale.row);
-    expect(title.fontVariations, AppWeight.variations(AppWeight.regular));
+    expect(title.fontVariations, AppWeight.variations(AppWeight.medium));
     expect(title.color, palette.textPrimary);
     expect(styleOf(tester, 'Today, 11:15').color, palette.textTertiary);
   });
@@ -337,10 +337,10 @@ void main() {
     );
 
     final label = styleOf(tester, 'Yesterday');
-    expect(label.fontSize, 12);
-    expect(label.height, 16 / 12);
-    expect(label.fontVariations, AppWeight.variations(AppWeight.regular));
-    expect(label.color, palette.textSecondary);
+    expect(label.fontSize, 13);
+    expect(label.height, 16 / 13);
+    expect(label.fontVariations, AppWeight.variations(AppWeight.semibold));
+    expect(label.color, palette.textPrimary);
     final count = styleOf(tester, '2');
     expect(count.fontSize, 12);
     expect(count.fontVariations, AppWeight.variations(AppWeight.regular));

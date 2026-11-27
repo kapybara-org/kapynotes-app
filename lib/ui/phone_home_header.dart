@@ -3,8 +3,8 @@ import 'package:material_ui/material_ui.dart';
 import '../core/theme.dart';
 import '../data/writing_streak.dart';
 import '../sync/auth_api.dart';
+import 'notes_list.dart' show CountBadge;
 import 'spaces_rail.dart' show AccountAvatar, StreakMark;
-import 'tasks/task_marks.dart';
 
 /// Home's header on a phone: the Notes and Tasks titles, the one on screen
 /// bright with its count, then the writing streak and the avatar that opens
@@ -59,46 +59,51 @@ class PhoneHomeHeader extends StatelessWidget {
         child: Row(
           spacing: 16,
           children: [
-            _Title(
-              key: const ValueKey('home-title-notes'),
-              label: 'Notes',
-              count: notesCount,
-              selected: !tasks,
-              onPressed: onNotes,
-            ),
-            if (onTasks != null)
-              _Title(
-                key: const ValueKey('home-title-tasks'),
-                label: 'Tasks',
-                count: tasksCount,
-                selected: tasks,
-                onPressed: onTasks,
-              ),
+            // The titles shrink together, only when a narrow phone at large
+            // text has no room for them beside the streak and S.
             Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                spacing: 12 - _reach,
-                children: [
-                  if (streak != null && streak.days > 0)
-                    Flexible(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: StreakMark(
-                          key: const ValueKey('phone-streak'),
-                          streak: streak,
-                          inline: true,
-                        ),
-                      ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  spacing: 16,
+                  children: [
+                    _Title(
+                      key: const ValueKey('home-title-notes'),
+                      label: 'Notes',
+                      count: notesCount,
+                      selected: !tasks,
+                      onPressed: onNotes,
                     ),
-                  AccountAvatar(
-                    key: const ValueKey('phone-account'),
-                    label: 'Settings',
-                    target: 32 + 2 * _reach,
-                    user: user,
-                    onPressed: onSettings,
-                  ),
-                ],
+                    if (onTasks != null)
+                      _Title(
+                        key: const ValueKey('home-title-tasks'),
+                        label: 'Tasks',
+                        count: tasksCount,
+                        selected: tasks,
+                        onPressed: onTasks,
+                      ),
+                  ],
+                ),
               ),
+            ),
+            Row(
+              spacing: 12 - _reach,
+              children: [
+                if (streak != null && streak.days > 0)
+                  StreakMark(
+                    key: const ValueKey('phone-streak'),
+                    streak: streak,
+                    inline: true,
+                  ),
+                AccountAvatar(
+                  key: const ValueKey('phone-account'),
+                  label: 'Settings',
+                  target: 32 + 2 * _reach,
+                  user: user,
+                  onPressed: onSettings,
+                ),
+              ],
             ),
           ],
         ),
@@ -155,18 +160,7 @@ class _Title extends StatelessWidget {
               ),
               Visibility.maintain(
                 visible: selected,
-                child: Text(
-                  '$count',
-                  maxLines: 1,
-                  softWrap: false,
-                  style: uiStyle(
-                    13,
-                    16,
-                    FontWeight.w400,
-                    palette.textQuiet,
-                    tabular: true,
-                  ),
-                ),
+                child: CountBadge(count, phone: true),
               ),
             ],
           ),

@@ -170,7 +170,7 @@ class KapyAiButton extends StatelessWidget {
       child: Text(
         label,
         maxLines: 1,
-        style: kapyText(13, 16, foreground, weight: FontWeight.w500),
+        style: kapyText(13, 16, foreground, weight: FontWeight.w400),
       ),
     );
   }

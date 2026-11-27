@@ -1430,6 +1430,42 @@ class ViewAllLink extends StatelessWidget {
   }
 }
 
+/// A count in a small circle that widens into a pill past one digit
+/// ([AppCountBadge]).
+class CountBadge extends StatelessWidget {
+  const CountBadge(this.count, {super.key, this.phone = false});
+
+  final int count;
+  final bool phone;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final extent = phone ? AppCountBadge.phone : AppCountBadge.desktop;
+    return Container(
+      constraints: BoxConstraints(minWidth: extent, minHeight: extent),
+      padding: const EdgeInsets.symmetric(horizontal: AppCountBadge.padding),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: palette.selectedBackground,
+        borderRadius: BorderRadius.circular(extent / 2),
+      ),
+      child: Text(
+        '$count',
+        maxLines: 1,
+        softWrap: false,
+        style: uiStyle(
+          phone ? 12 : 11,
+          extent,
+          FontWeight.w500,
+          palette.textSecondary,
+          tabular: true,
+        ),
+      ),
+    );
+  }
+}
+
 /// A section label over the notes list: small, quiet and in sentence case,
 /// set apart by the space round it rather than by size or a rule.
 TextStyle _sectionLabel(CalcPalette palette) => chromeStyle(

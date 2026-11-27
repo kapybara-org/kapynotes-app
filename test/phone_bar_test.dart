@@ -66,7 +66,7 @@ void main() {
           expect(text, findsOneWidget, reason: label);
           expect(
             tester.getSize(text).height,
-            lessThanOrEqualTo(13 * 1.3 + 0.5),
+            lessThanOrEqualTo(14 * 1.3 + 0.5),
             reason: label,
           );
         }
@@ -253,10 +253,11 @@ void main() {
       );
       expect(tester.getSize(plus), const Size.square(58));
       expect(
-        tester.widget<Material>(find.descendant(
-          of: plus,
-          matching: find.byType(Material),
-        ).first).color,
+        tester
+            .widget<Material>(
+              find.descendant(of: plus, matching: find.byType(Material)).first,
+            )
+            .color,
         KapyTheme.darkPalette.accent,
       );
       expect(tester.getRect(plus).left - tester.getRect(bar).right, 12);
@@ -324,7 +325,7 @@ void main() {
       );
 
       expect(icon('notes', KapyIcons.noteOutlined).color, palette.textPrimary);
-      expect(icon('notes', KapyIcons.noteOutlined).size, 18);
+      expect(icon('notes', KapyIcons.noteOutlined).size, 22);
       expect(
         icon('folders', KapyIcons.folderOutlined).color,
         palette.textSecondary,
@@ -539,7 +540,7 @@ void main() {
         expect(tester.getSize(dot), const Size.square(6));
         expect(
           (tester.widget<Container>(dot).decoration! as BoxDecoration).color,
-          Theme.of(tester.element(dot)).colorScheme.error,
+          waitingMarker,
         );
         final icon = tester.getRect(
           find.descendant(

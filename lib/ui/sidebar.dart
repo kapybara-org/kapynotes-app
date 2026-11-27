@@ -1380,8 +1380,8 @@ extension on Sidebar {
           padding: EdgeInsets.symmetric(horizontal: margin),
           child: ClipRRect(
             borderRadius: BorderRadius.vertical(
-              top: Radius.circular(first ? AppRadii.card : 0),
-              bottom: Radius.circular(last ? AppRadii.card : 0),
+              top: Radius.circular(first ? AppRadii.phoneList : 0),
+              bottom: Radius.circular(last ? AppRadii.phoneList : 0),
             ),
             child: ColoredBox(
               color: context.palette.cardBackground,

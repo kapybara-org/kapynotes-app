@@ -861,18 +861,31 @@ class EditorMetrics {
 /// The radii of the design system (handoffs/design-system/tokens.md).
 ///
 /// Controls and selected rows share [control]. A card of settings rows is
-/// [group], a card of notes in a list is [card], and a dialog, menu or
-/// floating panel is [surface]. Chips are full pills. Fills one or two steps
-/// apart separate one layer from another: no borders, no shadows.
+/// [group], a note's card is [card], a phone list's card of rows is
+/// [phoneList], and a dialog, menu or floating panel is [surface]. Chips are
+/// full pills. Fills one or two steps apart separate one layer from another:
+/// no borders, no shadows.
 class AppRadii {
   const AppRadii._();
 
   static const double small = 4;
   static const double control = 7;
-  static const double group = 10;
+  static const double group = 8;
   static const double surface = 12;
-  static const double card = 20;
+  static const double card = 14;
+  static const double phoneList = 18;
   static const double pill = 999;
+}
+
+/// A count in a small circle, such as the one beside Notes on a phone's
+/// Home: [desktop] or [phone] across, widening into a pill past one digit
+/// with [padding] each side, in the selected fill with secondary text.
+class AppCountBadge {
+  const AppCountBadge._();
+
+  static const double desktop = 16;
+  static const double phone = 18;
+  static const double padding = 4;
 }
 
 class AppHairline {

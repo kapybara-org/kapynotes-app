@@ -190,7 +190,12 @@ void main() {
         'categories, and Back leaves a search', (tester) async {
       await _open(tester, platform: defaultTargetPlatform);
       final content = find.byKey(const ValueKey('settings-dialog-content'));
-      Finder shown(SettingsSection section) => find.text(section.summary);
+      Finder shown(SettingsSection section) => find.byWidgetPredicate(
+        (widget) =>
+            widget is Text &&
+            widget.key == const ValueKey('settings-pane-title') &&
+            widget.data == section.label,
+      );
       expect(shown(SettingsSection.appearance), findsOneWidget);
 
       await stepOver(tester, content, BackForwardStep.back, by);
@@ -307,9 +312,7 @@ void main() {
       expect(
         find.descendant(
           of: _result('mode-setting'),
-          matching: find.text(
-            'Appearance',
-          ),
+          matching: find.text('Appearance'),
         ),
         findsOneWidget,
       );

@@ -210,7 +210,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                 style: uiStyle(
                   phone ? 16 : 13,
                   phone ? 22 : 20,
-                  FontWeight.w500,
+                  FontWeight.w400,
                   palette.accentText,
                 ),
               ),
@@ -237,7 +237,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
         onPressed: widget.onOpenNote,
         child: Text(
           'Open in note',
-          style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
+          style: uiStyle(13, 16, FontWeight.w400, palette.accentText),
         ),
       ),
     );
@@ -305,7 +305,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
               children: [
                 Text(
                   'Details',
-                  style: uiStyle(13, 18, FontWeight.w500, palette.textPrimary),
+                  style: uiStyle(13, 18, FontWeight.w400, palette.textPrimary),
                 ),
                 const Expanded(child: WindowDragArea(child: SizedBox.expand())),
                 TextButton(
@@ -318,7 +318,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                     style: uiStyle(
                       13,
                       18,
-                      FontWeight.w500,
+                      FontWeight.w400,
                       palette.textSecondary,
                     ),
                   ),
@@ -337,7 +337,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                     style: uiStyle(
                       15,
                       24,
-                      FontWeight.w500,
+                      FontWeight.w400,
                       palette.textPrimary,
                     ),
                   ),
@@ -543,7 +543,7 @@ class PhoneTaskPage extends StatelessWidget {
                                         uiStyle(
                                           18,
                                           26,
-                                          FontWeight.w500,
+                                          FontWeight.w400,
                                           done
                                               ? palette.textTertiary
                                               : palette.textPrimary,

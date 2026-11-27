@@ -139,7 +139,7 @@ void main() {
 
   for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
     testWidgets('${platform.name}: at the default list width the bar reads '
-        '"My notes 37" with New note and its chord, and 1 pt narrower the '
+        '"My notes 37" with New note, its chord on a slightly wider list, and 1 pt narrower the '
         'count and the word fold', (tester) async {
       AppPlatform.debugTargetPlatformOverride = platform;
       expect(SidebarWindowBar.fullWidth, LayoutPrefs.defaultSidebarWidth);
@@ -183,8 +183,8 @@ void main() {
       );
       expect(
         tester.widget<TonalButton>(newNote).shortcut,
-        platform == TargetPlatform.macOS ? isNotNull : isNull,
-        reason: 'Ctrl+N is wider than ⌘N and leaves the chord no room',
+        isNull,
+        reason: "D's 22 pt name leaves the chord no room at the default width",
       );
       expect(tester.getRect(ask).right, tester.getRect(newNote).left);
       expect(tester.getRect(newNote).right, tester.getRect(hide).left);
@@ -195,6 +195,13 @@ void main() {
       expect(find.text('New note'), findsNothing);
       expect(newNote, findsOneWidget);
       expect(ask, findsOneWidget);
+
+      // ⌘N comes back on a list 12 wider; Ctrl+N needs more room still.
+      await bar(SidebarWindowBar.fullWidth + 12);
+      expect(
+        tester.widget<TonalButton>(newNote).shortcut,
+        platform == TargetPlatform.macOS ? isNotNull : isNull,
+      );
     });
   }
 
@@ -261,7 +268,7 @@ void main() {
         find.byKey(const ValueKey('sidebar-space-title')),
       );
       expect(title.style?.fontFamily, AppFonts.hand);
-      expect(title.style?.fontSize, 19);
+      expect(title.style?.fontSize, 22);
       expect(title.style?.color, KapyTheme.lightPalette.textHeading);
     },
   );

@@ -960,7 +960,7 @@ class TasksScreenState extends State<TasksScreen> {
               Text(
                 'Newest first, by the day each was finished. Unticking one '
                 'puts it back at the end of the list.',
-                style: uiStyle(13, 18, FontWeight.w500, palette.textSecondary),
+                style: uiStyle(13, 18, FontWeight.w400, palette.textSecondary),
               ),
             ],
           ),
@@ -1829,7 +1829,7 @@ class _DoneRow extends StatelessWidget {
                           style: uiStyle(
                             16,
                             28,
-                            FontWeight.w500,
+                            FontWeight.w400,
                             palette.textMuted,
                           ),
                         ),
@@ -1871,7 +1871,7 @@ class _DoneRow extends StatelessWidget {
                 textAlign: TextAlign.right,
                 maxLines: 1,
                 softWrap: false,
-                style: uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary),
+                style: uiStyle(12.5, 16, FontWeight.w400, palette.textTertiary),
               ),
             ),
           ],

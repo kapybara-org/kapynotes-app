@@ -562,7 +562,7 @@ class _PathState extends State<_Path> {
     final above = light
         ? _chrome(12, 16, FontWeight.w400, palette.textTertiary)
         : _chrome(13, 16, FontWeight.w400, palette.textTertiary);
-    final here = _chrome(13, 16, FontWeight.w500, palette.textPrimary);
+    final here = _chrome(13, 16, FontWeight.w400, palette.textPrimary);
     final last = levels.lastOrNull;
     final base = DefaultTextStyle.of(context).style;
     final painter = TextPainter(
@@ -859,7 +859,7 @@ class _Saved extends StatelessWidget {
         Text(
           saved.label,
           maxLines: 1,
-          style: _chrome(12, 16, FontWeight.w500, palette.textTertiary),
+          style: _chrome(12, 16, FontWeight.w400, palette.textTertiary),
         ),
       ],
     );

@@ -117,7 +117,7 @@ void main() {
     expect(style.foregroundColor!.resolve({}), palette.textSecondary);
     expect(
       style.backgroundColor!.resolve({WidgetState.hovered}),
-      palette.textPrimary.withValues(alpha: 0.07),
+      isSameColorAs(palette.textPrimary.withValues(alpha: 0.07)),
     );
     expect(
       style.backgroundColor!.resolve({WidgetState.disabled}),

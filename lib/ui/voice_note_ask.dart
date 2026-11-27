@@ -958,7 +958,7 @@ class _VoiceAskState extends State<VoiceAsk> {
     ),
     label: Text(
       'Insert into note',
-      style: kapyText(13, 16, palette.accentText, weight: FontWeight.w500),
+      style: kapyText(13, 16, palette.accentText, weight: FontWeight.w400),
     ),
     style: TextButton.styleFrom(
       minimumSize: const Size(0, 28),

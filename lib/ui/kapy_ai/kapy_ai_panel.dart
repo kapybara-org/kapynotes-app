@@ -391,7 +391,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                             15,
                             20,
                             palette.textSecondary,
-                            weight: FontWeight.w500,
+                            weight: FontWeight.w400,
                           ),
                         ),
                       ),

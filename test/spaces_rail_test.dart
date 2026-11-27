@@ -124,7 +124,7 @@ void main() {
     );
     expect(
       (tester.widget<Container>(badge).decoration! as BoxDecoration).color,
-      Theme.of(tester.element(badge)).colorScheme.errorContainer,
+      waitingMarker,
     );
     expect(
       find.bySemanticsLabel('Shared with me, 2 invitations'),

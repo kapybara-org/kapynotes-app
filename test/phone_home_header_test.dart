@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/writing_streak.dart';
 import 'package:kapy_notes/sync/auth_api.dart';
+import 'package:kapy_notes/ui/notes_list.dart' show CountBadge;
 import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -76,15 +77,24 @@ void main() {
   for (final notesCount in [1, 37, 999]) {
     testWidgets('Notes $notesCount starts at the 20 pt inset and Tasks sits '
         '16 pt after its count, as the board draws it', (tester) async {
-      await pumpHeader(tester, notesCount: notesCount, width: 375);
+      // The board's 393 pt phone; a narrower one shrinks the titles to fit.
+      await pumpHeader(tester, notesCount: notesCount, width: 393);
 
       final notes = tester.getRect(notesTitle);
       final count = tester.getRect(
-        find.descendant(of: notesTitle, matching: find.text('$notesCount')),
+        find.descendant(of: notesTitle, matching: find.byType(CountBadge)),
+      );
+      expect(
+        find.descendant(
+          of: find.byType(CountBadge),
+          matching: find.text('$notesCount'),
+        ),
+        findsOne,
       );
       expect(notes.left, 20);
       expect(count.right, notes.right);
-      expect(tester.getRect(tasksTitle).left - count.right, 16);
+      // A three-digit count shrinks the titles a hair to keep S in place.
+      expect(tester.getRect(tasksTitle).left - count.right, closeTo(16, 0.25));
       expect(tester.getSize(find.byType(PhoneHomeHeader)).height, 48);
       expect(tester.takeException(), isNull);
     });

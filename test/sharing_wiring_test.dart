@@ -26,6 +26,7 @@ import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
+import 'package:kapy_notes/core/theme.dart' show waitingMarker;
 import 'package:material_ui/material_ui.dart';
 
 import 'support/sharing_devices.dart' show Device;
@@ -758,7 +759,7 @@ void main() {
     }
     expect(
       (tester.widget<Container>(foldersDot).decoration! as BoxDecoration).color,
-      Theme.of(tester.element(foldersDot)).colorScheme.error,
+      waitingMarker,
     );
     expect(tester.getSize(foldersDot), const Size.square(6));
     expect(find.bySemanticsLabel('Folders, new in Shared'), findsOneWidget);

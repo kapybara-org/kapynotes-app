@@ -103,14 +103,14 @@ void main() {
   });
   tearDown(() => kapyAiAvailable = wasAvailable);
 
-  testWidgets("the page's name is handwritten, Shantell 26/32 at 500", (
+  testWidgets("the page's name is handwritten, Shantell 30/36 at 500", (
     tester,
   ) async {
     await _pump(tester, _ai());
     final title = tester.widget<Text>(find.text('Kapy AI').first).style!;
     expect(title.fontFamily, AppFonts.hand);
-    expect(title.fontSize, 26);
-    expect(title.height, 32 / 26);
+    expect(title.fontSize, 30);
+    expect(title.height, 36 / 30);
     expect(title.fontVariations, contains(const FontVariation('wght', 500)));
   });
 

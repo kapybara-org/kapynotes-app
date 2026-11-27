@@ -127,7 +127,7 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('the title is set in Shantell at 26/32 with the meta row under '
+  testWidgets('the title is set in Shantell at 28 with the meta row under '
       'it', (tester) async {
     window(tester);
     await tester.pumpWidget(_page(_body));
@@ -135,7 +135,7 @@ void main() {
 
     final title = (_spanAt(tester, 2) as TextSpan).style!;
     expect(title.fontFamily, 'Shantell Sans');
-    expect(title.fontSize, 26);
+    expect(title.fontSize, 28);
     expect(title.fontWeight, EditorMetrics.titleWeight);
     final (firstLine, secondLine) = _rows(tester, 1);
     expect(secondLine - firstLine, moreOrLessEquals(EditorMetrics.lineHeight));
@@ -188,28 +188,30 @@ void main() {
     }
   });
 
-  testWidgets('the writing is a 680px column of the interface face at weight 400', (
-    tester,
-  ) async {
-    window(tester);
-    await tester.pumpWidget(_page(_body));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'the writing is a 680px column of the interface face at weight 400',
+    (tester) async {
+      window(tester);
+      await tester.pumpWidget(_page(_body));
+      await tester.pumpAndSettle();
 
-    final body = (_spanAt(tester, _body.indexOf('ahrefs')) as TextSpan).style!;
-    expect(body.fontFamily, AppFonts.ui);
-    expect(body.fontSize, 16);
-    expect(body.fontWeight, FontWeight.w400);
-    final field = _editable(tester);
-    expect(field.columnWidth, closeTo(EditorMetrics.columnWidth, 0.5));
-    expect(field.toGlobal(Offset.zero).dx, closeTo((1200 - 680) / 2, 2));
+      final body =
+          (_spanAt(tester, _body.indexOf('ahrefs')) as TextSpan).style!;
+      expect(body.fontFamily, AppFonts.ui);
+      expect(body.fontSize, 16);
+      expect(body.fontWeight, FontWeight.w400);
+      final field = _editable(tester);
+      expect(field.columnWidth, closeTo(EditorMetrics.columnWidth, 0.5));
+      expect(field.toGlobal(Offset.zero).dx, closeTo((1200 - 680) / 2, 2));
 
-    await tester.pumpWidget(_page(_body, width: 500));
-    await tester.pumpAndSettle();
-    expect(
-      _editable(tester).toGlobal(Offset.zero).dx,
-      EditorMetrics.padding.left,
-    );
-  });
+      await tester.pumpWidget(_page(_body, width: 500));
+      await tester.pumpAndSettle();
+      expect(
+        _editable(tester).toGlobal(Offset.zero).dx,
+        EditorMetrics.padding.left,
+      );
+    },
+  );
 
   testWidgets('a heading is Shantell at 22 with room above it', (tester) async {
     window(tester);
