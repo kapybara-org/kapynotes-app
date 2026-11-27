@@ -465,6 +465,21 @@ void main() {
       await expectStill(tester, 'diagonal');
     });
 
+    testWidgets('a drag that goes up or down first, with nothing to scroll, '
+        'however far it then goes sideways', (tester) async {
+      await _pump(tester, const _Pages());
+      final drag = await tester.startGesture(_middle);
+      await drag.moveBy(const Offset(0, kTouchSlop + 4));
+      await tester.pump();
+      for (var i = 0; i < 10; i++) {
+        await drag.moveBy(const Offset(-30, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(_left(tester, 1), 0);
+      await drag.up();
+      await expectStill(tester, 'down first');
+    });
+
     testWidgets('a scroll that has started keeps the drag, however far it '
         'then goes sideways', (tester) async {
       await _pump(
