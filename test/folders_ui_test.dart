@@ -622,10 +622,10 @@ void main() {
       final month = find.byKey(const ValueKey('day-strip-month'));
       expect(tester.getTopLeft(month).dx, bar.left + 10);
       expect(
-        find.descendant(of: month, matching: find.text('August–September')),
+        find.descendant(of: month, matching: find.text('Aug–Sep')),
         findsOneWidget,
       );
-      for (final key in ['page-path', 'page-saved', 'page-share']) {
+      for (final key in ['page-path', 'page-saved']) {
         expect(find.byKey(ValueKey(key)), findsNothing, reason: key);
       }
       final more = tester.getRect(find.byKey(const ValueKey('page-more')));

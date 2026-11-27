@@ -1712,6 +1712,56 @@ void main() {
     );
   });
 
+  Future<void> findInNote(WidgetTester tester, String words) async {
+    tester.state<NoteEditorState>(find.byType(NoteEditor)).openFind();
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('note-find-field')),
+      words,
+    );
+    await tester.pumpAndSettle();
+  }
+
+  // ⌘F in a note: the find bar across the top of the page, on the second of
+  // three matches, that one filled as the selection is and the others in
+  // clay. In a page as narrow as the notes list leaves it, and a wide one.
+  for (final brightness in Brightness.values) {
+    for (final (width, size) in [
+      ('narrow', const Size(760, 520)),
+      ('wide', const Size(1440, 900)),
+    ]) {
+      testWidgets('desktop ${brightness.name}, finding in a note, $width', (
+        tester,
+      ) async {
+        await pumpForGolden(tester, size: size, brightness: brightness);
+        await findInNote(tester, 'eur');
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(find.text('2 of 3'), findsOneWidget);
+        await expectLater(
+          find.byType(KapyNotesApp),
+          matchesGoldenFile(
+            'goldens/desktop_${brightness.name}_find_in_note_$width.png',
+          ),
+        );
+      });
+    }
+  }
+
+  testWidgets('desktop dark, finding nothing in a note', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    await findInNote(tester, 'porto');
+    expect(find.text('No matches'), findsOneWidget);
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_find_in_note_none.png'),
+    );
+  });
+
   testWidgets('desktop dark, sidebar collapsed', (tester) async {
     // The page starts a margin in from the rail, as in Paper's window with
     // the list hidden.
@@ -2271,6 +2321,28 @@ void main() {
         });
       }
     }
+  }
+
+  // The narrowest phone at twice the text size: a calculation that can't sit
+  // on one row beside its pill runs the full width with the pill under it.
+  for (final brightness in Brightness.values) {
+    testWidgets('phone calculations at 320 pt and 2x text, '
+        '${brightness.name}', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await pumpForGolden(
+        tester,
+        size: const Size(320, 1500),
+        brightness: brightness,
+        platform: TargetPlatform.iOS,
+      );
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile(
+          'goldens/phone_calculations_320_2x_${brightness.name}.png',
+        ),
+      );
+    });
   }
 
   // From 720 pt a tablet keeps the desktop layout: the list beside the page

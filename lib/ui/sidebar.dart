@@ -28,6 +28,7 @@ import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'folders_ui.dart';
 import 'join/joining_ui.dart' show joinedLine;
+import 'keycap.dart';
 import 'member_avatars.dart';
 import 'note_picks.dart';
 import 'note_row_swipe.dart';
@@ -2633,7 +2634,17 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
   String get query => widget.query;
   String get placeholder => widget.placeholder;
 
-  Widget? _end(CalcPalette palette, double extent) {
+  /// What ends the field: Clear while it holds a search, else the chord
+  /// that opens it, where the placeholder keeps at least as much of the
+  /// [room] beside the icon as the chord takes. A long one in a list dragged
+  /// narrow is left out rather than crowding the placeholder off the field,
+  /// and Settings still shows it.
+  Widget? _end(
+    BuildContext context,
+    CalcPalette palette,
+    double extent, {
+    double room = double.infinity,
+  }) {
     final onClear = widget.onClear;
     if (query.isNotEmpty && onClear != null) {
       // Inside the field's tap region, so Clear keeps the keyboard up.
@@ -2653,6 +2664,9 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
     }
     final shortcut = widget.shortcut;
     if (shortcut == null || !AppPlatform.hasPointer || !_hovering) return null;
+    if (Keycap.widthOf(context, shortcut.keycapLabel, plain: true) * 2 > room) {
+      return null;
+    }
     return Tooltip(
       message: '$placeholder · ${shortcut.displayLabel}',
       child: Semantics(
@@ -2682,8 +2696,9 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
     final phone = widget.phone;
     final onSearch = widget.onSearch;
     final trailing = widget.trailing;
-    final end = _end(palette, phone ? 32 : 20);
     if (!phone) {
+      const icon = 14.0;
+      const gap = 8.0;
       final field = Semantics(
         button: true,
         label: searching ? 'Search, $query' : placeholder,
@@ -2705,30 +2720,37 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
                 color: palette.fillRest,
                 borderRadius: BorderRadius.circular(AppRadii.control),
               ),
-              child: Row(
-                children: [
-                  KapyIcon(
-                    KapyIcons.searchRounded,
-                    size: 14,
-                    color: palette.textTertiary,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      searching ? query : placeholder,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 16 / 13,
-                        color: searching
-                            ? palette.textPrimary
-                            : palette.textTertiary,
+              child: LayoutBuilder(
+                builder: (context, constraints) => Row(
+                  children: [
+                    KapyIcon(
+                      KapyIcons.searchRounded,
+                      size: icon,
+                      color: palette.textTertiary,
+                    ),
+                    const SizedBox(width: gap),
+                    Expanded(
+                      child: Text(
+                        searching ? query : placeholder,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 16 / 13,
+                          color: searching
+                              ? palette.textPrimary
+                              : palette.textTertiary,
+                        ),
                       ),
                     ),
-                  ),
-                  ?end,
-                ],
+                    ?_end(
+                      context,
+                      palette,
+                      20,
+                      room: constraints.maxWidth - icon - gap,
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2745,6 +2767,7 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
       );
     }
 
+    final end = _end(context, palette, 32);
     final field = widget.field;
     final well = MouseRegion(
       cursor: SystemMouseCursors.text,

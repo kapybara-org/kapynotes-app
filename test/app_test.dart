@@ -11,6 +11,8 @@ import 'package:flutter/gestures.dart'
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:camera_platform_interface/camera_platform_interface.dart'
+    show CameraPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
@@ -44,6 +46,7 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/writing_streak.dart';
+import 'package:kapy_notes/images/camera_capture.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
@@ -87,7 +90,6 @@ import 'package:kapy_notes/ui/sidebar_timestamp.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
 import 'package:kapy_notes/ui/tag_ui.dart';
-import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/phone_home_header.dart';
@@ -96,6 +98,7 @@ import 'package:kapy_notes/ui/window_drag_area.dart';
 import 'audio/voice_recording_controller_test.dart'
     show FakeRecordingControls, FakeVoiceRecorder;
 import 'kapy_icon_finder.dart';
+import 'images/fake_camera.dart';
 import 'note_editor_test.dart' show sendShortcut;
 import 'quick_capture_test.dart' show stubLaunchIntent;
 import 'support/back_forward.dart';
@@ -113,9 +116,17 @@ class MemoryStore extends LocalStore {
   @override
   Future<void> flush() async {}
 
-  /// Writes straight through: no debounce timer to outlive the test.
+  /// Writes straight through: no delay timer to outlive the test.
   @override
   void put(String key, Object? value) => data[key] = value;
+
+  /// Still asks for [flush], so a note switch reaches a store that logs its
+  /// writes, and leaves [writes] as it was: this store has no disk to wait on.
+  @override
+  void putNow(String key, Object? value) {
+    data[key] = value;
+    unawaited(flush());
+  }
 }
 
 class DeferredMemoryStore extends MemoryStore {
@@ -2092,10 +2103,16 @@ void main() {
     expect(find.text('Unpin note'), findsOneWidget);
   });
 
-  testWidgets('a page too narrow for Saved in its bar puts it on the note\'s '
-      'date line', (tester) async {
+  testWidgets('typing says "Saving…", then "Saved", then nothing, on the '
+      'note\'s date line where the page is too narrow for it in its bar', (
+    tester,
+  ) async {
     final inBar = find.byKey(const ValueKey('page-saved'));
     final onDateLine = find.byKey(const ValueKey('note-saved'));
+    final field = find.descendant(
+      of: find.byType(NoteEditor),
+      matching: noteField,
+    );
     await pumpApp(
       tester,
       size: LayoutPrefs.minimumWindowSize,
@@ -2105,12 +2122,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getSize(find.byType(PageToolbar)).width, lessThan(560));
     expect(inBar, findsNothing);
-    expect(tester.widget<Text>(onDateLine).data, 'Saved');
+    expect(onDateLine, findsNothing);
+
+    await tester.enterNote('alpha beta', field);
+    await tester.pump();
+    expect(inBar, findsNothing);
+    expect(
+      find.descendant(of: onDateLine, matching: find.text('Saving…')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 1100));
+    expect(
+      find.descendant(of: onDateLine, matching: find.text('Saved')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2400));
+    expect(onDateLine, findsNothing);
 
     tester.view.physicalSize = const Size(1100, 760);
     await tester.pumpAndSettle();
-    expect(inBar, findsOneWidget);
+    await tester.enterNote('alpha beta gamma', field);
+    await tester.pump();
+    expect(
+      find.descendant(of: inBar, matching: find.text('Saving…')),
+      findsOneWidget,
+    );
     expect(onDateLine, findsNothing);
+    await tester.pump(const Duration(milliseconds: 1100));
+    expect(
+      find.descendant(of: inBar, matching: find.text('Saved')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2400));
+    expect(inBar, findsNothing);
   });
 
   testWidgets('a first run opens on a page, with the notes list closed', (
@@ -2166,7 +2210,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(Sidebar), findsNothing);
       expect(barrier, findsNothing);
-      for (final key in ['page-show-list', 'page-share', 'page-more']) {
+      for (final key in ['page-show-list', 'page-more']) {
         expect(find.byKey(ValueKey(key)), findsOneWidget);
       }
 
@@ -2457,7 +2501,6 @@ void main() {
       tester.getSize(pageButton('page-more', IconButton)),
       const Size.square(32),
     );
-    expect(tester.getSize(pageButton('page-share', FilledButton)).height, 32);
     expect(
       tester.getSize(find.byType(NoteRow).first).height,
       NoteCardFace.height,
@@ -2955,10 +2998,8 @@ void main() {
           await tester.pumpAndSettle();
 
           final page = tester.getRect(bar);
-          for (final key in ['page-share', 'page-more']) {
-            final control = tester.getRect(find.byKey(ValueKey(key)));
-            expect(page.intersect(control), control, reason: '$key, $reason');
-          }
+          final more = tester.getRect(find.byKey(const ValueKey('page-more')));
+          expect(page.intersect(more), more, reason: 'page-more, $reason');
           final screen = Offset.zero & (window / zoom);
           for (final key in ['rail-notes', 'rail-drawings']) {
             final item = tester.getRect(find.byKey(ValueKey(key)));
@@ -5177,9 +5218,8 @@ void main() {
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "
-        'month in full at its top left and the week centred on the page', (
-      tester,
-    ) async {
+        'month in three letters at its top left and the week centred on the '
+        'page', (tester) async {
       await library(tester);
       final bar = tester.getRect(find.byKey(const ValueKey('page-toolbar')));
       final list = tester.getRect(find.byType(SidebarWindowBar));
@@ -5188,7 +5228,7 @@ void main() {
       expect(list.height, 52);
       final month = find.byKey(const ValueKey('day-strip-month'));
       expect(
-        find.descendant(of: month, matching: find.text('November')),
+        find.descendant(of: month, matching: find.text('Nov')),
         findsOneWidget,
       );
       expect(tester.getTopLeft(month).dx, bar.left + 10);
@@ -5265,7 +5305,7 @@ void main() {
       for (final width in [1440.0, 1490.0]) {
         await window(width);
         expect(
-          find.descendant(of: month, matching: find.text('November')),
+          find.descendant(of: month, matching: find.text('Nov')),
           findsOneWidget,
           reason: '$width',
         );
@@ -5778,7 +5818,9 @@ void main() {
     final note = notes.create(
       body: 'Quote for the deck\n☑ One\n☐ Two\n☐ Three',
     );
-    final quarter = tags.create('Q4')!;
+    // The line no longer carries a Saved at rest, so the tag is long enough
+    // to be the one that has no room beside the progress.
+    final quarter = tags.create('Q4 planning')!;
     tags.addTag(note.id, quarter.id);
     await pumpApp(
       tester,
@@ -6159,8 +6201,8 @@ void main() {
       expect(find.byType(SettingsDialog), findsOneWidget);
     });
 
-    testWidgets('its shortcut, and Find\'s, open it over a hidden list, and '
-        'it finds nested content', (tester) async {
+    testWidgets('its shortcut opens it over a hidden list, and it finds '
+        'nested content', (tester) async {
       await pumpApp(tester, sidebarVisible: false);
       notes.create(
         body:
@@ -6170,7 +6212,8 @@ void main() {
       await tester.pumpAndSettle();
 
       final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
-      expect(binding.logicalKey, LogicalKeyboardKey.keyK);
+      expect(binding.logicalKey, LogicalKeyboardKey.keyF);
+      expect(binding.shift, isTrue);
       await pressShortcut(tester, binding);
       expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
       expect(prefs.sidebarVisible, isFalse);
@@ -6178,21 +6221,40 @@ void main() {
       await search(tester, 'launch contrast');
       expect(menuRow('Launch plan'), findsOneWidget);
       expect(menuRow('Weekend errands'), findsNothing);
+    });
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    // F opened Search as well as its own chord did.
+    testWidgets('F finds words in the open note, not in every note', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'Camping\nPack the tent\nTent pegs');
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+      await tester.tap(find.widgetWithText(NoteRow, 'Camping'));
+      await tester.pumpAndSettle();
 
       await pressShortcut(
         tester,
         ShortcutBinding(
           logicalKey: LogicalKeyboardKey.keyF,
           physicalKey: PhysicalKeyboardKey.keyF,
-          meta: binding.meta,
-          control: binding.control,
+          meta: AppPlatform.isMacOS,
+          control: !AppPlatform.isMacOS,
         ),
       );
-      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+      expect(find.byKey(const ValueKey('note-find-bar')), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('note-find-field')),
+        'tent',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 2'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('note-find-bar')), findsNothing);
     });
 
     testWidgets('the words become a note, or a search Archive keeps', (
@@ -6246,9 +6308,9 @@ void main() {
       expect(notes.notes.first.isArchived, isFalse);
     });
 
-    testWidgets('with words selected in a note, its key links instead', (
-      tester,
-    ) async {
+    // K opened Search too, wherever no words were selected.
+    testWidgets('K links the words selected in a note, and opens nothing '
+        'else', (tester) async {
       await pumpApp(tester);
       notes.create(body: 'Read the tram timetable');
       await tester.pumpAndSettle();
@@ -6261,13 +6323,12 @@ void main() {
       );
       await tester.tap(editor);
       await tester.pumpAndSettle();
+      final link = shortcuts.bindingFor(ShortcutAction.formatLink)!;
+      expect(link.logicalKey, LogicalKeyboardKey.keyK);
       tester.widget<NoteField>(editor).controller.selection =
           const TextSelection(baseOffset: 9, extentOffset: 23);
       await tester.pump();
-      await pressShortcut(
-        tester,
-        shortcuts.bindingFor(ShortcutAction.findNotes)!,
-      );
+      await pressShortcut(tester, link);
       expect(find.byKey(const ValueKey('command-menu')), findsNothing);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -6275,11 +6336,8 @@ void main() {
       tester.widget<NoteField>(editor).controller.selection =
           const TextSelection.collapsed(offset: 4);
       await tester.pump();
-      await pressShortcut(
-        tester,
-        shortcuts.bindingFor(ShortcutAction.findNotes)!,
-      );
-      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+      await pressShortcut(tester, link);
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
     });
 
     testWidgets('New drawing and the Go to keys work from anywhere', (
@@ -6430,7 +6488,7 @@ void main() {
                 '${platform.name}, ${width.round()} wide, list '
                 '${listShown ? 'shown' : 'hidden'}';
             expect(modeSwitch(), findsNothing, reason: reason);
-            for (final key in ['page-share', 'page-more']) {
+            for (final key in ['page-more']) {
               final control = tester.getRect(find.byKey(ValueKey(key)));
               expect(
                 tester.getRect(bar).intersect(control),
@@ -6887,6 +6945,28 @@ void main() {
       await tester.pumpAndSettle();
     }
 
+    // No note is in front of you on Tasks, so F is left unbound there, while
+    // the page's other keys still answer.
+    testWidgets('F opens nothing on Tasks', (tester) async {
+      await pumpWithPair(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+      await tester.pumpAndSettle();
+
+      final modifier = AppPlatform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      await tester.sendKeyDownEvent(modifier);
+      final handled = await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+      expect(handled, isFalse);
+      expect(find.byKey(const ValueKey('note-find-bar')), findsNothing);
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+
+      await press(tester, ShortcutAction.findNotes);
+      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+    });
+
     Future<void> pumpWithWaiting(WidgetTester tester, {Size? size}) async {
       await notes.load();
       notes.create(body: 'Errands\n☐ Pay the rent\n☐ Call the bank');
@@ -6981,13 +7061,29 @@ void main() {
         await pumpWithPair(tester);
         await tester.tap(find.byKey(const ValueKey('rail-tasks')));
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+      });
+
+      testWidgets('on ${platform.name}, ↵ stops choosing and starts your pick '
+          'so far', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpWithPair(tester);
+        await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(find.text('Most important so far'), findsOneWidget);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
       });
@@ -7007,10 +7103,10 @@ void main() {
         );
 
         await press(tester, ShortcutAction.showTasks);
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
       });
 
       testWidgets('on ${platform.name}, New task from Notes still puts the '
@@ -7024,15 +7120,15 @@ void main() {
         expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
 
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
       });
     }
   });
@@ -7235,13 +7331,26 @@ void main() {
         expect(tester.getSize(toolbar).width, closeTo(width, 0.01));
       }
 
+      // Typing gives it something to say.
+      var typed = 0;
+      Future<void> type() async {
+        await tester.enterNote(
+          'alpha ${typed++}',
+          find.descendant(of: find.byType(NoteEditor), matching: noteField),
+        );
+        await tester.pump();
+      }
+
       await pageWidth(580);
+      await type();
       expect(inBar, findsNothing);
       expect(onDateLine, findsOneWidget);
 
       await pageWidth(596);
+      await type();
       expect(inBar, findsOneWidget);
       expect(onDateLine, findsNothing);
+      await tester.pump(const Duration(seconds: 4));
     });
   });
 
@@ -7819,8 +7928,7 @@ void main() {
       notes.create(body: 'Trip plan');
       await pumpApp(tester, account: account);
 
-      await tester.tap(find.byKey(const ValueKey('page-share')));
-      await tester.pumpAndSettle();
+      await pickPageAction(tester, 'share');
 
       // Not the share sheet, which would have nothing to share with, and not
       // General either: the pane that signs in, and the reason it opened.
@@ -11579,10 +11687,9 @@ void main() {
         expect(find.byType(NoteField), findsOneWidget);
       });
 
-      testWidgets("offers New note, New task, New voice note and New drawing, "
-          "in M05's order, each at least 44 pt, and no Quick find", (
-        tester,
-      ) async {
+      testWidgets("offers New note, New task, New voice note, New photo or "
+          "video and New drawing, in M05's order, each at least 44 pt, and no "
+          "Quick find", (tester) async {
         await pumpPlus(tester);
         await open(tester);
         expect(
@@ -11593,14 +11700,48 @@ void main() {
                     .evaluate())
               (text.widget as Text).data,
           ],
-          ['New note', 'New task', 'New voice note', 'New drawing'],
+          [
+            'New note',
+            'New task',
+            'New voice note',
+            'New photo or video',
+            'New drawing',
+          ],
         );
-        for (final value in ['note', 'task', 'voice', 'drawing']) {
+        for (final value in ['note', 'task', 'voice', 'camera', 'drawing']) {
           final row = find.byKey(ValueKey('phone-new-$value'));
           expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
         }
         expect(find.byKey(const ValueKey('phone-new-find')), findsNothing);
         expect(find.text('Quick find'), findsNothing);
+      });
+
+      testWidgets('New photo or video makes a note and opens the camera; '
+          'closed with nothing kept, it leaves no note behind', (tester) async {
+        final temp = Directory.systemTemp.createTempSync('kapy-camera-');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        final previous = CameraPlatform.instance;
+        CameraPlatform.instance = FakeCameraPlatform(temp);
+        addTearDown(() => CameraPlatform.instance = previous);
+        await pumpPlus(tester);
+        final before = notes.notes.length;
+
+        await choose(tester, 'camera');
+        expect(find.byType(CameraCapturePage), findsOneWidget);
+        expect(notes.notes.length, before + 1);
+
+        await tester.tap(find.byKey(const ValueKey('camera-close')));
+        await tester.pumpAndSettle();
+        expect(find.byType(CameraCapturePage), findsNothing);
+        expect(find.byType(NoteEditor), findsOneWidget);
+
+        // As after New voice note: the blank note goes once another is
+        // opened.
+        await tester.tap(find.byKey(const ValueKey('page-home')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Groceries').first);
+        await tester.pumpAndSettle();
+        expect(notes.notes.length, before);
       });
 
       testWidgets('New note makes a note and opens it', (tester) async {
@@ -13045,13 +13186,15 @@ void main() {
       await tester.pumpAndSettle();
 
       await openSpace(tester, 'drawings');
+      await openMore();
       expect(
         tester
-            .widget<TonalButton>(find.byKey(const ValueKey('page-share')))
-            .onPressed,
-        isNull,
+            .widget<PopupMenuItem<String>>(
+              find.byKey(const ValueKey('page-more-share')),
+            )
+            .enabled,
+        isFalse,
       );
-      await openMore();
       expect(find.byKey(const ValueKey('page-more-pin')), findsNothing);
       expect(find.byKey(const ValueKey('page-more-hide')), findsNothing);
       expect(find.byKey(const ValueKey('page-more-archive')), findsNothing);
@@ -15393,9 +15536,13 @@ void main() {
       (tester) async {
         AppPlatform.debugTargetPlatformOverride = platform;
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        // At 1x no result is longer than the column, so a larger text size
+        // makes one wrap even on a row of its own, under its writing.
+        tester.platformDispatcher.textScaleFactorTestValue = 1.75;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
         final semantics = tester.ensureSemantics();
         await notes.load();
-        notes.create(body: 'Trip\ny = 123456789012 km in mi\ny');
+        notes.create(body: 'Trip\nweek 44 2026');
         await pumpApp(tester, size: const Size(320, 800));
         final chip = find.byType(ResultChip).last;
         final result = tester.widget<ResultChip>(chip).result.text;
