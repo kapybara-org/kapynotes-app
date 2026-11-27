@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/foundation.dart';
@@ -3126,6 +3127,20 @@ void main() {
         )) {
           expect(paragraph.didExceedMaxLines, isFalse);
         }
+        // The writing wraps between words, never inside a word or a number.
+        for (final word in ['October', '1147.50', 'hotel']) {
+          final start = body.indexOf(word);
+          final rows = editable
+              .boxesFor(
+                TextSelection(
+                  baseOffset: start,
+                  extentOffset: start + word.length,
+                ),
+              )
+              .map((box) => box.top.round())
+              .toSet();
+          expect(rows, hasLength(1), reason: '"$word" breaks across rows');
+        }
       });
     }
   }
@@ -3273,7 +3288,12 @@ void main() {
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     await tester.pumpAndSettle();
 
-    final pill = tester.getRect(chipWithText('2,295.00 EUR'));
+    final pill = tester.getRect(
+      find.descendant(
+        of: chipWithText('2,295.00 EUR'),
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
     final editable = NoteDriver(tester);
     final calculation = editable.boxesFor(
       TextSelection(
@@ -3282,15 +3302,21 @@ void main() {
       ),
     );
     for (final box in calculation) {
+      final words = Rect.fromPoints(
+        editable.toGlobal(Offset(box.left, box.top)),
+        editable.toGlobal(Offset(box.right, box.bottom)),
+      );
       expect(
-        editable.toGlobal(Offset(box.right, 0)).dx,
-        lessThanOrEqualTo(pill.left),
+        words.right <= pill.left || words.bottom <= pill.top,
+        isTrue,
+        reason: 'the pill covers the writing at $words',
       );
     }
   });
 
-  testWidgets('on a 390 pt phone, prose reaches the right margin and a '
-      'result line keeps its value whole at the right', (tester) async {
+  testWidgets('on a 390 pt phone, prose reaches the right margin, and a '
+      'calculation too long to sit beside its result runs the full width '
+      'with the result whole under it', (tester) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -3322,7 +3348,9 @@ void main() {
       find.descendant(of: chip, matching: find.byType(RichText)),
     );
     expect(paragraph.didExceedMaxLines, isFalse);
-    final pill = tester.getRect(chip);
+    final pill = tester.getRect(
+      find.descendant(of: chip, matching: find.byType(AnimatedContainer)),
+    );
     expect(pill.right, closeTo(columnRight, 1));
 
     final calculation = NoteDriver(tester).boxesFor(
@@ -3331,13 +3359,22 @@ void main() {
         extentOffset: body.length,
       ),
     );
-    for (final box in calculation) {
-      expect(
-        editable.toGlobal(Offset(box.right, 0)).dx,
-        lessThanOrEqualTo(pill.left),
-        reason: 'the calculation wraps short of its result',
-      );
-    }
+    final writingRight = calculation
+        .map((box) => editable.toGlobal(Offset(box.right, 0)).dx)
+        .reduce(math.max);
+    final writingBottom = calculation
+        .map((box) => editable.toGlobal(Offset(0, box.bottom)).dy)
+        .reduce(math.max);
+    expect(
+      writingRight,
+      greaterThan(pill.left),
+      reason: 'the calculation keeps the full width',
+    );
+    expect(
+      pill.top,
+      greaterThanOrEqualTo(writingBottom),
+      reason: 'its result sits under it',
+    );
   });
 
   testWidgets('keeps results pinned to their lines while scrolling', (

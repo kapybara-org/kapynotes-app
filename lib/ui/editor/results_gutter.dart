@@ -133,9 +133,9 @@ class ResultChip extends StatefulWidget {
 
   static final _railHeights = <(String, bool, double, double), double>{};
 
-  /// The desktop pill's padding, a step shorter so the pill still sits
-  /// inside a phone's row at its larger result size.
-  static const _railPadding = EdgeInsets.symmetric(horizontal: 10, vertical: 4);
+  /// The desktop pill's padding, two steps shorter so the pill sits inside a
+  /// phone's row at its larger result size with a gap to the next one.
+  static const _railPadding = EdgeInsets.symmetric(horizontal: 10, vertical: 3);
 
   /// Round ends on a pill of one row. A pill a long result wraps in keeps
   /// those corners rather than turning into a lozenge that cuts its words.
@@ -222,6 +222,8 @@ class _ResultChipState extends State<ResultChip> {
       softWrap: !pill,
       overflow: pill ? TextOverflow.ellipsis : null,
       textAlign: TextAlign.right,
+      // A wrapped result's pill hugs its longest row.
+      textWidthBasis: TextWidthBasis.longestLine,
       style: ResultChip._textStyle(total: total, color: ink),
     );
     final check = KapyIcon(
