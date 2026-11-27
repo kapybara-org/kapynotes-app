@@ -1,7 +1,10 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/widgets.dart' show StringCharacters;
+
 import '../ai/kapy_ai.dart';
+import '../ai/kapy_chat_records.dart';
 import '../data/notes_store.dart';
 import 'recap_digest.dart';
 import 'recap_filter.dart';
@@ -10,9 +13,33 @@ import 'recap_material.dart';
 import 'recap_period.dart';
 
 /// The most a recap's record may take of its chat's record, in UTF-8 bytes
-/// of JSON. A chat record holds about 3 KB, and the rest is the title's and
-/// the model's.
-const int recapRecordMax = 2000;
+/// of JSON: what the server takes of one ([chatPayloadMax]) less the rest of
+/// a recap chat's record at its longest. That is its id, kind and stamps
+/// (166 bytes), a title of at most 64 ([recapTitle] gives 31 at most) and a
+/// model of at most 256 (the longest this build names takes 80), with 128
+/// to spare for a field a later build adds.
+const int recapRecordMax = chatPayloadMax - 166 - 64 - 256 - 128;
+
+/// The most often a note a recap never read may take words out of it. Past
+/// it, a record keeps the filter of every note it read alone, which drops
+/// every part where it matches but matches less often.
+const double recapDropsMost = 0.004;
+
+/// The most UTF-8 bytes of a topic's name a recap's record keeps.
+const int recapTopicBytesMax = 40;
+
+/// [name] as a recap's record keeps a topic's: at most [recapTopicBytesMax]
+/// bytes of it, cut between graphemes.
+String recapTopicName(String name) {
+  final kept = StringBuffer();
+  var bytes = 0;
+  for (final grapheme in name.characters) {
+    bytes += utf8.encode(grapheme).length;
+    if (bytes > recapTopicBytesMax) break;
+    kept.write(grapheme);
+  }
+  return kept.toString();
+}
 
 /// The most tasks each of a recap's lists keeps.
 const int recapTasksMax = 6;
@@ -126,7 +153,10 @@ class RecapRecord {
   /// lists and the digest: which notes a recap read keeps its words honest,
   /// and outweighs the lists. Where that room is too little, [allRead] is
   /// served first, since it alone says whether a hidden note takes anything
-  /// out, and the parts share what it leaves in proportion.
+  /// out, and the parts share what it leaves in proportion. Where a note
+  /// read by none would then take words out more often than
+  /// [recapDropsMost], and [allRead] alone, in all the room, would do so
+  /// less often, the record keeps [allRead] alone and no [read].
   /// `at` goes first, so where two devices each made one, the later is the
   /// greater JSON and every device keeps it (mergeExtra).
   Map<String, Object?> toJson() {
@@ -149,7 +179,8 @@ class RecapRecord {
       'chart': numbers.chart,
       'run': numbers.longestRun,
       'topics': [
-        for (final topic in numbers.topics) [_cut(topic.name, 40), topic.notes],
+        for (final topic in numbers.topics)
+          [recapTopicName(topic.name), topic.notes],
       ],
       'before': [
         previous.notes,
@@ -170,15 +201,12 @@ class RecapRecord {
       final all = allRead;
       shell = [
         for (final part in parts)
-          [part.first, part.last, RecapFilter.maxHashes, ''],
+          [part.first, part.last, part.notes.count, RecapFilter.roomyM, ''],
       ];
-      whole = all == null ? null : [RecapFilter.maxHashes, ''];
+      whole = all == null ? null : [all.count, RecapFilter.roomyM, ''];
       final room = max(0, (recapRecordMax - size(json(tasks: 0))) * 3 ~/ 4);
       final wanted = parts.fold(0, (sum, part) => sum + part.notes.bytes);
-      final left = max(
-        parts.length * RecapFilter.minBytes,
-        room - (all?.bytes ?? 0),
-      );
+      final left = max(0, room - (all?.bytes ?? 0));
       final sized = [
         for (final part in parts)
           part.notes.sized(
@@ -189,13 +217,38 @@ class RecapRecord {
       ];
       shell = [
         for (final (index, part) in parts.indexed)
-          [part.first, part.last, sized[index].hashes, sized[index].toBase64()],
+          [
+            part.first,
+            part.last,
+            sized[index].count,
+            sized[index].m,
+            sized[index].toBase64(),
+          ],
       ];
       if (all != null) {
         final notes = all.sized(
           min(all.bytes, room - sized.fold(0, (sum, it) => sum + it.bytes)),
         );
-        whole = [notes.hashes, notes.toBase64()];
+        whole = [notes.count, notes.m, notes.toBase64()];
+        final drops =
+            notes.falseRate *
+            (1 - sized.fold(1.0, (none, it) => none * (1 - it.falseRate)));
+        if (drops > recapDropsMost) {
+          final (withParts, withWhole) = (shell, whole);
+          shell = null;
+          whole = [all.count, RecapFilter.roomyM, ''];
+          final alone = all.sized(
+            min(
+              all.bytes,
+              max(0, (recapRecordMax - size(json(tasks: 0))) * 3 ~/ 4),
+            ),
+          );
+          if (alone.falseRate < drops) {
+            whole = [alone.count, alone.m, alone.toBase64()];
+          } else {
+            (shell, whole) = (withParts, withWhole);
+          }
+        }
       }
     }
     var tasks = recapTasksMax;
@@ -288,8 +341,9 @@ class RecapRecord {
       digest: digest is String && digest.isNotEmpty ? digest : null,
       read: _reads(raw['read'], period.days),
       allRead: switch (raw['readAll']) {
-        [final hashes, final bits] => RecapFilter.fromJson(
-          hashes,
+        [final count, final m, final bits] => RecapFilter.fromJson(
+          count,
+          m,
           bits,
           whole: true,
         ),
@@ -307,10 +361,11 @@ class RecapRecord {
       if (part case [
         final int first,
         final int last,
-        final hashes,
+        final count,
+        final m,
         final bits,
       ] when first >= 0 && first <= last && last < days) {
-        final notes = RecapFilter.fromJson(hashes, bits);
+        final notes = RecapFilter.fromJson(count, m, bits);
         if (notes == null) return null;
         parts.add((first: first, last: last, notes: notes));
       } else {

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:kapy_notes/ai/answer_engine.dart';
@@ -169,3 +170,25 @@ RecapPeriod dayOf(DateTime day) =>
 
 RecapPeriod periodOf(DateTime day, RecapKind kind) =>
     RecapPeriod.containing(day, kind, firstWeekday: DateTime.monday);
+
+/// A recap filter's slot for [id] among [count] × [m], its coding written
+/// out again here (RecapFilter), so that a change to it fails.
+int recapSlotOf(String id, int count, int m, {bool whole = false}) {
+  var hash = 0x811c9dc5;
+  for (final byte in utf8.encode(id)) {
+    hash = ((hash ^ byte) * 0x01000193) & 0xffffffff;
+  }
+  hash ^= whole ? 0x7f4a7c15 : 0;
+  hash ^= hash >> 16;
+  hash = (hash * 0x85ebca6b) & 0xffffffff;
+  hash ^= hash >> 13;
+  hash = (hash * 0xc2b2ae35) & 0xffffffff;
+  hash ^= hash >> 16;
+  return (hash * count * m) >> 32;
+}
+
+/// The bits a recap filter of [m] slots a note codes a gap's low part in.
+int recapRiceBits(int m) {
+  final bits = ((m * 45426) >> 16).bitLength - 1;
+  return bits < 0 ? 0 : bits;
+}

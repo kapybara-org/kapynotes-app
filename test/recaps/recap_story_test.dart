@@ -280,6 +280,40 @@ void main() {
       expectAllLeftOut(await reopenWith(parted(), hiddenAt: since));
     });
 
+    test('a remake that comes back with no labelled lines has no words '
+        'gone, and a prune that empties a worded answer has', () async {
+      final chat = parted();
+      final record = recapOf(chat)!;
+      final later = DateTime.utc(2026, 11, 26);
+      final remade = recapChat(
+        chat,
+        record: RecapRecord(
+          period: record.period,
+          timeZone: record.timeZone,
+          firstWeekday: record.firstWeekday,
+          madeAt: later,
+          numbers: record.numbers,
+          fingerprint: record.fingerprint,
+        ),
+        answer: 'A quiet day, nothing much to tell.',
+        model: KapyModel.cloud,
+        now: later,
+      );
+      final quiet = await reopenWith(remade);
+      expect(quiet.lines.text, isEmpty);
+      expect(quiet.wordsGone, isFalse, reason: 'nothing was hidden');
+
+      final pruned = recapPruned(
+        await reopenWith(chat, hiddenAt: since),
+        now: later,
+      )!;
+      expect(
+        RecapStory.read(pruned, world.material(thursday))!.wordsGone,
+        isTrue,
+        reason: 'the answer before it, under the same record, had words',
+      );
+    });
+
     test('a note hidden before the recap was made drops nothing', () async {
       final story = await reopenWith(parted(), hiddenAt: before);
       expect(story.lines.next, 'Pay for it before Friday');
@@ -547,6 +581,83 @@ void main() {
         expect(highlights(story), ['deck', 'sat']);
       });
 
+      test(
+        'a set that does not read back takes out more, never less',
+        () async {
+          chat = recapReading([
+            (first: 0, last: 3, notes: RecapFilter.of(['deck', 'old'])),
+            (first: 4, last: 6, notes: RecapFilter.of(['fri', 'sat'])),
+          ]);
+          KapyChat broken({bool part = false, bool whole = false}) {
+            String cut(String bits) => bits.substring(0, bits.length - 4);
+            final recap = chat.recap!;
+            final parts = [
+              for (final read in recap['read']! as List) [...read as List],
+            ];
+            final all = [...recap['readAll']! as List];
+            if (part) parts.last.last = cut(parts.last.last as String);
+            if (whole) all.last = cut(all.last as String);
+            return KapyChat(
+              id: chat.id,
+              title: chat.title,
+              createdAt: chat.createdAt,
+              updatedAt: chat.updatedAt,
+              model: chat.model,
+              messages: chat.messages,
+              recap: {...recap, 'read': parts, 'readAll': all},
+            );
+          }
+
+          expect(highlights(await hide('sat')), ['deck']);
+          chat = broken(part: true);
+          expect(
+            highlights(await hide('sat')),
+            isEmpty,
+            reason: 'a part that does not read back may have read anything',
+          );
+        },
+      );
+
+      test('sets that do not read back take everything out, even for a note '
+          'no part read', () async {
+        final now = DateTime.utc(2026, 11, 26);
+        world.note('new', '2026-11-26T10:00:00Z', body: 'New\nAfter it');
+        await world.load();
+        chat = recapReading([
+          (first: 0, last: 3, notes: RecapFilter.of(['deck', 'old'])),
+          (first: 4, last: 6, notes: RecapFilter.of(['fri', 'sat'])),
+        ]);
+        expect((await hide('new')).lines.title, 'Drafts and a walk');
+        final recap = chat.recap!;
+        String cut(Object? set) {
+          final bits = (set! as List).last as String;
+          return bits.substring(0, bits.length - 4);
+        }
+
+        chat = KapyChat(
+          id: chat.id,
+          title: chat.title,
+          createdAt: chat.createdAt,
+          updatedAt: now,
+          model: chat.model,
+          messages: chat.messages,
+          recap: {
+            ...recap,
+            'read': [
+              for (final read in recap['read']! as List)
+                [...(read as List).take(4), cut(read)],
+            ],
+            'readAll': [
+              ...(recap['readAll']! as List).take(2),
+              cut(recap['readAll']),
+            ],
+          },
+        );
+        final story = await hide('new');
+        expect(story.lines.title, isNull);
+        expect(highlights(story), isEmpty);
+      });
+
       test('a note the first part read: that part only', () async {
         final story = await hide('old');
         expect(story.lines.title, isNull);
@@ -780,6 +891,37 @@ void main() {
     expect(
       story.topics.map((topic) => (topic.name, topic.colour)),
       unorderedEquals([('Work', 'plum'), ('Travel', null)]),
+    );
+  });
+
+  test('a tag topic with a long name takes its colour by the name the '
+      'record keeps', () async {
+    final long = world.tags.create('話' * 20)!;
+    world.tags.setTags('plan', [long.id]);
+    world.tags.recolour(long.id, 'rose');
+    final chat = recapChat(
+      null,
+      record: RecapRecord(
+        period: thursday,
+        timeZone: 'UTC',
+        firstWeekday: DateTime.monday,
+        madeAt: made,
+        numbers: RecapNumbers.of(
+          world.digest(thursday),
+          world.material(thursday),
+        ),
+        fingerprint: world.material(thursday).fingerprint,
+      ),
+      answer: 'TITLE: A day',
+      model: KapyModel.cloud,
+      now: made,
+    );
+    expect(
+      RecapStory.read(
+        chat,
+        world.material(thursday),
+      )!.topics.map((topic) => (topic.name, topic.colour)),
+      contains(('話' * 13, 'rose')),
     );
   });
 

@@ -15,6 +15,7 @@ import '../ui/sidebar_timestamp.dart';
 import 'recap_digest.dart';
 import 'recap_lines.dart';
 import 'recap_period.dart';
+import 'recap_record.dart';
 
 enum RecapSource { note, voice, taskDone, taskOpen }
 
@@ -146,7 +147,7 @@ class RecapMaterial {
       {
         for (final note in held.keys)
           for (final tag in tags.tagsOf(note.id))
-            tag.name.v.toLowerCase(): tag.colour.v,
+            recapTopicName(tag.name.v).toLowerCase(): tag.colour.v,
       },
     );
   }
@@ -161,8 +162,9 @@ class RecapMaterial {
   /// hidden may have read.
   final List<RecapHidden> hidden;
 
-  /// The colour of each tag the period's notes carry, by its name in lower
-  /// case: one of [tagColours] or [noTagColour].
+  /// The colour of each tag the period's notes carry, by its name as a
+  /// recap's record keeps it ([recapTopicName]), in lower case: one of
+  /// [tagColours] or [noTagColour].
   final Map<String, String> tagColours;
 
   List<RecapItem> within(DateTime first, DateTime last) => [

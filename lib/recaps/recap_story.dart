@@ -165,9 +165,11 @@ class RecapStory {
     final left = kept.text.isEmpty ? 0 : kept.text.split('\n').length;
     final answers = [
       for (final message in chat.messages)
-        if (message.role == KapyRole.assistant) message.text,
+        if (message.role == KapyRole.assistant) message,
     ];
-    final before = answers.reversed.skip(1);
+    final pruned = answers.reversed
+        .skip(1)
+        .where((answer) => !answer.at.isBefore(record.madeAt));
     return RecapStory(
       record: record,
       lines: kept,
@@ -176,7 +178,8 @@ class RecapStory {
       dropped: left < said,
       wordsGone:
           left == 0 &&
-          (said > 0 || before.any((text) => worded(text.split('\n')) > 0)),
+          (said > 0 ||
+              pruned.any((answer) => worded(answer.text.split('\n')) > 0)),
       done: words(RecapSource.taskDone, record.numbers.done),
       open: words(RecapSource.taskOpen, record.numbers.open),
       voice: quote == null
@@ -203,8 +206,11 @@ class RecapStory {
   /// Whether every word Kapy AI wrote was left out because notes it may
   /// have come from are hidden or gone now, here or when an earlier opening
   /// kept the chat without them ([recapPruned]): its newest answer has no
-  /// words, but an older one did. The closing card says so and offers to
-  /// make it again, and a remake with words ends it.
+  /// words, but one written under the same record did. A prune keeps the
+  /// record, and a remake writes a new one made after every answer before
+  /// it, so a remake that comes back with no words is not one of these. The
+  /// closing card says so and offers to make it again, and a remake with
+  /// words ends it.
   final bool wordsGone;
 
   /// The chat it was read from.
