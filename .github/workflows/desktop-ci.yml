@@ -63,11 +63,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: subosito/flutter-action@v2
+      - uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
 
       - run: flutter pub get
 
@@ -134,22 +132,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
-        id: flutter
+      - uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-          pub-cache: false
-
-      # flutter-action keys its own pub cache on hashFiles('**/pubspec.lock'),
-      # a walk of the whole checkout that has run past its 120 s limit on the
-      # macOS runner. The root pubspec.lock is the only one, so this keeps the
-      # same key without the walk.
-      - uses: actions/cache@v5
-        with:
-          path: ${{ steps.flutter.outputs.PUB-CACHE-PATH }}
-          key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ hashFiles('pubspec.lock') }}
 
       - run: flutter pub get
 
@@ -235,14 +220,23 @@ jobs:
       # for x64 Linux only. On arm64 the SDK is a clone of the release tag,
       # which downloads its own arm64 Dart SDK and engine on first run.
       - if: matrix.arch == 'x86_64'
-        uses: subosito/flutter-action@v2
+        uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
 
-      - if: matrix.arch == 'aarch64'
+      # Saved only from main, like .github/actions/flutter (KAP-383).
+      - if: matrix.arch == 'aarch64' && github.ref == 'refs/heads/main'
         uses: actions/cache@v4
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '3'
+        with:
+          path: ~/flutter
+          key: flutter-${{ env.FLUTTER_VERSION }}-linux-arm64
+
+      - if: matrix.arch == 'aarch64' && github.ref != 'refs/heads/main'
+        uses: actions/cache/restore@v4
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '3'
         with:
           path: ~/flutter
           key: flutter-${{ env.FLUTTER_VERSION }}-linux-arm64
