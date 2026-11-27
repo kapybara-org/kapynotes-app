@@ -140,8 +140,8 @@ void main() {
 
   for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
     testWidgets('${platform.name}: at the default list width the bar reads '
-        '"My notes 37" with New note, and 1 pt narrower the count and the '
-        'word fold', (tester) async {
+        '"My notes 37" with New note and its chord, and 1 pt narrower the '
+        'count and the word fold', (tester) async {
       AppPlatform.debugTargetPlatformOverride = platform;
       expect(SidebarWindowBar.fullWidth, LayoutPrefs.defaultSidebarWidth);
       Future<void> bar(double width) => tester.pumpWidget(
@@ -184,8 +184,8 @@ void main() {
       );
       expect(
         tester.widget<TonalButton>(newNote).shortcut,
-        isNull,
-        reason: 'the handwritten title and Geist leave the chord no room',
+        platform == TargetPlatform.macOS ? isNotNull : isNull,
+        reason: 'Ctrl+N is wider than ⌘N and leaves the chord no room',
       );
       expect(tester.getRect(ask).right, tester.getRect(newNote).left);
       expect(tester.getRect(newNote).right, tester.getRect(hide).left);

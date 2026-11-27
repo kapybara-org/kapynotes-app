@@ -2191,7 +2191,7 @@ class SidebarWindowBar extends StatelessWidget {
                   final room =
                       constraints.maxWidth -
                       widthOf(title, titleStyle) -
-                      8 -
+                      (onAskKapy == null ? 8 : 0) -
                       gap -
                       32 -
                       (onAskKapy == null ? 0 : 32 + gap);
@@ -2256,7 +2256,9 @@ class SidebarWindowBar extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      // The sparkle's own 8 around its icon keeps the count
+                      // 8 from it, as the count is 8 from the title.
+                      if (onAskKapy == null) const SizedBox(width: 8),
                       if (onAskKapy != null)
                         CompactIconButton(
                           key: const ValueKey('sidebar-ask-kapy'),

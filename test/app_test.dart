@@ -2548,13 +2548,11 @@ void main() {
     expect((LayoutPrefs(store)..load()).writingFont, WritingFont.clean);
   });
 
-  testWidgets('on a 320 pt phone all five writing styles keep their letters', (
-    tester,
-  ) async {
+  Future<void> openWritingStyles(WidgetTester tester, double width) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(320, 568);
+    tester.view.physicalSize = Size(width, 700);
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
@@ -2578,9 +2576,33 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('writing-font-pixel')),
+    );
+  }
+
+  testWidgets('a phone shares a choice equally when its labels fit, each '
+      'label measured in the face it is drawn in', (tester) async {
+    double width(String key) => tester.getSize(find.byKey(ValueKey(key))).width;
+
+    await openWritingStyles(tester, 320);
+    expect({
+      for (final paper in PaperStyle.values) width('paper-style-${paper.name}'),
+    }, hasLength(1));
+
+    tester.view.physicalSize = const Size(390, 700);
+    await tester.pumpAndSettle();
+    expect({
+      for (final font in WritingFont.values) width('writing-font-${font.name}'),
+    }, hasLength(1));
+  });
+
+  testWidgets('on a 320 pt phone all five writing styles keep their letters', (
+    tester,
+  ) async {
+    await openWritingStyles(tester, 320);
     for (final font in WritingFont.values) {
       final segment = find.byKey(ValueKey('writing-font-${font.name}'));
-      await tester.ensureVisible(segment);
       final label = find.descendant(of: segment, matching: find.byType(Text));
       final shown = find.descendant(
         of: segment,

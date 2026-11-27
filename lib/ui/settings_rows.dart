@@ -823,21 +823,24 @@ class SettingsSegmented<T> extends StatelessWidget {
                 // Options share the track equally, unless a phone's share is
                 // too narrow for a label: then each is as wide as its label.
                 final scaler = MediaQuery.textScalerOf(context);
+                final base = DefaultTextStyle.of(context).style;
+                int measure(T option) {
+                  final painter = TextPainter(
+                    text: TextSpan(
+                      text: labelFor(option),
+                      style: base.merge(labelStyle(option)),
+                    ),
+                    textDirection: TextDirection.ltr,
+                    textScaler: scaler,
+                    maxLines: 1,
+                  )..layout();
+                  final width = painter.width.ceil() + 16;
+                  painter.dispose();
+                  return width;
+                }
+
                 final widths = [
-                  for (final option in options)
-                    if (pointer)
-                      1
-                    else
-                      (TextPainter(
-                            text: TextSpan(
-                              text: labelFor(option),
-                              style: labelStyle(option),
-                            ),
-                            textDirection: TextDirection.ltr,
-                            textScaler: scaler,
-                            maxLines: 1,
-                          )..layout()).width.ceil() +
-                          16,
+                  for (final option in options) pointer ? 1 : measure(option),
                 ];
                 final share =
                     (constraints.maxWidth - 2 * (options.length - 1)) /
