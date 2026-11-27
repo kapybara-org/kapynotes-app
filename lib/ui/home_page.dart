@@ -1033,11 +1033,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     try {
       if (stopping) {
-        await recording.finishRecordingAndFlush();
-        if (mounted) {
-          progress.success('Recording stopped');
-        } else {
+        final silent = await recording.finishRecordingAndFlush(
+          discardSilent: true,
+        );
+        if (!mounted) {
           progress.dismiss();
+        } else if (silent) {
+          progress.error('Nothing saved: the microphone was silent');
+        } else {
+          progress.success('Recording stopped');
         }
         return;
       }
@@ -3600,16 +3604,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     });
   }
 
-  /// What the search fields read: Drawings' names what it finds, and the
-  /// rest offer to ask Kapy AI only while it can be asked.
+  /// What the phone's and Tasks' search fields read: Drawings' names what
+  /// it finds, and the rest offer to ask Kapy AI only while it can be asked.
+  /// The list beside the rail just says Search.
   String get _searchPlaceholder => _kapyAiOn && _space != LibrarySpace.drawings
       ? 'Search or Ask Kapy AI'
-      : _listSearchPlaceholder;
-
-  /// What the desktop list's field reads, Kapy AI or not, as D01 draws it:
-  /// Ask Kapy has its own button beside it, and ⌘K's results still offer to
-  /// ask. Drawings' names what it finds.
-  String get _listSearchPlaceholder => _space == LibrarySpace.drawings
+      : _space == LibrarySpace.drawings
       ? 'Search drawings'
       : _offersFolders && !_usesCompactLayout
       ? 'Search notes and folders'
@@ -3619,11 +3619,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// chip is attached. With [question] it first starts a new chat and asks
   /// it there, which is how ⌘K's Ask row and its Tab reach Kapy AI. On a
   /// phone, the note's own button ([fromNote]) has the sheet rest over the
-  /// note; everything else opens it at full height.
-  void _openKapyAi({String? question, bool fromNote = false}) {
+  /// note; everything else opens it at full height. [typing] opens it with
+  /// its field ready to type in, keyboard up, as the bar's New chat does.
+  /// With [aboutNote] false the chat is about no note, whichever is open
+  /// behind: the Kapy AI tab's + is not a note's own button.
+  void _openKapyAi({
+    String? question,
+    bool fromNote = false,
+    bool typing = false,
+    bool aboutNote = true,
+  }) {
     final ai = _kapyAi;
     if (ai == null || !ai.enabled) return;
-    final shown = _shownNote(_selectedId)?.id;
+    final shown = aboutNote ? _shownNote(_selectedId)?.id : null;
     final noteId = shown != null && _kapyNoteTitle(shown) != null
         ? shown
         : null;
@@ -3642,6 +3650,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       showKapyAiSheet(
         context,
         rest: fromNote && noteId != null,
+        typing: typing,
         panel: (close, expand, compact) => _kapyAiPanel(
           ai,
           onClose: close,
@@ -3841,12 +3850,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _hiddenMode ||
       (widget.prefs.hiddenFolderVisible && widget.notes.hiddenNotes.isNotEmpty);
 
-  /// The notes filter, the sort and the list/cards switch, for the list
-  /// beside the rail. A phone's filter row has the filter and the tags
-  /// instead, and the archive, Hidden Notes and the pinned list keep their
-  /// own order, so they have no sort. On a folder's page the filter sits
-  /// beside the switch, and leaves out Archive and Hidden, whose notes are
-  /// in no folder.
+  /// The View menu, for the list beside the rail: what it shows, how it
+  /// groups the notes, and List or Grid. A phone's filter row has the filter
+  /// and the tags instead, and the archive, Hidden Notes and the pinned list
+  /// keep their own order, so they have no Group by. On a folder's page it
+  /// leaves out Archive and Hidden, whose notes are in no folder.
   Widget _notesControls(
     LibrarySpace space, {
     bool phone = false,
@@ -3863,7 +3871,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     archivedCount: _narrowed(widget.notes.archivedNotes).length,
     media: space == LibrarySpace.drawings ? null : _mediaFilter,
     onMediaChanged: (media) => setState(() => _mediaFilter = media),
-    onClear: _clearFilter,
     tags: widget.tags == null ? null : _tagsNarrowed,
     onTagsChanged: (tags) => setState(() => _tagFilter = tags),
     when: _when,
@@ -3875,9 +3882,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     onGroupingChanged: sort
         ? (grouping) => widget.prefs.notesGrouping = grouping
         : null,
-    alignEnd: onFolder,
     phone: phone,
   );
+
+  /// What narrows the list beside the rail, as one chip under its search
+  /// or before the View icon on a folder's page; null while nothing does.
+  Widget? _notesFilterChip(LibrarySpace space) {
+    final media = space == LibrarySpace.drawings ? null : _mediaFilter;
+    final tags = widget.tags == null ? null : _tagsNarrowed;
+    if (!NotesFilterChip.shows(
+      show: _show,
+      media: media,
+      tags: tags,
+      when: _when,
+    )) {
+      return null;
+    }
+    return NotesFilterChip(
+      show: _show,
+      media: media,
+      tags: tags,
+      when: _when,
+      onClear: _clearFilter,
+    );
+  }
 
   /// The page's days, in My notes and on a folder in front, counting what
   /// the list shows or what the folder holds; a day picked there opens those
@@ -4528,7 +4556,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               searchShortcut: widget.shortcuts.hintFor(
                 ShortcutAction.findNotes,
               ),
-              searchPlaceholder: _listSearchPlaceholder,
               archiveShortcut: widget.shortcuts.hintFor(
                 ShortcutAction.deleteNote,
               ),
@@ -4541,6 +4568,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 space,
                 sort: !_specialMode && !_showingPinnedOnly,
               ),
+              filterChip: _notesFilterChip(space),
               grouping: widget.prefs.notesGrouping,
               ownDay: widget.days == null ? null : _ownDayOf,
               ofPickedDay: switch (_workspace.dayInTabs) {
@@ -5241,7 +5269,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       folderId: folderId,
       filed: filed,
       notes: _filtered(filed),
-      controls: _notesControls(LibrarySpace.notes, onFolder: true),
+      controls: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          if (_notesFilterChip(LibrarySpace.notes) case final chip?) ...[
+            Flexible(child: chip),
+            const SizedBox(width: 8),
+          ],
+          _notesControls(LibrarySpace.notes, onFolder: true),
+        ],
+      ),
       cards: widget.prefs.noteCards,
       group: (context, notes) => groupNotes(
         notes,
@@ -5698,12 +5735,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           KapyAiPage(
             kapyAi: ai,
             onOpenChat: _openKapyAi,
-            onManageAccounts: () => _showSettings(
-              section: SettingsSection.voice,
-              reveal: ai.accounts.isEmpty
-                  ? 'kapy-ai-toggle'
-                  : kapyAccountRowId(ai.accounts.first.kind),
-            ),
             account: _phoneAccount(),
             now: widget.notes.now,
           ),
@@ -5758,11 +5789,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       showKapyAi: _kapyAiOn,
       createLabel: tasks != null
           ? 'New task'
+          : ai != null
+          ? 'New chat'
           : _drawingsOnly
           ? 'New drawing'
           : 'New note',
       onCreate: tasks != null
           ? _createInSpace
+          : ai != null
+          ? () {
+              ai.newChat();
+              _openKapyAi(typing: true, aboutNote: false);
+            }
           : () => _createNote(drawing: _drawingsOnly),
       createActions: [
         const KapyMenuAction(
