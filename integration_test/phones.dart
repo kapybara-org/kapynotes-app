@@ -23,6 +23,7 @@ import 'kapy_ai_page_test.dart' as kapy_ai_page;
 import 'kapy_ai_sheet_test.dart' as kapy_ai_sheet;
 import 'phone_about_test.dart' as phone_about;
 import 'phone_bar_android_test.dart' as phone_bar_android;
+import 'phone_camera_test.dart' as phone_camera;
 import 'phone_format_bar_test.dart' as phone_format_bar;
 import 'phone_home_test.dart' as phone_home;
 import 'phone_keyboard_test.dart' as phone_keyboard;
@@ -44,6 +45,7 @@ const _tests = <String, void Function()>{
   'kapy_ai_sheet': kapy_ai_sheet.main,
   'phone_about': phone_about.main,
   'phone_bar_android': phone_bar_android.main,
+  'phone_camera': phone_camera.main,
   'phone_format_bar': phone_format_bar.main,
   'phone_home': phone_home.main,
   'phone_keyboard': phone_keyboard.main,

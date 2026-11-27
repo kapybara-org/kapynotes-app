@@ -171,29 +171,39 @@ void main() {
     expect(notes.byId(made.id)!.body, startsWith('zz'));
   });
 
-  for (final (name, key, selected) in [
-    ('the menu', LogicalKeyboardKey.keyK, false),
-    ("find's own chord", LogicalKeyboardKey.keyF, true),
-  ]) {
-    testWidgets('what is typed right after $name opens goes into its field', (
-      tester,
-    ) async {
+  testWidgets('what is typed right after the menu opens goes into its field', (
+    tester,
+  ) async {
+    await pump(tester);
+    await selectAllOfTheList(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+
+    await press(tester, ShortcutAction.findNotes);
+    await type(tester, 'milk');
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+    expect(focusedText(tester), 'milk');
+    expect(notes.byId(listId)!.body, _list);
+  });
+
+  testWidgets(
+    "what is typed right after find's own chord opens goes into its field",
+    (tester) async {
       await pump(tester);
       await selectAllOfTheList(tester);
-      if (!selected) {
-        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-        await tester.pumpAndSettle();
-      }
 
-      await chord(tester, key);
+      await press(tester, ShortcutAction.findInNote);
       await type(tester, 'milk');
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+      expect(find.byKey(const ValueKey('note-find-bar')), findsOneWidget);
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
       expect(focusedText(tester), 'milk');
       expect(notes.byId(listId)!.body, _list);
-    });
-  }
+    },
+  );
 
   testWidgets('what is typed right after Link goes into its address', (
     tester,
@@ -262,7 +272,7 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
     await tester.pumpAndSettle();
 
-    await chord(tester, LogicalKeyboardKey.keyK);
+    await press(tester, ShortcutAction.findNotes);
     await type(tester, 'mi');
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();

@@ -40,15 +40,26 @@ typedef NoteCaret = ({
 });
 
 /// What the lines draw besides their text: the selection, in
-/// [selectionColor] while it shows, and the caret, in [caretColor] while it
-/// shows. While [handles] are given, the lines holding the selection's ends
-/// lead them, for the selection handles to follow.
+/// [selectionColor] while it shows, the caret, in [caretColor] while it
+/// shows, and what a find in the note [found]. While [handles] are given, the
+/// lines holding the selection's ends lead them, for the selection handles to
+/// follow.
 typedef NoteMarks = ({
   TextSelection selection,
   Color? selectionColor,
   Color? caretColor,
   NoteCaret caret,
   ({LayerLink start, LayerLink end})? handles,
+  NoteFound? found,
+});
+
+/// What a find in the note found: [ranges], sorted and apart, each filled
+/// in [color] under the writing, and the one at [current] in [currentColor].
+typedef NoteFound = ({
+  List<TextRange> ranges,
+  int current,
+  Color color,
+  Color currentColor,
 });
 
 /// What a line shows past its writing, such as a calculation's result:
@@ -244,6 +255,7 @@ class NoteLayout {
       pixelRatio: 1,
     ),
     handles: null,
+    found: null,
   );
   set marks(NoteMarks value) {
     if (value == _marks) return;
@@ -997,6 +1009,9 @@ class RenderNoteLine extends RenderBox
     final start = layout.lines.startOf(_line);
     final end = start + layout.lines[_line].length;
     final selection = marks.selection;
+    if (marks.found case final found?) {
+      _paintFound(context.canvas, offset, found, start, end);
+    }
     final selectionColor = marks.selectionColor;
     final fill =
         selectionColor != null &&
@@ -1098,6 +1113,40 @@ class RenderNoteLine extends RenderBox
     }
     if (selection.end >= start && selection.end <= end) {
       lead(handles.end, first: false);
+    }
+  }
+
+  /// Fills what a find found on this line, [start] to [end] in the note,
+  /// under its writing, the way the selection is filled.
+  void _paintFound(
+    Canvas canvas,
+    Offset offset,
+    NoteFound found,
+    int start,
+    int end,
+  ) {
+    final ranges = found.ranges;
+    var first = 0;
+    var last = ranges.length;
+    while (first < last) {
+      final middle = (first + last) >> 1;
+      if (ranges[middle].end <= start) {
+        first = middle + 1;
+      } else {
+        last = middle;
+      }
+    }
+    for (var i = first; i < ranges.length && ranges[i].start < end; i++) {
+      final from = math.max(ranges[i].start, start) - start;
+      final to = math.min(ranges[i].end, end) - start;
+      if (from >= to) continue;
+      _paintSelection(
+        canvas,
+        offset,
+        from,
+        to,
+        Paint()..color = i == found.current ? found.currentColor : found.color,
+      );
     }
   }
 
