@@ -29,7 +29,7 @@ dir=$2
 pkg=com.kapybara.kapynotes
 data=/data/user/0/$pkg
 out=$dir/evidence
-probe_minutes=${PROBE_MINUTES:-20}
+probe_minutes=${PROBE_MINUTES:-30}
 status=0
 mkdir -p "$out"
 

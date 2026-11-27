@@ -55,8 +55,16 @@ Future<void> main() async {
   const channel = MethodChannel(PlatformLiveTranslation.channelName);
 
   _mark('available=${await live.isAvailable()}');
+  // The recogniser learns which languages it has from its own download of
+  // its configuration, which can come a few minutes after a fresh boot.
+  final waited = Stopwatch()..start();
+  var spoken = (await live.languages()).spoken;
+  while (spoken.isEmpty && waited.elapsed < const Duration(minutes: 10)) {
+    await Future<void>.delayed(const Duration(seconds: 15));
+    spoken = (await live.languages()).spoken;
+  }
   _mark(
-    'spoken=${((await live.languages()).spoken.toList()..sort()).join(',')}',
+    'spoken=${(spoken.toList()..sort()).join(',')} after=${waited.elapsed.inSeconds}s',
   );
 
   var pair = _pairs.first;
