@@ -499,6 +499,32 @@ void main() {
       expect(_state(tester).turns, [false]);
     });
 
+    testWidgets("on Android, Back's left edge still goes back from inside "
+        "the system's gesture edges, as the system's own back does there, "
+        'but turns nothing', (tester) async {
+      var backs = 0;
+      await _pump(
+        tester,
+        _Pages(start: 0, onBack: () => backs++),
+        platform: TargetPlatform.android,
+        gestureInsets: const EdgeInsets.symmetric(horizontal: 30),
+      );
+      await tester.timedDragFrom(
+        const Offset(4, 400),
+        const Offset(200, 0),
+        const Duration(milliseconds: 300),
+      );
+      await tester.pumpAndSettle();
+      expect(backs, 1);
+      await tester.timedDragFrom(
+        const Offset(_width - 4, 400),
+        const Offset(-200, 0),
+        const Duration(milliseconds: 300),
+      );
+      await tester.pumpAndSettle();
+      expect(_state(tester).turns, isEmpty);
+    });
+
     testWidgets('on an iPhone, a drag from the left edge of a page that can '
         "go back is iOS's own", (tester) async {
       await _pump(tester, const SizedBox());

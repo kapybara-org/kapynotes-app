@@ -59,11 +59,13 @@ Map<String, Object?> _note(String id, String body, DateTime edited) => {
 
 final _day = find.byKey(const ValueKey('page-day'));
 
-/// Whether the note's page shows [date] of November as its day.
-bool _on(int date) => find
-    .descendant(of: _day, matching: find.text('$date'))
-    .evaluate()
-    .isNotEmpty;
+/// The words on the note's page's day chip.
+List<String> _dayShown(WidgetTester tester) => [
+  for (final text in tester.widgetList<Text>(
+    find.descendant(of: _day, matching: find.byType(Text)),
+  ))
+    ?text.data,
+];
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -111,9 +113,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle(const Duration(seconds: 1));
+      // The page opens ready to type; the turns here start with the keyboard
+      // down, once it has gone.
       FocusManager.instance.primaryFocus?.unfocus();
+      await Future<void>.delayed(const Duration(seconds: 1));
       await tester.pumpAndSettle();
-      expect(_on(19), isTrue);
+      expect(_dayShown(tester), contains('19'));
 
       final frames = <FrameTiming>[];
       void count(List<FrameTiming> timings) => frames.addAll(timings);
@@ -122,6 +127,7 @@ void main() {
         await deviceAction('record:page-turn-$name'),
         anyOf(isNull, startsWith('no host')),
       );
+      addTearDown(() => deviceAction('record-stop'));
 
       final width = tester.getSize(find.byType(MaterialApp)).width;
       Offset header() => tester.getCenter(_day) + const Offset(60, 0);
@@ -137,11 +143,11 @@ void main() {
 
       // A note's page: a day back, a short drag let go, then a day on.
       await drag(header(), 0.5, 500);
-      expect(_on(18), isTrue);
+      expect(_dayShown(tester), contains('18'));
       await drag(header(), 0.12, 500);
-      expect(_on(18), isTrue);
+      expect(_dayShown(tester), contains('18'));
       await drag(header(), -0.5, 500);
-      expect(_on(19), isTrue);
+      expect(_dayShown(tester), contains('19'));
 
       // Home, turned to Tasks and back to Notes from its header.
       await tester.tap(find.byKey(const ValueKey('page-home')));
@@ -153,10 +159,6 @@ void main() {
       await drag(tester.getCenter(title), 0.5, 500);
       expect(find.byType(TasksScreen), findsNothing);
 
-      expect(
-        await deviceAction('record-stop'),
-        anyOf(isNull, startsWith('no host')),
-      );
       SchedulerBinding.instance.removeTimingsCallback(count);
       await tester.pump();
       expect(tester.takeException(), isNull);

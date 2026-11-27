@@ -15,7 +15,9 @@ import 'package:material_ui/material_ui.dart';
 /// [PageTurn.steepest]. So a scroll, a tap, a long press or a wobble never
 /// moves the page, and a row's own swipe or a sideways scroller under the
 /// finger, which take a drag sooner, keep theirs. On Android a drag from
-/// inside the system's back gesture edges never starts one.
+/// inside the system's back gesture edges never starts one, though on a
+/// page with [PageTurn.onBack] the left edge goes back, as the system's own
+/// gesture there does.
 ///
 /// [before] and [after] are built only while they show, except [before] with
 /// [keepBefore], which stays built out of sight, as a list does under the
@@ -130,7 +132,10 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  bool _allowed(PointerDownEvent event) {
+  /// Whether a drag from [event] may start, on the page or, with [edge],
+  /// on Android's left edge strip, which goes back as the system's own back
+  /// gesture there does.
+  bool _allowed(PointerDownEvent event, {bool edge = false}) {
     if (_fadingTo != null) return false;
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return false;
@@ -140,7 +145,7 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
     final x = event.position.dx;
     switch (Theme.of(context).platform) {
       case TargetPlatform.android
-          when x < edges.left || x > media.size.width - edges.right:
+          when !edge && (x < edges.left || x > media.size.width - edges.right):
         return false;
       case TargetPlatform.iOS
           when x < PageTurn.backEdge &&
@@ -277,14 +282,14 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final on =
         widget.before != null || widget.after != null || widget.onBack != null;
-    Map<Type, GestureRecognizerFactory> turn({required double start}) => {
+    Map<Type, GestureRecognizerFactory> turn({bool edge = false}) => {
       if (on)
         _SidewaysDragRecognizer:
             GestureRecognizerFactoryWithHandlers<_SidewaysDragRecognizer>(
               () => _SidewaysDragRecognizer(debugOwner: this),
               (drag) => drag
-                ..start = start
-                ..allowed = _allowed
+                ..start = edge ? PageTurn.slop : PageTurn.start
+                ..allowed = ((event) => _allowed(event, edge: edge))
                 ..dragStartBehavior = DragStartBehavior.down
                 ..onStart = _begin
                 ..onUpdate = _drag
@@ -293,7 +298,7 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
             ),
     };
     final page = RawGestureDetector(
-      gestures: turn(start: PageTurn.start),
+      gestures: turn(),
       child: LayoutBuilder(
         builder: (context, constraints) {
           _width = math.max(constraints.maxWidth, 1);
@@ -358,7 +363,7 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
           width: PageTurn.backEdge,
           child: RawGestureDetector(
             behavior: HitTestBehavior.translucent,
-            gestures: turn(start: PageTurn.slop),
+            gestures: turn(edge: true),
             child: const SizedBox.expand(),
           ),
         ),
