@@ -17,6 +17,7 @@ class NotePayload {
   final NoteDrawing? drawing;
   final int? archivedAt;
   final int? hiddenAt;
+  final int? trashedAt;
 
   /// Epoch milliseconds, matching the on-disk format of the Flutter model.
   final int createdAt;
@@ -28,6 +29,7 @@ class NotePayload {
     this.drawing,
     this.archivedAt,
     this.hiddenAt,
+    this.trashedAt,
     required this.createdAt,
   });
 
@@ -38,6 +40,7 @@ class NotePayload {
     drawing: note.drawing,
     archivedAt: note.archivedAt?.millisecondsSinceEpoch,
     hiddenAt: note.hiddenAt?.millisecondsSinceEpoch,
+    trashedAt: note.trashedAt?.millisecondsSinceEpoch,
     createdAt: note.createdAt.millisecondsSinceEpoch,
   );
 
@@ -65,6 +68,9 @@ class NotePayload {
     hiddenAt: hiddenAt == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(hiddenAt!),
+    trashedAt: trashedAt == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(trashedAt!),
     spaceId: spaceId,
     contentKey: contentKey,
     contentKeyEpoch: contentKeyEpoch,
@@ -78,6 +84,7 @@ class NotePayload {
     if (drawing != null) 'drawing': drawing!.toJson(),
     if (archivedAt != null) 'archivedAt': archivedAt,
     if (hiddenAt != null) 'hiddenAt': hiddenAt,
+    if (trashedAt != null) 'trashedAt': trashedAt,
     'createdAt': createdAt,
   };
 
@@ -102,6 +109,7 @@ class NotePayload {
       drawing: NoteDrawing.fromJson(raw['drawing']),
       archivedAt: raw['archivedAt'] is int ? raw['archivedAt']! as int : null,
       hiddenAt: raw['hiddenAt'] is int ? raw['hiddenAt']! as int : null,
+      trashedAt: raw['trashedAt'] is int ? raw['trashedAt']! as int : null,
       createdAt: createdAt is int && createdAt >= 0 ? createdAt : 0,
     );
   }

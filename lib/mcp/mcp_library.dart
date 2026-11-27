@@ -151,10 +151,12 @@ class McpLibrary {
     return matches;
   }
 
-  /// The note with [id], unless it is Hidden or gone.
+  /// The note with [id], unless it is Hidden, in Recently deleted or gone.
   Note read(String id) {
     final note = notes.byId(id);
-    if (note == null || note.isHidden) throw const McpRefusal(notFound);
+    if (note == null || note.isHidden || note.isTrashed) {
+      throw const McpRefusal(notFound);
+    }
     return note;
   }
 
@@ -190,8 +192,7 @@ class McpLibrary {
     if (note.isDrawing) return const {};
     final results = _engine().evaluateDocument(note.body, titled: true);
     return {
-      for (final entry in results.entries)
-        entry.key + 1: entry.value.text,
+      for (final entry in results.entries) entry.key + 1: entry.value.text,
     };
   }
 
@@ -521,10 +522,12 @@ class McpLibrary {
   /// hidden as they are, its name included.
   bool _visible(Tag tag) =>
       !_onHidden(tag) ||
-      notes.allNotes.any((note) => !note.isHidden && _carries(note, tag));
+      notes.allNotes.any(
+        (note) => !note.isHidden && !note.isTrashed && _carries(note, tag),
+      );
 
   bool _onHidden(Tag tag) =>
-      notes.hiddenNotes.any((note) => _carries(note, tag));
+      notes.allNotes.any((note) => note.isHidden && _carries(note, tag));
 
   bool _carries(Note note, Tag tag) =>
       _tags.tagsOf(note.id).any((each) => each.id == tag.id);

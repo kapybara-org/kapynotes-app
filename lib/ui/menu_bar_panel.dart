@@ -381,7 +381,11 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
   /// The note the Tasks field adds to, while it may still be added to.
   Note? get _taskNote {
     final note = widget.notes.byId(widget.controller.taskNoteId);
-    if (note == null || note.isHidden || note.isArchived || !widget.canEdit(note)) {
+    if (note == null ||
+        note.isHidden ||
+        note.isArchived ||
+        note.isTrashed ||
+        !widget.canEdit(note)) {
       return null;
     }
     return note;

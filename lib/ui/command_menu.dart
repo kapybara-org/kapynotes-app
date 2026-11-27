@@ -475,6 +475,7 @@ class _CommandMenuState extends State<CommandMenu> {
       for (final id in widget.recentIds)
         if (notes.byId(id) case final note?
             when !note.isArchived &&
+                !note.isTrashed &&
                 (!note.isHidden || widget.hiddenUnlocked) &&
                 switch (_scope) {
                   _Scope.all => true,

@@ -187,6 +187,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// The temp-directory sweep is disk work nobody is waiting on; last of all.
   static const _tempSweepDelay = Duration(seconds: 6);
 
+  /// Recently deleted is checked after that, and then once a day.
+  static const _trashCheckDelay = Duration(seconds: 7);
+
   final TextEditingController _launchController = TextEditingController();
   final MobilePopupKeyboardObserver _popupKeyboardObserver =
       MobilePopupKeyboardObserver();
@@ -288,6 +291,8 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   Timer? _updateCheckTimer;
   Timer? _transcriptionTimer;
   Timer? _tempSweepTimer;
+  Timer? _trashCheckTimer;
+  DateTime? _trashCheckedAt;
   bool _ready = false;
 
   /// The welcome note, on the launch that seeded it. Null every other time.
@@ -574,6 +579,18 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       () => unawaited(VoiceRecordingController.sweepTempFiles()),
     );
 
+    // A phone wakes no timers while it is away, so a resume a day or more
+    // after the last check of Recently deleted is the time for the next.
+    final checked = _trashCheckedAt;
+    if (checked == null ||
+        DateTime.now().difference(checked) >= const Duration(days: 1)) {
+      _trashCheckTimer?.cancel();
+      _trashCheckTimer = Timer(
+        _trashCheckDelay,
+        () => unawaited(_emptyExpiredTrash()),
+      );
+    }
+
     final updates = widget.updates;
     if (updates == null) return;
     _updateCheckTimer?.cancel();
@@ -583,6 +600,29 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       _updateCheckDelay,
       () => unawaited(updates.checkIfDue()),
     );
+  }
+
+  /// Deletes for good the notes whose time in Recently deleted is up, and
+  /// checks again a day later. A synced device first waits for a sync pass
+  /// to finish, so a note put back on another device is never deleted from
+  /// this one's older copy; when the pass does not finish, the notes wait
+  /// for the next check.
+  Future<void> _emptyExpiredTrash() async {
+    _trashCheckedAt = DateTime.now();
+    _trashCheckTimer?.cancel();
+    _trashCheckTimer = Timer(
+      const Duration(days: 1),
+      () => unawaited(_emptyExpiredTrash()),
+    );
+    final sync = widget.account?.sync;
+    if (sync != null) {
+      final asked = DateTime.now();
+      await sync.syncNow();
+      final synced = sync.lastSyncedAt;
+      if (synced == null || synced.isBefore(asked)) return;
+    }
+    if (!mounted || widget.notes.emptyExpiredTrash() == 0) return;
+    unawaited(widget.notes.sweepBlobs());
   }
 
   /// Ends any recording, then flushes. The order matters: the recording has
@@ -685,6 +725,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _updateCheckTimer?.cancel();
     _transcriptionTimer?.cancel();
     _tempSweepTimer?.cancel();
+    _trashCheckTimer?.cancel();
     _transcriptions?.dispose();
     _cloudAccess?.dispose();
     _voicePrefs?.dispose();

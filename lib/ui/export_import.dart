@@ -23,10 +23,10 @@ Future<void> runExport(
 }) async {
   final messenger = _Messenger(context);
   final progress = messenger.progress('Exporting notes…');
-  final result = await (service ?? NoteArchiveService()).exportNotes(
-    notes.allNotes,
-    images: notes.blobs,
-  );
+  final result = await (service ?? NoteArchiveService()).exportNotes([
+    for (final note in notes.allNotes)
+      if (!note.isTrashed) note,
+  ], images: notes.blobs);
   if (!context.mounted) {
     progress.dismiss();
     return;

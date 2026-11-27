@@ -183,6 +183,22 @@ void main() {
     expect(limit.canCreate, isTrue);
   });
 
+  test('a note in Recently deleted makes its room, and Put back takes it '
+      'back', () async {
+    final written = write(5);
+    await signInOnFree();
+    expect(limit.canCreate, isFalse);
+
+    notes.trashAll([written[4].id]);
+    expect(limit.count, 4);
+    expect(limit.canCreate, isTrue);
+    expect(limit.lockedIds, isEmpty);
+
+    notes.putBackAll([written[4].id]);
+    expect(limit.count, 5);
+    expect(limit.canCreate, isFalse);
+  });
+
   test("a note deleted with Undo on offer makes its room at once, and Undo "
       'takes it back', () async {
     final written = write(5);

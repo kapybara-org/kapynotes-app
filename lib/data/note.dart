@@ -7,6 +7,7 @@ import 'note_format.dart';
 
 const Object _keepArchivedAt = Object();
 const Object _keepHiddenAt = Object();
+const Object _keepTrashedAt = Object();
 const Object _keepDrawing = Object();
 
 /// A single note. Its title is derived from [body] rather than stored, so it
@@ -48,6 +49,19 @@ class Note {
   /// follow it. Each device protects the folder with its own system lock or
   /// PIN.
   final DateTime? hiddenAt;
+
+  /// When the note was moved to Recently deleted, or null while it is not
+  /// there. It waits [trashKept] there before it goes for good.
+  ///
+  /// Content state like [archivedAt], so it follows the note between devices
+  /// and Put back can clear it. A build from before the trash knows nothing
+  /// of it, so moving a note there also sets [archivedAt] when the note was
+  /// not archived, at the same time: such a build then shows it in Archive
+  /// rather than among the person's notes. See [NotesStore.trashAll].
+  final DateTime? trashedAt;
+
+  /// How long a note waits in Recently deleted.
+  static const Duration trashKept = Duration(days: 30);
 
   /// The [updatedAt] the server has confirmed it holds, or null if this note
   /// has never been pushed.
@@ -93,6 +107,7 @@ class Note {
     required this.updatedAt,
     this.archivedAt,
     this.hiddenAt,
+    this.trashedAt,
     this.syncedAt,
     this.spaceId,
     this.contentKey,
@@ -113,6 +128,18 @@ class Note {
   bool get isShared => spaceId != null;
   bool get isArchived => archivedAt != null;
   bool get isHidden => hiddenAt != null;
+  bool get isTrashed => trashedAt != null;
+
+  /// When a note in Recently deleted goes for good: [trashKept] after it was
+  /// moved there, or after its last edit if that came later. Only a build
+  /// from before the trash can edit it there, and the person using that
+  /// build has not seen it go.
+  DateTime? get trashEndsAt {
+    final at = trashedAt;
+    if (at == null) return null;
+    return (updatedAt.isAfter(at) ? updatedAt : at).add(trashKept);
+  }
+
   bool get isDrawing => drawing != null;
 
   /// Whether a drawing also holds words beyond its title, which is all of a
@@ -128,6 +155,7 @@ class Note {
     DateTime? updatedAt,
     Object? archivedAt = _keepArchivedAt,
     Object? hiddenAt = _keepHiddenAt,
+    Object? trashedAt = _keepTrashedAt,
   }) => Note(
     id: id,
     body: body ?? this.body,
@@ -144,6 +172,9 @@ class Note {
     hiddenAt: identical(hiddenAt, _keepHiddenAt)
         ? this.hiddenAt
         : hiddenAt as DateTime?,
+    trashedAt: identical(trashedAt, _keepTrashedAt)
+        ? this.trashedAt
+        : trashedAt as DateTime?,
     // Deliberately carried over: an edit must not look synced.
     syncedAt: syncedAt,
     spaceId: spaceId,
@@ -163,6 +194,7 @@ class Note {
     updatedAt: updatedAt,
     archivedAt: archivedAt,
     hiddenAt: hiddenAt,
+    trashedAt: trashedAt,
     syncedAt: at,
     spaceId: spaceId,
     contentKey: contentKey,
@@ -189,6 +221,7 @@ class Note {
     updatedAt: at,
     archivedAt: archivedAt,
     hiddenAt: hiddenAt,
+    trashedAt: trashedAt,
     syncedAt: null,
     spaceId: spaceId,
     contentKey: contentKey,
@@ -212,6 +245,7 @@ class Note {
     updatedAt: updatedAt,
     archivedAt: archivedAt,
     hiddenAt: hiddenAt,
+    trashedAt: trashedAt,
     syncedAt: syncedAt,
     spaceId: spaceId,
     contentKey: contentKey,
@@ -459,6 +493,7 @@ class Note {
     'updatedAt': updatedAt.millisecondsSinceEpoch,
     if (archivedAt != null) 'archivedAt': archivedAt!.millisecondsSinceEpoch,
     if (hiddenAt != null) 'hiddenAt': hiddenAt!.millisecondsSinceEpoch,
+    if (trashedAt != null) 'trashedAt': trashedAt!.millisecondsSinceEpoch,
     // Omitted while null so a store that has never synced stays byte-identical
     // to what earlier builds wrote.
     if (syncedAt != null) 'syncedAt': syncedAt!.millisecondsSinceEpoch,
@@ -487,6 +522,7 @@ class Note {
       updatedAt: _date(raw['updatedAt']),
       archivedAt: _optionalDate(raw['archivedAt']),
       hiddenAt: _optionalDate(raw['hiddenAt']),
+      trashedAt: _optionalDate(raw['trashedAt']),
       syncedAt: _optionalDate(raw['syncedAt']),
       spaceId: spaceId is String && spaceId.isNotEmpty ? spaceId : null,
       contentKey: _optionalKey(raw['contentKey']),

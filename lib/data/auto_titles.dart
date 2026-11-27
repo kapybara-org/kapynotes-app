@@ -233,7 +233,7 @@ class NoteNamer extends ChangeNotifier {
       _kindToName(note) && notes.namesHere(note.id) && mayName(note);
 
   bool _kindToName(Note note) =>
-      !note.isHidden && !note.isDrawing && !note.isArchived;
+      !note.isHidden && !note.isDrawing && !note.isArchived && !note.isTrashed;
 
   /// Whether [note], new, will be named here as it is written. Where it
   /// will not, the person names it, so it opens on its title.

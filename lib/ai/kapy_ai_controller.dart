@@ -639,7 +639,8 @@ class KapyAiController extends KapyAi {
         return [
           if (at > 0) chat.messages[at - 1].text,
           for (final note in _notes.allNotes)
-            if (read.contains(note.id) && !note.isHidden) note.body,
+            if (read.contains(note.id) && !note.isHidden && !note.isTrashed)
+              note.body,
         ].join('\n');
       }();
 
@@ -688,7 +689,7 @@ class KapyAiController extends KapyAi {
       final read = readableNotes(_notes, retrieval.notes);
       final hidden = {
         for (final note in _notes.allNotes)
-          if (note.isHidden) note.id,
+          if (note.isHidden || note.isTrashed) note.id,
       };
       final before = chat.messages.sublist(0, chat.messages.length - 1);
       final cut = before.indexWhere(
@@ -782,7 +783,7 @@ class KapyAiController extends KapyAi {
   /// note is there and not hidden, and the recording has a transcript.
   ({Note note, NoteVoiceRef ref})? _recording(KapyRecordingRef link) {
     for (final note in _notes.allNotes) {
-      if (note.id != link.noteId || note.isHidden) continue;
+      if (note.id != link.noteId || note.isHidden || note.isTrashed) continue;
       for (final ref in note.attachments) {
         if (ref is NoteVoiceRef &&
             ref.hash == link.hash &&
@@ -795,10 +796,14 @@ class KapyAiController extends KapyAi {
   }
 
   /// Why [_recording] found nothing to read for [link].
-  String _refusal(KapyRecordingRef link) =>
-      _notes.allNotes.any((note) => note.id == link.noteId && note.isHidden)
-      ? "Kapy AI doesn't read hidden notes."
-      : 'This recording has no transcript to read.';
+  String _refusal(KapyRecordingRef link) {
+    final note = _notes.byId(link.noteId);
+    if (note?.isHidden ?? false) return "Kapy AI doesn't read hidden notes.";
+    if (note?.isTrashed ?? false) {
+      return "Kapy AI doesn't read notes in Recently deleted.";
+    }
+    return 'This recording has no transcript to read.';
+  }
 
   /// What [model] reads of the notes, or of a recording.
   RetrievalBudget _budgetFor(KapyModel model) =>

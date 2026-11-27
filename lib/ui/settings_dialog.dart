@@ -1389,7 +1389,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   String get _defaultNoteLabel {
     final id = widget.layoutPrefs.defaultNoteId;
     final note = id == null ? null : widget.notes.byId(id);
-    return note == null || note.isArchived || note.isHidden
+    return note == null || note.isArchived || note.isHidden || note.isTrashed
         ? 'Last opened note'
         : note.title;
   }

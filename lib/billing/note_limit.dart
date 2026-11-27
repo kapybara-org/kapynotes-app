@@ -121,9 +121,10 @@ class NoteLimit extends ChangeNotifier {
   /// is no telling who owns a shared space, and those notes are read-only
   /// for that reason already, so only personal ones count. A note just
   /// deleted no longer counts while its Undo is on offer, so the room it
-  /// makes is there at once.
+  /// makes is there at once, and nor does one in Recently deleted.
   bool _counts(Note note) =>
       !_notes.isDeleting(note.id) &&
+      !note.isTrashed &&
       (note.spaceId == null ||
           (_account.sharing?.spaceOf(note)?.isOwner ?? false));
 

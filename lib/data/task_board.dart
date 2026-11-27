@@ -99,7 +99,12 @@ class TaskBoard {
     final open = <TaskItem>[];
     final done = <TaskItem>[];
     for (final note in notes) {
-      if (note.isDrawing || note.isArchived || note.isHidden) continue;
+      if (note.isDrawing ||
+          note.isArchived ||
+          note.isHidden ||
+          note.isTrashed) {
+        continue;
+      }
       if (!note.isShared &&
           note.title == homeTitle &&
           (home == null || note.createdAt.isBefore(home.createdAt))) {
