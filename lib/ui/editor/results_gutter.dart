@@ -228,8 +228,13 @@ class _ResultChipState extends State<ResultChip> {
         color: fill,
         borderRadius: BorderRadius.circular(pill ? 999 : 5),
       ),
+      // A total's dash sits on the page around its fill, where it shows.
       foregroundDecoration: widget.result.count?.mark == true
-          ? DashedOutline(ink.withValues(alpha: 0.45), pill ? 999 : 5)
+          ? DashedOutline(
+              (total ? palette.resultPillText : ink).withValues(alpha: 0.45),
+              pill ? 999 : 5,
+              outset: total ? 3 : 0,
+            )
           : null,
       child: pill
           ? Row(

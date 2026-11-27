@@ -226,10 +226,10 @@ class CalcEngine {
     );
     final results = <int, LineResult>{};
     final pass = _memo.begin(body);
-    final covered = _coveredByTotal(pass.lines);
+    final cover = _coverByTotal(pass.lines);
 
     for (var i = 0; i < pass.lines.length; i++) {
-      final evaluated = _evaluateLine(pass, i, evaluator, scope, covered[i]);
+      final evaluated = _evaluateLine(pass, i, evaluator, scope, cover[i]);
       if (evaluated == null || (titled && i == 0)) continue;
       results[i] = evaluated.result;
       // Aggregate readouts, including conversions such as `total to usd`,
@@ -358,15 +358,15 @@ class CalcEngine {
 
   /// Line [index] of [pass]: an earlier reading of the same text where it
   /// holds in [scope], otherwise a fresh one, remembered for next time.
-  /// [covered] is whether a total line closes the line's block.
+  /// [cover] is whether a total line closes the line's block.
   _EvaluatedLine? _evaluateLine(
     _Pass pass,
     int index,
     Evaluator evaluator,
     CalcScope scope,
-    bool covered,
+    _Cover cover,
   ) {
-    final reading = _memo.reuse(pass, index, scope, covered);
+    final reading = _memo.reuse(pass, index, scope, cover);
     if (reading != null) return reading.at(index);
     scope.beginTrace();
     var evaluated = _readLine(
@@ -374,12 +374,12 @@ class CalcEngine {
       index,
       evaluator,
       scope,
-      covered,
+      cover,
     );
     if (evaluated != null && scope.tracedReadsAggregate) {
       evaluated = evaluated.readingAggregate();
     }
-    _memo.remember(pass, index, covered, scope.endTrace(), evaluated);
+    _memo.remember(pass, index, cover, scope.endTrace(), evaluated);
     return evaluated;
   }
 
@@ -388,7 +388,7 @@ class CalcEngine {
     int index,
     Evaluator evaluator,
     CalcScope scope,
-    bool covered,
+    _Cover cover,
   ) {
     final prepared = _prepare(rawLine, scope);
     if (prepared == null) return null;
@@ -398,7 +398,7 @@ class CalcEngine {
         _labelledAssignment(source, index, evaluator, scope) ??
         _explicitLabel(source, index, evaluator, scope) ??
         _labelledArithmetic(source, index, evaluator, scope) ??
-        _labelledAmount(source, index, evaluator, scope, covered: covered);
+        _labelledAmount(source, index, evaluator, scope, cover: cover);
   }
 
   /// A line that reads the note's total, as `total`, `= sum` or
@@ -410,8 +410,8 @@ class CalcEngine {
 
   /// For each line, whether a total line closes the block it is in: comes
   /// after it with no blank line between.
-  static List<bool> _coveredByTotal(List<String> lines) {
-    final covered = List.filled(lines.length, false);
+  static List<_Cover> _coverByTotal(List<String> lines) {
+    final cover = List.filled(lines.length, _Cover.none);
     var closed = false;
     for (var i = lines.length - 1; i >= 0; i--) {
       final line = lines[i].trim();
@@ -419,10 +419,14 @@ class CalcEngine {
         closed = false;
         continue;
       }
-      covered[i] = closed;
+      if (closed) {
+        cover[i] = i == 0 || lines[i - 1].trim().isEmpty
+            ? _Cover.top
+            : _Cover.inside;
+      }
       if (line.length <= 24 && _totalLine.hasMatch(line)) closed = true;
     }
-    return covered;
+    return cover;
   }
 
   /// Reads `mailboxes = domains * 5 mail boxes` or `fee: $2/mailbox`: an
@@ -678,7 +682,7 @@ class CalcEngine {
   /// of whatever is evaluated.
   ///
   /// The one place a bare trailing number is taken is a block a total line
-  /// closes, [covered]: there `rent 1200` above `total` is an amount in the
+  /// closes, [cover]: there `rent 1200` above `total` is an amount in the
   /// list. Even there a label that ends the way a sentence, a date or a
   /// numbering does, `Meeting at 3`, `Nov 27`, `Chapter 12`, is refused.
   _EvaluatedLine? _labelledAmount(
@@ -687,7 +691,7 @@ class CalcEngine {
     Evaluator evaluator,
     CalcScope scope, {
     String head = '',
-    bool covered = false,
+    _Cover cover = _Cover.none,
   }) {
     final tokens = Lexer(source)
         .tokenize()
@@ -714,9 +718,9 @@ class CalcEngine {
       if (kind == ResultKind.currency || kind == ResultKind.unit) {
         return evaluated;
       }
-      if (covered &&
+      if (cover != _Cover.none &&
           evaluated.result.value is NumberValue &&
-          _namesAPlainAmount(tokens, i)) {
+          _namesAPlainAmount(tokens, i, scope, heading: cover == _Cover.top)) {
         return evaluated;
       }
     }
@@ -726,8 +730,16 @@ class CalcEngine {
   /// Whether the words before [at] in [tokens] name the plain number from
   /// [at] on: only words before it, the last of them none that would make
   /// the number a time, a date or a place in a sequence.
-  static bool _namesAPlainAmount(List<Token> tokens, int at) {
-    if (tokens[at].type != TokenType.number) return false;
+  bool _namesAPlainAmount(
+    List<Token> tokens,
+    int at,
+    CalcScope scope, {
+    required bool heading,
+  }) {
+    if (tokens[at].type != TokenType.number ||
+        (heading && _isThisYearish(tokens[at].text, scope))) {
+      return false;
+    }
     for (final token in tokens.skip(at)) {
       if (token.type != TokenType.number &&
           token.type != TokenType.identifier) {
@@ -752,6 +764,16 @@ class CalcEngine {
   /// place in a sequence (`Chapter 12`, `Room 4`).
   static bool _notAmountLabel(String word) =>
       _sequenceWords.contains(word) || _dateWord.hasMatch(word);
+
+  /// Whether [text] is a year within five of this one, which on the first
+  /// line of a block is a heading, `Goa trip 2026`, rather than an amount.
+  /// `rent 2000` there, and any amount further down, is still read. The
+  /// answer moves with the clock, so the line is not remembered.
+  bool _isThisYearish(String text, CalcScope scope) {
+    if (!RegExp(r'^[0-9]{4}$').hasMatch(text)) return false;
+    scope.markUnrepeatable();
+    return (int.parse(text) - _now().year).abs() <= 5;
+  }
 
   static final _sequenceWords =
       ('at on by in from to until till since before after around about for of '
@@ -1051,20 +1073,24 @@ class CalcEngine {
   }
 }
 
+/// Where a total line closing a line's block puts the line: in no such
+/// block, on the block's first line, or further down it.
+enum _Cover { none, top, inside }
+
 /// One reading of a line's text in one scope: what the line read and wrote
 /// there, and what it gave.
 class _Reading {
   final ScopeTrace trace;
 
-  /// Whether a total line closed the line's block when it was read.
-  final bool covered;
+  /// Where a total line closing the line's block put it when it was read.
+  final _Cover cover;
   _EvaluatedLine? outcome;
 
   /// The last pass that used this reading, which is what [_LineMemo] forgets
   /// by.
   int used;
 
-  _Reading(this.trace, this.covered, this.outcome, this.used);
+  _Reading(this.trace, this.cover, this.outcome, this.used);
 
   /// The outcome, as line [index] of the note.
   _EvaluatedLine? at(int index) {
@@ -1183,16 +1209,16 @@ class _LineMemo {
   }
 
   /// A reading of line [index] that holds in [scope], already redone there,
-  /// and was read with a total line closing its block or not, as [covered].
-  _Reading? reuse(_Pass pass, int index, CalcScope scope, bool covered) {
+  /// and was read under the same [cover].
+  _Reading? reuse(_Pass pass, int index, CalcScope scope, _Cover cover) {
     final hint = pass.readings[index];
-    if (hint != null && hint.covered == covered && scope.reuse(hint.trace)) {
+    if (hint != null && hint.cover == cover && scope.reuse(hint.trace)) {
       return hint..used = pass.number;
     }
     pass.readings[index] = null;
     for (final reading in _readings[pass.lines[index]] ?? const <_Reading>[]) {
       if (!identical(reading, hint) &&
-          reading.covered == covered &&
+          reading.cover == cover &&
           scope.reuse(reading.trace)) {
         pass.readings[index] = reading;
         return reading..used = pass.number;
@@ -1206,12 +1232,12 @@ class _LineMemo {
   void remember(
     _Pass pass,
     int index,
-    bool covered,
+    _Cover cover,
     ScopeTrace? trace,
     _EvaluatedLine? outcome,
   ) {
     if (trace == null) return;
-    final reading = _Reading(trace, covered, outcome, pass.number);
+    final reading = _Reading(trace, cover, outcome, pass.number);
     final readings = _readings[pass.lines[index]] ??= [];
     if (readings.length < _readingsPerText) {
       _size++;

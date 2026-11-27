@@ -25,8 +25,10 @@ class CountedAmount {
   final String? name;
 
   /// Whether the amount is a count of things the line names, as `7 nights`
-  /// is: a plain number that a total in money leaves out.
-  final bool counts;
+  /// is, or a number a later line multiplies or divides by, as `people = 4`
+  /// is under `share = $120 / people`: a plain number that a total in money
+  /// leaves out.
+  bool counts;
 
   /// False once a later line took the amount's place.
   bool live = true;
@@ -62,6 +64,10 @@ class Contribution {
   /// restates them (`monthly = rent + utilities`) or builds on them.
   final List<String> stands;
 
+  /// The names the line multiplies or divides by: a plain amount among them
+  /// is a count or a share, not money of its own.
+  final List<String> operands;
+
   /// What the total says of a line that adds nothing the writer might have
   /// expected it to.
   final String? skipped;
@@ -72,6 +78,7 @@ class Contribution {
     this.replaces = false,
     this.consumes = const {},
     this.stands = const [],
+    this.operands = const [],
     this.skipped,
   });
 
@@ -101,12 +108,14 @@ class Contribution {
       String? skipped,
       Map<String, String> consumes = const {},
       List<String> stands = const [],
+      List<String> operands = const [],
     }) => Contribution(
       amount: amount,
       defines: name,
       replaces: replaces,
       consumes: consumes,
       stands: stands,
+      operands: operands,
       skipped: skipped,
     );
 
@@ -133,6 +142,7 @@ class Contribution {
         return claim(
           amount: value,
           consumes: _consumed(expression, owner, isVariable),
+          operands: _names(expression),
         );
       case _:
         return claim(amount: value);
@@ -250,6 +260,18 @@ class Contribution {
             : 'count',
     };
   }
+
+  /// The names [node] reads.
+  static List<String> _names(Node node) => switch (node) {
+    IdentifierNode() => [node.name],
+    QuantityNode() => _names(node.magnitude),
+    PercentNode() => _names(node.operand),
+    UnaryNode() => _names(node.operand),
+    BinaryNode() => [..._names(node.left), ..._names(node.right)],
+    CallNode() => [for (final arg in node.args) ..._names(arg)],
+    ConvertNode() => _names(node.value),
+    _ => const [],
+  };
 
   static String _restates(Node node) => switch (node) {
     IdentifierNode() => 'Not added again: restates ${node.name}',

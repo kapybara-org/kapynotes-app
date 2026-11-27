@@ -1042,6 +1042,22 @@ void main() {
       expect(evaluation.results[2]!.count!.mark, isFalse);
     });
 
+    test('leaves out a plain number a later line multiplies or divides by', () {
+      final hotel = read('\$100\nnights = 7\nhotel = nights * \$20\ntotal');
+      expect(hotel.results[3]!.text, '240.00 USD');
+      expect(hotel.results[1]!.count!.mark, isTrue);
+      final split = read('people = 4\nshare = \$120 / people');
+      expect(split.totalText, '30.00 USD');
+      expect(
+        split.results[0]!.count!.text,
+        "Not in the total: it has no unit, so it doesn't add to USD",
+      );
+      expect(
+        read('qty = 3\ncost = qty * 15 usd\ntotal').results[2]!.text,
+        '45.00 USD',
+      );
+    });
+
     test('marks the total, as a line and in the header, when it leaves out '
         'a line it cannot join', () {
       final listed = read('5 lakh INR\nrent: 1200\nboxes = 4 kg\ntotal');
@@ -1336,6 +1352,25 @@ void main() {
           2: '100',
         }, reason: text);
       }
+    });
+
+    test('reads this year on a block\'s first line as its heading', () {
+      final dated = CalcEngine(
+        ratesPerUsd: _rates,
+        now: () => DateTime(2026, 11, 27),
+      );
+      Map<int, String> read(String body) => dated
+          .evaluateDocument(body)
+          .map((key, value) => MapEntry(key, value.text));
+      expect(
+        read('Budget\n\nGoa trip 2026\nflights \$400\nhotel \$600\ntotal')[5],
+        '1,000.00 USD',
+        reason: 'Goa trip 2026 is a heading',
+      );
+      expect(read('rent 2000\nfood 300\ntotal')[2], '2,300');
+      expect(read('rent: 2025\nfood 300\ntotal')[2], '2,325');
+      expect(read('rent 100\nbonus 2026\ntotal')[2], '2,126');
+      expect(read('flights 1950\ntotal')[1], '1,950');
     });
 
     test('follows a total line written under the list and taken away', () {

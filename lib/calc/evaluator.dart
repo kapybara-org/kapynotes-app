@@ -177,6 +177,13 @@ class CalcScope {
         _retire(entry, 'replaced by a later $name');
       }
     }
+    for (final operand in claim.operands) {
+      for (final entry in liveOwner(operand)) {
+        if (entry.counts || entry.amount is QuantityValue) continue;
+        entry.counts = true;
+        _stale = true;
+      }
+    }
     final amount = claim.amount;
     final entry = amount == null
         ? null
