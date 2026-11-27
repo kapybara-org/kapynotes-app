@@ -5,9 +5,11 @@ import 'package:material_ui/material_ui.dart';
 
 import '../ai/kapy_ai.dart';
 import '../ai/recording_context.dart';
+import '../ai/recording_translation.dart';
 import '../core/phone_keyboard.dart';
 import '../core/theme.dart';
 import '../data/note_attachment.dart';
+import '../speech/languages.dart';
 import '../speech/moments.dart';
 import '../speech/speech_errors.dart';
 import '../speech/summarizer.dart';
@@ -17,6 +19,7 @@ import 'kapy_ai/kapy_ai_conversation.dart' show KapyAiNotice;
 import 'kapy_ai/kapy_ai_markdown.dart';
 import 'kapy_ai/kapy_ai_parts.dart';
 import 'kapy_ai/kapy_ai_picker.dart';
+import 'voice_translate_picker.dart';
 
 /// Kapy AI, for asking about one recording, and what its cards open.
 class VoiceAskActions {
@@ -27,6 +30,7 @@ class VoiceAskActions {
     this.hidden = false,
     this.onSignIn,
     this.onUpgrade,
+    this.recents,
   });
 
   final KapyAi kapyAi;
@@ -45,6 +49,9 @@ class VoiceAskActions {
 
   /// The Pro sheet. Null where there's no plan to show.
   final VoidCallback? onUpgrade;
+
+  /// The languages last picked in Translate to…, kept on this device.
+  final RecentLanguages? recents;
 }
 
 /// Asking about a recording, and making posts from it (KAP-396 b1–b6): the
@@ -64,6 +71,7 @@ class VoiceAsk extends StatefulWidget {
     required this.page,
     this.unavailable,
     this.compact = false,
+    this.summaryInView = false,
     this.onPlay,
     this.onCited,
     this.onInsert,
@@ -87,6 +95,10 @@ class VoiceAsk extends StatefulWidget {
 
   /// The window is a sheet, on a phone or a tablet: Earlier is its clock.
   final bool compact;
+
+  /// The summary is the page in view, and so what Translate to… translates
+  /// unless the person picks the transcript.
+  final bool summaryInView;
 
   final ValueChanged<Duration>? onPlay;
 
@@ -234,6 +246,52 @@ class _VoiceAskState extends State<VoiceAsk> {
     });
   }
 
+  /// What Translate to… translates without asking: the page in view.
+  TranslateScope get _scope =>
+      widget.summaryInView && widget.ref.summary != null
+      ? TranslateScope.summary
+      : TranslateScope.transcript;
+
+  /// The person's languages: the app's, then the device's.
+  List<Language> _mine() => personLanguages(
+    Localizations.maybeLocaleOf(context) ?? const Locale('en'),
+    WidgetsBinding.instance.platformDispatcher.locales,
+  );
+
+  /// Translates [scope] into [language], as a chat of its own.
+  void _translate(TranslateScope scope, Language language) {
+    final ai = _ai;
+    if (ai == null || !_asking || ai.answering) return;
+    widget.actions!.recents?.add(language);
+    ai.newChat();
+    unawaited(
+      ai.ask(translationRequest(scope, language), recording: _recording),
+    );
+    setState(() {
+      _shown = ai.current?.id;
+      _post = null;
+      _asked = null;
+      _open = true;
+      _earlier = false;
+      _picking = false;
+    });
+  }
+
+  Future<void> _pickTranslation() async {
+    final picked = await showTranslatePicker(
+      context,
+      asSheet: widget.compact,
+      scope: _scope,
+      hasSummary: widget.ref.summary != null,
+      yours: yourLanguages(
+        _mine(),
+        widget.actions?.recents?.languages ?? const [],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    _translate(picked.scope, picked.language);
+  }
+
   /// Writes a post, one at a time: each costs a model call, and two racing
   /// would both try to be the newest take.
   Future<void> _write(VoiceTakeKind kind, String? instruction) async {
@@ -338,7 +396,8 @@ class _VoiceAskState extends State<VoiceAsk> {
             messages.last.role == KapyRole.assistant
         ? messages.last
         : null;
-    _cite(answer);
+    // A translation's moments are its own lines, so it edges none.
+    _cite(chat == null || _translationIn(chat) != null ? null : answer);
     final history = _earlierEntries();
 
     return Column(
@@ -446,13 +505,35 @@ class _VoiceAskState extends State<VoiceAsk> {
             }
           : () => unawaited(_write(kind, null)),
     );
+    // In a language that isn't the person's, Translate to it comes first, in
+    // view; otherwise Translate to… waits at the end, before Your own words….
+    final target = _asking
+        ? translateTarget(widget.ref.transcript!.lang, _mine())
+        : null;
+    final Widget? translate = !_asking
+        ? null
+        : target == null
+        ? _Starter(
+            key: const ValueKey('voice-ask-translate'),
+            label: 'Translate to…',
+            icon: KapyIcons.translateRounded,
+            onPressed: _answering ? null : _pickTranslation,
+          )
+        : _TranslateChip(
+            label: 'Translate to ${target.own}',
+            compact: widget.compact,
+            onTranslate: _answering ? null : () => _translate(_scope, target),
+            onPick: _answering ? null : _pickTranslation,
+          );
     // Questions and posts in turn, so both are in view on a phone.
     final starters = [
+      if (target != null) ?translate,
       if (questions.isNotEmpty) question(questions[0]),
       if (posting) post(VoiceTakeKind.x),
       if (questions.length > 1) question(questions[1]),
       if (posting) post(VoiceTakeKind.linkedin),
       if (questions.length > 2) question(questions[2]),
+      if (target == null) ?translate,
       if (posting && _asking) post(VoiceTakeKind.custom),
     ];
     if (starters.isEmpty && history.isEmpty) return const SizedBox.shrink();
@@ -620,6 +701,7 @@ class _VoiceAskState extends State<VoiceAsk> {
     );
     final ai = _ai!;
     final actions = widget.actions!;
+    final translation = _translationIn(chat);
     final current = ai.current?.id == chat.id;
     final pending = current ? ai.pending : null;
     final Widget body;
@@ -642,13 +724,15 @@ class _VoiceAskState extends State<VoiceAsk> {
         onUpgrade: actions.onUpgrade,
       );
     } else if (answer == null || (current && ai.answering)) {
-      body = Text(
-        'Reading the transcript…',
-        key: const ValueKey('voice-ask-thinking'),
-        style: kapyText(13, 19, palette.textTertiary),
-      );
+      body = translation != null
+          ? _translating(palette, translation, current ? ai.draft : null)
+          : Text(
+              'Reading the transcript…',
+              key: const ValueKey('voice-ask-thinking'),
+              style: kapyText(13, 19, palette.textTertiary),
+            );
     } else {
-      body = _answer(palette, chat, answer);
+      body = _answer(palette, chat, answer, translation);
     }
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -656,17 +740,44 @@ class _VoiceAskState extends State<VoiceAsk> {
       children: [
         _header(
           palette,
-          title: Text(
-            question.text,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: kapyText(
-              13.5,
-              19,
-              palette.textSecondary,
-              weight: FontWeight.w600,
-            ),
-          ),
+          title: translation == null
+              ? Text(
+                  question.text,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: kapyText(
+                    13.5,
+                    19,
+                    palette.textSecondary,
+                    weight: FontWeight.w600,
+                  ),
+                )
+              : Row(
+                  children: [
+                    KapyIcon(
+                      KapyIcons.translateRounded,
+                      size: 15,
+                      color: palette.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        translationTitle(
+                          translation.scope,
+                          translation.language,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: kapyText(
+                          13.5,
+                          19,
+                          palette.textSecondary,
+                          weight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
         ),
         Flexible(
           child: SingleChildScrollView(
@@ -678,12 +789,27 @@ class _VoiceAskState extends State<VoiceAsk> {
     );
   }
 
-  Widget _answer(CalcPalette palette, KapyChat chat, KapyMessage answer) {
-    final moments = _momentsOf(answer);
+  Widget _answer(
+    CalcPalette palette,
+    KapyChat chat,
+    KapyMessage answer,
+    TranslatePick? translation,
+  ) {
+    // A translation comes as one answer a part, each within a synced record.
+    final text = translation == null
+        ? answer.text
+        : stitchTranslation([
+            for (final part in _answers(chat.messages)) part.text,
+          ]);
+    final moments = translation == null
+        ? _momentsOf(answer)
+        : const <Duration>[];
     final model = answer.model;
     final readTo = answer.readTo;
     final minutes = (widget.ref.duration.inSeconds / 60).ceil();
-    final read = readTo != null
+    final read = translation != null
+        ? null
+        : readTo != null
         ? 'Read the first ${_minutes(readTo)} of $minutes'
         : _ai!.readWhole(chat, answer)
         ? 'Read the whole transcript'
@@ -748,7 +874,7 @@ class _VoiceAskState extends State<VoiceAsk> {
     );
     final tools = Row(
       children: [
-        if (insert != null) _insertButton(palette, answer.text),
+        if (insert != null) _insertButton(palette, text),
         if (copy != null)
           KapyAiIconButton(
             key: const ValueKey('voice-ask-copy'),
@@ -758,7 +884,7 @@ class _VoiceAskState extends State<VoiceAsk> {
             iconSize: 15,
             radius: AppRadii.control,
             color: palette.textTertiary,
-            onPressed: () => copy(answer.text),
+            onPressed: () => copy(text),
           ),
         if (!widget.compact) ...[
           const SizedBox(width: 8),
@@ -771,11 +897,14 @@ class _VoiceAskState extends State<VoiceAsk> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        KapyAiMarkdown(
-          answer.text,
-          sources: _ai!.linkSources(chat, answer),
-          style: kapyText(14, 21, palette.textPrimary),
-        ),
+        if (translation == null)
+          KapyAiMarkdown(
+            answer.text,
+            sources: _ai!.linkSources(chat, answer),
+            style: kapyText(14, 21, palette.textPrimary),
+          )
+        else
+          _translated(palette, translation.scope, text),
         if (moments.isNotEmpty) ...[
           const SizedBox(height: 10),
           Wrap(
@@ -795,20 +924,83 @@ class _VoiceAskState extends State<VoiceAsk> {
     );
   }
 
+  /// A translation, or the part of one written so far: the transcript's
+  /// lines each after the moment it plays from, or the summary as it reads.
+  Widget _translated(CalcPalette palette, TranslateScope scope, String text) =>
+      switch (scope) {
+        TranslateScope.transcript => _TranslatedTranscript(
+          text: text,
+          onPlay: widget.onPlay,
+        ),
+        TranslateScope.summary => KapyAiMarkdown(
+          text,
+          sources: '',
+          style: kapyText(14, 21, palette.textPrimary),
+        ),
+      };
+
+  /// A translation on its way: the parts that are in, with no way to copy or
+  /// insert them, and how far it has got.
+  Widget _translating(
+    CalcPalette palette,
+    TranslatePick translation,
+    KapyTranslationDraft? draft,
+  ) {
+    final status = Text(
+      draft == null || draft.parts < 2
+          ? 'Translating…'
+          : 'Translating part ${draft.done + 1} of ${draft.parts}…',
+      key: const ValueKey('voice-ask-translating'),
+      style: kapyText(13, 19, palette.textTertiary),
+    );
+    final text = draft?.text ?? '';
+    if (text.isEmpty) return status;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _translated(palette, translation.scope, text),
+        const SizedBox(height: 10),
+        status,
+      ],
+    );
+  }
+
+  /// The translation [chat]'s last question asks for, if it asks for one.
+  static TranslatePick? _translationIn(KapyChat chat) {
+    for (final message in chat.messages.reversed) {
+      if (message.role == KapyRole.user) {
+        return parseTranslationRequest(message.text);
+      }
+    }
+    return null;
+  }
+
+  /// The answer to the last question in [messages]: every message since it.
+  static List<KapyMessage> _answers(List<KapyMessage> messages) {
+    var from = messages.length;
+    while (from > 0 && messages[from - 1].role == KapyRole.assistant) {
+      from--;
+    }
+    return messages.sublist(from);
+  }
+
   /// Everything asked or made from this recording, newest first: its
   /// chats, and its takes, those made before posts moved here among them.
   List<_Earlier> _earlierEntries() => [
     for (final chat in _history)
       (
         key: ValueKey('voice-ask-earlier-${chat.id}'),
-        icon: KapyIcons.messageQuestionRounded,
+        icon: _translationIn(chat) == null
+            ? KapyIcons.messageQuestionRounded
+            : KapyIcons.translateRounded,
         title: chat.title,
-        preview: chat.messages
-            .lastWhere(
-              (message) => message.role == KapyRole.assistant,
-              orElse: () => chat.messages.last,
-            )
-            .text,
+        preview:
+            (_answers(chat.messages).firstOrNull ??
+                    chat.messages.lastWhere(
+                      (message) => message.role == KapyRole.assistant,
+                      orElse: () => chat.messages.last,
+                    ))
+                .text,
         at: chat.updatedAt,
         open: () => _show(chat.id),
       ),
@@ -1131,7 +1323,12 @@ class _EarlierButton extends StatelessWidget {
 
 /// A question to ask with one tap.
 class _Starter extends StatelessWidget {
-  const _Starter({required this.label, required this.onPressed, this.icon});
+  const _Starter({
+    super.key,
+    required this.label,
+    required this.onPressed,
+    this.icon,
+  });
 
   final String label;
   final VoidCallback? onPressed;
@@ -1340,4 +1537,147 @@ String _when(DateTime at, DateTime now) {
   final day =
       '${weekdays[at.weekday - 1]} ${at.day} ${kapyMonths[at.month - 1].substring(0, 3)}';
   return at.year == now.year ? day : '$day ${at.year}';
+}
+
+/// Translate to हिन्दी ⌄: translates at a tap, and its chevron opens the
+/// picker, with a 44 pt target of its own on a sheet however small the chip.
+class _TranslateChip extends StatelessWidget {
+  const _TranslateChip({
+    required this.label,
+    required this.compact,
+    required this.onTranslate,
+    required this.onPick,
+  });
+
+  final String label;
+  final bool compact;
+  final VoidCallback? onTranslate;
+  final VoidCallback? onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final height = compact ? 44.0 : 32.0;
+    // Taps around the 32 px chip, inside the target, land on its half.
+    Widget half({
+      required Key key,
+      required VoidCallback? onTap,
+      required BorderRadius radius,
+      required Widget child,
+    }) => GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        height: height,
+        child: Center(
+          child: InkWell(
+            key: key,
+            onTap: onTap,
+            borderRadius: radius,
+            child: SizedBox(height: 32, child: child),
+          ),
+        ),
+      ),
+    );
+    return KeepsKeyboard(
+      child: DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: ShapeDecoration(
+          shape: StadiumBorder(side: BorderSide(color: palette.separator)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            half(
+              key: const ValueKey('voice-ask-translate'),
+              onTap: onTranslate,
+              radius: const BorderRadius.horizontal(left: Radius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 12, right: 10),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    KapyIcon(
+                      KapyIcons.translateRounded,
+                      size: 14,
+                      color: palette.textSecondary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(label, style: kapyText(13, 18, palette.textSecondary)),
+                  ],
+                ),
+              ),
+            ),
+            Container(width: 1, height: 16, color: palette.separator),
+            Tooltip(
+              message: 'Other languages',
+              child: half(
+                key: const ValueKey('voice-ask-translate-more'),
+                onTap: onPick,
+                radius: const BorderRadius.horizontal(
+                  right: Radius.circular(16),
+                ),
+                child: SizedBox(
+                  width: compact ? 44 : 30,
+                  child: Center(
+                    child: KapyIcon(
+                      KapyIcons.chevronDownRounded,
+                      size: 13,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A translated transcript: each line after the moment it was said, which
+/// plays from there, as the transcript's own rows do.
+class _TranslatedTranscript extends StatelessWidget {
+  const _TranslatedTranscript({required this.text, required this.onPlay});
+
+  final String text;
+  final ValueChanged<Duration>? onPlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = kapyText(14, 21, context.palette.textPrimary);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final line in text.split('\n'))
+          if (line.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: switch (timeMarkPattern.matchAsPrefix(line)) {
+                null => SelectableText(line.trim(), style: style),
+                final mark => Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _Moment(
+                      at: markTime(mark),
+                      onPlay: () => onPlay?.call(markTime(mark)),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: SelectableText(
+                          line.substring(mark.end).trim(),
+                          style: style,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              },
+            ),
+      ],
+    );
+  }
 }

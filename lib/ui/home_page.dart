@@ -61,6 +61,7 @@ import '../speech/speech_api.dart';
 import '../speech/speech_errors.dart';
 import 'voice_consent_sheet.dart';
 import '../ai/kapy_ai.dart';
+import '../ai/recording_translation.dart' show RecentLanguages;
 import '../sync/aead.dart';
 import '../sync/sync_api.dart';
 import '../sync/account.dart';
@@ -1290,6 +1291,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 onManageAccounts: () => _manageKapyAccounts(ai),
                 onSignIn: _kapySignIn,
                 onUpgrade: _kapyUpgrade,
+                recents: RecentLanguages(widget.store),
               ),
       ),
     );
