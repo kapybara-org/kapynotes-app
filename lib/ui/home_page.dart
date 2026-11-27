@@ -6411,7 +6411,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ? _phoneTabsOn(tabsOn, counted: counted, kept: kept)
         : null;
     final end = PhoneNoteHeaderEnd(
-      room: hasDays && _phoneWeekOpen && tasks == 0,
+      weekOpen: hasDays && _phoneWeekOpen,
+      tasksLine: tasks == 0
+          ? null
+          : PhoneNoteHeader.tasksLine(tasks, day, today),
+      onTasks: tasks == 0 ? null : () => unawaited(_openPhoneTasks()),
       tabs: tabs == null || tabsOn == null
           ? null
           : DayTabsRow(
@@ -6448,8 +6452,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ownDay: widget.days == null ? null : _ownDayOf,
             )
           : null,
-      tasks: tasks,
-      onTasks: tasks == 0 ? null : () => unawaited(_openPhoneTasks()),
       members: _selectedMembers,
       present: _selectedPresence,
       currentUserId: widget.account?.sharing?.userId ?? '',
