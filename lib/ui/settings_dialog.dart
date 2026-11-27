@@ -1691,10 +1691,14 @@ class _SettingsDialogState extends State<SettingsDialog>
         _choice<WritingFont>(
           'writing-font-setting',
           'Writing font',
-          'The font your notes are written in',
+          prefs.writingFont.description,
           options: WritingFont.values,
           selected: prefs.writingFont,
-          label: (font) => font == WritingFont.monospace ? 'Mono' : font.label,
+          label: (font) => switch (font) {
+            WritingFont.monospace => 'Mono',
+            WritingFont.handwritten when !AppPlatform.hasPointer => 'Hand',
+            _ => font.label,
+          },
           onSelected: (font) => prefs.writingFont = font,
           byDefault: WritingFont.clean,
           keyPrefix: 'writing-font',
@@ -1709,7 +1713,15 @@ class _SettingsDialogState extends State<SettingsDialog>
               fontVariations: shown.fontVariations,
             );
           },
-          keywords: ['font', 'typeface', 'handwritten', 'mono', 'clean'],
+          keywords: [
+            'font',
+            'typeface',
+            'handwritten',
+            'mono',
+            'clean',
+            'pixel',
+            'retro',
+          ],
         ),
         _Setting(
           'note-text-size-setting',
@@ -3465,9 +3477,7 @@ class _AppearancePreview extends StatelessWidget {
       height: 1.45,
       color: palette.textPrimary,
     );
-    final heading = font == WritingFont.clean || font == WritingFont.monospace
-        ? font
-        : WritingFont.handwritten;
+    final heading = font == WritingFont.mixed ? WritingFont.handwritten : font;
     final caption = TextStyle(fontSize: 11, color: palette.textTertiary);
     return Container(
       key: const ValueKey('appearance-preview'),
@@ -3541,10 +3551,8 @@ class _AppearancePreview extends StatelessWidget {
                                   softWrap: false,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontFamily:
-                                        AppPlatform.monoFontFallback.first,
-                                    fontFamilyFallback:
-                                        AppPlatform.monoFontFallback,
+                                    fontFamily: AppFonts.ui,
+                                    fontFamilyFallback: AppFonts.uiFallback,
                                     fontSize: 12.5,
                                     color: palette.tonalForeground,
                                   ),
@@ -3896,8 +3904,8 @@ class _Keycap extends StatelessWidget {
           softWrap: false,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: AppPlatform.monoFontFallback.first,
-            fontFamilyFallback: AppPlatform.monoFontFallback,
+            fontFamily: AppFonts.ui,
+            fontFamilyFallback: AppFonts.uiFallback,
             fontSize: 12,
             height: 1.2,
             color: keys.isEmpty ? palette.textTertiary : palette.textPrimary,

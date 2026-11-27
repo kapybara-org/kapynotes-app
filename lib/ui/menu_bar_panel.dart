@@ -1127,8 +1127,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                     Text(
                       open.keycapLabel,
                       style: TextStyle(
-                        fontFamily: AppFonts.mono,
-                        fontFamilyFallback: AppFonts.monoFallback,
+                        fontFamily: AppFonts.ui,
+                        fontFamilyFallback: AppFonts.uiFallback,
                         fontSize: 11,
                         height: 14 / 11,
                         color: palette.textSecondary,
@@ -1216,8 +1216,8 @@ class _Tabs extends StatelessWidget {
                     child: Text(
                       meta ? '⌘$keys' : 'Ctrl+$keys',
                       style: TextStyle(
-                        fontFamily: AppFonts.mono,
-                        fontFamilyFallback: AppFonts.monoFallback,
+                        fontFamily: AppFonts.ui,
+                        fontFamilyFallback: AppFonts.uiFallback,
                         fontSize: 11,
                         height: 14 / 11,
                         color: palette.textTertiary,

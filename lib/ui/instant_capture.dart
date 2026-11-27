@@ -125,7 +125,7 @@ class _CaptureSurface extends StatelessWidget {
                 fontSize: 16,
                 height: 1.55,
                 fontWeight: FontWeight.w300,
-                fontFamilyFallback: AppPlatform.monoFontFallback,
+                fontFamilyFallback: AppFonts.uiFallback,
               ),
               cursorColor: palette.accent,
               backgroundCursorColor: palette.editorBackground,

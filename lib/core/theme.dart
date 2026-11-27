@@ -1179,23 +1179,23 @@ class AppTypeScale {
 class AppFonts {
   const AppFonts._();
 
-  /// Every control and label: San Francisco through the system face on a Mac
-  /// or an iPhone, which its licence keeps out of the bundle, and Inter,
-  /// bundled, on Windows, Android and Linux.
-  static String get ui => AppPlatform.isMacOS || AppPlatform.isIOS
-      ? AppPlatform.uiFontFamily
-      : inter;
+  /// Every control, label and result, and the Clean writing style: Geist,
+  /// bundled, so the app reads the same on every device.
+  static const String ui = 'Geist';
 
-  static const String inter = 'Inter';
-
-  /// The handwritten accent's face: see [handAccent].
+  /// The handwritten face: the screen titles ([handTitle]), the empty
+  /// moments ([handAccent]) and the Handwritten and Mixed writing styles.
   static const String hand = 'Shantell Sans';
 
-  /// Figures that have to line up and keys that have to look like keys:
-  /// calculation results, keycaps and code.
+  /// Fixed-width letters, where they are the point: code and the Monospace
+  /// writing style.
   static const String mono = 'Geist Mono';
 
-  /// What draws the scripts and symbols the interface face does not have.
+  /// The Pixel writing style's face, Geist Pixel's Square cut.
+  static const String pixel = 'Geist Pixel';
+
+  /// What draws the scripts and symbols Geist does not have (⌘, ⌥, ⌃, ⎋,
+  /// some currency signs, Devanagari and other scripts): the device's own.
   static List<String> get uiFallback => [
     AppPlatform.uiFontFamily,
     ...AppPlatform.uiFontFallback,

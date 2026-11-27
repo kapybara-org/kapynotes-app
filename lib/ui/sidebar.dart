@@ -2755,8 +2755,6 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
             line: 14,
             weight: AppWeight.regular,
             color: palette.textTertiary,
-            family: AppFonts.mono,
-            fallback: AppFonts.monoFallback,
           ),
         ),
       ),

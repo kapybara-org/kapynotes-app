@@ -2729,8 +2729,8 @@ class _FilterMenu extends StatelessWidget {
                     : Text(
                         hiddenShortcut,
                         style: TextStyle(
-                          fontFamily: AppFonts.mono,
-                          fontFamilyFallback: AppFonts.monoFallback,
+                          fontFamily: AppFonts.ui,
+                          fontFamilyFallback: AppFonts.uiFallback,
                           fontSize: 11,
                           height: 14 / 11,
                           color: palette.textTertiary,

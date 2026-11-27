@@ -2540,6 +2540,14 @@ void main() {
     expect(restored.writingFont, WritingFont.monospace);
   });
 
+  test('Pixel is kept, and a writing style from a later version reads as '
+      'Clean', () {
+    store.data['writingFont.v1'] = 'pixel';
+    expect((LayoutPrefs(store)..load()).writingFont, WritingFont.pixel);
+    store.data['writingFont.v1'] = 'a style from a later version';
+    expect((LayoutPrefs(store)..load()).writingFont, WritingFont.clean);
+  });
+
   testWidgets('changes app text size live and persists it', (tester) async {
     await pumpApp(tester);
     notes.create(body: 'Readable everywhere');
@@ -5993,7 +6001,7 @@ void main() {
 
   testWidgets(
     'the search field is a control fill with no border, and its shortcut '
-    'shows on hover, plain Geist Mono in T3',
+    'shows on hover, plain Geist in T3',
     (tester) async {
       await pumpApp(tester);
 
@@ -6021,7 +6029,7 @@ void main() {
       final keycap = tester.getRect(searchKeycap);
       final hint = tester.widget<Text>(searchKeycap);
       expect(hint.data, binding.keycapLabel);
-      expect(hint.style!.fontFamily, AppFonts.mono);
+      expect(hint.style!.fontFamily, AppFonts.ui);
       expect(hint.style!.fontSize, 11);
       expect(hint.style!.height, 14 / 11);
       expect(hint.style!.fontWeight, FontWeight.w400);

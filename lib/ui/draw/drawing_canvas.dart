@@ -1144,8 +1144,8 @@ class DrawingCanvasState extends State<DrawingCanvas> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             foregroundColor: palette.textPrimary,
             textStyle: TextStyle(
-              fontFamily: AppFonts.mono,
-              fontFamilyFallback: AppFonts.monoFallback,
+              fontFamily: AppFonts.ui,
+              fontFamilyFallback: AppFonts.uiFallback,
               fontSize: 13,
               fontWeight: AppWeight.font(AppWeight.regular),
               fontVariations: AppWeight.wght(AppWeight.regular),

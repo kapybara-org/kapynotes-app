@@ -110,8 +110,8 @@ TextStyle taskText(
 ]) => uiStyle(size, line, FontWeight.w400, color, axis: weight);
 
 TextStyle _mono(Color color) => TextStyle(
-  fontFamily: AppFonts.mono,
-  fontFamilyFallback: AppFonts.monoFallback,
+  fontFamily: AppFonts.ui,
+  fontFamilyFallback: AppFonts.uiFallback,
   fontSize: 11,
   height: 14 / 11,
   color: color,

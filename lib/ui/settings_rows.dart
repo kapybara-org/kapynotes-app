@@ -747,9 +747,26 @@ class SettingsSegmented<T> extends StatelessWidget {
     final palette = context.palette;
     final pointer = AppPlatform.hasPointer;
     final fitted = pointer && width == null;
+    TextStyle labelStyle(T option) =>
+        (styleFor?.call(option) ?? const TextStyle()).copyWith(
+          fontSize: SettingsMetrics.buttonLabelSize,
+          height: 1.2,
+        );
     Widget segment(T option) {
       final chosen = option == selected;
       final enabled = enabledFor?.call(option) ?? true;
+      final label = Text(
+        labelFor(option),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: labelStyle(option).copyWith(
+          color: chosen
+              ? palette.textPrimary
+              : enabled
+              ? palette.textDescription
+              : palette.textTertiary.withValues(alpha: 0.6),
+        ),
+      );
       return Semantics(
         button: true,
         selected: chosen,
@@ -764,7 +781,7 @@ class SettingsSegmented<T> extends StatelessWidget {
             curve: Curves.easeOutCubic,
             height: pointer ? 26 : 30,
             alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: EdgeInsets.symmetric(horizontal: pointer ? 10 : 8),
             decoration: BoxDecoration(
               color: chosen ? palette.segmentSelected : null,
               borderRadius: BorderRadius.circular(AppRadii.control),
@@ -772,20 +789,10 @@ class SettingsSegmented<T> extends StatelessWidget {
                   ? Border.all(color: palette.accent)
                   : null,
             ),
-            child: Text(
-              labelFor(option),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: (styleFor?.call(option) ?? const TextStyle()).copyWith(
-                fontSize: SettingsMetrics.buttonLabelSize,
-                height: 1.2,
-                color: chosen
-                    ? palette.textPrimary
-                    : enabled
-                    ? palette.textDescription
-                    : palette.textTertiary.withValues(alpha: 0.6),
-              ),
-            ),
+            // A phone's label shrinks a little rather than losing letters.
+            child: pointer
+                ? label
+                : FittedBox(fit: BoxFit.scaleDown, child: label),
           ),
         ),
       );
@@ -801,18 +808,54 @@ class SettingsSegmented<T> extends StatelessWidget {
             ? Border.all(color: palette.controlBorder)
             : null,
       ),
-      child: Row(
-        mainAxisSize: fitted ? MainAxisSize.min : MainAxisSize.max,
-        children: [
-          for (final option in options) ...[
-            if (option != options.first) const SizedBox(width: 2),
-            if (fitted)
-              Flexible(child: segment(option))
-            else
-              Expanded(child: segment(option)),
-          ],
-        ],
-      ),
+      child: fitted
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final option in options) ...[
+                  if (option != options.first) const SizedBox(width: 2),
+                  Flexible(child: segment(option)),
+                ],
+              ],
+            )
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                // Options share the track equally, unless a phone's share is
+                // too narrow for a label: then each is as wide as its label.
+                final scaler = MediaQuery.textScalerOf(context);
+                final widths = [
+                  for (final option in options)
+                    if (pointer)
+                      1
+                    else
+                      (TextPainter(
+                            text: TextSpan(
+                              text: labelFor(option),
+                              style: labelStyle(option),
+                            ),
+                            textDirection: TextDirection.ltr,
+                            textScaler: scaler,
+                            maxLines: 1,
+                          )..layout()).width.ceil() +
+                          16,
+                ];
+                final share =
+                    (constraints.maxWidth - 2 * (options.length - 1)) /
+                    options.length;
+                final even = pointer || widths.every((width) => width <= share);
+                return Row(
+                  children: [
+                    for (final (index, option) in options.indexed) ...[
+                      if (index > 0) const SizedBox(width: 2),
+                      Expanded(
+                        flex: even ? 1 : widths[index],
+                        child: segment(option),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
     );
   }
 }
@@ -892,8 +935,8 @@ class SettingsStepper extends StatelessWidget {
               label,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: AppPlatform.monoFontFallback.first,
-                fontFamilyFallback: AppPlatform.monoFontFallback,
+                fontFamily: AppFonts.ui,
+                fontFamilyFallback: AppFonts.uiFallback,
                 fontSize: 12,
                 fontWeight: AppWeight.font(AppWeight.regular),
                 fontVariations: AppWeight.wght(AppWeight.regular),

@@ -132,8 +132,8 @@ class ResultChip extends StatefulWidget {
 
   static TextStyle _textStyle({required bool pill, Color? color}) {
     return TextStyle(
-      fontFamily: AppFonts.mono,
-      fontFamilyFallback: AppFonts.monoFallback,
+      fontFamily: AppFonts.ui,
+      fontFamilyFallback: AppFonts.uiFallback,
       fontSize: AppTypeScale.result,
       fontWeight: pill ? AppWeight.font(AppWeight.regular) : null,
       fontVariations: pill ? AppWeight.wght(AppWeight.regular) : null,

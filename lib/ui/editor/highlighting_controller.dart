@@ -940,7 +940,7 @@ class HighlightingController extends TextEditingController {
   bool _chipLink(NoteLink link) =>
       _cachedWebSpans.contains((link.start, link.end));
 
-  /// A web address on the page: Paper's link chip, Geist Mono at 12.5 in the
+  /// A web address on the page: Paper's link chip, Geist at 12.5 in the
   /// muted ink, keeping the row it sits in. The chip under it is drawn by the
   /// backdrop.
   TextStyle _linkChipStyle(TextStyle style) {
@@ -949,8 +949,8 @@ class HighlightingController extends TextEditingController {
         ? null
         : style.fontSize! * style.height!;
     return style.copyWith(
-      fontFamily: AppFonts.mono,
-      fontFamilyFallback: AppFonts.monoFallback,
+      fontFamily: AppFonts.ui,
+      fontFamilyFallback: AppFonts.uiFallback,
       fontVariations: const [],
       fontWeight: FontWeight.w400,
       fontSize: size,

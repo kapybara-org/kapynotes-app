@@ -8071,8 +8071,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         if (!styles.contains(MarkdownStyle.tableHeader) &&
                             _tableNumber.hasMatch(words.trim())) {
                           drawn = drawn.copyWith(
-                            fontFamily: AppFonts.mono,
-                            fontFamilyFallback: AppFonts.monoFallback,
+                            fontFamily: AppFonts.ui,
+                            fontFamilyFallback: AppFonts.uiFallback,
                             fontSize: base.fontSize! * 14 / 15,
                             color: switch (words.trim()[0]) {
                               '+' => palette.codeString,

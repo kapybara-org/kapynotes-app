@@ -1312,11 +1312,12 @@ void main() {
     final address = runs.firstWhere(
       (span) => span.text == 'example.com/docs?q=notes',
     );
-    expect(address.style!.fontFamily, AppFonts.mono);
+    expect(address.style!.fontFamily, AppFonts.ui);
+    expect(address.style!.fontSize, 12.5);
     expect(address.style!.decoration, TextDecoration.none);
     // The full stop after it is the sentence's, not the address's.
     final period = runs.firstWhere((span) => span.text == '.');
-    expect(period.style?.fontFamily, isNot(AppFonts.mono));
+    expect(period.style?.fontSize, isNot(12.5));
     expect(
       period.style?.decoration?.contains(TextDecoration.underline) ?? false,
       isFalse,
@@ -1369,7 +1370,7 @@ void main() {
       'https://example.com/docs',
     ]) {
       for (final run in runsOf(link)) {
-        expect(run.style!.fontFamily, AppFonts.mono, reason: link);
+        expect(run.style!.fontFamily, AppFonts.ui, reason: link);
       }
     }
 

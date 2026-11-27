@@ -281,13 +281,13 @@ void main() {
     expect(body, startsWith('SnowSEO Issues\n☑ Automate'));
   });
 
-  testWidgets('a web address is set as a Geist Mono chip', (tester) async {
+  testWidgets('a web address is set as a Geist chip', (tester) async {
     window(tester);
     await tester.pumpWidget(_page(_body));
     await tester.pumpAndSettle();
 
     final link = (_spanAt(tester, _body.indexOf('openseo')) as TextSpan).style!;
-    expect(link.fontFamily, AppFonts.mono);
+    expect(link.fontFamily, AppFonts.ui);
     expect(link.fontSize, 12.5);
   });
 

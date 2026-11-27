@@ -1288,8 +1288,8 @@ class _AddRow extends StatelessWidget {
                   child: Text(
                     focused ? '↵' : shortcut ?? '',
                     style: TextStyle(
-                      fontFamily: AppFonts.mono,
-                      fontFamilyFallback: AppFonts.monoFallback,
+                      fontFamily: AppFonts.ui,
+                      fontFamilyFallback: AppFonts.uiFallback,
                       fontSize: 11,
                       height: 14 / 11,
                       color: ink.quiet,

@@ -1,14 +1,13 @@
 import 'dart:ui' show FontVariation;
 
-import 'platform.dart';
 import 'theme.dart';
 
 /// The typeface used on the writing surface.
 ///
-/// App chrome deliberately keeps the system UI face for clarity. This choice
-/// only changes the note itself, where it can add personality without making
+/// App chrome keeps the interface face, Geist, for clarity. This choice only
+/// changes the note itself, where it can add personality without making
 /// settings and controls harder to scan.
-enum WritingFont { mixed, handwritten, clean, monospace }
+enum WritingFont { mixed, handwritten, clean, monospace, pixel }
 
 extension WritingFontDetails on WritingFont {
   String get label => switch (this) {
@@ -16,6 +15,7 @@ extension WritingFontDetails on WritingFont {
     WritingFont.handwritten => 'Handwritten',
     WritingFont.clean => 'Clean',
     WritingFont.monospace => 'Monospace',
+    WritingFont.pixel => 'Pixel',
   };
 
   String get description => switch (this) {
@@ -23,20 +23,15 @@ extension WritingFontDetails on WritingFont {
     WritingFont.handwritten => 'Relaxed strokes with a steady baseline',
     WritingFont.clean => 'Comfortable text for longer notes',
     WritingFont.monospace => 'Fixed-width text for notes and calculations',
-  };
-
-  String get preview => switch (this) {
-    WritingFont.mixed => 'Ideas 42',
-    WritingFont.handwritten => 'Ideas 42',
-    WritingFont.clean => 'Ideas 42',
-    WritingFont.monospace => 'Ideas 42',
+    WritingFont.pixel => 'Blocky letters, like an old computer screen',
   };
 
   String? get fontFamily => switch (this) {
     WritingFont.mixed => AppFonts.ui,
     WritingFont.handwritten => AppFonts.hand,
     WritingFont.clean => AppFonts.ui,
-    WritingFont.monospace => AppPlatform.monoFontFallback.first,
+    WritingFont.monospace => AppFonts.mono,
+    WritingFont.pixel => AppFonts.pixel,
   };
 
   List<String>? get fontFamilyFallback => switch (this) {
@@ -48,7 +43,8 @@ extension WritingFontDetails on WritingFont {
       'sans-serif',
     ],
     WritingFont.clean => AppFonts.uiFallback,
-    WritingFont.monospace => AppPlatform.monoFontFallback,
+    WritingFont.monospace => AppFonts.monoFallback,
+    WritingFont.pixel => [AppFonts.ui, ...AppFonts.uiFallback],
   };
 
   /// Shantell Sans is intentionally kept close to a clean sans: a hint of
@@ -64,17 +60,22 @@ extension WritingFontDetails on WritingFont {
       FontVariation('BNCE', 0),
       FontVariation('SPAC', 0),
     ],
-    WritingFont.mixed || WritingFont.clean || WritingFont.monospace => null,
+    WritingFont.mixed ||
+    WritingFont.clean ||
+    WritingFont.monospace ||
+    WritingFont.pixel => null,
   };
 
   List<FontVariation> get faceVariations => fontVariations ?? const [];
 
-  /// Handwriting faces need a little more size to carry the same visual weight
-  /// as a UI sans or a compact mono face.
+  /// Each face at the size that reads like Clean's 16: a compact mono face a
+  /// step smaller, and Geist Pixel, whose letters are small for their size,
+  /// two steps larger.
   double get editorSize => switch (this) {
     WritingFont.mixed => 16,
     WritingFont.handwritten => 16,
     WritingFont.clean => 16,
     WritingFont.monospace => 14,
+    WritingFont.pixel => 18,
   };
 }

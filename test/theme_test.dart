@@ -162,8 +162,8 @@ void main() {
 
     final theme = KapyTheme.dark();
 
-    // Inter, bundled, with Segoe UI drawing whatever it lacks.
-    expect(theme.textTheme.bodyMedium?.fontFamily, 'Inter');
+    // Geist, bundled, with Segoe UI drawing whatever it lacks.
+    expect(theme.textTheme.bodyMedium?.fontFamily, 'Geist');
     expect(theme.textTheme.bodyMedium?.fontFamilyFallback?.first, 'Segoe UI');
     expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
     expect(theme.textTheme.bodySmall?.fontWeight, FontWeight.w400);
@@ -315,19 +315,21 @@ void main() {
     );
   });
 
-  test('the interface is San Francisco on Apple and Inter elsewhere', () {
+  test('the interface is Geist on every platform, and each device draws what '
+      'it lacks', () {
     addTearDown(() {
       AppPlatform.debugTargetPlatformOverride = null;
       debugDefaultTargetPlatformOverride = null;
     });
 
-    for (final (platform, face) in [
-      (TargetPlatform.macOS, '.AppleSystemUIFont'),
-      (TargetPlatform.iOS, '.AppleSystemUIFont'),
-      (TargetPlatform.windows, 'Inter'),
-      (TargetPlatform.android, 'Inter'),
-      (TargetPlatform.linux, 'Inter'),
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.iOS,
+      TargetPlatform.windows,
+      TargetPlatform.android,
+      TargetPlatform.linux,
     ]) {
+      const face = 'Geist';
       AppPlatform.debugTargetPlatformOverride = platform;
       debugDefaultTargetPlatformOverride = platform;
       final text = KapyTheme.light().textTheme;
@@ -349,11 +351,12 @@ void main() {
     () {
       final pubspec = File('pubspec.yaml').readAsStringSync();
 
-      expect(pubspec, contains('- family: ${AppFonts.inter}\n'));
+      expect(pubspec, contains('- family: ${AppFonts.ui}\n'));
+      expect(pubspec, contains('- family: ${AppFonts.pixel}\n'));
       expect(pubspec, contains('- family: ${AppFonts.hand}\n'));
       // San Francisco's licence keeps it out of the bundle, and the faces
       // the design system replaced are gone with their files.
-      for (final gone in ['Figtree', 'Newsreader', 'SF Pro']) {
+      for (final gone in ['Figtree', 'Newsreader', 'SF Pro', 'Inter']) {
         expect(pubspec, isNot(contains(gone)), reason: gone);
       }
       expect(pubspec, contains('- family: ${AppFonts.mono}\n'));
