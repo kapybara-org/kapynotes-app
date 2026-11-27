@@ -4,14 +4,16 @@
 # stand in for them. Each case drives one test file, whose fake flutter drive
 # does one thing per run:
 #   never    prints nothing, as an app that never connects
+#   giveup   prints nothing for 2 seconds, then gives up as flutter drive does
+#            when the app never connects
 #   stall    connects, prints a test line, then nothing more
 #   chatty   connects, then prints a line every second and never finishes
 #   slow     takes 2 seconds to connect and goes quiet for 2, then passes
 #   pass     connects and passes
 #   fail     connects and fails a test
 # and the case checks the script's exit code, how many runs it made, how long
-# it took and what it said. The stall limit is 3 seconds here, and so is the
-# launch limit on the fake iPhone.
+# it took and what it said. On the fake iPhone the launch and stall limits
+# are 3 seconds; on the fake emulator both are off, as on a real one.
 #
 #   bash tool/ci/phone_screenshots_test.sh
 set -u
@@ -29,6 +31,7 @@ read -ra plan <<< "$FAKE_PLAN"
 connect() { echo "VMServiceFlutterDriver: Connected to Flutter application."; }
 case ${plan[run - 1]:-pass} in
   never) sleep 1000 ;;
+  giveup) sleep 2; echo "Error waiting for a debug connection: The log reader failed unexpectedly"; exit 1 ;;
   stall) connect; echo "flutter: 00:00 +0: a test"; sleep 1000 ;;
   chatty) connect; while :; do echo "flutter: 00:00 +0: still going"; sleep 1; done ;;
   slow) sleep 2; connect; sleep 2; echo "flutter: 00:02 +1: All tests passed!" ;;
@@ -56,15 +59,15 @@ chmod +x "$root/bin/"*
 check() {
   local name=$1 device=$2 plan=$3 want=$4 runs=$5 most=$6
   shift 6
-  local dir=$root/$name app= launch=
+  local dir=$root/$name app= limits=
   mkdir "$dir"
-  if [[ $device != emulator-* ]]; then app=build/ios/Runner.app launch=3; fi
+  if [[ $device != emulator-* ]]; then app=build/ios/Runner.app limits=3; fi
   local began=$SECONDS
   (
     cd "$dir" &&
       PATH=$root/bin:$PATH FAKE_DIR=$dir FAKE_PLAN=$plan FAKE_DEVICE=$device \
         PHONE_TESTS=phone_about PHONE_APP=$app PHONE_TEST_FILE=$dir/test-file \
-        PHONE_LAUNCH_SECONDS=$launch PHONE_STALL_SECONDS=3 PHONE_RETRY_MINUTES=5 \
+        PHONE_LAUNCH_SECONDS=$limits PHONE_STALL_SECONDS=$limits PHONE_RETRY_MINUTES=5 \
         PHONE_FIRST_FILE_MINUTES=1 GITHUB_STEP_SUMMARY=$dir/summary \
         bash "$script" "$device" > "$dir/out" 2>&1
   )
@@ -94,21 +97,21 @@ ios=FAKE-UDID
 {
   # Rule 1: an app that never connects is stopped within the launch limit
   # and runs once more.
-  check launch-hang-then-pass $ios 'never pass' 0 2 15 \
+  check launch-hang-then-pass $ios 'never pass' 0 2 20 \
     "hadn't connected 3 seconds after" \
     '::warning::phone_about_test.dart hung: the app never connected. Running it again' '!FAIL' &
   # Rule 2: an app that connects and then goes quiet is stopped after the
   # stall limit and runs once more.
-  check stall-then-pass $ios 'stall pass' 0 2 15 \
+  check stall-then-pass $ios 'stall pass' 0 2 25 \
     'nothing new reached the log for 3 seconds' \
     '::warning::phone_about_test.dart hung: the app connected, then stalled' '!FAIL' &
   # Rule 3: a second hang fails the run with a FAIL line naming the file and
   # each run's kind of hang.
-  check launch-hang-twice $ios 'never never' 1 2 25 \
+  check launch-hang-twice $ios 'never never' 1 2 35 \
     '::error::FAIL phone_about_test.dart hung twice. First run: the app never connected. Second run: the app never connected' &
-  check stall-twice $ios 'stall stall' 1 2 25 \
+  check stall-twice $ios 'stall stall' 1 2 45 \
     '::error::FAIL phone_about_test.dart hung twice. First run: the app connected, then stalled with nothing new in the log for 3 seconds. Second run: the app connected, then stalled' &
-  check launch-hang-then-stall $ios 'never stall' 1 2 25 \
+  check launch-hang-then-stall $ios 'never stall' 1 2 40 \
     '::error::FAIL phone_about_test.dart hung twice. First run: the app never connected. Second run: the app connected, then stalled' &
   # A test that fails is never run again, and a slow launch or a quiet stretch
   # within the limits is left alone.
@@ -119,13 +122,17 @@ ios=FAKE-UDID
   # without a second run, as before.
   check wall-clock-limit $ios 'chatty' 1 1 80 \
     '::error::phone_about_test.dart was still running after 1 minutes and was stopped' '!Running it again' &
-  # On an emulator, where flutter drive builds the app itself, the launch
-  # limit is off by default, so a launch hang waits for the file's limit
-  # before its second run; a stall still runs once more.
-  check android-stall-then-pass emulator-5554 'stall pass' 0 2 15 \
-    '::warning::phone_about_test.dart hung: the app connected, then stalled' &
-  check android-launch-waits-for-limit emulator-5554 'never pass' 0 2 80 \
-    "hadn't connected after 1 minutes" \
+  # When flutter drive itself gives up on an app that never connects, the
+  # file runs once more, as before.
+  check gives-up-then-pass $ios 'giveup pass' 0 2 20 \
+    '::warning::phone_about_test.dart hung: the app never connected. Running it again' &
+  # On an emulator both limits are off, so it runs as before: a launch hang
+  # or a stall is stopped only at the file's limit, and fails.
+  check android-launch-waits-for-limit emulator-5554 'never pass' 1 1 80 \
+    '::error::phone_about_test.dart was still running after 1 minutes and was stopped' '!hung' &
+  check android-stall-waits-for-limit emulator-5554 'stall pass' 1 1 80 \
+    '::error::phone_about_test.dart was still running after 1 minutes and was stopped' '!hung' &
+  check android-gives-up-then-pass emulator-5554 'giveup pass' 0 2 20 \
     '::warning::phone_about_test.dart hung: the app never connected. Running it again' &
   wait
 } > "$root/results"

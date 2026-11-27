@@ -19,16 +19,18 @@
 # A file that is still running after PHONE_FILE_MINUTES (20 by default; the
 # first file, which pays for the cold build, PHONE_FIRST_FILE_MINUTES, 35) is
 # stopped with everything it started, counts as failed, and the next file runs.
-# A file that hangs is stopped sooner, with a screenshot of where, and runs
-# once more:
-# - its app hasn't connected PHONE_LAUNCH_SECONDS after flutter drive started
-#   (150 by default when PHONE_APP is set, since the slowest healthy iOS launch
-#   took 96; off otherwise, since flutter drive's own build is part of a
-#   launch), or flutter drive gave up waiting for it;
+# When PHONE_APP is set, a file that hangs is stopped sooner, with a
+# screenshot of where, and runs once more:
+# - its app hasn't connected PHONE_LAUNCH_SECONDS (150) after flutter drive
+#   started, since the slowest healthy iOS launch took 96;
 # - or its app connected and then nothing new reached the log for
-#   PHONE_STALL_SECONDS (240 by default; phone_recording_away's locked
-#   recording is quiet for up to 163).
-# A file that hangs on both runs fails the run with a FAIL line saying which.
+#   PHONE_STALL_SECONDS (240), since phone_recording_away's locked recording
+#   is quiet for up to 163.
+# Without PHONE_APP both are off unless set, so a file whose app never
+# connected (flutter drive ends with "Error waiting for a debug connection")
+# runs once more only after flutter drive gives up or the file's limit stops
+# it. A file that hangs on both runs fails the run with a FAIL line saying
+# which way it hung.
 # PHONE_TESTS, when set, names the only tests to run, such as
 # `phone_recording_away`, for a run that checks one test. A name that isn't
 # one of the phone tests below fails the run, so a typo, or a desktop test
@@ -63,7 +65,8 @@ log=$(mktemp)
 limit=$(( ${PHONE_FIRST_FILE_MINUTES:-35} * 60 ))
 launch=${PHONE_LAUNCH_SECONDS:-${PHONE_APP:+150}}
 launch=${launch:-0}
-stall=${PHONE_STALL_SECONDS:-240}
+stall=${PHONE_STALL_SECONDS:-${PHONE_APP:+240}}
+stall=${stall:-0}
 mkdir -p build/screenshots
 
 wanted() {
@@ -175,31 +178,28 @@ drive() {
     local pid=$! started=$SECONDS quiet=$SECONDS
     set +m
     while kill -0 "$pid" 2>/dev/null; do
-      now=$(wc -c < "$log")
-      if (( now != size )); then size=$now quiet=$SECONDS; fi
-      if ! $connected && grep -qE 'Connected to Flutter application|[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
-        connected=true
+      if (( launch || stall )); then
+        now=$(wc -c < "$log")
+        if (( now != size )); then size=$now quiet=$SECONDS; fi
+        if ! $connected && grep -qE 'Connected to Flutter application|[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
+          connected=true
+        fi
       fi
-      if ! $connected && (( launch > 0 && SECONDS - started >= launch )); then
+      if ! $connected && (( launch && SECONDS - started >= launch )); then
         echo "$1_test.dart's app hadn't connected $launch seconds after flutter drive started, so it was stopped"
         hang=launch
-      elif $connected && (( SECONDS - quiet >= stall )); then
+      elif $connected && (( stall && SECONDS - quiet >= stall )); then
         echo "$1_test.dart's app connected, then nothing new reached the log for $stall seconds, so it was stopped"
         hang=stall
       elif (( SECONDS - started >= limit )); then
-        if $connected; then
-          echo "::error::$1_test.dart was still running after $(( limit / 60 )) minutes and was stopped"
-        else
-          echo "$1_test.dart's app hadn't connected after $(( limit / 60 )) minutes, so it was stopped"
-          hang=launch
-        fi
+        echo "::error::$1_test.dart was still running after $(( limit / 60 )) minutes and was stopped"
       elif $android && { grep -q 'Exception attempting to connect to the VM Service' "$log" ||
         (( $(grep -c 'unusually long time to connect' "$log") >= 30 )); }; then
         echo "::warning::$1_test.dart could not reach the app's VM Service and was stopped"
         stop "$1" "$pid"
         break
       else
-        sleep 1
+        sleep 5
         continue
       fi
       stop "$1" "$pid"
