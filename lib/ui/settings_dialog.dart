@@ -1963,7 +1963,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         _toggle(
           'ask-before-deleting-toggle',
           'Ask before deleting notes',
-          'Deleting several notes at once always asks',
+          'Deleted notes wait 30 days in Recently deleted. Deleting several '
+          'at once always asks.',
           value: prefs.askBeforeDeleting,
           onChanged: (value) => prefs.askBeforeDeleting = value,
           byDefault: true,
