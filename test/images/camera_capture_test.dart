@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/images/camera_capture.dart';
-import 'package:kapy_notes/images/image_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
@@ -86,43 +85,6 @@ void main() {
       )
       .properties
       .label!;
-
-  testWidgets('the mobile image action asks for camera or photo library', (
-    tester,
-  ) async {
-    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-    final existing = XFile.fromData(
-      Uint8List.fromList([1, 2, 3]),
-      name: 'existing.png',
-      mimeType: 'image/png',
-    );
-    List<XFile>? selected;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) => TextButton(
-            onPressed: () async {
-              selected = await acquireNoteImages(
-                context,
-                chooseFromLibrary: () async => [existing],
-              );
-            },
-            child: const Text('Add image'),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('Add image'));
-    await tester.pumpAndSettle();
-    expect(find.text('Camera'), findsOneWidget);
-    expect(find.text('Photo library'), findsOneWidget);
-
-    await tester.tap(find.text('Photo library'));
-    await tester.pumpAndSettle();
-    expect(selected, [existing]);
-  });
 
   testWidgets('with no camera, Photos is still there and it can try again', (
     tester,

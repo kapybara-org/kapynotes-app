@@ -270,7 +270,7 @@ class HomePage extends StatefulWidget {
 
   /// Injectable media boundaries keep launch tests independent of a physical
   /// camera and let the real page remember which note owns an interrupted
-  /// Android camera or photo-library result.
+  /// Android photo-library result.
   final ImageFileAcquirer? imageAcquirer;
   final MediaFileAcquirer? cameraAcquirer;
   final LostImageRetriever? lostImageRetriever;
@@ -916,7 +916,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Remembers the target note only for the moment Android leaves Flutter for
-  /// its camera or system photo picker. This durable marker is needed where the
+  /// the system photo picker. This durable marker is needed where the
   /// operating system may reclaim the Activity while another one is open.
   Future<List<XFile>> _pickImagesOnAndroid(
     String noteId,

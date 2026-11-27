@@ -223,8 +223,9 @@ dev_dependencies:
   # a platform for. Both come in with path_provider itself; named here because
   # the export tests use them directly.
   path_provider_platform_interface: ^2.1.2
-  # Lets a test stand in for the camera and Android's lost-result store. It
-  # comes in with image_picker; named here because a test uses it directly.
+  # Lets a test stand in for the photo library and Android's lost-result
+  # store. It comes in with image_picker; named here because a test uses it
+  # directly.
   image_picker_platform_interface: ^2.11.1
   plugin_platform_interface: ^2.1.8
   # Lets a test stand in for the video player, so a video in a note can be
