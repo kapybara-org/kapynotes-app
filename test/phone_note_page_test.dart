@@ -2440,8 +2440,14 @@ void main() {
       expect(openNoteBody(tester), startsWith('Standup notes'));
       expect(tabs, findsNothing);
       expect(
-        find.textContaining('task'),
-        findsWidgets,
+        find.descendant(
+          of: find.byType(PhoneNoteHeaderEnd),
+          matching: find.descendant(
+            of: tasksLine,
+            matching: find.text('2 tasks today'),
+          ),
+        ),
+        findsOneWidget,
         reason:
             "Tuesday's page has today's tasks line, which Monday's tabs "
             'had not',

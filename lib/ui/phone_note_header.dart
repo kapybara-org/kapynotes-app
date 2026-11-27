@@ -12,8 +12,8 @@ import 'sidebar_timestamp.dart';
 
 /// A note's header on a phone, as M07 and M09 draw it: ⌂ Home, then the
 /// note's day, Kapy AI and More. Under them, while the day has it open, the
-/// note's week and the line that opens the day's tasks, then on a page that
-/// shows a day's notes as tabs, those, then a hairline.
+/// note's week. The page under it draws the rest, the day's tasks line,
+/// tabs and hairline, as a [PhoneNoteHeaderEnd], so they turn with the note.
 class PhoneNoteHeader extends StatelessWidget {
   const PhoneNoteHeader({
     super.key,
@@ -25,16 +25,12 @@ class PhoneNoteHeader extends StatelessWidget {
     this.weekOpen = true,
     this.onWeekToggled,
     this.week,
-    this.tasks = 0,
-    this.onTasks,
-    this.tabs,
     this.members = const [],
     this.present = const [],
     this.currentUserId = '',
     this.onMembers,
     this.assistant,
     this.typing = false,
-    this.ends = true,
   });
 
   final VoidCallback onHome;
@@ -53,15 +49,6 @@ class PhoneNoteHeader extends StatelessWidget {
   final VoidCallback? onWeekToggled;
   final Widget? week;
 
-  /// How many tasks the line under the week counts, and what opens them.
-  /// The line shows only while there are some.
-  final int tasks;
-  final VoidCallback? onTasks;
-
-  /// A day's notes as tabs (A1), last in the header, the week or not. Under
-  /// an open week they take the place of the room that ends it.
-  final Widget? tabs;
-
   /// Who else has the note, at the left of the day button.
   final List<SpaceMember> members;
   final List<Collaborator> present;
@@ -74,13 +61,6 @@ class PhoneNoteHeader extends StatelessWidget {
   /// While a note with words in it is being typed in (M08) the row of
   /// buttons steps back, and the week and the tasks line stay as they are.
   final bool typing;
-
-  /// Whether the header ends itself: under an open week, its tasks line or
-  /// the room in its place, then its [tabs] and its hairline, everything
-  /// that is the day's. Where it does not, the page under it draws that end
-  /// as a [PhoneNoteHeaderEnd], so it turns with the note while the header,
-  /// the same on every day, stays put.
-  final bool ends;
 
   /// The row of buttons, and the line that opens the tasks.
   static const double rowHeight = 52;
@@ -98,21 +78,14 @@ class PhoneNoteHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     final day = this.day;
     final today = this.today;
     final week = this.week;
-    final onTasks = this.onTasks;
     final open = weekOpen && week != null;
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
-      child: DecoratedBox(
+      child: KeyedSubtree(
         key: const ValueKey('phone-note-header'),
-        decoration: BoxDecoration(
-          border: ends
-              ? Border(bottom: BorderSide(color: palette.railBorder))
-              : null,
-        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -168,21 +141,7 @@ class PhoneNoteHeader extends StatelessWidget {
                 ),
               ),
             ),
-            if (open) ...[
-              week,
-              if (ends)
-                if (tasks > 0 &&
-                    onTasks != null &&
-                    day != null &&
-                    today != null)
-                  _TasksLine(
-                    label: tasksLine(tasks, day, today),
-                    onPressed: onTasks,
-                  )
-                else if (tabs == null)
-                  const SizedBox(height: 8),
-            ],
-            ?tabs,
+            if (open) ...[week],
           ],
         ),
       ),
@@ -212,8 +171,8 @@ class PhoneNoteHeader extends StatelessWidget {
   }
 }
 
-/// The end of a [PhoneNoteHeader] that does not end itself, drawn by the
-/// page under it so it turns with the note: under an open week the day's
+/// The end of a [PhoneNoteHeader], drawn by the page under it so it turns
+/// with the note: under an open week the day's
 /// tasks line or some room, the day's notes as tabs, then the hairline.
 class PhoneNoteHeaderEnd extends StatelessWidget {
   const PhoneNoteHeaderEnd({
