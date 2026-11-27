@@ -81,11 +81,13 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # No gradle cache: this job never runs on main, so every branch saved its
+      # own 2.3 GB copy, which pushed main's Flutter caches out of the
+      # repository's 10 GB and left the macOS jobs downloading Flutter (KAP-325).
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - uses: ./.github/actions/flutter
         with:
@@ -267,6 +269,18 @@ jobs:
       # once, with no retry; this fetches them first, with retries (KAP-320).
       - run: bash tool/ci/gemma_natives.sh ios_sim_arm64
 
+      # One build for every test file, while the iPhone boots: built per file,
+      # the app took 1.5 to 6 minutes of Xcode each time (KAP-325).
+      - name: Build the phone tests
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: >-
+          flutter build ios --simulator --debug --no-pub
+          --target integration_test/phones.dart
+          --dart-define=KAPYNOTES_SYNC=false
+          --dart-define=KAPYNOTES_DEVICE_SHOTS="$UDID"
+          --dart-define=KAPYNOTES_PHONE_TEST_FILE="$RUNNER_TEMP/phone-test"
+
       # Waits out the boot, or boots the iPhone if that failed, then turns
       # Slide to Type off, which only a booted iPhone accepts, so its
       # introduction doesn't cover the first keyboard.
@@ -302,6 +316,10 @@ jobs:
       - name: Screenshots on an iOS 27.2 iPhone
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
+          PHONE_APP: build/ios/iphonesimulator/Runner.app
+          PHONE_TEST_FILE: ${{ runner.temp }}/phone-test
+          PHONE_FIRST_FILE_MINUTES: 15
+          PHONE_FILE_MINUTES: 12
         run: bash tool/ci/phone_screenshots.sh "$UDID"
 
       - name: List the screenshots

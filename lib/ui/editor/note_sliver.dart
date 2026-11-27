@@ -40,32 +40,45 @@ typedef NoteCaret = ({
 });
 
 /// What the lines draw besides their text: the selection, in
-/// [selectionColor] while it shows, and the caret, in [caretColor] while it
-/// shows. While [handles] are given, the lines holding the selection's ends
-/// lead them, for the selection handles to follow.
+/// [selectionColor] while it shows, the caret, in [caretColor] while it
+/// shows, and what a find in the note [found]. While [handles] are given, the
+/// lines holding the selection's ends lead them, for the selection handles to
+/// follow.
 typedef NoteMarks = ({
   TextSelection selection,
   Color? selectionColor,
   Color? caretColor,
   NoteCaret caret,
   ({LayerLink start, LayerLink end})? handles,
+  NoteFound? found,
+});
+
+/// What a find in the note found: [ranges], sorted and apart, each filled
+/// in [color] under the writing, and the one at [current] in [currentColor].
+typedef NoteFound = ({
+  List<TextRange> ranges,
+  int current,
+  Color color,
+  Color currentColor,
 });
 
 /// What a line shows past its writing, such as a calculation's result:
-/// [child], centred on the line's last row, or on its first with [firstRow],
-/// with its right edge at [right] in the line. When the writing on that row
-/// runs too near, the child moves out past [right] after it, as far as the
-/// line reaches, and covers the writing only once there's no room left.
-/// [leader], when given, fills the space between the writing and the child.
-/// Every row of the writing stops [room] short of the line's end, so that
-/// the child never covers it; with none, the writing runs the full width.
-/// The line is at least [height] tall, for a child that takes more rows than
-/// the writing, and the child is then centred on the whole line.
+/// [child], centred on the line's last row, with its right edge at [right]
+/// in the line. When the writing on that row runs too near, the child moves
+/// out past [right] after it, as far as the line reaches, and covers the
+/// writing only once there's no room left. [leader], when given, fills the
+/// space between the writing and the child.
+///
+/// With [room], the writing stops that far short of the line's end when it
+/// fits on one row beside the child, so the child never covers it. When it
+/// doesn't, it runs the full width, wrapping as any writing does, and the
+/// child takes a row of its own under it. A line with [room] has no
+/// [leader]. The line is at least [height] tall, for a child that takes more
+/// rows than the writing, and the child is then centred on the whole line.
 typedef LineTrailing = ({
   Widget child,
   Widget? leader,
   double right,
-  bool firstRow,
   double room,
   double height,
 });
@@ -225,6 +238,10 @@ class NoteLayout {
   final Map<int, LineSpan> _spans = {};
   final Map<int, TextPainter> _paragraphs = {};
 
+  /// The lines whose writing runs the full width, with what they show past
+  /// it on a row of its own under it; see [LineTrailing.room].
+  final Set<int> _under = {};
+
   double? _width;
   LineHeights? _heights;
   RenderNoteSliver? _sliver;
@@ -244,6 +261,7 @@ class NoteLayout {
       pixelRatio: 1,
     ),
     handles: null,
+    found: null,
   );
   set marks(NoteMarks value) {
     if (value == _marks) return;
@@ -271,21 +289,29 @@ class NoteLayout {
   TextPainter paragraphOf(int line) =>
       _paragraphs[line] ??= _paragraphFor(line);
 
+  /// Whether [line], once laid out, shows what is past its writing on a row
+  /// of its own under it.
+  bool trailsUnder(int line) => _under.contains(line);
+
   /// Lays [line] out, unless it is already, and records its height.
   double measure(int line) {
-    final height = spanAt(line).folded
-        ? 0.0
-        : math.max(
-            paragraphOf(line).height,
-            trailingOf?.call(line)?.height ?? 0,
-          );
+    final height = spanAt(line).folded ? 0.0 : _heightOf(line);
     _heights!.measure(line, height);
     return height;
+  }
+
+  double _heightOf(int line) {
+    final writing = paragraphOf(line).height;
+    final trailing = trailingOf?.call(line)?.height ?? 0;
+    return trailsUnder(line)
+        ? writing + math.max(_row, trailing)
+        : math.max(writing, trailing);
   }
 
   void edited(LineEdit edit) {
     _spans.clear();
     _paragraphs.clear();
+    _under.clear();
     _heights?.apply(edit, _estimate);
     _sliver?._edited(edit);
   }
@@ -293,6 +319,7 @@ class NoteLayout {
   void restyled() {
     _spans.clear();
     _paragraphs.clear();
+    _under.clear();
     _sliver?.markNeedsLayout();
   }
 
@@ -320,6 +347,7 @@ class NoteLayout {
     _width = width;
     _kept.clear();
     _paragraphs.clear();
+    _under.clear();
     final heights = _heights;
     if (heights == null) {
       _heights = LineHeights([
@@ -331,8 +359,17 @@ class NoteLayout {
   }
 
   TextPainter _paragraphFor(int line) {
+    _under.remove(line);
+    final room = trailingOf?.call(line)?.room ?? 0;
+    final beside = _laidOut(line, math.max(0.0, _width! - room));
+    if (room == 0 || beside.computeLineMetrics().length < 2) return beside;
+    _under.add(line);
+    return _laidOut(line, _width!);
+  }
+
+  /// [line]'s paragraph laid out [width] wide, kept for the next time.
+  TextPainter _laidOut(int line, double width) {
     final drawn = spanAt(line);
-    final width = math.max(0.0, _width! - (trailingOf?.call(line)?.room ?? 0));
     final key = _Drawn(
       drawn.span,
       drawn.placeholders,
@@ -822,7 +859,6 @@ class _NoteLine extends MultiChildRenderObjectWidget {
     null => null,
     final trailing => (
       right: trailing.right,
-      firstRow: trailing.firstRow,
       leader: trailing.leader != null,
       height: trailing.height,
     ),
@@ -843,12 +879,7 @@ class _NoteLine extends MultiChildRenderObjectWidget {
 }
 
 /// Where a line puts what it shows past its writing; see [LineTrailing].
-typedef LineTrailingPlacement = ({
-  double right,
-  bool firstRow,
-  bool leader,
-  double height,
-});
+typedef LineTrailingPlacement = ({double right, bool leader, double height});
 
 /// One line of the note: its paragraph, the widgets set in it, and what it
 /// shows past its writing, which comes after them among its children.
@@ -945,9 +976,17 @@ class RenderNoteLine extends RenderBox
     final child = _trailingChild;
     if (trailing == null || child == null) return;
     child.layout(BoxConstraints(maxWidth: size.width), parentUsesSize: true);
-    final row = _row(paragraph, first: trailing.firstRow);
-    final start = row.right + lineTrailingGap;
     final width = child.size.width;
+    if (_noteLayout.trailsUnder(_line)) {
+      final top = paragraph.height;
+      _trailingAt = Offset(
+        math.max(0.0, trailing.right - width),
+        top + (size.height - top - child.size.height) / 2,
+      );
+      return;
+    }
+    final row = _lastRow(paragraph);
+    final start = row.right + lineTrailingGap;
     var left = trailing.right - width;
     if (left < start) left = math.min(start, size.width - width);
     left = math.max(0.0, left);
@@ -965,9 +1004,9 @@ class RenderNoteLine extends RenderBox
     _leaderAt = Offset(start, row.top);
   }
 
-  /// The line's first or last row: as tall as the row, and as wide as the
-  /// writing on it.
-  Rect _row(TextPainter paragraph, {required bool first}) {
+  /// The line's last row: as tall as the row, and as wide as the writing on
+  /// it.
+  Rect _lastRow(TextPainter paragraph) {
     final length = _noteLayout.lines[_line].length;
     final boxes = length == 0
         ? const <TextBox>[]
@@ -978,7 +1017,7 @@ class RenderNoteLine extends RenderBox
     if (boxes.isEmpty) {
       return Rect.fromLTWH(0, 0, 0, paragraph.preferredLineHeight);
     }
-    final top = boxes.map((box) => box.top).reduce(first ? math.min : math.max);
+    final top = boxes.map((box) => box.top).reduce(math.max);
     final row = boxes.where((box) => (box.top - top).abs() < 0.5);
     return Rect.fromLTRB(
       row.map((box) => box.left).reduce(math.min),
@@ -997,6 +1036,9 @@ class RenderNoteLine extends RenderBox
     final start = layout.lines.startOf(_line);
     final end = start + layout.lines[_line].length;
     final selection = marks.selection;
+    if (marks.found case final found?) {
+      _paintFound(context.canvas, offset, found, start, end);
+    }
     final selectionColor = marks.selectionColor;
     final fill =
         selectionColor != null &&
@@ -1098,6 +1140,40 @@ class RenderNoteLine extends RenderBox
     }
     if (selection.end >= start && selection.end <= end) {
       lead(handles.end, first: false);
+    }
+  }
+
+  /// Fills what a find found on this line, [start] to [end] in the note,
+  /// under its writing, the way the selection is filled.
+  void _paintFound(
+    Canvas canvas,
+    Offset offset,
+    NoteFound found,
+    int start,
+    int end,
+  ) {
+    final ranges = found.ranges;
+    var first = 0;
+    var last = ranges.length;
+    while (first < last) {
+      final middle = (first + last) >> 1;
+      if (ranges[middle].end <= start) {
+        first = middle + 1;
+      } else {
+        last = middle;
+      }
+    }
+    for (var i = first; i < ranges.length && ranges[i].start < end; i++) {
+      final from = math.max(ranges[i].start, start) - start;
+      final to = math.min(ranges[i].end, end) - start;
+      if (from >= to) continue;
+      _paintSelection(
+        canvas,
+        offset,
+        from,
+        to,
+        Paint()..color = i == found.current ? found.currentColor : found.color,
+      );
     }
   }
 
@@ -1220,8 +1296,13 @@ class RenderNoteLine extends RenderBox
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
     final trailing = _trailingChild;
     final at = _trailingAt;
+    // A pill on a row of its own under the writing takes no tap on the
+    // writing, which its target would otherwise reach up into.
+    final onWriting =
+        _noteLayout.trailsUnder(_line) && position.dy < paragraph.height;
     if (trailing != null &&
         at != null &&
+        !onWriting &&
         result.addWithPaintOffset(
           offset: at,
           position: position,

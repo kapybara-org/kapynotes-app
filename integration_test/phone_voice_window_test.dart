@@ -25,6 +25,11 @@ final _window = find.byType(VoiceNoteView);
 final _starters = find.byKey(const ValueKey('voice-ask-starters'));
 final _drawer = find.byKey(const ValueKey('voice-ask-drawer'));
 final _earlier = find.byKey(const ValueKey('voice-ask-earlier'));
+final _translate = find.descendant(
+  of: _starters,
+  matching: find.text('Translate to…'),
+);
+final _picker = find.byKey(const ValueKey('voice-translate-picker'));
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -75,6 +80,39 @@ void main() {
     expect(tester.takeException(), isNull);
     return seed;
   }
+
+  /// Translate to… among the starters, and the picker it opens as a sheet,
+  /// its rows 44 pt tall. Nothing is sent.
+  Future<void> translate(WidgetTester tester, String look) async {
+    final seed = await open(
+      tester,
+      look == 'dark' ? AppearanceMode.dark : AppearanceMode.light,
+    );
+    await tester.dragUntilVisible(_translate, _starters, const Offset(-120, 0));
+    await tester.pumpAndSettle();
+    await screenshot('phone-voice-window-translate-chip-$look', device: true);
+    await tester.tap(_translate);
+    await tester.pumpAndSettle();
+    expect(_picker, findsOneWidget);
+    expect(
+      find.ancestor(of: _picker, matching: find.byType(BottomSheet)),
+      findsOneWidget,
+      reason: 'a sheet over the window',
+    );
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('voice-translate-yours-en')))
+          .height,
+      greaterThanOrEqualTo(44),
+    );
+    await screenshot('phone-voice-window-translate-picker-$look', device: true);
+    expect(seed.answers, isEmpty);
+    expect(tester.takeException(), isNull);
+  }
+
+  testWidgets('Translate to…, light', (tester) => translate(tester, 'light'));
+
+  testWidgets('Translate to…, dark', (tester) => translate(tester, 'dark'));
 
   testWidgets('the sheet, light', (tester) async {
     await open(tester, AppearanceMode.light);

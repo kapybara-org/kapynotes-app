@@ -371,7 +371,8 @@ void main() {
       });
     }
 
-    testWidgets('at 3.1x, the first pair and Start with fit', (tester) async {
+    testWidgets('at 3.1x, the first pair and Stop choosing fit, with the '
+        'whole task named', (tester) async {
       await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Two\n☐ Three');
       await pumpTasks(
         tester,
@@ -393,7 +394,7 @@ void main() {
       expectInside(tester, start, 390);
       final label = find.descendant(
         of: start,
-        matching: find.textContaining('Start with'),
+        matching: find.text('Stop choosing and start Hide the menu'),
       );
       expectWholeLine(
         tester,

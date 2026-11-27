@@ -10,6 +10,7 @@ import UIKit
   private var audioDecodeChannel: FlutterMethodChannel?
   private var systemRegionChannel: FlutterMethodChannel?
   private var fileExportChannel: FlutterMethodChannel?
+  private var cameraSupportChannel: FlutterMethodChannel?
 
   override func application(
     _ application: UIApplication,
@@ -40,6 +41,9 @@ import UIKit
       with: engineBridge.applicationRegistrar.messenger()
     )
     fileExportChannel = FileExport.register(
+      with: engineBridge.applicationRegistrar.messenger()
+    )
+    cameraSupportChannel = CameraSupport.register(
       with: engineBridge.applicationRegistrar.messenger()
     )
     RecordingActivity.shared.register(with: engineBridge.applicationRegistrar.messenger())

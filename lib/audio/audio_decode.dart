@@ -116,6 +116,7 @@ class AudioDecoder {
         'This build cannot read recordings on the device.',
       );
     } on PlatformException catch (error) {
+      debugPrint('KapyNotes: decode failed: ${error.details}');
       throw AudioDecodeException(
         error.message ?? 'This recording could not be read.',
       );

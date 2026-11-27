@@ -56,6 +56,7 @@ class FakeKapyAi extends KapyAi {
   KapyChat? _current;
   bool _answering = false;
   KapyPending? _pending;
+  KapyTranslationDraft? _draft;
 
   List<KapyChat> chatList;
   DeviceModelState deviceState;
@@ -88,6 +89,8 @@ class FakeKapyAi extends KapyAi {
     bool clearPending = false,
     bool? answering,
     KapyModel? model,
+    KapyTranslationDraft? draft,
+    bool clearDraft = false,
   }) {
     if (chats != null) chatList = chats;
     if (current != null) _current = current;
@@ -99,6 +102,8 @@ class FakeKapyAi extends KapyAi {
     if (clearPending) _pending = null;
     if (answering != null) _answering = answering;
     if (model != null) _model = model;
+    if (draft != null) _draft = draft;
+    if (clearDraft) _draft = null;
     notifyListeners();
   }
 
@@ -120,6 +125,12 @@ class FakeKapyAi extends KapyAi {
 
   @override
   bool get chatsSync => syncing ?? _pro;
+
+  /// Set to say the book holds a recap.
+  bool recaps = false;
+
+  @override
+  bool get hasRecaps => recaps;
 
   @override
   KapyModel get defaultModel => _default;
@@ -256,6 +267,8 @@ class FakeKapyAi extends KapyAi {
   bool get answering => _answering;
   @override
   KapyPending? get pending => _pending;
+  @override
+  KapyTranslationDraft? get draft => _draft;
 
   @override
   Future<void> proceed() async {
