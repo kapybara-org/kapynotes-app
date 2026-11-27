@@ -387,8 +387,9 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                KeyedSubtree(
+                Listener(
                   key: _top,
+                  behavior: HitTestBehavior.opaque,
                   child: top(context, _settlingTo ?? _fadingTo),
                 ),
                 Expanded(child: pages),
