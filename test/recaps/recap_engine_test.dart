@@ -333,6 +333,20 @@ void main() {
     String last(ScriptedEngine ai) =>
         ai.asked.last.notes.map((n) => '${n.title}\n${n.text}').join('\n');
 
+    test("leaves out a later day's note held for deleting meanwhile", () async {
+      final ai = ScriptedEngine();
+      ai.reply = (request) {
+        if (ai.asked.length == 1) {
+          world.store.holdDelete(['fri']);
+          return 'Monday plans said to ship it.';
+        }
+        return 'TITLE: Shipped';
+      };
+      await make(week, ai);
+      expect(ai.paid, 2);
+      expect(last(ai), isNot(contains('Friday')));
+    });
+
     test('drops the sentence after the one naming it, too', () async {
       final ai = ScriptedEngine();
       ai.reply = (request) {
