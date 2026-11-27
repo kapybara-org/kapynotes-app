@@ -480,7 +480,7 @@ void main() {
         expect(tester.takeException(), isNull, reason: 'nothing clips');
         expect(
           showing(
-            'Some notes this recap read are hidden now, so what Kapy AI wrote '
+            'Some notes this recap used are hidden now, so what Kapy AI wrote '
             'was taken out. Remake it from your notes as they are now.',
           ),
           isTrue,
