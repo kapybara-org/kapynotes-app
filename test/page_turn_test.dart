@@ -196,6 +196,29 @@ void main() {
       expect(_state(tester).turns, [true]);
     });
 
+    testWidgets('turns from a drag on a bare part of it, where nothing in it '
+        'takes a touch', (tester) async {
+      await _pump(
+        tester,
+        _Pages(
+          top: (index) => SizedBox(
+            height: 100,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('top $index'),
+            ),
+          ),
+        ),
+      );
+      await tester.timedDragFrom(
+        const Offset(_width * 3 / 4, 50),
+        const Offset(-200, 0),
+        const Duration(milliseconds: 300),
+      );
+      await tester.pumpAndSettle();
+      expect(_state(tester).turns, [true]);
+    });
+
     testWidgets('is the only place a turn starts from', (tester) async {
       await _pump(tester, const _Pages(top: _top));
       await tester.timedDragFrom(
