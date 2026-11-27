@@ -2848,28 +2848,30 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<void> _deleteNow(List<String> ids, {bool emptying = false}) async {
     final going = _goingNow(ids, emptying: emptying);
     if (going.isEmpty) return;
-    final theirs = going.where((note) => _sharedBy(note) != null).length;
+    final own = [
+      for (final note in going)
+        if (_sharedBy(note) == null) note,
+    ];
     const shared =
         'Notes shared with you are only removed from your notes. Their '
         'owners keep them.';
-    final own = going.length - theirs;
-    final title = going.first.title.trim();
+    final title = own.firstOrNull?.title.trim() ?? '';
     final confirmed = await _confirmDelete(
-      title: own == 0
+      title: own.isEmpty
           ? 'Remove from your notes?'
-          : going.length == 1
+          : own.length == 1
           ? 'Delete note for good?'
-          : 'Delete ${going.length} notes for good?',
-      body: own == 0
+          : 'Delete ${own.length} notes for good?',
+      body: own.isEmpty
           ? shared
           : [
-              going.length == 1
+              own.length == 1
                   ? 'Deletes ${title.isEmpty ? 'this note' : '"$title"'} from '
                         'every synced device, with its pictures and '
                         'recordings.'
                   : 'Deletes them from every synced device, with their '
                         'pictures and recordings.',
-              if (theirs > 0) shared,
+              if (own.length < going.length) shared,
             ].join(' '),
       action: emptying ? 'Empty' : 'Delete',
     );
