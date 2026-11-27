@@ -461,6 +461,58 @@ void main() {
     expect(shutter, findsNothing);
   });
 
+  testWidgets('a click outside closes the window while nothing is captured', (
+    tester,
+  ) async {
+    final result = await open(tester);
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pumpAndSettle();
+    expect(result(), isEmpty);
+    expect(shutter, findsNothing);
+    expect(camera.calls.last, 'close');
+  });
+
+  testWidgets('a click outside leaves a recording going', (tester) async {
+    final result = await open(tester, startInVideo: true);
+    await space(tester);
+    await tester.pump(const Duration(seconds: 3));
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump(const Duration(seconds: 1));
+    expect(result(), isNull);
+    expect(timer, findsOneWidget);
+
+    await space(tester);
+    await tester.pumpAndSettle();
+    expect(find.text('Review video'), findsOneWidget);
+  });
+
+  for (final video in [false, true]) {
+    final kind = video ? 'video' : 'photo';
+    testWidgets('a click outside keeps a $kind waiting in review', (
+      tester,
+    ) async {
+      final result = await open(tester, startInVideo: video);
+      await space(tester);
+      if (video) {
+        await tester.pump(const Duration(seconds: 2));
+        await space(tester);
+      }
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(10, 10));
+      await tester.pumpAndSettle();
+      expect(result(), isNull);
+      expect(find.text('Review $kind'), findsOneWidget);
+      expect(
+        directory.listSync(recursive: true).whereType<File>(),
+        hasLength(1),
+      );
+
+      await tester.tap(use);
+      await tester.pumpAndSettle();
+      expect(result(), hasLength(1));
+    });
+  }
+
   testWidgets('closing mid-recording keeps nothing', (tester) async {
     final result = await open(tester, startInVideo: true);
     await space(tester);

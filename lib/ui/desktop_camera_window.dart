@@ -411,40 +411,43 @@ class _DesktopCameraWindowState extends State<DesktopCameraWindow>
     final captured = _captured;
     final size = MediaQuery.sizeOf(context);
     final width = math.min(880.0, size.width - 96);
-    return Dialog(
-      backgroundColor: palette.surfaceBackground,
-      insetPadding: const EdgeInsets.all(24),
-      child: Focus(
-        focusNode: _focus,
-        autofocus: true,
-        onKeyEvent: _onKey,
-        child: SizedBox(
-          width: width,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(32, 22, 26, 28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _Header(
-                  title: captured == null
-                      ? 'Camera'
-                      : _capturedVideo
-                      ? 'Review video'
-                      : 'Review photo',
-                  onClose: () => Navigator.of(context).pop(),
-                ),
-                const SizedBox(height: 18),
-                Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: captured == null
-                        ? _buildCamera()
-                        : _buildReview(captured),
+    return PopScope(
+      canPop: !_recording && captured == null,
+      child: Dialog(
+        backgroundColor: palette.surfaceBackground,
+        insetPadding: const EdgeInsets.all(24),
+        child: Focus(
+          focusNode: _focus,
+          autofocus: true,
+          onKeyEvent: _onKey,
+          child: SizedBox(
+            width: width,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(32, 22, 26, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _Header(
+                    title: captured == null
+                        ? 'Camera'
+                        : _capturedVideo
+                        ? 'Review video'
+                        : 'Review photo',
+                    onClose: () => Navigator.of(context).pop(),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 18),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: captured == null
+                          ? _buildCamera()
+                          : _buildReview(captured),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
