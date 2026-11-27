@@ -392,95 +392,102 @@ class _TabChipState extends State<_TabChip> {
         ): ?widget.onPin,
         const CustomSemanticsAction(label: 'Close tab'): widget.onClose,
       },
-      child: Listener(
-        // A middle click closes a tab, as it does in a browser.
-        onPointerDown: (event) {
-          if (event.buttons == kMiddleMouseButton) widget.onClose();
+      child: FocusableActionDetector(
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) => widget.onSelect(),
+          ),
         },
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onSelect,
-          onSecondaryTapUp: (details) =>
-              unawaited(_showMenu(details.globalPosition)),
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: SizedBox(
-              width: _TabChip.widthFor(widget.labelWidth),
-              child: Stack(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Row(
-                      children: [
-                        KapyIcon(
-                          widget.tab.pinned == true
-                              ? KapyIcons.pinOutlined
-                              : widget.tab.icon,
-                          size: 16,
-                          color: active
-                              ? palette.textPrimary
-                              : palette.textTertiary,
-                        ),
-                        const SizedBox(width: 8),
-                        SizedBox(
-                          width: widget.labelWidth,
-                          child: widget.cut
-                              ? Tooltip(message: widget.tab.title, child: title)
-                              : title,
-                        ),
-                        const SizedBox(width: 4),
-                        Tooltip(
-                          message: [
-                            'Close tab',
-                            ?widget.closeShortcut,
-                          ].join('  '),
-                          child: MouseRegion(
-                            onEnter: (_) =>
-                                setState(() => _closeHovered = true),
-                            onExit: (_) =>
-                                setState(() => _closeHovered = false),
-                            child: GestureDetector(
-                              key: ValueKey('close-tab-${widget.tab.id}'),
-                              behavior: HitTestBehavior.opaque,
-                              onTap: widget.onClose,
-                              child: Container(
-                                width: 20,
-                                height: 20,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: _closeHovered
-                                      ? palette.controlBackground
-                                      : null,
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: KapyIcon(
-                                  KapyIcons.closeRounded,
-                                  size: 12,
-                                  color: active
-                                      ? palette.textSecondary
-                                      : palette.textTertiary,
+        child: Listener(
+          // A middle click closes a tab, as it does in a browser.
+          onPointerDown: (event) {
+            if (event.buttons == kMiddleMouseButton) widget.onClose();
+          },
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onSelect,
+            onSecondaryTapUp: (details) =>
+                unawaited(_showMenu(details.globalPosition)),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: SizedBox(
+                width: _TabChip.widthFor(widget.labelWidth),
+                child: Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Row(
+                        children: [
+                          KapyIcon(
+                            widget.tab.pinned == true
+                                ? KapyIcons.pinOutlined
+                                : widget.tab.icon,
+                            size: 16,
+                            color: active
+                                ? palette.textPrimary
+                                : palette.textTertiary,
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: widget.labelWidth,
+                            child: widget.cut
+                                ? Tooltip(message: widget.tab.title, child: title)
+                                : title,
+                          ),
+                          const SizedBox(width: 4),
+                          Tooltip(
+                            message: [
+                              'Close tab',
+                              ?widget.closeShortcut,
+                            ].join('  '),
+                            child: MouseRegion(
+                              onEnter: (_) =>
+                                  setState(() => _closeHovered = true),
+                              onExit: (_) =>
+                                  setState(() => _closeHovered = false),
+                              child: GestureDetector(
+                                key: ValueKey('close-tab-${widget.tab.id}'),
+                                behavior: HitTestBehavior.opaque,
+                                onTap: widget.onClose,
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: _closeHovered
+                                        ? palette.controlBackground
+                                        : null,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: KapyIcon(
+                                    KapyIcons.closeRounded,
+                                    size: 12,
+                                    color: active
+                                        ? palette.textSecondary
+                                        : palette.textTertiary,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (active)
-                    Positioned(
-                      left: 0,
-                      bottom: 0,
-                      width: _TabChip.underlineFor(widget.labelWidth),
-                      height: 2,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: palette.selectedBorder,
-                          borderRadius: BorderRadius.circular(1),
-                        ),
+                        ],
                       ),
                     ),
-                ],
+                    if (active)
+                      Positioned(
+                        left: 0,
+                        bottom: 0,
+                        width: _TabChip.underlineFor(widget.labelWidth),
+                        height: 2,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: palette.selectedBorder,
+                            borderRadius: BorderRadius.circular(1),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -559,6 +566,7 @@ class _MoreButton extends StatelessWidget {
       button: true,
       label: '$count more ${count == 1 ? 'tab' : 'tabs'}',
       excludeSemantics: true,
+      onTap: () => unawaited(_show(context)),
       child: Material(
         type: MaterialType.transparency,
         child: InkWell(

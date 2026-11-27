@@ -363,6 +363,18 @@ class KapyIcons {
     0xE047,
     HugeIcons.strokeRoundedPause,
   );
+  static const volumeHighRounded = KapyIconData(
+    0xE0ED,
+    HugeIcons.strokeRoundedVolumeHigh,
+  );
+  static const volumeOffRounded = KapyIconData(
+    0xE0EE,
+    HugeIcons.strokeRoundedVolumeOff,
+  );
+  static const fullScreenRounded = KapyIconData(
+    0xE0EF,
+    HugeIcons.strokeRoundedFullScreen,
+  );
   static const groupOutlined = KapyIconData(
     0xE092,
     HugeIcons.strokeRoundedUserMultiple,
@@ -626,5 +638,33 @@ class KapyIcons {
   static const wifiOffRounded = KapyIconData(
     0xE0E2,
     HugeIcons.strokeRoundedWifiOff01,
+  );
+  static const moreHorizontalRounded = KapyIconData(
+    0xE0ED,
+    HugeIcons.strokeRoundedMoreHorizontal,
+  );
+  static const forwardRounded = KapyIconData(
+    0xE0EE,
+    HugeIcons.strokeRoundedForward01,
+  );
+  static const pencilEditRounded = KapyIconData(
+    0xE0EF,
+    HugeIcons.strokeRoundedPencilEdit01,
+  );
+  static const slidersRounded = KapyIconData(
+    0xE0F0,
+    HugeIcons.strokeRoundedSlidersHorizontal,
+  );
+  static const messageQuestionRounded = KapyIconData(
+    0xE0F1,
+    HugeIcons.strokeRoundedMessageQuestion,
+  );
+  static const newTwitter = KapyIconData(
+    0xE0F2,
+    HugeIcons.strokeRoundedNewTwitter,
+  );
+  static const linkedin = KapyIconData(
+    0xE0F3,
+    HugeIcons.strokeRoundedLinkedin01,
   );
 }

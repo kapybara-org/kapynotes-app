@@ -1,13 +1,21 @@
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kapy_notes/billing/billing.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/speech/speech_api.dart';
 import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/aead.dart';
+import 'package:kapy_notes/sync/key_wrap.dart';
+import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/auth_api.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -38,10 +46,14 @@ class MemoryStore extends LocalStore {
 
 /// One device: its own storage and keystore, the shared server.
 class Device {
-  Device(this.server, {FakeAuth? auth, int protocol = protocolVersion})
-    : auth = auth ?? FakeAuth() {
+  Device(
+    this.server, {
+    FakeAuth? auth,
+    int protocol = protocolVersion,
+    BlobStore? blobs,
+  }) : auth = auth ?? FakeAuth() {
     store = MemoryStore();
-    notes = NotesStore(store);
+    notes = NotesStore(store, blobs: blobs);
     keys = KeyStore(InMemorySecureStore());
     final syncState = SyncState(store);
     account = Account(
@@ -158,6 +170,151 @@ void main() {
     expect(d.account.state, AccountState.ready);
     expect(d.account.speech, isA<_StubSpeech>());
     d.dispose();
+  });
+
+  group('a full account', () {
+    late Device d;
+
+    /// Adds [ref]'s bytes and puts it in a new note, then lets sync try it.
+    Future<void> add(
+      NoteAttachmentRef Function(String hash) ref,
+      int seed,
+    ) async {
+      final hash = await d.notes.blobs.put(
+        Uint8List.fromList(List.generate(512, (i) => (i + seed) & 0xFF)),
+      );
+      final id = d.notes.create().id;
+      d.notes.updateDocument(id, NoteAttachmentRef.placeholder, const [], [
+        ref(hash),
+      ]);
+      await d.account.sync!.syncNow();
+      await settle(server);
+    }
+
+    NoteVideoRef video(String hash) => NoteVideoRef(
+      offset: 0,
+      hash: hash,
+      key: Uint8List(32),
+      mime: 'video/mp4',
+      bytes: 512,
+      width: 1280,
+      height: 720,
+      durationMs: 42000,
+    );
+
+    NoteImageRef photo(String hash) => NoteImageRef(
+      offset: 0,
+      hash: hash,
+      key: Uint8List(32),
+      mime: 'image/png',
+      bytes: 512,
+      width: 64,
+      height: 64,
+    );
+
+    setUp(() async {
+      final dir = await Directory.systemTemp.createTemp('account-full');
+      addTearDown(() => dir.delete(recursive: true));
+      d = Device(server, blobs: BlobStore(directory: dir));
+      addTearDown(d.dispose);
+      await d.boot();
+      await d.account.signIn(email: 'a@b.co', password: 'x');
+      await d.account.createPassphrase('a good passphrase');
+    });
+
+    test(
+      'says so once, with what would not fit, and not on later tries',
+      () async {
+        server.storageQuota = 8;
+        await add(video, 1);
+        expect(d.account.storageFull, isA<NoteVideoRef>());
+
+        d.account.storageFullShown();
+        expect(d.account.storageFull, isNull);
+
+        // The next pass is turned away again, and the next thing added too.
+        await d.account.sync!.syncNow();
+        await settle(server);
+        await add(photo, 2);
+        expect(d.account.storageFull, isNull);
+        // Nothing underneath changed: both are still here to try again.
+        expect(d.notes.notes.every((note) => note.isDirty), isTrue);
+      },
+    );
+
+    test(
+      'says so again once something has fitted and it is full again',
+      () async {
+        server.storageQuota = 8;
+        await add(video, 1);
+        d.account.storageFullShown();
+
+        server.storageQuota = 1 << 20;
+        await d.account.sync!.syncNow();
+        await settle(server);
+        expect(server.blobs, isNotEmpty, reason: 'there was room');
+        expect(d.account.storageFull, isNull);
+
+        server.storageQuota = 8;
+        await add(photo, 2);
+        expect(d.account.storageFull, isA<NoteImageRef>());
+      },
+    );
+
+    test(
+      'an accepted upload into someone else\'s space leaves the flag set',
+      () async {
+        server.storageQuota = 8;
+        await add(video, 1);
+        d.account.storageFullShown();
+        // Gone, so the next pass cannot retry it and clear the flag because
+        // there really is room.
+        d.notes.delete(d.notes.notes.single.id);
+
+        final owner = 'someone-else';
+        server.user(owner);
+        const spaceId = 'theirs';
+        final theirs = server.user(d.auth.id).bundle?.identity?.x25519Public;
+        expect(theirs, isNotNull);
+        server.spaces[spaceId] =
+            FakeSpace(
+                id: spaceId,
+                kind: SpaceKind.team,
+                name: 'Theirs',
+                ownerId: owner,
+              )
+              ..members[owner] = SpaceRole.owner
+              ..members[d.auth.id] = SpaceRole.member
+              ..keys[d.auth.id] = await sealToPublicKey(randomKey(), theirs!);
+        await d.account.sharing!.refresh();
+        expect(d.account.sharing!.spaceById(spaceId)!.isOwner, isFalse);
+
+        server.storageQuota = 1 << 20;
+        final hash = await d.notes.blobs.put(
+          Uint8List.fromList(List.filled(512, 3)),
+        );
+        final id = d.notes
+            .create(spaceId: spaceId, contentKey: Uint8List(32))
+            .id;
+        d.notes.updateDocument(id, NoteAttachmentRef.placeholder, const [], [
+          photo(hash),
+        ]);
+        await d.account.sync!.syncNow();
+        await settle(server);
+        expect(d.notes.byId(id)!.attachments.single.isUploaded, isTrue);
+
+        server.storageQuota = 8;
+        await add(photo, 4);
+        expect(d.account.storageFull, isNull);
+      },
+    );
+
+    test('a refusal that is not about room says nothing', () async {
+      server.storageQuota = 1 << 20;
+      await add(video, 1);
+      expect(server.blobs, isNotEmpty);
+      expect(d.account.storageFull, isNull);
+    });
   });
 
   test('Pro bought here brings back the spaces sync was holding', () async {

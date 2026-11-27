@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -252,8 +253,9 @@ class Sidebar extends StatelessWidget {
   /// only move the focus to it.
   final Set<String> openElsewhereIds;
 
-  /// Whether a note is on the day last picked in the page's week, which
-  /// lights it more quietly than the open one. Asked only of the rows built.
+  /// Whether a note is on the day last picked in the page's week, or is one
+  /// of the notes that day opened, which lights it more quietly than the open
+  /// one. Asked only of the rows built.
   final bool Function(Note note)? ofPickedDay;
 
   /// Opens a note in a tab of its own behind the one in front: ⌘-click or
@@ -542,11 +544,13 @@ class Sidebar extends StatelessWidget {
                             picks!.step(_order, delta, open: _highlighted?.id),
                   onStopPicking: _picking ? picks!.clear : null,
                   archiveShortcut: archiveShortcut,
-                  child: _foldersTab
-                      ? _buildFolders(context)
-                      : notes.isEmpty
-                      ? _buildEmpty(context)
-                      : _sweeps(_buildBesideRail(context)),
+                  child: BackForwardSlide(
+                    child: _foldersTab
+                        ? _buildFolders(context)
+                        : notes.isEmpty
+                        ? _buildEmpty(context)
+                        : _sweeps(_buildBesideRail(context)),
+                  ),
                 ),
               ),
             ),

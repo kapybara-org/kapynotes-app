@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/core/toast.dart';
+import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'test_fonts.dart';
@@ -75,6 +76,25 @@ void main() {
     expect(find.text('Undo'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('Removed Priya'), findsNothing);
+  });
+
+  testWidgets('withdraw takes down only the toast that offers that action', (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(_harness((value) => context = value));
+    void reopen() {}
+    void undo() {}
+
+    Toast.show(context, 'Removed Priya', action: 'Undo', onAction: undo);
+    await tester.pump();
+    Toast.withdraw(reopen);
+    await tester.pump();
+    expect(find.text('Removed Priya'), findsOneWidget);
+
+    Toast.withdraw(undo);
+    await tester.pump();
     expect(find.text('Removed Priya'), findsNothing);
   });
 
@@ -691,6 +711,114 @@ void main() {
       expect(tester.getCenter(surface).dx, (412 + 820) / 2);
     });
 
+    // Parity item 64: a menu took it to the middle of the window, over the
+    // list, until it closed.
+    testWidgets('keeps its place under a menu and a menu from it, and centres '
+        "on the window under a dialog a menu's item opens", (tester) async {
+      final context = await window(tester, list: listOf(336));
+      opened(context);
+      await tester.pumpAndSettle();
+      const page = (412 + 820) / 2;
+      expect(tester.getCenter(surface).dx, page);
+
+      Future<String?> menu(BuildContext over, String item) =>
+          showKapyContextMenu<String>(
+            context: over,
+            globalPosition: const Offset(500, 200),
+            items: [PopupMenuItem(value: item, child: Text(item))],
+          );
+      unawaited(menu(context, 'Tags'));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+      unawaited(menu(tester.element(find.text('Tags')), 'Work'));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      expect(find.text('Tags'), findsNothing);
+      expect(tester.getCenter(surface).dx, page);
+
+      // As a shortcut can open one over a menu still open.
+      unawaited(menu(context, 'Copy'));
+      await tester.pumpAndSettle();
+      unawaited(
+        showDialog<void>(
+          context: tester.element(find.text('Copy')),
+          builder: (_) => const SizedBox(width: 200, height: 200),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, 410);
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      expect(find.text('Copy'), findsOneWidget);
+      expect(tester.getCenter(surface).dx, page);
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+
+      unawaited(
+        menu(context, 'Rename').then((_) {
+          if (context.mounted) {
+            unawaited(
+              showDialog<void>(
+                context: context,
+                builder: (_) => const SizedBox(width: 200, height: 200),
+              ),
+            );
+          }
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      expect(find.text('Rename'), findsNothing);
+      expect(tester.getCenter(surface).dx, 410);
+    });
+
+    testWidgets("keeps its place under a popover, as the tag list a menu's "
+        'Tags opens', (tester) async {
+      final context = await window(tester, list: listOf(336));
+      opened(context);
+      await tester.pumpAndSettle();
+      const page = (412 + 820) / 2;
+
+      unawaited(
+        showKapyContextMenu<String>(
+          context: context,
+          globalPosition: const Offset(500, 200),
+          items: const [PopupMenuItem(value: 'Tags', child: Text('Tags'))],
+        ).then((_) {
+          if (context.mounted) {
+            unawaited(
+              showKapyPopover<void>(
+                context: context,
+                barrierLabel: 'Close tags',
+                pageBuilder: (_, _, _) => const Center(child: Text('Work')),
+              ),
+            );
+          }
+        }),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(surface).dx, page);
+      await tester.tap(find.text('Tags'));
+      await tester.pump();
+      expect(tester.getCenter(surface).dx, page);
+      await tester.pumpAndSettle();
+      expect(find.text('Work'), findsOneWidget);
+      expect(tester.getCenter(surface).dx, page);
+
+      Navigator.pop(context);
+      await tester.pumpAndSettle();
+      expect(find.text('Work'), findsNothing);
+      expect(tester.getCenter(surface).dx, page);
+    });
+
     testWidgets("keeps above the list's foot where it centres on the window "
         'over the list, and not where it keeps beside the list or the list '
         'is slid shut', (tester) async {
@@ -722,6 +850,43 @@ void main() {
 
       expect(tester.getCenter(surface).dx, 512);
       expect(tester.getSize(surface).width, 480);
+    });
+
+    testWidgets("leaves a phone's card stepping down under a menu, as under "
+        'anything over its bar', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      Toast.debugAnimateLifetimeInTests = false;
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(400, 800);
+      addTearDown(tester.view.reset);
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Builder(
+            builder: (value) {
+              context = value;
+              return const Align(
+                alignment: Alignment.bottomCenter,
+                child: ToastClearance(child: SizedBox(width: 400, height: 100)),
+              );
+            },
+          ),
+        ),
+      );
+      Toast.show(context, 'Copied');
+      await tester.pumpAndSettle();
+      expect(tester.getRect(surface).bottom, 800 - 100 - 16);
+
+      unawaited(
+        showKapyContextMenu<void>(
+          context: context,
+          globalPosition: const Offset(200, 300),
+          items: const [PopupMenuItem(child: Text('Copy'))],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.getRect(surface).bottom, greaterThan(800 - 100 - 16));
     });
   });
 
@@ -785,4 +950,97 @@ void main() {
       });
     }
   }
+  group("a toast's onGone", () {
+    testWidgets('runs once its time is up, and never after its action', (
+      tester,
+    ) async {
+      late BuildContext context;
+      await tester.pumpWidget(_harness((value) => context = value));
+      var gone = 0;
+      var undone = 0;
+
+      Toast.show(
+        context,
+        'Note deleted',
+        action: 'Undo',
+        onAction: () => undone++,
+        onGone: () => gone++,
+      );
+      await tester.pump();
+      await tester.pump(
+        Toast.actionLifetime - const Duration(milliseconds: 100),
+      );
+      expect(gone, 0);
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('Note deleted'), findsNothing);
+      expect(gone, 1);
+
+      Toast.show(
+        context,
+        'Note deleted',
+        action: 'Undo',
+        onAction: () => undone++,
+        onGone: () => gone++,
+      );
+      await tester.pump();
+      await tester.tap(find.text('Undo'));
+      await tester.pump(Toast.actionLifetime * 2);
+      expect(undone, 1);
+      expect(gone, 1);
+    });
+
+    testWidgets('runs as another toast takes its place', (tester) async {
+      late BuildContext context;
+      await tester.pumpWidget(_harness((value) => context = value));
+      final gone = <String>[];
+
+      Toast.show(
+        context,
+        'Note deleted',
+        action: 'Undo',
+        onAction: () {},
+        onGone: () => gone.add('first'),
+      );
+      await tester.pump();
+      Toast.show(
+        context,
+        '2 notes deleted',
+        action: 'Undo',
+        onAction: () {},
+        onGone: () => gone.add('second'),
+      );
+      expect(gone, ['first']);
+      await tester.pump();
+      expect(find.text('2 notes deleted'), findsOneWidget);
+
+      Toast.show(context, 'Copied');
+      expect(gone, ['first', 'second']);
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('never runs for a toast still showing as the app closes', (
+      tester,
+    ) async {
+      late BuildContext context;
+      await tester.pumpWidget(_harness((value) => context = value));
+      var gone = 0;
+
+      Toast.show(
+        context,
+        'Note deleted',
+        action: 'Undo',
+        onAction: () {},
+        onGone: () => gone++,
+      );
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(Toast.actionLifetime * 2);
+      expect(gone, 0);
+
+      await tester.pumpWidget(_harness((value) => context = value));
+      Toast.show(context, 'Copied');
+      await tester.pump(const Duration(seconds: 2));
+      expect(gone, 0);
+    });
+  });
 }

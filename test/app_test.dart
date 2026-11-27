@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/gestures.dart'
@@ -79,7 +80,8 @@ import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
-import 'package:kapy_notes/ui/sidebar_swipe.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
+import 'package:kapy_notes/ui/folders_ui.dart' show FolderPage, FoldersTab;
 import 'package:kapy_notes/ui/sidebar_timestamp.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
@@ -95,6 +97,7 @@ import 'audio/voice_recording_controller_test.dart'
 import 'kapy_icon_finder.dart';
 import 'note_editor_test.dart' show sendShortcut;
 import 'quick_capture_test.dart' show stubLaunchIntent;
+import 'support/back_forward.dart';
 import 'support/note_driver.dart';
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
@@ -731,6 +734,241 @@ void main() {
     // The task documents' own coalesced write.
     await tester.pump(const Duration(seconds: 1));
   });
+
+  group(
+    'a swipe and the mouse buttons step where the pointer is (KAPY-97)',
+    () {
+      const back = BackForwardStep.back;
+      const forward = BackForwardStep.forward;
+      final desktop = TargetPlatformVariant.desktop();
+
+      Future<FolderStore> pumpWithFolders(WidgetTester tester) async {
+        asDesktop();
+        final folders = FolderStore(store);
+        await folders.load();
+        await pumpApp(tester, size: const Size(1400, 800), folders: folders);
+        return folders;
+      }
+
+      String? folderInFront(WidgetTester tester) {
+        final page = find.byType(FolderPage);
+        return page.evaluate().isEmpty
+            ? null
+            : tester.widget<FolderPage>(page).folderId;
+      }
+
+      for (final by in StepBy.values) {
+        testWidgets('${by.name}: over the list it turns Notes and Folders, and '
+            'the list stays open', (tester) async {
+          await pumpWithFolders(tester);
+          notes.create(body: 'Alpha');
+          await tester.pumpAndSettle();
+          final list = find.byType(Sidebar);
+          expect(prefs.foldersShown, isFalse);
+
+          await stepOver(tester, list, back, by);
+          expect(prefs.foldersShown, isFalse, reason: 'Notes is the first');
+          await stepOver(tester, list, forward, by);
+          expect(prefs.foldersShown, isTrue);
+          expect(find.byType(FoldersTab), findsOneWidget);
+          await stepOver(tester, list, forward, by);
+          expect(prefs.foldersShown, isTrue, reason: 'Folders is the last');
+          await stepOver(tester, list, back, by);
+          expect(prefs.foldersShown, isFalse);
+          expect(list, findsOneWidget);
+          expect(openNoteBody(tester), 'Alpha', reason: 'the note stays');
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over a list with no Folders it walks the '
+            'notes shown, as the page does', (tester) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'First note');
+          notes.create(body: 'Second note');
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+          await tester.pumpAndSettle();
+          final list = find.byType(Sidebar);
+
+          await stepOver(tester, list, back, by);
+          expect(openNoteBody(tester), 'First note');
+          await stepOver(tester, list, forward, by);
+          expect(openNoteBody(tester), 'Second note');
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over the note it walks the notes shown', (
+          tester,
+        ) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'First note');
+          notes.create(body: 'Second note');
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+          await tester.pumpAndSettle();
+          final page = find.byType(NoteEditor);
+
+          await stepOver(tester, page, back, by);
+          expect(openNoteBody(tester), 'First note');
+          await stepOver(tester, page, forward, by);
+          expect(openNoteBody(tester), 'Second note');
+          expect(find.byType(Sidebar), findsOneWidget, reason: 'list stays');
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over the tab row it moves to the tab beside', (
+          tester,
+        ) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'First note');
+          notes.create(body: 'Second note');
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+          await tester.pumpAndSettle();
+          final modifier = AppPlatform.isMacOS
+              ? LogicalKeyboardKey.metaLeft
+              : LogicalKeyboardKey.controlLeft;
+          await tester.sendKeyDownEvent(modifier);
+          await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+          await tester.sendKeyUpEvent(modifier);
+          await tester.pumpAndSettle();
+          final row = find.byType(NoteTabRow);
+          expect(openNoteBody(tester), 'First note');
+
+          await stepOver(tester, row, back, by);
+          expect(openNoteBody(tester), 'First note', reason: 'the first tab');
+          await stepOver(tester, row, forward, by);
+          expect(openNoteBody(tester), 'Second note');
+          await stepOver(tester, row, back, by);
+          expect(openNoteBody(tester), 'First note');
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over Tasks it moves between its views', (
+          tester,
+        ) async {
+          asDesktop();
+          await notes.load();
+          notes.create(body: 'Errands\n☐ Pay the rent');
+          final tasks = TaskLibrary(
+            notes: notes,
+            store: store,
+            storage: MemoryDocStorage(),
+          );
+          await tasks.load();
+          await tasks.reconcileNow();
+          await pumpApp(tester, size: const Size(1400, 800), tasks: tasks);
+          await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+          await tester.pumpAndSettle();
+          bool done() =>
+              tester.widget<TasksScreen>(find.byType(TasksScreen)).filter.done;
+          expect(done(), isFalse);
+
+          await stepOver(tester, find.byType(TasksScreen), forward, by);
+          expect(done(), isTrue);
+          await stepOver(tester, find.byType(TasksSidebar), back, by);
+          expect(done(), isFalse);
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over the filter menu Back closes its submenu '
+            'and Forward opens it again', (tester) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'Alpha');
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('When'));
+          await tester.pumpAndSettle();
+          final when = find.byWidgetPredicate(
+            (widget) => widget.runtimeType.toString() == '_WhenMenu',
+          );
+          expect(when, findsOneWidget);
+          final menu = tester.getCenter(find.text('When'));
+
+          await stepAt(tester, menu, back, by);
+          expect(when, findsNothing);
+          expect(find.text('When'), findsOneWidget, reason: 'the menu stays');
+          await stepAt(tester, menu, forward, by);
+          expect(when, findsOneWidget);
+        }, variant: desktop);
+      }
+
+      testWidgets('the Notes and Folders switch and the tabs take keyboard '
+          'focus, and Enter turns them, as a step does', (tester) async {
+        await pumpWithFolders(tester);
+        notes.create(body: 'First note');
+        notes.create(body: 'Second note');
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+        await tester.pumpAndSettle();
+        final modifier = AppPlatform.isMacOS
+            ? LogicalKeyboardKey.metaLeft
+            : LogicalKeyboardKey.controlLeft;
+        await tester.sendKeyDownEvent(modifier);
+        await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+        await tester.sendKeyUpEvent(modifier);
+        await tester.pumpAndSettle();
+
+        Future<void> enterOn(Finder target) async {
+          Focus.of(tester.element(target)).requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await tester.pumpAndSettle();
+        }
+
+        await enterOn(
+          find.descendant(
+            of: find.byType(NoteTabRow),
+            matching: find.text('Second note'),
+          ),
+        );
+        expect(openNoteBody(tester), 'Second note');
+        await enterOn(find.byKey(const ValueKey('notes-switch-folders')));
+        expect(prefs.foldersShown, isTrue);
+        await enterOn(find.byKey(const ValueKey('notes-switch-notes')));
+        expect(prefs.foldersShown, isFalse);
+      }, variant: desktop);
+
+      testWidgets(
+        'over the list, Back goes up out of the folder in front, then '
+        'to Notes, and Forward comes back down',
+        (tester) async {
+          final folders = await pumpWithFolders(tester);
+          final trips = folders.create('Trips')!;
+          final lisbon = folders.create('Lisbon', parentId: trips.id)!;
+          prefs.setFolderOpen(trips.id, true);
+          prefs.foldersShown = true;
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Lisbon'));
+          await tester.pumpAndSettle();
+          expect(folderInFront(tester), lisbon.id);
+          final list = find.byType(Sidebar);
+
+          await stepOver(tester, list, back, StepBy.pan);
+          expect(folderInFront(tester), trips.id);
+          expect(prefs.foldersShown, isTrue);
+          await stepOver(tester, list, back, StepBy.wheel);
+          expect(prefs.foldersShown, isFalse);
+          expect(folderInFront(tester), trips.id, reason: 'the page stays');
+          await stepOver(tester, list, forward, StepBy.button);
+          expect(prefs.foldersShown, isTrue);
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(folderInFront(tester), lisbon.id);
+          await stepOver(tester, list, forward, StepBy.wheel);
+          expect(
+            folderInFront(tester),
+            lisbon.id,
+            reason: 'nothing further in',
+          );
+        },
+        variant: desktop,
+      );
+    },
+  );
 
   group('voice choices survive a relaunch', () {
     void saveChoices(LocalStore saved) {
@@ -2544,43 +2782,127 @@ void main() {
     expect((LayoutPrefs(store)..load()).appTextSize, AppTextSize.large);
   });
 
-  testWidgets('editor text shortcuts change, persist, and reset its size', (
-    tester,
-  ) async {
+  testWidgets('the zoom keys step the whole window, persist, and reset it, '
+      'leaving note text as it is', (tester) async {
     await pumpApp(tester);
     notes.create(body: 'Zoom this note\n2 + 2');
     await tester.pumpAndSettle();
 
     double editorFontSize() => openNoteField(tester).style.fontSize!;
+    Future<void> press(ShortcutAction action) =>
+        pressShortcut(tester, shortcuts.bindingFor(action)!);
+
+    final seen = <double>[];
+    for (var i = 0; i < 7; i++) {
+      await press(ShortcutAction.zoomIn);
+      seen.add(prefs.zoom);
+    }
+    expect(seen, [1.1, 1.25, 1.5, 1.75, 2, 2, 2]);
+    expect((LayoutPrefs(store)..load()).zoom, 2);
+    expect(prefs.editorTextScale, 1);
     expect(editorFontSize(), WritingFont.clean.editorSize);
 
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.increaseEditorTextSize)!,
-    );
-    expect(prefs.editorTextScale, 1.1);
+    for (var i = 0; i < 8; i++) {
+      await press(ShortcutAction.zoomOut);
+    }
+    expect(prefs.zoom, 0.8);
+    expect((LayoutPrefs(store)..load()).zoom, 0.8);
+
+    await press(ShortcutAction.resetZoom);
+    expect(prefs.zoom, 1);
+    expect((LayoutPrefs(store)..load()).zoom, 1);
+    expect(prefs.editorTextScale, 1);
+  });
+
+  testWidgets('Settings shows the zoom and steps it', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await pumpApp(tester);
+    await openSettings(tester, section: SettingsSection.appearance);
+    final row = find.byKey(const ValueKey('zoom-setting'));
+    await tester.ensureVisible(row);
+    await tester.pumpAndSettle();
+
     expect(
-      editorFontSize(),
-      closeTo(WritingFont.clean.editorSize * 1.1, 0.001),
+      find.descendant(of: row, matching: find.text('The whole window')),
+      findsOneWidget,
     );
-    expect((LayoutPrefs(store)..load()).editorTextScale, 1.1);
+    expect(find.descendant(of: row, matching: find.text('100%')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('note-text-size-setting')),
+        matching: find.text('Text inside notes'),
+      ),
+      findsOneWidget,
+    );
 
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.decreaseEditorTextSize)!,
+    await tester.tap(
+      find.descendant(of: row, matching: find.byKey(const ValueKey('stepper-up'))),
     );
+    await tester.pumpAndSettle();
+    expect(prefs.zoom, 1.1);
+    expect(find.descendant(of: row, matching: find.text('110%')), findsOneWidget);
     expect(prefs.editorTextScale, 1);
+  });
 
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.increaseEditorTextSize)!,
-    );
-    await pressShortcut(
-      tester,
-      shortcuts.bindingFor(ShortcutAction.resetEditorTextSize)!,
-    );
-    expect(prefs.editorTextScale, 1);
-    expect(editorFontSize(), WritingFont.clean.editorSize);
+  testWidgets('at 150% the narrowest window, and a short one at 200%, keep '
+      'every control in view', (tester) async {
+    // The app draws a zoomed window as a screen of that much higher pixel
+    // density, so these are the same windows on screen, laid out zoomed. The
+    // narrowest window grows with the zoom, up to what the display holds.
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final bar = find.byKey(const ValueKey('page-toolbar'));
+    for (final (zoom, window) in [
+      (1.5, LayoutPrefs.minimumWindowSize * 1.5),
+      (2.0, Size(LayoutPrefs.minimumWindowSize.width * 2, 876)),
+    ]) {
+      for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        for (final listShown in [true, false]) {
+          final reason = '${(zoom * 100).round()}%, ${platform.name}, list '
+              '${listShown ? 'shown' : 'hidden'}';
+          await pumpApp(tester, sidebarVisible: listShown);
+          prefs.zoom = zoom;
+          tester.view.devicePixelRatio = zoom;
+          tester.view.physicalSize = window;
+          notes.create(body: 'Trip budget\nFlights 420 + hotel 380');
+          await tester.pumpAndSettle();
+
+          final page = tester.getRect(bar);
+          for (final key in ['page-share', 'page-more']) {
+            final control = tester.getRect(find.byKey(ValueKey(key)));
+            expect(page.intersect(control), control, reason: '$key, $reason');
+          }
+          final screen = Offset.zero & (window / zoom);
+          for (final key in ['rail-notes', 'rail-drawings']) {
+            final item = tester.getRect(find.byKey(ValueKey(key)));
+            expect(screen.intersect(item), item, reason: '$key, $reason');
+          }
+
+          await openSettings(tester);
+          final done = find.text('Done');
+          expect(done, findsOneWidget, reason: reason);
+          final doneRect = tester.getRect(done);
+          expect(screen.intersect(doneRect), doneRect, reason: reason);
+          final zoomRow = find.byKey(const ValueKey('zoom-setting'));
+          await tester.ensureVisible(zoomRow);
+          await tester.pumpAndSettle();
+          for (final words in ['Zoom', 'The whole window']) {
+            final text = find.descendant(of: zoomRow, matching: find.text(words));
+            expect(
+              tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+              isFalse,
+              reason: '$words, $reason',
+            );
+          }
+          await tester.tap(done);
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull, reason: reason);
+        }
+      }
+    }
   });
 
   testWidgets('transparency thins the whole window, and persists', (
@@ -3647,11 +3969,74 @@ void main() {
       await press(tester, ShortcutAction.closeTab);
       expect(openNoteBody(tester), 'Second note');
 
-      // ⇧⌘T brings back the tab closed last, in front.
+      // ⇧⌘T brings back the tab closed last, in front and where it was.
       await press(tester, ShortcutAction.reopenTab);
       expect(openNoteBody(tester), 'First note');
-      expect(tabTitles(tester), ['Second note', 'First note']);
+      expect(tabTitles(tester), ['First note', 'Second note']);
       expect(notes.notes, hasLength(3), reason: 'a tab closes no note');
+    });
+
+    testWidgets('⇧⌘T again goes on back through the closed tabs, each to its '
+        'place on the row with its caret where it was', (tester) async {
+      await threeNotes(tester);
+      notes.create(body: 'Fourth note');
+      await tester.pumpAndSettle();
+      for (final title in ['Second note', 'Third note', 'Fourth note']) {
+        await clickWith(tester, LogicalKeyboardKey.metaLeft, title);
+      }
+      expect(tabTitles(tester), [
+        'First note',
+        'Second note',
+        'Third note',
+        'Fourth note',
+      ]);
+
+      await tester.tap(tab('Third note'));
+      await tester.pumpAndSettle();
+      openNoteField(tester).controller.selection =
+          const TextSelection.collapsed(offset: 3);
+      await tester.pump();
+      await press(tester, ShortcutAction.closeTab);
+      await tester.tap(tab('First note'));
+      await tester.pumpAndSettle();
+      await press(tester, ShortcutAction.closeTab);
+      expect(tabTitles(tester), ['Second note', 'Fourth note']);
+      expect(find.text('Closed "First note"'), findsOneWidget);
+
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'First note');
+      expect(tabTitles(tester), ['First note', 'Second note', 'Fourth note']);
+      expect(
+        find.text('Closed "First note"'),
+        findsNothing,
+        reason: 'the toast offers back a tab that is back',
+      );
+
+      await press(tester, ShortcutAction.reopenTab);
+      expect(openNoteBody(tester), 'Third note');
+      expect(
+        openNoteField(tester).controller.selection,
+        const TextSelection.collapsed(offset: 3),
+      );
+      expect(tabTitles(tester), [
+        'First note',
+        'Second note',
+        'Third note',
+        'Fourth note',
+      ]);
+
+      await press(tester, ShortcutAction.reopenTab);
+      expect(tabTitles(tester), hasLength(4), reason: 'none is left closed');
+    });
+
+    testWidgets('a new install answers its shortcuts before anything is '
+        'clicked', (tester) async {
+      await pumpApp(tester, firstRun: true, size: const Size(1400, 800));
+      expect(prefs.sidebarVisible, isTrue);
+
+      // The welcome note waits untouched, without a caret.
+      await press(tester, ShortcutAction.toggleSidebar);
+      expect(prefs.sidebarVisible, isFalse);
     });
 
     testWidgets('a middle click and the menu open a tab behind too', (
@@ -4103,6 +4488,22 @@ void main() {
         isSemantics(isSelected: true, hint: 'Back to your tabs'),
       );
       expect(find.text("Opened yesterday's note"), findsOneWidget);
+    });
+
+    testWidgets("a note typed in from a picked day moves under Today and stays "
+        "lit while the day's notes are the tabs", (tester) async {
+      await library(tester);
+      await tap(tester, day(18));
+      expect(lit(tester), ['Standup notes']);
+
+      await tester.enterNote('Standup notes\nShip it');
+      await tester.pumpAndSettle();
+      expect(headings(tester), ['Today', 'Tue 17', 'Tue 20 Oct']);
+      expect(lit(tester), ['Standup notes']);
+      expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
+
+      await tap(tester, day(18));
+      expect(lit(tester), isEmpty);
     });
 
     testWidgets('a day with several notes opens them as the tabs, the '
@@ -5131,6 +5532,130 @@ void main() {
       expect(find.byKey(const ValueKey('notes-when-chip')), findsNothing);
       expect(headings(tester), hasLength(4));
     });
+  });
+
+  // KAP-173: split at 600, the left note's "1 of 3 done" ran into its
+  // pane's edge, cut with no ellipsis, and + Tag sat past it.
+  testWidgets("split at 600, a note's meta line keeps to its column, and what "
+      'has no room there steps aside whole', (tester) async {
+    await notes.load();
+    final tags = TagStore(store);
+    await tags.load();
+    notes.create(body: 'Right note');
+    notes.create(body: 'Left note\n☑ One\n☐ Two\n☐ Three');
+    await pumpApp(tester, tags: tags);
+    await tester.tap(find.widgetWithText(NoteRow, 'Left note'));
+    await tester.pumpAndSettle();
+    await pickPageAction(tester, 'split');
+    await tester.tap(find.widgetWithText(NoteRow, 'Right note'));
+    await tester.pumpAndSettle();
+
+    final line = find.byType(NoteMetaRow).first;
+    Finder onLine(String key) =>
+        find.descendant(of: line, matching: find.byKey(ValueKey(key)));
+    Future<void> inColumn(double width) async {
+      tester.view.physicalSize = Size(width, 760);
+      await tester.pumpAndSettle();
+      final pane = tester.getRect(find.byType(EditorPaneFrame).first);
+      final column = pane.right - (tester.getRect(line).left - pane.left);
+      expect(onLine('note-edited').hitTestable(), findsOneWidget);
+      for (final key in [
+        'note-edited',
+        'note-saved',
+        'note-progress',
+        'note-add-tag',
+      ]) {
+        final shown = onLine(key).hitTestable();
+        if (shown.evaluate().isEmpty) continue;
+        expect(
+          tester.getRect(shown).right,
+          lessThanOrEqualTo(column),
+          reason: '$key at $width',
+        );
+      }
+    }
+
+    await inColumn(1280);
+    expect(onLine('note-progress').hitTestable(), findsOneWidget);
+    await inColumn(600);
+  });
+
+  testWidgets(
+    "at 400, + Tag's list opens inside the window and stays put while "
+    'ticking tags pushes + Tag off the line',
+    (tester) async {
+      notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 8, 55));
+      await notes.load();
+      final tags = TagStore(store);
+      await tags.load();
+      for (var i = 0; i < 6; i++) {
+        tags.create('Longer tag $i');
+      }
+      notes.create(body: 'Quote for the deck');
+      await pumpApp(
+        tester,
+        size: const Size(400, 700),
+        tags: tags,
+        sidebarVisible: false,
+      );
+      final add = find.byKey(const ValueKey('note-add-tag'));
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      final list = find.byType(TagPicker);
+      final opened = tester.getRect(list);
+      expect(opened.right, lessThanOrEqualTo(400));
+      var ticked = 0;
+      while (add.hitTestable().evaluate().isNotEmpty && ticked < 6) {
+        await tester.tap(
+          find.descendant(of: list, matching: find.text('Longer tag $ticked')),
+        );
+        ticked++;
+        await tester.pumpAndSettle();
+        expect(tester.getRect(list), opened);
+      }
+      expect(add.hitTestable(), findsNothing);
+      expect(
+        find.byKey(const ValueKey('tag-picker-field')).hitTestable(),
+        findsOneWidget,
+      );
+    },
+  );
+
+  // At 400 the line had no room for its tag, yet the chip sat at the window's
+  // edge, and the × it shows under the pointer fell outside it (KAP-378).
+  testWidgets("at 400, a note's tags step aside where the line has no room "
+      "for them, and where it has, a chip's × shows inside the window", (
+    tester,
+  ) async {
+    notes = NotesStore(store, now: () => DateTime(2026, 11, 19, 8, 55));
+    await notes.load();
+    final tags = TagStore(store);
+    await tags.load();
+    final note = notes.create(
+      body: 'Quote for the deck\n☑ One\n☐ Two\n☐ Three',
+    );
+    final quarter = tags.create('Q4')!;
+    tags.addTag(note.id, quarter.id);
+    await pumpApp(
+      tester,
+      size: const Size(400, 700),
+      tags: tags,
+      sidebarVisible: false,
+    );
+    final chip = find.byKey(ValueKey('tag-chip-${quarter.id}'));
+    final remove = find.byKey(ValueKey('tag-chip-remove-${quarter.id}'));
+    expect(find.text('1 of 3 done').hitTestable(), findsOneWidget);
+    expect(chip.hitTestable(), findsNothing);
+
+    notes.updateBody(note.id, 'Quote for the deck');
+    await tester.pumpAndSettle();
+    expect(chip.hitTestable(), findsOneWidget);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(chip));
+    await tester.pumpAndSettle();
+    expect(remove.hitTestable(), findsOneWidget);
+    expect(tester.getRect(remove).right, lessThanOrEqualTo(400));
   });
 
   testWidgets('picked notes dragged together promise nothing over the panes, '
@@ -7527,6 +8052,8 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.tombstones, hasLength(1));
     });
 
@@ -7818,6 +8345,8 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.tombstones, hasLength(1));
     });
   });
@@ -7937,8 +8466,10 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
-      expect(notes.tombstones.single.id, third.id);
       expect(find.text('Note deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.tombstones.single.id, third.id);
     });
 
     testWidgets('backing out of the question keeps the note', (tester) async {
@@ -7964,8 +8495,10 @@ void main() {
       await confirm(tester);
 
       expect(notes.archivedNotes, isEmpty);
-      expect(notes.tombstones, hasLength(3));
       expect(find.text('3 notes deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.tombstones, hasLength(3));
       // The notes that were never archived are untouched.
       expect(notes.notes, isEmpty);
     });
@@ -8013,6 +8546,8 @@ void main() {
       await confirm(tester);
 
       expect(notes.archivedNotes, isEmpty);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.tombstones, hasLength(3));
     });
 
@@ -8357,6 +8892,67 @@ void main() {
       expect(find.byKey(const ValueKey('slash-command-drawing')), findsNothing);
     });
 
+    testWidgets('Voice note from the bar\'s attach sheet records into the '
+        'open note, at the caret', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      // Notices come and go as they do in the app, so Recording started is
+      // not left over Stop.
+      Toast.debugAnimateLifetimeInTests = true;
+      addTearDown(() => Toast.debugAnimateLifetimeInTests = false);
+      final temp = Directory.systemTemp.createTempSync('kapy-attach-voice-');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      notes = NotesStore(store, blobs: BlobStore(directory: temp));
+      final note = notes.create(body: 'Groceries\nOat milk');
+      final recorder = FakeVoiceRecorder(writesFile: false);
+      final recording = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+      );
+      addTearDown(recording.dispose);
+      await pumpApp(tester, size: const Size(393, 852), recording: recording);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      openNoteField(tester).controller.selection =
+          const TextSelection.collapsed(offset: 9);
+      await tester.pump();
+
+      // Starting and delivering are real file work, so the real clock is let
+      // run, and the test's clock is pumped for what comes back.
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      Future<void> until(bool Function() done) async {
+        for (var wait = 0; wait < 100 && !done(); wait++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
+
+      await tester.tap(find.byKey(const ValueKey('format-attach')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('attach-voice')));
+      await tester.pump();
+      await until(() => recording.isRecording && notice.evaluate().isEmpty);
+      expect(recording.session?.noteId, note.id);
+      File(
+        recorder.startedAt!,
+      ).writeAsBytesSync(File('test/fixtures/tone_5s.m4a').readAsBytesSync());
+
+      await tester.tap(find.byKey(const ValueKey('recording-stop')));
+      Iterable<NoteVoiceRef> voice() =>
+          notes.byId(note.id)!.attachments.whereType<NoteVoiceRef>();
+      await until(() => voice().isNotEmpty && notice.evaluate().isEmpty);
+
+      expect(recording.isRecording, isFalse);
+      final body = notes.byId(note.id)!.body;
+      final at = voice().single.offset;
+      expect(body, startsWith('Groceries\n'));
+      expect(at, greaterThanOrEqualTo('Groceries\n'.length));
+      expect(body.indexOf('Oat milk'), greaterThan(at));
+    });
+
     testWidgets(
       'holds the note above the home indicator and the bar on the keyboard',
       (tester) async {
@@ -8496,6 +9092,9 @@ void main() {
 
         await tester.tap(find.byKey(const ValueKey('confirm-delete')));
         await tester.pumpAndSettle();
+        expect(find.widgetWithText(NoteRow, 'First note'), findsNothing);
+        Toast.debugTimeUp();
+        await tester.pumpAndSettle();
         expect(notes.byId('first'), isNull);
         expect(notes.tombstones, hasLength(1));
       });
@@ -8578,38 +9177,6 @@ void main() {
       await showNotesList(tester);
       expect(find.widgetWithText(NoteRow, 'Open the list'), findsOneWidget);
       expect(bar, findsNothing);
-    });
-
-    testWidgets('two-finger trackpad swipes work in a narrow macOS window', (
-      tester,
-    ) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      store.data['notes.v1'] = [
-        {
-          'id': 'compact-mac-swipe',
-          'body': 'Trackpad note',
-          'createdAt': 1000,
-          'updatedAt': 1000,
-        },
-      ];
-
-      await pumpApp(tester, size: const Size(640, 800));
-      expect(find.byType(NoteRow), findsNothing);
-
-      final pointer = TestPointer(1, PointerDeviceKind.trackpad);
-      const center = Offset(320, 400);
-      await tester.sendEventToBinding(pointer.panZoomStart(center));
-      await tester.sendEventToBinding(
-        pointer.panZoomUpdate(
-          center,
-          pan: const Offset(-SidebarSwipe.threshold - 20, 0),
-        ),
-      );
-      await tester.sendEventToBinding(pointer.panZoomEnd());
-      await tester.pumpAndSettle();
-
-      expect(find.widgetWithText(NoteRow, 'Trackpad note'), findsOneWidget);
     });
 
     testWidgets('creates a ready-to-type note when the store is empty', (
@@ -11754,6 +12321,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
       await tester.pumpAndSettle();
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
       expect(notes.byId(offsite.id), isNull);
     });
 
@@ -12711,6 +13280,55 @@ void main() {
         tester.getCenter(notice).dx,
         tester.getCenter(find.byType(PagePane)).dx,
       );
+    });
+
+    // Parity item 64: the page's menu took the notice to the window's
+    // centre, over the list, until it closed, and so did the tag list that
+    // a note's menu opens.
+    testWidgets('a notice keeps its place beside the list while a menu is '
+        "open, and the tag list from a note's menu", (tester) async {
+      await notes.load();
+      final tags = TagStore(store);
+      await tags.load();
+      notes.create(body: 'Narrow note');
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      final menu = find.byType(KapyContextMenuSurface);
+      final picker = find.byKey(const ValueKey('tag-picker'));
+      await pumpApp(tester, size: const Size(820, 760), tags: tags);
+      await pickPageAction(tester, 'pin');
+      final place = tester.getRect(notice);
+      expect(
+        place.left,
+        greaterThan(tester.getRect(find.byType(Sidebar)).right),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      expect(menu, findsOneWidget);
+      expect(tester.getRect(notice), place);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(tester.getRect(notice), place);
+
+      await tester.tap(
+        find.widgetWithText(NoteRow, 'Narrow note'),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      expect(menu, findsOneWidget);
+      expect(tester.getRect(notice), place);
+      await tester.tap(find.text('Tags'));
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(picker, findsOneWidget);
+      expect(tester.getRect(notice), place);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(picker, findsNothing);
+      expect(tester.getRect(notice), place);
     });
   });
 
@@ -14794,6 +15412,105 @@ void main() {
     },
     variant: TargetPlatformVariant.only(TargetPlatform.linux),
   );
+
+  group('what was typed is written', () {
+    late _WriteLog log;
+
+    setUp(() {
+      log = _WriteLog();
+      store = log;
+      notes = NotesStore(store);
+      prefs = LayoutPrefs(store);
+      rates = RatesRepository(store);
+      shortcuts = ShortcutPrefs(store);
+    });
+
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    Future<void> typeThen(
+      WidgetTester tester,
+      String text,
+      FutureOr<void> Function() ending,
+      String reason,
+    ) async {
+      await tester.enterNote(text);
+      expect(log.written, isNot(contains(text)), reason: reason);
+      await ending();
+      await tester.pump();
+      expect(log.written, contains(text), reason: reason);
+    }
+
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    ]) {
+      testWidgets('on ${platform.name}, as the app leaves the screen, closes '
+          'or is asked to quit', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        stubLaunchIntent(null);
+        addTearDown(() => stubLaunchIntent(null, respond: false));
+        await notes.load();
+        notes.create(body: 'Groceries');
+        final phone =
+            platform == TargetPlatform.iOS ||
+            platform == TargetPlatform.android;
+        await pumpApp(
+          tester,
+          size: phone ? const Size(420, 800) : const Size(1100, 760),
+        );
+        for (final state in [
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.paused,
+          AppLifecycleState.detached,
+        ]) {
+          await typeThen(
+            tester,
+            'Typed before ${state.name}',
+            () => tester.binding.handleAppLifecycleStateChanged(state),
+            state.name,
+          );
+          tester.binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.resumed,
+          );
+          await tester.pump();
+        }
+        await typeThen(
+          tester,
+          'Typed before quitting',
+          () => tester.binding.handleRequestAppExit(),
+          'quit',
+        );
+      }, variant: TargetPlatformVariant.only(platform));
+    }
+
+    testWidgets('as another note is opened', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+      await notes.load();
+      notes.create(body: 'Groceries');
+      notes.create(body: 'Standup');
+      await pumpApp(tester);
+      await typeThen(tester, 'Standup moved to 10', () async {
+        await tester.tap(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is NoteCardFace && widget.note.title == 'Groceries',
+          ),
+        );
+      }, 'switch');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+  });
+}
+
+/// A store that keeps what its last write would have put on disk.
+class _WriteLog extends MemoryStore {
+  String written = '';
+
+  @override
+  Future<void> flush() async => written = jsonEncode(data);
 }
 
 /// Android 14's text scale, which grows large type less than small: the

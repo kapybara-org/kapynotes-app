@@ -83,7 +83,6 @@ class _EditorContextMenuButton extends StatelessWidget {
                 item.onPressed!();
               },
         hoverColor: palette.hover,
-        focusColor: palette.hover,
         splashColor: Colors.transparent,
         highlightColor: Colors.transparent,
         child: Container(

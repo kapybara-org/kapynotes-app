@@ -362,6 +362,28 @@ void main() {
     expect(find.text('Calculation results'), findsNothing);
   });
 
+  testWidgets('a search for text size still finds the zoom after the note '
+      'text size, and the zoom keys as text size shortcuts (KAP-379)', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await setUpNotes(tester);
+    await pumpMenu(tester, withSettings: true);
+    await type(tester, 'text size');
+    expect(row('Note text size'), findsOneWidget);
+    expect(row('Zoom'), findsOneWidget);
+    expect(
+      tester.getTopLeft(row('Zoom')).dy,
+      greaterThan(tester.getTopLeft(row('Note text size')).dy),
+    );
+
+    await type(tester, 'text size shortcut');
+    expect(keycapOn(tester, 'Zoom in'), '⌘=');
+    expect(keycapOn(tester, 'Zoom out'), '⌘-');
+    expect(keycapOn(tester, 'Reset zoom'), '⌘0');
+  });
+
   testWidgets('without the settings index there is no Settings section', (
     tester,
   ) async {

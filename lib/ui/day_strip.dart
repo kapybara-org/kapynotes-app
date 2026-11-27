@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -9,6 +10,7 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
+import 'context_menu.dart';
 import 'notes_grouping.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart' show PopoverAtPoint;
@@ -309,12 +311,9 @@ class _DayStripState extends State<DayStrip> {
     final picked = widget.picked;
     final shown = picked ?? _shown.lastOrNull ?? today;
     setState(() => _choosing = true);
-    final day = await showGeneralDialog<DateTime>(
+    final day = await showKapyPopover<DateTime>(
       context: context,
-      barrierDismissible: true,
       barrierLabel: 'Close the calendar',
-      barrierColor: Colors.transparent,
-      transitionDuration: Duration.zero,
       pageBuilder: (context, _, _) => CustomSingleChildLayout(
         delegate: PopoverAtPoint(
           box.localToGlobal(Offset(0, box.size.height + 4)),
@@ -416,49 +415,65 @@ class _DayStripState extends State<DayStrip> {
                 final shown = _shown;
                 final counts = _counts(shown);
                 final filled = picked ?? today;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CompactIconButton(
-                      key: const ValueKey('day-strip-back'),
-                      tooltip: 'The week before',
-                      extent: 32,
-                      width: DayStrip._arrowWidth,
-                      radius: 8,
-                      onPressed: () => setState(() => _shift -= 7),
-                      icon: const KapyIcon(
-                        KapyIcons.chevronLeftRounded,
-                        size: 16,
+                return BackForwardArea(
+                  onStep: (step) {
+                    setState(
+                      () => _shift += step == BackForwardStep.back ? -7 : 7,
+                    );
+                    return true;
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CompactIconButton(
+                        key: const ValueKey('day-strip-back'),
+                        tooltip: 'The week before',
+                        extent: 32,
+                        width: DayStrip._arrowWidth,
+                        radius: 8,
+                        onPressed: () => setState(() => _shift -= 7),
+                        icon: const KapyIcon(
+                          KapyIcons.chevronLeftRounded,
+                          size: 16,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: DayStrip._arrowGap),
-                    for (final (index, day) in shown.indexed) ...[
-                      if (index > 0) const SizedBox(width: DayStrip._dayGap),
-                      _Day(
-                        key: ValueKey('day-strip-${_date(day)}'),
-                        day: day,
-                        today: day == today,
-                        picked: day == picked,
-                        filled: day == filled,
-                        count: counts[day]!,
-                        opensTabs: widget.opensTabs,
-                        onTap: () => _choose(day),
+                      const SizedBox(width: DayStrip._arrowGap),
+                      BackForwardSlide(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final (index, day) in shown.indexed) ...[
+                              if (index > 0)
+                                const SizedBox(width: DayStrip._dayGap),
+                              _Day(
+                                key: ValueKey('day-strip-${_date(day)}'),
+                                day: day,
+                                today: day == today,
+                                picked: day == picked,
+                                filled: day == filled,
+                                count: counts[day]!,
+                                opensTabs: widget.opensTabs,
+                                onTap: () => _choose(day),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: DayStrip._arrowGap),
+                      CompactIconButton(
+                        key: const ValueKey('day-strip-forward'),
+                        tooltip: 'The week after',
+                        extent: 32,
+                        width: DayStrip._arrowWidth,
+                        radius: 8,
+                        onPressed: () => setState(() => _shift += 7),
+                        icon: const KapyIcon(
+                          KapyIcons.chevronRightRounded,
+                          size: 16,
+                        ),
                       ),
                     ],
-                    const SizedBox(width: DayStrip._arrowGap),
-                    CompactIconButton(
-                      key: const ValueKey('day-strip-forward'),
-                      tooltip: 'The week after',
-                      extent: 32,
-                      width: DayStrip._arrowWidth,
-                      radius: 8,
-                      onPressed: () => setState(() => _shift += 7),
-                      icon: const KapyIcon(
-                        KapyIcons.chevronRightRounded,
-                        size: 16,
-                      ),
-                    ),
-                  ],
+                  ),
                 );
               },
             ),
@@ -693,7 +708,6 @@ class _Day extends StatefulWidget {
 
 class _DayState extends State<_Day> {
   bool _hovered = false;
-  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -725,11 +739,7 @@ class _DayState extends State<_Day> {
         ? Container(
             constraints: const BoxConstraints(minHeight: _Day.phoneHeight),
             decoration: BoxDecoration(
-              color: filled
-                  ? palette.controlBackground
-                  : _focused
-                  ? palette.hover
-                  : null,
+              color: filled ? palette.controlBackground : null,
               borderRadius: BorderRadius.circular(10),
             ),
             child: Column(
@@ -772,7 +782,7 @@ class _DayState extends State<_Day> {
                   decoration: BoxDecoration(
                     color: filled
                         ? palette.tonalBackground
-                        : _hovered || _focused
+                        : _hovered
                         ? palette.controlBackground
                         : null,
                     borderRadius: BorderRadius.circular(6),
@@ -811,7 +821,6 @@ class _DayState extends State<_Day> {
     return TextButton(
       onPressed: widget.onTap,
       onHover: (hovered) => setState(() => _hovered = hovered),
-      onFocusChange: (focused) => setState(() => _focused = focused),
       style: TextButton.styleFrom(
         minimumSize: Size.zero,
         padding: EdgeInsets.zero,
@@ -980,8 +989,7 @@ class _DayPickerState extends State<DayPicker> {
           backgroundColor: WidgetStateProperty.resolveWith(
             (states) => filled
                 ? palette.tonalBackground
-                : states.contains(WidgetState.hovered) ||
-                      states.contains(WidgetState.focused)
+                : states.contains(WidgetState.hovered)
                 ? palette.controlBackground
                 : null,
           ),
@@ -1120,19 +1128,28 @@ class _DayPickerState extends State<DayPicker> {
         ),
       );
     }
-    return Material(
-      color: palette.surfaceBackground,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        side: BorderSide(
-          color: palette.controlBorder,
-          width: AppHairline.of(context),
+    return BackForwardArea(
+      onStep: (step) {
+        _page(step == BackForwardStep.back ? -1 : 1);
+        return true;
+      },
+      child: Material(
+        color: palette.surfaceBackground,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+          side: BorderSide(
+            color: palette.controlBorder,
+            width: AppHairline.of(context),
+          ),
         ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: SizedBox(width: 7 * 32 + 6 * 4, child: grid),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: 7 * 32 + 6 * 4,
+            child: BackForwardSlide(child: grid),
+          ),
+        ),
       ),
     );
   }

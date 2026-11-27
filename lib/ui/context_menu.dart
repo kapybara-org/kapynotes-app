@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
 
 /// The quiet desktop menu used by note rows and things embedded in a note.
 ///
@@ -62,6 +63,36 @@ Future<T?> showKapyContextMenu<T>({
   return choice;
 }
 
+/// A picker or a field over the window, such as the tag list, with no
+/// barrier to see: a click outside closes it unless [barrierDismissible] is
+/// false. To a desktop's toasts it is a menu, so a notice stays where it is.
+Future<T?> showKapyPopover<T>({
+  required BuildContext context,
+  required String barrierLabel,
+  required RoutePageBuilder pageBuilder,
+  bool barrierDismissible = true,
+  Duration transitionDuration = Duration.zero,
+  RouteTransitionsBuilder? transitionBuilder,
+}) => Navigator.of(context, rootNavigator: true).push(
+  _KapyPopoverRoute<T>(
+    pageBuilder: pageBuilder,
+    barrierDismissible: barrierDismissible,
+    barrierLabel: barrierLabel,
+    transitionDuration: transitionDuration,
+    transitionBuilder: transitionBuilder,
+  ),
+);
+
+class _KapyPopoverRoute<T> extends RawDialogRoute<T> with ToastMenuRoute<T> {
+  _KapyPopoverRoute({
+    required super.pageBuilder,
+    required super.barrierDismissible,
+    required super.barrierLabel,
+    required super.transitionDuration,
+    required super.transitionBuilder,
+  }) : super(barrierColor: Colors.transparent);
+}
+
 /// The shared compact surface for popup-route and editable-text menus.
 class KapyContextMenuSurface extends StatelessWidget {
   const KapyContextMenuSurface({
@@ -106,7 +137,7 @@ class KapyContextMenuSurface extends StatelessWidget {
   }
 }
 
-class _KapyContextMenuRoute<T> extends PopupRoute<T> {
+class _KapyContextMenuRoute<T> extends PopupRoute<T> with ToastMenuRoute<T> {
   _KapyContextMenuRoute({
     required this.position,
     required this.preferredBounds,
@@ -363,6 +394,7 @@ class KapyMenuAction {
     this.hint,
     this.destructive = false,
     this.enabled = true,
+    this.checked,
   });
 
   final String value;
@@ -371,6 +403,10 @@ class KapyMenuAction {
   final String? hint;
   final bool destructive;
   final bool enabled;
+
+  /// Set for a line that turns something on or off, such as Skip pauses:
+  /// a tick at its end while it is on.
+  final bool? checked;
 }
 
 /// A note's actions menu: a heading that names what it acts on, where that
@@ -455,7 +491,7 @@ class KapyMenuActionRow extends StatelessWidget {
         : action.destructive
         ? Theme.of(context).colorScheme.error
         : palette.textPrimary;
-    return Row(
+    final row = Row(
       children: [
         KapyIcon(
           action.icon,
@@ -489,7 +525,19 @@ class KapyMenuActionRow extends StatelessWidget {
             ),
           ),
         ],
+        if (action.checked == true) ...[
+          SizedBox(width: touch ? 18 : 10),
+          KapyIcon(
+            KapyIcons.checkRounded,
+            size: touch
+                ? AppControlMetrics.iconAction
+                : AppControlMetrics.iconControl,
+            color: palette.textSecondary,
+          ),
+        ],
       ],
     );
+    if (action.checked == null) return row;
+    return Semantics(checked: action.checked, child: row);
   }
 }

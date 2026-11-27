@@ -20,6 +20,11 @@ class MainFlutterWindow: NSWindow {
   private var menuBarPanel: MenuBarPanel?
   private var menuBarIcon: MenuBarIcon?
 
+  /// `kill` and Ctrl+C in a terminal would end the process on the spot, with
+  /// the last keys typed still waiting to be written. Taken here, they quit
+  /// the way the menu's Quit does: the app saves, then goes.
+  private var quitSignals: [DispatchSourceSignal] = []
+
   override func awakeFromNib() {
     let flutterViewController = KapyFlutterViewController()
     flutterViewController.backgroundColor = NSColor.clear
@@ -94,6 +99,14 @@ class MainFlutterWindow: NSWindow {
 
     menuBarPanel = MenuBarPanel(engine: flutterViewController.engine)
     menuBarIcon = MenuBarIcon(messenger: flutterViewController.engine.binaryMessenger)
+
+    for quitSignal in [SIGTERM, SIGINT] {
+      signal(quitSignal, SIG_IGN)
+      let source = DispatchSource.makeSignalSource(signal: quitSignal, queue: .main)
+      source.setEventHandler { NSApp.terminate(nil) }
+      source.resume()
+      quitSignals.append(source)
+    }
 
     super.awakeFromNib()
   }

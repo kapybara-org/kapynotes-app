@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:flutter/semantics.dart' show SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/ui/context_menu.dart' show KapyMenuAction;
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -17,6 +19,8 @@ void main() {
     PhoneTab tab = PhoneTab.notes,
     ValueChanged<PhoneTab>? onSelected,
     VoidCallback? onCreate,
+    List<KapyMenuAction> createActions = const [],
+    ValueChanged<String>? onCreateAction,
     bool showKapyAi = true,
     bool foldersDot = false,
   }) async {
@@ -35,8 +39,8 @@ void main() {
           onCreate: onCreate ?? () {},
           showKapyAi: showKapyAi,
           foldersDot: foldersDot,
-          createActions: const [],
-          onCreateAction: (_) {},
+          createActions: createActions,
+          onCreateAction: onCreateAction ?? (_) {},
           child: const SizedBox.expand(),
         ),
       ),
@@ -401,6 +405,100 @@ void main() {
       expect(find.byKey(const ValueKey('bar-folders')), findsOneWidget);
       expect(find.byKey(const ValueKey('bar-kapyAi')), findsNothing);
       expect(find.text('Kapy AI'), findsNothing);
+    });
+
+    testWidgets('on ${platform.name} a screen reader presses the + as a tap '
+        'does, and holds it as a long press does for its menu, where it '
+        'presses a choice or Close as a tap does (KAP-365)', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final semantics = tester.ensureSemantics();
+      final made = <String>[];
+      await pumpBar(
+        tester,
+        scale: 1,
+        size: const Size(393, 852),
+        onCreate: () => made.add('note'),
+        createActions: const [
+          KapyMenuAction(
+            value: 'drawing',
+            label: 'New drawing',
+            icon: KapyIcons.addRounded,
+          ),
+          KapyMenuAction(
+            value: 'folder',
+            label: 'New folder',
+            icon: KapyIcons.addRounded,
+            enabled: false,
+          ),
+        ],
+        onCreateAction: made.add,
+      );
+      SemanticsNode node(String key) =>
+          tester.getSemantics(find.byKey(ValueKey(key)));
+      Future<void> tap(SemanticsNode node) async {
+        tester.semantics.tap(
+          find.semantics.byPredicate((n) => n.id == node.id),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> hold(SemanticsNode node) async {
+        tester.semantics.longPress(
+          find.semantics.byPredicate((n) => n.id == node.id),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      final plus = node('phone-new');
+      expect(
+        plus,
+        isSemantics(
+          label: 'New note',
+          isButton: true,
+          hasTapAction: true,
+          hasLongPressAction: true,
+        ),
+      );
+      expect(plus.hintOverrides?.onLongPressHint, 'More to make');
+      await tap(plus);
+      expect(made, ['note']);
+
+      await hold(node('phone-new'));
+      expect(
+        node('phone-new-folder'),
+        isSemantics(
+          label: 'New folder',
+          isButton: true,
+          hasEnabledState: true,
+          isEnabled: false,
+          hasTapAction: false,
+        ),
+      );
+      final drawing = node('phone-new-drawing');
+      expect(
+        drawing,
+        isSemantics(
+          label: 'New drawing',
+          isButton: true,
+          isEnabled: true,
+          hasTapAction: true,
+        ),
+      );
+      await tap(drawing);
+      expect(made, ['note', 'drawing']);
+      expect(find.byKey(const ValueKey('phone-new-drawing')), findsNothing);
+
+      await hold(node('phone-new'));
+      final close = node('phone-new-close');
+      expect(
+        close,
+        isSemantics(label: 'Close', isButton: true, hasTapAction: true),
+      );
+      await tap(close);
+      expect(find.byKey(const ValueKey('phone-new-close')), findsNothing);
+      expect(made, ['note', 'drawing']);
+      semantics.dispose();
     });
   }
 

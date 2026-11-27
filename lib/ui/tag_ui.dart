@@ -525,12 +525,9 @@ Future<void> showTagPickerAt(
 ) async {
   final shelf = TagShelf.maybeOf(context);
   if (shelf == null) return;
-  await showGeneralDialog<void>(
+  await showKapyPopover<void>(
     context: context,
-    barrierDismissible: true,
     barrierLabel: 'Close tags',
-    barrierColor: Colors.transparent,
-    transitionDuration: Duration.zero,
     pageBuilder: (context, _, _) => CustomSingleChildLayout(
       delegate: PopoverAtSpot(
         spot,
@@ -565,104 +562,32 @@ class PopoverAtPoint extends SingleChildLayoutDelegate {
   bool shouldRelayout(PopoverAtPoint oldDelegate) => oldDelegate.point != point;
 }
 
-/// The chips at the end of a note's meta line, then + Tag. A chip's × takes
-/// its tag off, a tap narrows the list to it, and a drag moves it: the first
-/// colours the note.
-class NoteTagChips extends StatefulWidget {
-  const NoteTagChips({super.key, required this.noteId, this.adds = true});
+/// The chips at the end of a note's meta line. A chip's × takes its tag off,
+/// a tap narrows the list to it, and a drag moves it: the first colours the
+/// note.
+class NoteTagChips extends StatelessWidget {
+  const NoteTagChips({super.key, required this.noteId});
 
   final String noteId;
-
-  /// Whether + Tag follows the chips. A phone's note adds tags from More.
-  final bool adds;
-
-  @override
-  State<NoteTagChips> createState() => _NoteTagChipsState();
-}
-
-class _NoteTagChipsState extends State<NoteTagChips> {
-  final _picker = OverlayPortalController();
-  final _link = LayerLink();
-
-  void _close() {
-    if (_picker.isShowing) setState(_picker.hide);
-  }
 
   @override
   Widget build(BuildContext context) {
     final shelf = TagShelf.maybeOf(context);
     if (shelf == null) return const SizedBox.shrink();
-    final palette = context.palette;
-    final tags = shelf.store.tagsOf(widget.noteId);
-    if (!widget.adds && tags.isEmpty) return const SizedBox.shrink();
+    final tags = shelf.store.tagsOf(noteId);
+    if (tags.isEmpty) return const SizedBox.shrink();
     void move(String dragged, String onto) {
       final ids = [for (final tag in tags) tag.id];
       final to = ids.indexOf(onto);
       ids
         ..remove(dragged)
         ..insert(to, dragged);
-      shelf.store.setTags(widget.noteId, ids);
+      shelf.store.setTags(noteId, ids);
     }
 
-    final add = TapRegion(
-      groupId: _picker,
-      onTapOutside: (_) => _close(),
-      child: CompositedTransformTarget(
-        link: _link,
-        child: OverlayPortal(
-          controller: _picker,
-          overlayChildBuilder: (context) => Align(
-            alignment: Alignment.topLeft,
-            child: CompositedTransformFollower(
-              link: _link,
-              targetAnchor: Alignment.bottomLeft,
-              offset: const Offset(0, 6),
-              child: TapRegion(
-                groupId: _picker,
-                child: TagPicker(
-                  shelf: shelf,
-                  noteIds: [widget.noteId],
-                  onClose: _close,
-                ),
-              ),
-            ),
-          ),
-          child: MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              key: const ValueKey('note-add-tag'),
-              behavior: HitTestBehavior.opaque,
-              onTap: () =>
-                  setState(_picker.isShowing ? _picker.hide : _picker.show),
-              child: Container(
-                // A phone's target is 44 pt tall; the pill stays small.
-                height: AppPlatform.hasPointer ? 22 : 44,
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.only(left: 4, right: 6),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    KapyIcon(
-                      KapyIcons.addRounded,
-                      size: 12,
-                      color: palette.textTertiary,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Tag',
-                      style: _text(13, FontWeight.w400, palette.textTertiary),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    // Past 360, or the width there is, the chips scroll, so + Tag stays in
-    // reach and nothing runs off the line.
-    final chips = ConstrainedBox(
+    // Past 360, or the width there is, the chips scroll, so nothing runs off
+    // the line.
+    return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 360),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
@@ -672,7 +597,7 @@ class _NoteTagChipsState extends State<NoteTagChips> {
               _TagChip(
                 tag: tag,
                 onFilter: () => shelf.onFilter(tag.id),
-                onRemove: () => shelf.store.removeTag(widget.noteId, tag.id),
+                onRemove: () => shelf.store.removeTag(noteId, tag.id),
                 onDropped: (dragged) => move(dragged, tag.id),
               ),
               const SizedBox(width: 8),
@@ -681,13 +606,90 @@ class _NoteTagChipsState extends State<NoteTagChips> {
         ),
       ),
     );
-    return LayoutBuilder(
-      builder: (context, constraints) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          constraints.hasBoundedWidth ? Flexible(child: chips) : chips,
-          if (widget.adds) add,
-        ],
+  }
+}
+
+/// + Tag after a note's chips, which opens the list of tags under it. A
+/// phone's note adds tags from More instead.
+class NoteAddTag extends StatefulWidget {
+  const NoteAddTag({super.key, required this.noteId});
+
+  final String noteId;
+
+  @override
+  State<NoteAddTag> createState() => _NoteAddTagState();
+}
+
+class _NoteAddTagState extends State<NoteAddTag> {
+  final _picker = OverlayPortalController();
+
+  /// Where the list opened: under + Tag, inside the window. It stays there
+  /// while it's open, even when + Tag steps aside from the line.
+  Offset _opened = Offset.zero;
+
+  void _close() {
+    if (_picker.isShowing) setState(_picker.hide);
+  }
+
+  void _toggle() {
+    if (_picker.isShowing) return _close();
+    final box = context.findRenderObject()! as RenderBox;
+    setState(() {
+      _opened = box.localToGlobal(box.size.bottomLeft(const Offset(0, 6)));
+      _picker.show();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shelf = TagShelf.maybeOf(context);
+    if (shelf == null) return const SizedBox.shrink();
+    final palette = context.palette;
+    return TapRegion(
+      groupId: _picker,
+      onTapOutside: (_) => _close(),
+      child: OverlayPortal(
+        controller: _picker,
+        overlayChildBuilder: (context) => CustomSingleChildLayout(
+          delegate: PopoverAtPoint(_opened),
+          child: TapRegion(
+            groupId: _picker,
+            child: TagPicker(
+              shelf: shelf,
+              noteIds: [widget.noteId],
+              onClose: _close,
+            ),
+          ),
+        ),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            key: const ValueKey('note-add-tag'),
+            behavior: HitTestBehavior.opaque,
+            onTap: _toggle,
+            child: Container(
+              // A phone's target is 44 pt tall; the pill stays small.
+              height: AppPlatform.hasPointer ? 22 : 44,
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(left: 4, right: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  KapyIcon(
+                    KapyIcons.addRounded,
+                    size: 12,
+                    color: palette.textTertiary,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Tag',
+                    style: _text(13, FontWeight.w400, palette.textTertiary),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
