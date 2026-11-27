@@ -117,6 +117,29 @@ void FailedAt(Completion* out, const char* step, HRESULT hr) {
   out->detail = detail;
 }
 
+// Whether the reader hands over mono 16-bit PCM at [sample_rate], which is
+// what Decode asked for and what the file it writes is read as.
+bool IsWanted(IMFSourceReader* reader, int sample_rate) {
+  ComPtr<IMFMediaType> current;
+  if (FAILED(reader->GetCurrentMediaType(
+          static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM),
+          current.GetAddressOf()))) {
+    return false;
+  }
+  GUID subtype = GUID_NULL;
+  UINT32 rate = 0;
+  UINT32 channels = 0;
+  UINT32 bits = 0;
+  return SUCCEEDED(current->GetGUID(MF_MT_SUBTYPE, &subtype)) &&
+         subtype == MFAudioFormat_PCM &&
+         SUCCEEDED(current->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &rate)) &&
+         rate == static_cast<UINT32>(sample_rate) &&
+         SUCCEEDED(current->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &channels)) &&
+         channels == kChannels &&
+         SUCCEEDED(current->GetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, &bits)) &&
+         bits == kBitsPerSample;
+}
+
 void Decode(const std::string& source, int sample_rate, Completion* out) {
   out->message = "This recording could not be read.";
   out->sample_rate = sample_rate;
@@ -173,13 +196,24 @@ void Decode(const std::string& source, int sample_rate, Completion* out) {
       break;
     }
     if (flags & MF_SOURCE_READERF_ENDOFSTREAM) break;
-    // A format change mid-file would quietly start writing samples at another
-    // rate into the same file, which is a transcript that drifts rather than
-    // one that fails. Stop instead.
-    if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) {
-      FailedAt(out, "format-changed", S_OK);
-      failed = true;
-      break;
+    // The AAC decoder announces its output once it has seen the first frame,
+    // so every recording made on a PC reports a change here (KAP-437). A change
+    // that leaves the samples as asked for is no change at all. One that does
+    // not is asked for the same samples again, and what came with it, in the
+    // other shape, is dropped:
+    // written into the same file, it would be a transcript that drifts rather
+    // than one that fails.
+    if ((flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) &&
+        !IsWanted(reader.Get(), sample_rate)) {
+      hr = reader->SetCurrentMediaType(
+          static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), nullptr,
+          wanted.Get());
+      if (FAILED(hr) || !IsWanted(reader.Get(), sample_rate)) {
+        FailedAt(out, "format-changed", hr);
+        failed = true;
+        break;
+      }
+      continue;
     }
     if (!sample) continue;
 
