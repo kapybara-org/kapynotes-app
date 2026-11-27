@@ -49,6 +49,13 @@ void main() {
     );
   });
 
+  test('beside the pointer, a menu as wide as the larger side still keeps '
+      'clear of the pointer', () {
+    const at = Offset(300, 300);
+    final placed = place(at, size: const Size(600, 700));
+    expect(placed.left, greaterThan(at.dx));
+  });
+
   test('taller than the window, it fills the window beside the pointer and '
       'scrolls', () {
     expect(

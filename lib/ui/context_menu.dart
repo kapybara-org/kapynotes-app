@@ -228,7 +228,7 @@ class KapyMenuLayout extends SingleChildLayoutDelegate {
     final safe = _clear(
       mediaPadding,
     ).deflateRect(Offset.zero & constraints.biggest);
-    final right = safe.right - position.dx;
+    final right = safe.right - position.dx - _pointerGap;
     final left = position.dx - safe.left;
     final loose = BoxConstraints.loose(
       constraints.biggest,
