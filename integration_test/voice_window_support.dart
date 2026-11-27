@@ -46,6 +46,7 @@ const voiceStarters = [
   'What are the next steps?',
   'Create LinkedIn Post',
   'What did Arjun ask for?',
+  'Translate to…',
   'Your own words…',
 ];
 

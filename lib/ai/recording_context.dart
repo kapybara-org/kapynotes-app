@@ -49,7 +49,7 @@ RecordingRead readRecording(
       final speaker = named ? paragraph.first.speaker : null;
       final said = paragraph.map((segment) => segment.t.trim()).join(' ');
       final who = speaker == null ? '' : '${transcript.nameFor(speaker)}: ';
-      lines.add((text: '[${formatVoiceDuration(at)}] $who$said', at: at));
+      lines.add((text: '${timeMark(at)} $who$said', at: at));
     }
   }
 

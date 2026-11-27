@@ -48,11 +48,13 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # No gradle cache: this job never runs on main, so every branch saved its
+      # own 2.3 GB copy, which pushed main's Flutter caches out of the
+      # repository's 10 GB and left the macOS jobs downloading Flutter (KAP-325).
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - uses: ./.github/actions/flutter
         with:
