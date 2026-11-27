@@ -401,6 +401,7 @@ class KapyChatBook extends ChangeNotifier {
             model: model,
             titleAt: DateTime.fromMillisecondsSinceEpoch(merged.title.at),
             modelAt: DateTime.fromMillisecondsSinceEpoch(merged.model.at),
+            recording: merged.recording,
           ),
         );
         _assembleAll(id);
@@ -426,6 +427,7 @@ class KapyChatBook extends ChangeNotifier {
             modelAt: newModel
                 ? DateTime.fromMillisecondsSinceEpoch(merged.model.at)
                 : existing.modelAt,
+            recording: existing.recording,
           ),
         );
       }
@@ -513,6 +515,7 @@ class KapyChatBook extends ChangeNotifier {
         messages: messages,
         titleAt: chat.titleAt,
         modelAt: chat.modelAt,
+        recording: chat.recording,
       ),
     );
   }

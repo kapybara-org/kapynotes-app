@@ -321,6 +321,47 @@ void main() {
     expect(prefs.writingFont, WritingFont.clean);
   });
 
+  test('the zoom steps through its levels, stays within them, and persists', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.zoom, 1);
+
+    final seen = <double>[];
+    for (var i = 0; i < 8; i++) {
+      prefs.zoomIn();
+      seen.add(prefs.zoom);
+    }
+    expect(seen, [1.1, 1.25, 1.5, 1.75, 2, 2, 2, 2]);
+    expect(store.data['zoom.v1'], 2);
+
+    prefs.zoomOut();
+    expect((LayoutPrefs(store)..load()).zoom, 1.75);
+
+    for (var i = 0; i < 10; i++) {
+      prefs.zoomOut();
+    }
+    expect(prefs.zoom, 0.8);
+
+    prefs.resetZoom();
+    expect(prefs.zoom, 1);
+    expect((LayoutPrefs(store)..load()).zoom, 1);
+    expect(prefs.editorTextScale, LayoutPrefs.defaultEditorTextScale);
+  });
+
+  test('a stored zoom off the steps lands on the nearest one', () {
+    for (final (stored, zoom) in [
+      (1.3, 1.25),
+      (7.0, 2.0),
+      (0.1, 0.8),
+      (double.nan, 1.0),
+      (double.infinity, 1.0),
+      ('large', 1.0),
+    ]) {
+      final store = _MemoryStore()..put('zoom.v1', stored);
+      expect((LayoutPrefs(store)..load()).zoom, zoom, reason: '$stored');
+    }
+  });
+
   test('text sizes fall back safely and editor steps stay bounded', () {
     final store = _MemoryStore()
       ..put('appTextSize.v1', 'enormous')
@@ -619,12 +660,12 @@ void main() {
 
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     final mac = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
-    expect(mac.displayLabel, 'Cmd + Option + Shift + X');
+    expect(mac.displayLabel, 'Cmd + Option + Shift + L');
     expect(mac.control, isFalse, reason: 'Control+Option is VoiceOver');
 
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     final windows = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
-    expect(windows.displayLabel, 'Alt + Shift + X');
+    expect(windows.displayLabel, 'Alt + Shift + L');
     expect(
       windows.control,
       isFalse,
@@ -854,6 +895,148 @@ void main() {
     },
   );
 
+  // The summon chord is heard system-wide, so one of the app's own chords a
+  // single modifier away from it is a slip that hides the window: Alt+Shift+X
+  // sat beside strikethrough's Ctrl+Shift+X, and ⇧⌥⌘X beside its ⇧⌘X.
+  test('no default sits on or one modifier from the summon shortcut', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    Set<String> held(ShortcutBinding binding) => {
+      if (binding.meta) 'meta',
+      if (binding.control) 'control',
+      if (binding.alt) 'alt',
+      if (binding.shift) 'shift',
+    };
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final summon = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
+      for (final action in ShortcutAction.values) {
+        if (action == ShortcutAction.openApp) continue;
+        final binding = ShortcutPrefs.defaultFor(action);
+        if (binding.logicalKey != summon.logicalKey) continue;
+        final a = held(summon);
+        final b = held(binding);
+        final apart = a.difference(b).union(b.difference(a)).length;
+        final swapped = apart == 2 && a.length == b.length;
+        expect(
+          apart > 1 && !swapped,
+          isTrue,
+          reason:
+              '${action.name} is ${binding.displayLabel} beside summon\'s '
+              '${summon.displayLabel} on ${platform.name}',
+        );
+      }
+    }
+  });
+
+  test('an install still on the X summon shortcut moves to L once', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final useMeta = platform == TargetPlatform.macOS;
+      final store = _MemoryStore();
+      store.data['shortcuts.v1'] = {
+        'openApp': ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyX,
+          physicalKey: PhysicalKeyboardKey.keyX,
+          meta: useMeta,
+          alt: true,
+          shift: true,
+        ).toJson(),
+      };
+
+      ShortcutPrefs(store).load();
+      expect(
+        (store.data['shortcuts.v1']! as Map)['openApp'],
+        ShortcutPrefs.defaultFor(ShortcutAction.openApp).toJson(),
+        reason: platform.name,
+      );
+
+      final reloaded = ShortcutPrefs(store)..load();
+      expect(
+        reloaded.bindingFor(ShortcutAction.openApp)!.displayLabel,
+        useMeta ? 'Cmd + Option + Shift + L' : 'Alt + Shift + L',
+        reason: platform.name,
+      );
+    }
+  });
+
+  test('a summon shortcut the person chose stays where they put it', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    const chosen = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyK,
+      physicalKey: PhysicalKeyboardKey.keyK,
+      alt: true,
+      shift: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'openApp': chosen.toJson()};
+
+    expect(
+      (ShortcutPrefs(store)..load()).bindingFor(ShortcutAction.openApp),
+      chosen,
+    );
+  });
+
+  test('the X summon shortcut stays where L is already taken', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    const oldSummon = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyX,
+      physicalKey: PhysicalKeyboardKey.keyX,
+      alt: true,
+      shift: true,
+    );
+    final boldOnL = ShortcutPrefs.defaultFor(ShortcutAction.openApp);
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {
+      'openApp': oldSummon.toJson(),
+      'formatBold': boldOnL.toJson(),
+    };
+
+    final prefs = ShortcutPrefs(store)..load();
+
+    expect(prefs.bindingFor(ShortcutAction.openApp), oldSummon);
+    expect(prefs.bindingFor(ShortcutAction.formatBold), boldOnL);
+  });
+
+  test('the X summon shortcut picked again in Settings outlasts a restart', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    const oldSummon = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyX,
+      physicalKey: PhysicalKeyboardKey.keyX,
+      alt: true,
+      shift: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'openApp': oldSummon.toJson()};
+    final moved = ShortcutPrefs(store)..load();
+    expect(moved.bindingFor(ShortcutAction.openApp)!.keyLabel, 'L');
+
+    moved.update(ShortcutAction.openApp, oldSummon);
+
+    final reloaded = ShortcutPrefs(store)..load();
+    expect(
+      reloaded.bindingFor(ShortcutAction.openApp)!.displayLabel,
+      'Alt + Shift + X',
+    );
+
+    reloaded.update(
+      ShortcutAction.openApp,
+      ShortcutPrefs.defaultFor(ShortcutAction.openApp),
+    );
+    expect((store.data['shortcuts.v1']! as Map)['repicked'], isEmpty);
+  });
+
   test(
     'an install still on the 1Password-shadowed shortcut is moved across',
     () {
@@ -874,14 +1057,14 @@ void main() {
       final prefs = ShortcutPrefs(store)..load();
       expect(
         prefs.bindingFor(ShortcutAction.openApp)!.displayLabel,
-        'Cmd + Option + Shift + X',
+        'Cmd + Option + Shift + L',
       );
 
       // Written back, so the move survives a restart.
       final reloaded = ShortcutPrefs(store)..load();
       expect(
         reloaded.bindingFor(ShortcutAction.openApp)!.displayLabel,
-        'Cmd + Option + Shift + X',
+        'Cmd + Option + Shift + L',
       );
     },
   );
@@ -986,7 +1169,7 @@ void main() {
       shift: true,
     );
 
-    expect(prefs.bindingFor(ShortcutAction.openApp)!.keyLabel, 'X');
+    expect(prefs.bindingFor(ShortcutAction.openApp)!.keyLabel, 'L');
     expect(prefs.conflictFor(ShortcutAction.findNotes, replacement), isNull);
 
     prefs.update(ShortcutAction.findNotes, replacement);
@@ -1027,15 +1210,15 @@ void main() {
     );
     expect(prefs.bindingFor(ShortcutAction.formatChecklist)!.shift, isTrue);
     expect(
-      prefs.bindingFor(ShortcutAction.increaseEditorTextSize)!.logicalKey,
+      prefs.bindingFor(ShortcutAction.zoomIn)!.logicalKey,
       LogicalKeyboardKey.equal,
     );
     expect(
-      prefs.bindingFor(ShortcutAction.decreaseEditorTextSize)!.logicalKey,
+      prefs.bindingFor(ShortcutAction.zoomOut)!.logicalKey,
       LogicalKeyboardKey.minus,
     );
     expect(
-      prefs.bindingFor(ShortcutAction.resetEditorTextSize)!.logicalKey,
+      prefs.bindingFor(ShortcutAction.resetZoom)!.logicalKey,
       LogicalKeyboardKey.digit0,
     );
 
