@@ -1126,9 +1126,32 @@ void main() {
       );
 
       expect(find.text('You’re offline'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'needs a connection. Apple Intelligence can '
+          'answer offline.',
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Try again'));
       await tester.tap(find.text('Use Apple Intelligence'));
       expect(ai.calls, ['proceed', 'answerWith:apple']);
+    });
+
+    testWidgets('offline with a model on this device says the device can '
+        'answer, in a whole sentence', (tester) async {
+      final ai = await hold(
+        tester,
+        const KapyOffline(fallback: FakeKapyAi.gemma),
+      );
+
+      expect(
+        find.text(
+          '${ai.model.plainLabel} needs a connection. This device can answer '
+          'offline.',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('a signed-out Codex: Check again looks, then answers', (

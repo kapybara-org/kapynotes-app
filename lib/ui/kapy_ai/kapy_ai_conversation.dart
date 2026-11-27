@@ -747,7 +747,9 @@ class KapyAiNotice extends StatelessWidget {
         [
           [
             '${ai.model.plainLabel} needs a connection.',
-            if (fallback != null) '${fallback.plainLabel} answers offline.',
+            if (fallback != null)
+              '${fallback.id == 'apple' ? fallback.plainLabel : 'This device'} '
+                  'can answer offline.',
           ].join(' '),
         ],
         [?(fallback == null ? null : use(fallback)), tryAgain],
