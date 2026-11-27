@@ -25,6 +25,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:kapy_notes/audio/audio_decode.dart';
 import 'package:kapy_notes/audio/mp4_duration.dart';
 import 'package:kapy_notes/audio/voice_player.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
@@ -146,6 +147,33 @@ void main() {
 
     await player.pause();
     await player.stop();
+  });
+
+  testWidgets('zz decode variants', (tester) async {
+    expect(await controller.start(noteId: 'n1'), isTrue);
+    await Future<void>.delayed(const Duration(seconds: 3));
+    final result = await controller.stop();
+    final file = result!.file;
+    debugPrint('DIAG file \${file.path} \${await file.length()} bytes');
+    Future<void> attempt(String label, File source, int rate) async {
+      try {
+        final decoded = await const AudioDecoder().decode(
+          source,
+          sampleRate: rate,
+        );
+        debugPrint('DIAG \$label ok frames \${decoded.frames} rate \${decoded.sampleRate}');
+        await decoded.dispose();
+      } catch (error) {
+        debugPrint('DIAG \$label failed \$error');
+      }
+    }
+
+    await attempt('16k', file, 16000);
+    await attempt('44k', file, 44100);
+    await Future<void>.delayed(const Duration(seconds: 2));
+    await attempt('16k-later', file, 16000);
+    final copy = await file.copy('\${temp.path}/copy.m4a');
+    await attempt('16k-copy', copy, 16000);
   });
 
   testWidgets('noise comes off a real recording, and the clean copy plays', (
