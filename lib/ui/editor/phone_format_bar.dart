@@ -203,7 +203,7 @@ class _BarButton extends StatelessWidget {
 }
 
 /// What the attach button adds to the note.
-enum FormatBarAttachment { photo, video, voice, file }
+enum FormatBarAttachment { camera, photos, voice, file }
 
 /// The small sheet the attach button opens, one row for each thing a note
 /// can take that is not text. Voice note is left out where [voice] is false,
@@ -219,8 +219,12 @@ Future<FormatBarAttachment?> chooseAttachment(
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final (choice, label, icon) in const [
-          (FormatBarAttachment.photo, 'Photo', KapyIcons.photoLibraryOutlined),
-          (FormatBarAttachment.video, 'Video', KapyIcons.videoOutlined),
+          (FormatBarAttachment.camera, 'Camera', KapyIcons.cameraOutlined),
+          (
+            FormatBarAttachment.photos,
+            'Photos',
+            KapyIcons.photoLibraryOutlined,
+          ),
           (FormatBarAttachment.voice, 'Voice note', KapyIcons.micRounded),
           (FormatBarAttachment.file, 'File', KapyIcons.attachFileRounded),
         ])

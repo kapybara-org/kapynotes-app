@@ -66,6 +66,7 @@ import '../tag_ui.dart';
 import '../../data/note_attachment.dart';
 import 'package:file_selector/file_selector.dart';
 
+import '../../images/camera_capture.dart';
 import '../../images/image_clipboard.dart';
 import '../../paste/clipboard_snapshot.dart';
 import '../../paste/image_download.dart';
@@ -172,6 +173,8 @@ class NoteEditor extends StatefulWidget {
     this.voiceActionBusy = false,
     this.clipboard = const ImageClipboard(),
     this.imageAcquirer,
+    this.mediaAcquirer,
+    this.cameraAcquirer,
     this.imageIngestor,
     this.imageFinalizer,
     this.onImagePrepared,
@@ -267,6 +270,15 @@ class NoteEditor extends StatefulWidget {
   /// pending note can be remembered across Android activity recreation, and
   /// replaced by tests that have no camera behind them.
   final ImageFileAcquirer? imageAcquirer;
+
+  /// Opens the phone library with photos and videos together, for the attach
+  /// sheet's Photos row. Supplied by the page, like [imageAcquirer].
+  final MediaFileAcquirer? mediaAcquirer;
+
+  /// Opens the in-app camera and returns what the person keeps, for the attach
+  /// sheet's Camera row. Supplied by the page, which remembers the mode last
+  /// used; an empty list means it was closed.
+  final MediaFileAcquirer? cameraAcquirer;
 
   /// Defaults to the production compression pipeline. Tests replace only this
   /// boundary and still exercise the real footer and toast lifecycle.
@@ -2938,18 +2950,49 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   /// Opens the device's image entry point, compresses whatever comes back,
-  /// and inserts it. Phones ask between the native camera and photo library;
-  /// desktop opens its system file dialog.
+  /// and inserts it. Phones go straight to the photo library; desktop opens
+  /// its system file dialog.
   Future<void> pickAndInsertImages() async {
     final store = widget.images;
     if (store == null || !_beginImageAction()) return;
     try {
-      final files = await (widget.imageAcquirer ?? acquireNoteImages)(context);
+      final files =
+          await widget.imageAcquirer?.call(context) ?? await pickNoteImages();
       if (files.isEmpty || !mounted) return;
       await _ingestAndInsertFiles(files, store);
     } finally {
       _endImageAction();
     }
+  }
+
+  /// Opens the phone library with photos and videos on one screen and sends
+  /// each file down its own path, with its own limits and refusals.
+  Future<void> pickAndInsertMedia() async {
+    if (widget.images == null || widget.readOnly) return;
+    final pick = widget.mediaAcquirer;
+    final files = pick != null
+        ? await pick(context)
+        : await pickExistingMedia();
+    if (files.isEmpty || !mounted) return;
+    await insertDroppedMedia(files);
+  }
+
+  /// Opens the in-app camera and inserts the photo or video it keeps. Closing
+  /// it leaves the note as it was.
+  Future<void> takeAndInsertMedia() async {
+    if (widget.images == null || widget.readOnly) return;
+    final open = widget.cameraAcquirer;
+    final files = open != null
+        ? await open(context)
+        : await showNoteCamera(
+            context,
+            chooseFromLibrary: pickExistingMedia,
+            attachmentMaxBytes:
+                widget.videoAttachmentMaxBytes?.call() ??
+                freeAttachmentMaxBytes,
+          );
+    if (files.isEmpty || !mounted) return;
+    await insertDroppedMedia(files);
   }
 
   /// Compresses and inserts files that arrived from anywhere — a picker or a
@@ -6354,10 +6397,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
     if (choice == null || !mounted) return;
     switch (choice) {
-      case FormatBarAttachment.photo:
-        await pickAndInsertImages();
-      case FormatBarAttachment.video:
-        await pickAndInsertVideos();
+      case FormatBarAttachment.camera:
+        await takeAndInsertMedia();
+      case FormatBarAttachment.photos:
+        await pickAndInsertMedia();
       case FormatBarAttachment.voice:
         widget.onRecordVoice?.call();
       case FormatBarAttachment.file:

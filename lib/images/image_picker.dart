@@ -15,6 +15,10 @@ import '../data/blob_store.dart';
 /// camera while still exercising the complete note-insertion path.
 typedef ImageFileAcquirer = Future<List<XFile>> Function(BuildContext context);
 
+/// The same boundary for the camera and for the library's photos and videos
+/// together.
+typedef MediaFileAcquirer = Future<List<XFile>> Function(BuildContext context);
+
 /// What a batch of files turned into.
 class ImageBatch {
   const ImageBatch({required this.images, required this.rejections});
@@ -61,6 +65,12 @@ Future<List<XFile>> pickImageFiles() async {
     return const [];
   }
 }
+
+/// Opens the right image entry point for the device: a phone's photo library
+/// or the desktop file dialog. The camera has its own door, the attach sheet's
+/// Camera row.
+Future<List<XFile>> pickNoteImages() =>
+    AppPlatform.isMobile ? pickExistingImageFiles() : pickImageFiles();
 
 /// Opens the right image entry point for the device.
 ///
