@@ -108,6 +108,7 @@ import 'selection_bubble.dart';
 import 'slash_command_menu.dart';
 import 'slash_commands.dart';
 import '../../sync/presence.dart';
+import 'live_text_card.dart';
 
 /// [edit] is where in the old body the change happened, as the editor saw
 /// it; null when it cannot say. See [NotesStore.updateDocument].
@@ -8438,14 +8439,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               },
             ),
           ),
-          if (!widget.readOnly && _liveSession != null)
+          if (!widget.readOnly && _liveSession != null) ...[
+            if (widget.recording?.liveText case final text?)
+              LiveTextCard(
+                text: text,
+                prefs: widget.recording!.live!.prefs,
+                paused: _liveSession!.paused,
+                wide: !AppPlatform.isMobile,
+              ),
             VoiceRecordingBar(
               session: _liveSession!,
               onPause: widget.recording?.pause,
               onResume: widget.recording?.resume,
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
-            )
+            ),
+          ]
           else if (!AppPlatform.isMobile)
             SizedBox(height: MediaQuery.paddingOf(context).bottom)
           else ...[

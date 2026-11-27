@@ -128,6 +128,7 @@ import 'tag_ui.dart';
 import 'spaces_rail.dart';
 import 'split_view.dart';
 import 'draw/drawing_canvas.dart';
+import '../audio/live_text.dart';
 
 /// The narrowest window that holds the notes list beside the page. Below it a
 /// phone switches to the compact editor with a notes drawer, while a desktop
@@ -183,6 +184,7 @@ class HomePage extends StatefulWidget {
     this.deviceSummarizer,
     this.summarizer,
     this.deviceTranscriber,
+    this.liveTranslation,
     this.transcriber,
     this.imageAcquirer,
     this.lostImageRetriever,
@@ -260,6 +262,9 @@ class HomePage extends StatefulWidget {
   /// The device half of transcribing, for the voice pane to offer and to
   /// explain when this machine cannot do it.
   final Transcriber? deviceTranscriber;
+
+  /// Live translation, where this device can do it; for Settings.
+  final LiveTranslationLauncher? liveTranslation;
 
   /// Where a recording actually goes to become words. The twin of
   /// [summarizer], and it is the queue rather than this page that uses it —
@@ -3788,6 +3793,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         localModels: widget.localModels,
         deviceSummarizer: widget.deviceSummarizer,
         deviceTranscriber: widget.deviceTranscriber,
+        liveTranslation: widget.liveTranslation,
         onTranscriptionReady: _resumeTranscriptionsFromSettings,
         cloudAccess: widget.cloudAccess,
         hiddenNotes: widget.hiddenNotesGate,
@@ -4006,6 +4012,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         localModels: widget.localModels,
         deviceSummarizer: widget.deviceSummarizer,
         deviceTranscriber: widget.deviceTranscriber,
+        liveTranslation: widget.liveTranslation,
         cloudAccess: widget.cloudAccess,
         hiddenNotes: widget.hiddenNotesGate,
       ),

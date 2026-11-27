@@ -71,6 +71,8 @@ import 'ui/instant_capture.dart';
 import 'ui/mcp_pane.dart';
 import 'ui/menu_bar_panel.dart';
 import 'ui/tasks/tasks_controller.dart';
+import 'speech/live_translation.dart';
+import 'audio/live_text.dart';
 
 /// Flutter's own actions, with a finger outside a text field putting a
 /// phone's keyboard away.
@@ -340,6 +342,14 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         _recording.finishRecordingAndFlush;
     _recording.onFlush = _flushAfterHydration;
     _voicePrefs = VoicePrefs(widget.store);
+    // Only where the OS has its own engines. Nothing behind it is created
+    // until live translation is turned on in Settings.
+    if (PlatformLiveTranslation.isPossibleHere) {
+      _recording.live ??= LiveTranslationLauncher(
+        engine: PlatformLiveTranslation(),
+        prefs: _voicePrefs!,
+      );
+    }
     // Each model is offered only where this build carries something that
     // reads it: Parakeet where the platform has no recogniser of its own,
     // Gemma everywhere but iOS. On Android neither runtime is in the app;
@@ -882,6 +892,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
                   localModels: _localModels,
                   deviceSummarizer: _deviceSummarizer,
                   deviceTranscriber: _deviceTranscriber,
+                  liveTranslation: _recording.live,
                   summarizer: _summarizer,
                   transcriber: _transcriber,
                   imageAcquirer: widget.imageAcquirer,

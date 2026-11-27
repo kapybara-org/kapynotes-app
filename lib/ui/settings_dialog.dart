@@ -63,6 +63,8 @@ import 'tasks/task_marks.dart';
 import 'tonal_button.dart';
 import 'voice_consent_sheet.dart';
 import 'voice_note_dialog.dart';
+import '../audio/live_text.dart';
+import '../speech/live_translation.dart';
 
 /// The groups of settings, one per rail entry, in the rail's order.
 ///
@@ -157,6 +159,7 @@ Future<void> showSettings(
   LocalModelStore? localModels,
   Summarizer? deviceSummarizer,
   Transcriber? deviceTranscriber,
+  LiveTranslationLauncher? liveTranslation,
   VoidCallback? onTranscriptionReady,
   CloudAccess? cloudAccess,
   HiddenNotesGate? hiddenNotes,
@@ -183,6 +186,7 @@ Future<void> showSettings(
     localModels: localModels,
     deviceSummarizer: deviceSummarizer,
     deviceTranscriber: deviceTranscriber,
+    liveTranslation: liveTranslation,
     onTranscriptionReady: onTranscriptionReady,
     cloudAccess: cloudAccess,
     hiddenNotes: hiddenNotes,
@@ -241,6 +245,7 @@ class SettingsDialog extends StatefulWidget {
     this.localModels,
     this.deviceSummarizer,
     this.deviceTranscriber,
+    this.liveTranslation,
     this.onTranscriptionReady,
     this.cloudAccess,
     this.hiddenNotes,
@@ -277,6 +282,10 @@ class SettingsDialog extends StatefulWidget {
   /// The device half of transcribing, so the pane can offer it and say what
   /// is in the way when this machine cannot.
   final Transcriber? deviceTranscriber;
+
+  /// Live translation, where the app has it. Null, or unavailable, hides the
+  /// Live translation card.
+  final LiveTranslationLauncher? liveTranslation;
 
   /// Runs queued recordings as soon as a usable transcription route is
   /// selected or cloud consent is accepted.
@@ -466,6 +475,13 @@ class _SettingsDialogState extends State<SettingsDialog>
   static const double _dialogHeight = 860;
   static const double _navWidth = 232;
 
+  /// What this device can hear and translate into; null hides the card.
+  LiveLanguages? _liveLanguages;
+  ({LivePairStatus status, int? bytes})? _livePair;
+  bool _liveBusy = false;
+  bool _liveDenied = false;
+  String? _liveNote;
+
   String? _shortcutError;
   String? _loginItemError;
   SettingsSection _section = SettingsSection.appearance;
@@ -553,6 +569,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     unawaited(widget.localModels?.refresh());
     _loadDeviceSummaryState();
     _loadDeviceTranscriptState();
+    _loadLiveTranslation();
     unawaited(
       DeviceMemory().total().then((bytes) {
         if (mounted && bytes != null) {
@@ -800,6 +817,334 @@ class _SettingsDialogState extends State<SettingsDialog>
     );
     if (chosen == null || !mounted) return;
     prefs.language = chosen.isEmpty ? null : chosen;
+  }
+
+  /// Asks the device whether it can translate live, each time Settings
+  /// opens: nothing about live translation is asked anywhere else until it's
+  /// turned on.
+  void _loadLiveTranslation() {
+    final live = widget.liveTranslation;
+    if (live == null) return;
+    unawaited(() async {
+      try {
+        if (!await live.engine.isAvailable()) return;
+        final languages = await live.languages();
+        if (!mounted || languages.targets.isEmpty) return;
+        setState(() => _liveLanguages = languages);
+        await _loadLivePair(live);
+      } catch (error) {
+        debugPrint('KapyNotes: live translation unavailable: $error');
+      }
+    }());
+  }
+
+  Future<void> _loadLivePair(LiveTranslationLauncher live) async {
+    final to = live.prefs.liveTranslateTo;
+    if (to == null) return;
+    final pair = await live.engine.pairStatus(live.from, to);
+    if (mounted) setState(() => _livePair = pair);
+  }
+
+  Future<void> _setLive(LiveTranslationLauncher live, bool on) async {
+    if (!on) {
+      live.prefs.liveTranslation = false;
+      return;
+    }
+    final to = live.prefs.liveTranslateTo ?? await _pickLiveTarget(live);
+    if (to == null || !mounted) return;
+    if (await _prepareLive(live, to)) {
+      live.prefs.liveTranslateTo = to;
+      live.prefs.liveTranslation = true;
+    }
+  }
+
+  /// Gets the pair ready: Speech Recognition on the iPhone and the Mac, which
+  /// show the system's own prompt and download, and on Android the languages'
+  /// one-time download, after saying its size.
+  Future<bool> _prepareLive(LiveTranslationLauncher live, String to) async {
+    final from = live.from;
+    setState(() {
+      _liveBusy = true;
+      _liveDenied = false;
+      _liveNote = null;
+    });
+    try {
+      final pair = await live.engine.pairStatus(from, to);
+      if (!mounted) return false;
+      if (pair.status == LivePairStatus.unsupported) {
+        setState(
+          () => _liveNote =
+              '${_liveName(from)} to ${_liveName(to)} isn’t on this '
+              '$kapyDeviceWord. Translate to after recording still works.',
+        );
+        return false;
+      }
+      var wifiOnly = true;
+      if (pair.status == LivePairStatus.downloadable && AppPlatform.isAndroid) {
+        final asked = await _confirmLiveDownload(from, to, pair.bytes);
+        if (asked == null || !mounted) return false;
+        wifiOnly = asked;
+      }
+      final result = await live.engine.prepare(from, to, wifiOnly: wifiOnly);
+      final now = await live.engine.pairStatus(from, to);
+      if (!mounted) return false;
+      setState(() {
+        _livePair = now;
+        _liveDenied = result == LivePrepareResult.denied;
+      });
+      return result == LivePrepareResult.ready &&
+          now.status == LivePairStatus.installed;
+    } catch (error) {
+      debugPrint('KapyNotes: live translation could not get ready: $error');
+      return false;
+    } finally {
+      if (mounted) setState(() => _liveBusy = false);
+    }
+  }
+
+  String _liveName(String code) =>
+      _liveLanguages?.nameOf(code) ?? speechLanguages[code] ?? code;
+
+  /// Android's one-time download, said before it starts. Null for Not now,
+  /// else whether to wait for Wi-Fi.
+  Future<bool?> _confirmLiveDownload(String from, String to, int? bytes) {
+    var wifiOnly = true;
+    final size = bytes == null ? '' : ' of ${fileSize(bytes)}';
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Download ${_liveName(from)} and ${_liveName(to)}?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Live translation needs them on this phone. It’s a one-time '
+                'download$size. After that it translates with no internet, '
+                'and nothing you say leaves your phone.',
+              ),
+              const SizedBox(height: 12),
+              InkWell(
+                key: const ValueKey('voice-live-wifi-only'),
+                onTap: () => setDialogState(() => wifiOnly = !wifiOnly),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      const Expanded(child: Text('Download on Wi-Fi only')),
+                      SettingsSwitch(value: wifiOnly),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Not now'),
+            ),
+            FilledButton(
+              key: const ValueKey('voice-live-download'),
+              onPressed: () => Navigator.of(context).pop(wifiOnly),
+              child: const Text('Download'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The languages this device translates into, the person's own first.
+  Future<String?> _pickLiveTarget(LiveTranslationLauncher live) async {
+    final languages = _liveLanguages;
+    if (languages == null) return null;
+    final from = live.from;
+    final own = {
+      for (final locale in PlatformDispatcher.instance.locales)
+        locale.languageCode.toLowerCase(),
+    };
+    final codes = languages.targets.where((code) => code != from).toList()
+      ..sort((a, b) {
+        final mine = (own.contains(b) ? 1 : 0) - (own.contains(a) ? 1 : 0);
+        return mine != 0 ? mine : _liveName(a).compareTo(_liveName(b));
+      });
+    final current = live.prefs.liveTranslateTo;
+    return showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Translate to'),
+        children: [
+          for (final code in codes)
+            SimpleDialogOption(
+              key: ValueKey('voice-live-to-$code'),
+              onPressed: () => Navigator.of(context).pop(code),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(_liveName(code)),
+                        if (languages.names[code]?.own case final name?
+                            when name != _liveName(code))
+                          Text(
+                            name,
+                            style: TextStyle(
+                              fontSize: AppTypeScale.small,
+                              color: context.palette.textSecondary,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (code == current)
+                    KapyIcon(
+                      KapyIcons.checkRounded,
+                      size: 16,
+                      color: context.palette.accent,
+                    ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changeLiveTarget(LiveTranslationLauncher live) async {
+    final to = await _pickLiveTarget(live);
+    if (to == null || !mounted || to == live.prefs.liveTranslateTo) return;
+    if (await _prepareLive(live, to)) live.prefs.liveTranslateTo = to;
+  }
+
+  /// Deletes the pair's languages this app downloaded, which turns live
+  /// translation off until they're downloaded again.
+  Future<void> _removeLiveLanguages(LiveTranslationLauncher live) async {
+    final to = live.prefs.liveTranslateTo;
+    if (to == null) return;
+    live.prefs.liveTranslation = false;
+    for (final language in {live.from, to}) {
+      await live.engine.remove(language);
+    }
+    await _loadLivePair(live);
+  }
+
+  /// Settings › Voice & AI › Live translation, shown only where this device
+  /// can hear and translate on its own.
+  List<_Group> _liveGroups(VoicePrefs prefs) {
+    final live = widget.liveTranslation;
+    if (live == null || _liveLanguages == null) return const [];
+    final on = prefs.liveTranslation;
+    final to = prefs.liveTranslateTo;
+    final denied = _liveDenied && !on && !AppPlatform.isAndroid;
+    final pair = _livePair;
+    final keywords = ['translate', 'translation', 'live text', 'language'];
+    void changeTarget() {
+      if (!_liveBusy) unawaited(_changeLiveTarget(live));
+    }
+
+    return [
+      _Group(
+        'Live translation',
+        [
+          _toggle(
+            'voice-live-toggle',
+            'Live translation',
+            denied
+                ? 'The microphone is off for Kapy Notes, so live '
+                      'translation can’t start.'
+                : 'See what’s said, and its translation, while you record.',
+            value: on,
+            onChanged: _liveBusy
+                ? null
+                : (value) => unawaited(_setLive(live, value)),
+            byDefault: false,
+            keywords: keywords,
+          ),
+          if (denied)
+            _Setting(
+              'voice-live-allow',
+              AppPlatform.isIOS
+                  ? 'Allow in iPhone Settings'
+                  : 'Allow in System Settings',
+              keywords: keywords,
+              onTap: () => unawaited(live.engine.openSettings()),
+              control: KapyIcon(
+                KapyIcons.chevronRightRounded,
+                size: 14,
+                color: context.palette.textTertiary,
+              ),
+            ),
+          if (on) ...[
+            _Setting(
+              'voice-live-spoken',
+              'Spoken language',
+              subtitle: 'The language you record in',
+              keywords: keywords,
+              value: _languageName(prefs.language),
+              control: SettingsMenuButton(
+                key: const ValueKey('voice-live-spoken-menu'),
+                label: _languageName(prefs.language),
+                onPressed: () => unawaited(_pickSpeechLanguage(prefs)),
+              ),
+              onTap: () => unawaited(_pickSpeechLanguage(prefs)),
+            ),
+            _Setting(
+              'voice-live-to',
+              'Translate to',
+              keywords: keywords,
+              value: to == null ? null : _liveName(to),
+              control: SettingsMenuButton(
+                key: const ValueKey('voice-live-to-menu'),
+                label: to == null ? 'Choose' : _liveName(to),
+                onPressed: changeTarget,
+              ),
+              onTap: changeTarget,
+            ),
+            if (AppPlatform.isMobile)
+              _toggle(
+                'voice-live-lock-screen',
+                AppPlatform.isAndroid
+                    ? 'Show on the lock screen'
+                    : 'Show on the Lock Screen',
+                'Turn off to show the words only while your phone is unlocked.',
+                value: prefs.liveOnLockScreen,
+                onChanged: (value) => prefs.liveOnLockScreen = value,
+                byDefault: true,
+                keywords: [...keywords, 'lock screen', 'privacy'],
+              ),
+          ],
+        ],
+        after: [
+          if (_liveNote case final note?)
+            SettingsNote(note)
+          else if (on)
+            SettingsNote(
+              'Translated on this $kapyDeviceWord. It’s free, and nothing '
+              'you say leaves it.',
+            ),
+        ],
+      ),
+      if (on &&
+          AppPlatform.isAndroid &&
+          to != null &&
+          pair?.status == LivePairStatus.installed)
+        _Group('On this phone', [
+          _Setting(
+            'voice-live-downloaded',
+            '${_liveName(live.from)} and ${_liveName(to)}',
+            subtitle: pair?.bytes == null ? null : fileSize(pair!.bytes!),
+            keywords: [...keywords, 'download', 'storage', 'remove'],
+            control: SettingsRowButton(
+              key: const ValueKey('voice-live-remove'),
+              label: 'Remove',
+              onPressed: () => unawaited(_removeLiveLanguages(live)),
+            ),
+          ),
+        ]),
+    ];
   }
 
   Future<void> _editSummaryInstruction(VoicePrefs prefs) async {
@@ -2058,6 +2403,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           onTap: () => unawaited(_pickSpeechLanguage(prefs)),
         ),
       ]),
+      ..._liveGroups(prefs),
       _Group(
         'Transcription',
         [

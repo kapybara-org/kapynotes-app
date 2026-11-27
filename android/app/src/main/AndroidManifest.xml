@@ -27,6 +27,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Android 16's Live Update: the recording notification at the top of
+         the lock screen and as a status-bar chip, asked for only while live
+         translation is showing its words there. A normal permission, granted
+         at install; the person can still turn it off per app. -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
 
     <!-- Requested only when the camera surface is opened. Choosing an
          existing photo uses Android's system Photo Picker and needs no broad

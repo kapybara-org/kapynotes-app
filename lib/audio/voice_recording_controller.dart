@@ -11,6 +11,8 @@ import '../core/platform.dart';
 import 'adts.dart';
 import 'audio_decode.dart';
 import 'linux_voice_recorder.dart';
+import 'live_text.dart';
+import 'live_voice_recorder.dart';
 import 'mp4_duration.dart';
 import 'peaks.dart';
 import 'recording_controls.dart';
@@ -125,6 +127,20 @@ class VoiceRecordingController extends ChangeNotifier {
   }
 
   final VoiceRecorderBackend _recorder;
+
+  /// The backend this recording runs on: [_recorder], except on Android
+  /// while live translation is on, where the live session records the file.
+  late VoiceRecorderBackend _backend = _recorder;
+
+  /// Live translation, when the app has it. Null, or off in Settings, leaves
+  /// every recording exactly as it was before the feature existed.
+  LiveTranslationLauncher? live;
+
+  LivePhrases? _liveText;
+
+  /// What is being heard and translated, while a recording with live
+  /// translation on runs; null otherwise.
+  LivePhrases? get liveText => _liveText;
   final Directory? _tempDirectory;
   final RecordingControls? _controls;
 
@@ -245,21 +261,57 @@ class VoiceRecordingController extends ChangeNotifier {
     _session = VoiceRecordingSession(noteId: noteId, starting: true);
     _notify();
 
+    final launcher = live;
+    final pair = await launcher?.pair();
+    final recordsItself = pair != null && AppPlatform.isAndroid;
+    _backend = recordsItself
+        ? LiveVoiceRecorder(launcher!.engine, from: pair.from, to: pair.to)
+        : _recorder;
+    if (pair != null) {
+      _liveText = LivePhrases(
+        from: pair.from,
+        to: pair.to,
+        fromName: pair.fromName,
+        toName: pair.toName,
+        engine: launcher!.engine,
+        onTranslated: _showControls,
+      );
+    }
+
     try {
-      await _recorder.start(path);
+      try {
+        await _backend.start(path);
+      } catch (error) {
+        if (!recordsItself) rethrow;
+        // Live translation is extra: a live session that won't start leaves
+        // the recording to today's recorder rather than not recording at all.
+        debugPrint('KapyNotes: live translation did not start: $error');
+        _endLiveText();
+        _backend = _recorder;
+        await _backend.start(path);
+      }
     } catch (error) {
       debugPrint('KapyNotes: could not start recording: $error');
       _session = null;
       _path = null;
+      _endLiveText();
       _notify();
       return false;
+    }
+    if (pair != null && !recordsItself) {
+      try {
+        await launcher!.engine.start(from: pair.from, to: pair.to);
+      } catch (error) {
+        debugPrint('KapyNotes: live translation did not start: $error');
+        _endLiveText();
+      }
     }
 
     _session = _session?.copyWith(starting: false);
     _notify();
     _clock = clock.stopwatch()..start();
-    _amplitudes = _recorder.amplitude.listen(_onAmplitude);
-    _paused = _recorder.paused.listen(_onBackendPaused);
+    _amplitudes = _backend.amplitude.listen(_onAmplitude);
+    _paused = _backend.paused.listen(_onBackendPaused);
     _ticker = Timer.periodic(const Duration(seconds: 1), _onTick);
     _showControls();
     _writeMarker(path, noteId);
@@ -387,11 +439,18 @@ class VoiceRecordingController extends ChangeNotifier {
     final session = _session;
     final controls = _controls;
     if (session == null || controls == null) return;
+    final liveText = _liveText;
+    final phrase = (live?.prefs.liveOnLockScreen ?? false)
+        ? liveText?.latestTranslated
+        : null;
     unawaited(
       controls.show(
         elapsed: _clock.elapsed,
         paused: session.paused,
         interrupted: session.interrupted,
+        live: liveText != null,
+        phrase: phrase == null ? null : clipPhrase(phrase.translation!, 300),
+        heard: phrase == null ? null : clipPhrase(phrase.heard, 200),
       ),
     );
   }
@@ -471,7 +530,8 @@ class VoiceRecordingController extends ChangeNotifier {
     final session = _session;
     if (session == null || session.paused) return;
     _userPaused = true;
-    await _recorder.pause();
+    await _backend.pause();
+    await _hearBeside(pause: true);
     _clock.stop();
     _session = session.copyWith(paused: true, level: 0, elapsed: _elapsed);
     _notify();
@@ -482,7 +542,8 @@ class VoiceRecordingController extends ChangeNotifier {
     final session = _session;
     if (session == null) return;
     _userPaused = false;
-    await _recorder.resume();
+    await _backend.resume();
+    await _hearBeside(pause: false);
     _clock.start();
     _session = session.copyWith(paused: false, interrupted: false);
     _notify();
@@ -505,7 +566,7 @@ class VoiceRecordingController extends ChangeNotifier {
 
     final String? written;
     try {
-      written = await _recorder.stop();
+      written = await _backend.stop();
     } catch (error) {
       debugPrint('KapyNotes: could not stop recording: $error');
       return null;
@@ -562,7 +623,7 @@ class VoiceRecordingController extends ChangeNotifier {
     _session = null;
     _notify();
     try {
-      await _recorder.cancel();
+      await _backend.cancel();
     } catch (error) {
       debugPrint('KapyNotes: could not cancel recording: $error');
     }
@@ -631,6 +692,36 @@ class VoiceRecordingController extends ChangeNotifier {
     await _paused?.cancel();
     _amplitudes = null;
     _paused = null;
+    // On Android the live recorder ends its own session as it stops.
+    if (_liveText != null && identical(_backend, _recorder)) {
+      try {
+        await live?.engine.stop();
+      } catch (error) {
+        debugPrint('KapyNotes: live translation did not stop: $error');
+      }
+    }
+    _endLiveText();
+  }
+
+  /// Pauses or resumes live hearing beside a recorder that isn't the live
+  /// session itself: the iPhone and the Mac.
+  Future<void> _hearBeside({required bool pause}) async {
+    final engine = live?.engine;
+    if (_liveText == null ||
+        engine == null ||
+        !identical(_backend, _recorder)) {
+      return;
+    }
+    try {
+      await (pause ? engine.pause() : engine.resume());
+    } catch (error) {
+      debugPrint('KapyNotes: live translation did not follow: $error');
+    }
+  }
+
+  void _endLiveText() {
+    _liveText?.dispose();
+    _liveText = null;
   }
 
   /// Removes a recording nobody is going to keep.
@@ -684,6 +775,7 @@ class VoiceRecordingController extends ChangeNotifier {
     unawaited(_amplitudes?.cancel());
     unawaited(_paused?.cancel());
     unawaited(_recorder.dispose());
+    _endLiveText();
     super.dispose();
   }
 }

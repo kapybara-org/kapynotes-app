@@ -19,6 +19,10 @@
          speech engines, in its own dialogs. -->
     <string name="speech_runtime_title">On-device speech engine</string>
 
+    <!-- What Google Play calls the on-demand module that carries the
+         on-device translator, in its own dialogs. -->
+    <string name="translation_runtime_title">On-device translation</string>
+
     <!-- A voice recording's notification, which keeps it going with the
          screen off, and the setting it is listed under. -->
     <string name="recording_channel">Recording</string>
@@ -29,4 +33,7 @@
     <string name="recording_pause">Pause</string>
     <string name="recording_resume">Resume</string>
     <string name="recording_stop">Stop</string>
+    <!-- What a locked phone set to hide sensitive content shows in place of
+         the live translation. -->
+    <string name="recording_live_hidden">Unlock to see the live text</string>
 </resources>
