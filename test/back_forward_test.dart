@@ -279,6 +279,79 @@ void main() {
     }
   }, variant: TargetPlatformVariant.desktop());
 
+  testWidgets('a wheel that went mostly down is not a swipe, however far '
+      'sideways it drifts after', (tester) async {
+    asDesktop();
+    await tester.pumpWidget(
+      app(BackForwardArea(onStep: record('page'), child: box('page'))),
+    );
+    final at = tester.getCenter(find.byKey(const ValueKey('page')));
+
+    Future<void> wheel(Offset delta, int times) async {
+      for (var part = 0; part < times; part++) {
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: at,
+            kind: PointerDeviceKind.mouse,
+            scrollDelta: delta,
+          ),
+        );
+      }
+    }
+
+    await wheel(const Offset(0, 50), 4);
+    await wheel(const Offset(-40, 0), 4);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(steps, isEmpty, reason: 'down 200, then sideways 160');
+
+    await stepAt(tester, at, _back, StepBy.wheel);
+    expect(steps, ['page back'], reason: 'the same sideways run on its own');
+  }, variant: TargetPlatformVariant.desktop());
+
+  testWidgets('only fingers on the pad spend a swipe on sideways scrolling: '
+      'a scroll the app makes meanwhile does not', (tester) async {
+    asDesktop();
+    final strip = ScrollController(initialScrollOffset: 400);
+    addTearDown(strip.dispose);
+    await tester.pumpWidget(
+      app(
+        BackForwardArea(
+          onStep: record('page'),
+          child: Center(
+            child: SizedBox(
+              height: 100,
+              child: ListView(
+                controller: strip,
+                physics: const NeverScrollableScrollPhysics(),
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (var cell = 0; cell < 12; cell++)
+                    SizedBox(width: 200, child: box('cell $cell')),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final at = tester.getCenter(find.byType(ListView));
+
+    final pointer = TestPointer(3, PointerDeviceKind.trackpad);
+    await tester.sendEventToBinding(pointer.panZoomStart(at));
+    await tester.sendEventToBinding(
+      pointer.panZoomUpdate(at, pan: const Offset(40, 0)),
+    );
+    strip.jumpTo(600);
+    await tester.pump();
+    expect(strip.offset, 600);
+    await tester.sendEventToBinding(
+      pointer.panZoomUpdate(at, pan: const Offset(160, 0)),
+    );
+    await tester.sendEventToBinding(pointer.panZoomEnd());
+    await tester.pumpAndSettle();
+    expect(steps, ['page back']);
+  }, variant: TargetPlatformVariant.desktop());
+
   testWidgets('what moved slides in from the side the step came from, and '
       'holds still where the system asks for less motion', (tester) async {
     asDesktop();

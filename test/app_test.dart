@@ -1000,6 +1000,42 @@ void main() {
         },
         variant: desktop,
       );
+
+      testWidgets(
+        'over the list, Forward forgets every way down once one of them is '
+        'gone',
+        (tester) async {
+          final folders = await pumpWithFolders(tester);
+          final trips = folders.create('Trips')!;
+          final lisbon = folders.create('Lisbon', parentId: trips.id)!;
+          final oldTown = folders.create('Old town', parentId: lisbon.id)!;
+          prefs.setFolderOpen(trips.id, true);
+          prefs.setFolderOpen(lisbon.id, true);
+          prefs.foldersShown = true;
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Old town'));
+          await tester.pumpAndSettle();
+          expect(folderInFront(tester), oldTown.id);
+          final list = find.byType(Sidebar);
+
+          await stepOver(tester, list, back, StepBy.pan);
+          await stepOver(tester, list, back, StepBy.pan);
+          expect(folderInFront(tester), trips.id);
+          folders.move(lisbon.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(folderInFront(tester), trips.id, reason: 'Lisbon moved out');
+          folders.move(oldTown.id, parentId: trips.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(
+            folderInFront(tester),
+            trips.id,
+            reason: 'Old town is a child again, but the way was forgotten',
+          );
+        },
+        variant: desktop,
+      );
     },
   );
 
