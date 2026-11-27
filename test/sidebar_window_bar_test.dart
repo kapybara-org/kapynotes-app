@@ -214,6 +214,46 @@ void main() {
     expect(shortcut, findsNothing);
   });
 
+  // Ctrl+Shift+F, Search's chord off a Mac, is longer than the field in a
+  // list dragged to its narrowest has beside the placeholder.
+  testWidgets('a chord too long for a list dragged narrow leaves the field '
+      'to the placeholder', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    const chord = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyF,
+      physicalKey: PhysicalKeyboardKey.keyF,
+      control: true,
+      shift: true,
+    );
+    final keycap = find.byKey(const ValueKey('sidebar-search-shortcut'));
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    for (final (width, shown) in [(150.0, false), (344.0, true)]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Material(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: width,
+                child: SidebarSearchField(onSearch: () {}, shortcut: chord),
+              ),
+            ),
+          ),
+        ),
+      );
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('sidebar-search-box'))),
+      );
+      await tester.pump();
+      expect(keycap, shown ? findsOneWidget : findsNothing, reason: '$width');
+      expect(tester.takeException(), isNull, reason: '$width');
+    }
+  });
+
   testWidgets('the Mac search field is 32 high, 10 in, radius 9, with its '
       '14 px icon in T3', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;

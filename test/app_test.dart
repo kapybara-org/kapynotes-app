@@ -6159,8 +6159,8 @@ void main() {
       expect(find.byType(SettingsDialog), findsOneWidget);
     });
 
-    testWidgets('its shortcut, and Find\'s, open it over a hidden list, and '
-        'it finds nested content', (tester) async {
+    testWidgets('its shortcut opens it over a hidden list, and it finds '
+        'nested content', (tester) async {
       await pumpApp(tester, sidebarVisible: false);
       notes.create(
         body:
@@ -6170,7 +6170,8 @@ void main() {
       await tester.pumpAndSettle();
 
       final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
-      expect(binding.logicalKey, LogicalKeyboardKey.keyK);
+      expect(binding.logicalKey, LogicalKeyboardKey.keyF);
+      expect(binding.shift, isTrue);
       await pressShortcut(tester, binding);
       expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
       expect(prefs.sidebarVisible, isFalse);
@@ -6178,21 +6179,40 @@ void main() {
       await search(tester, 'launch contrast');
       expect(menuRow('Launch plan'), findsOneWidget);
       expect(menuRow('Weekend errands'), findsNothing);
+    });
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    // F opened Search as well as its own chord did.
+    testWidgets('F finds words in the open note, not in every note', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      notes.create(body: 'Camping\nPack the tent\nTent pegs');
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+      await tester.tap(find.widgetWithText(NoteRow, 'Camping'));
+      await tester.pumpAndSettle();
 
       await pressShortcut(
         tester,
         ShortcutBinding(
           logicalKey: LogicalKeyboardKey.keyF,
           physicalKey: PhysicalKeyboardKey.keyF,
-          meta: binding.meta,
-          control: binding.control,
+          meta: AppPlatform.isMacOS,
+          control: !AppPlatform.isMacOS,
         ),
       );
-      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+      expect(find.byKey(const ValueKey('note-find-bar')), findsOneWidget);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('note-find-field')),
+        'tent',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('1 of 2'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('note-find-bar')), findsNothing);
     });
 
     testWidgets('the words become a note, or a search Archive keeps', (
@@ -6246,9 +6266,9 @@ void main() {
       expect(notes.notes.first.isArchived, isFalse);
     });
 
-    testWidgets('with words selected in a note, its key links instead', (
-      tester,
-    ) async {
+    // K opened Search too, wherever no words were selected.
+    testWidgets('K links the words selected in a note, and opens nothing '
+        'else', (tester) async {
       await pumpApp(tester);
       notes.create(body: 'Read the tram timetable');
       await tester.pumpAndSettle();
@@ -6261,13 +6281,12 @@ void main() {
       );
       await tester.tap(editor);
       await tester.pumpAndSettle();
+      final link = shortcuts.bindingFor(ShortcutAction.formatLink)!;
+      expect(link.logicalKey, LogicalKeyboardKey.keyK);
       tester.widget<NoteField>(editor).controller.selection =
           const TextSelection(baseOffset: 9, extentOffset: 23);
       await tester.pump();
-      await pressShortcut(
-        tester,
-        shortcuts.bindingFor(ShortcutAction.findNotes)!,
-      );
+      await pressShortcut(tester, link);
       expect(find.byKey(const ValueKey('command-menu')), findsNothing);
 
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -6275,11 +6294,8 @@ void main() {
       tester.widget<NoteField>(editor).controller.selection =
           const TextSelection.collapsed(offset: 4);
       await tester.pump();
-      await pressShortcut(
-        tester,
-        shortcuts.bindingFor(ShortcutAction.findNotes)!,
-      );
-      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+      await pressShortcut(tester, link);
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
     });
 
     testWidgets('New drawing and the Go to keys work from anywhere', (
@@ -6886,6 +6902,28 @@ void main() {
       }
       await tester.pumpAndSettle();
     }
+
+    // No note is in front of you on Tasks, so F is left unbound there, while
+    // the page's other keys still answer.
+    testWidgets('F opens nothing on Tasks', (tester) async {
+      await pumpWithPair(tester);
+      await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+      await tester.pumpAndSettle();
+
+      final modifier = AppPlatform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      await tester.sendKeyDownEvent(modifier);
+      final handled = await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+      expect(handled, isFalse);
+      expect(find.byKey(const ValueKey('note-find-bar')), findsNothing);
+      expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+
+      await press(tester, ShortcutAction.findNotes);
+      expect(find.byKey(const ValueKey('command-menu')), findsOneWidget);
+    });
 
     Future<void> pumpWithWaiting(WidgetTester tester, {Size? size}) async {
       await notes.load();
