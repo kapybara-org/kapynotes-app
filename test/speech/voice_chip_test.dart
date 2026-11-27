@@ -92,6 +92,11 @@ Future<void> hover(WidgetTester tester, Finder finder) async {
   await tester.pump();
 }
 
+/// The waveform's bars, which a press anywhere around them skips through.
+Finder waveform() => find.byWidgetPredicate(
+  (widget) => widget is CustomPaint && widget.painter is VoiceWaveformPainter,
+);
+
 /// The phone's row, which says in words what the page's pill leaves to its
 /// waveform: the label, and the summary under it.
 void _onPhone() {
@@ -102,11 +107,11 @@ void _onPhone() {
 void main() {
   group('what the chip says', () {
     _onPhone();
-    testWidgets('an untranscribed recording is just its length', (
+    testWidgets('an untranscribed recording is a voice note of its length', (
       tester,
     ) async {
       await tester.pumpWidget(harness(recording()));
-      expect(find.text('Voice note'), findsNothing);
+      expect(find.text('Voice note'), findsOneWidget);
       expect(find.text('2:14'), findsOneWidget);
     });
 
@@ -370,7 +375,28 @@ void main() {
       await tester.pumpAndSettle();
 
       await hover(tester, find.text('Standup thoughts'));
-      expect(find.text('Read the transcript'), findsOneWidget);
+      expect(find.text('Open the summary and transcript'), findsOneWidget);
+    });
+
+    testWidgets('one with only a transcript opens that', (tester) async {
+      await tester.pumpWidget(
+        harness(
+          recording(
+            transcript: VoiceTranscript(
+              lang: 'en',
+              engine: 'local',
+              at: 1,
+              segments: const [TranscriptSegment(s: 0, e: 900, t: 'Ship it.')],
+            ),
+          ),
+          state: VoiceChipState.needsAccount,
+          onOpen: () {},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await hover(tester, find.text('Transcript ready'));
+      expect(find.text('Open the transcript'), findsOneWidget);
     });
 
     testWidgets('one waiting on consent says so', (tester) async {
@@ -407,7 +433,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await hover(tester, find.byType(CustomPaint).last);
+      await hover(tester, waveform());
       expect(find.text('Skip to a point'), findsOneWidget);
       expect(find.text('Open this recording'), findsNothing);
     });
@@ -501,194 +527,469 @@ void main() {
     });
   });
 
-  group('a status on a phone', () {
-    _onPhone();
+  group('the card', () {
     setUpAll(loadTestFonts);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
-    double column(double phone) =>
-        phone - EditorMetrics.phonePadding.horizontal;
-
-    Future<void> pumpAt(
-      WidgetTester tester,
-      double phone,
-      VoiceChipState state, {
-      NoteVoiceRef? ref,
-    }) => tester.pumpWidget(
-      harness(
-        ref ?? recording(durationMs: 123000),
-        state: state,
-        width: column(phone),
-      ),
+    final peaks = Uint8List.fromList(List.filled(100, 200));
+    const card = ValueKey('voice-chip-card');
+    final summary = VoiceSummary(
+      engine: 'cf/llama',
+      at: 1,
+      title: 'Standup thoughts on the pricing page and the launch',
+      points: const ['Ship it.'],
     );
+    final transcript = VoiceTranscript(
+      lang: 'en',
+      engine: 'cf/deepgram-nova-3',
+      at: 1,
+      segments: const [TranscriptSegment(s: 0, e: 900, t: 'Ship it.')],
+    );
+    const statuses = {
+      VoiceChipState.transcribing: 'Transcribing…',
+      VoiceChipState.summarising: 'Summarising…',
+      VoiceChipState.waiting: 'Waiting for connection',
+      VoiceChipState.retrying: 'Trying again soon',
+      VoiceChipState.failed: "Couldn't transcribe",
+      VoiceChipState.outOfMinutes: 'Out of minutes',
+      VoiceChipState.needsConsent: 'Turn on transcription',
+    };
 
-    double drawn(WidgetTester tester) =>
-        tester.getSize(find.byKey(const ValueKey('voice-chip-pill'))).height;
+    void on(TargetPlatform platform) =>
+        AppPlatform.debugTargetPlatformOverride = platform;
 
-    double promised(WidgetTester tester, double phone) {
-      final chip = tester.element(find.byType(NoteVoiceChip));
-      return tester
-          .widget<NoteVoiceChip>(find.byType(NoteVoiceChip))
-          .heightIn(chip, column(phone), MediaQuery.textScalerOf(chip));
+    BoxDecoration surface(WidgetTester tester) =>
+        tester.widget<Container>(find.byKey(card)).decoration! as BoxDecoration;
+
+    CalcPalette colours(WidgetTester tester) =>
+        tester.element(find.byType(NoteVoiceChip)).palette;
+
+    double baseline(WidgetTester tester, Finder words) {
+      final paragraph = tester.renderObject<RenderParagraph>(words);
+      return tester.getRect(words).top +
+          paragraph.getDryBaseline(
+            paragraph.constraints,
+            TextBaseline.alphabetic,
+          )!;
     }
 
     bool cut(WidgetTester tester, String words) => tester
         .renderObject<RenderParagraph>(find.text(words))
         .didExceedMaxLines;
 
-    testWidgets('reads in full on every phone, at large text and in bold', (
+    testWidgets('is as tall in every state, with a pointer and on a phone', (
       tester,
     ) async {
-      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      addTearDown(
-        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
-      );
-      const statuses = {
-        VoiceChipState.needsConsent: 'Turn on transcription',
-        VoiceChipState.waiting: 'Waiting for connection',
-        VoiceChipState.failed: "Couldn't transcribe",
-        VoiceChipState.retrying: 'Trying again soon',
-      };
-      for (final bold in [false, true]) {
-        tester.platformDispatcher.accessibilityFeaturesTestValue =
-            FakeAccessibilityFeatures(boldText: bold);
-        for (final scale in [1.0, 1.3]) {
-          tester.platformDispatcher.textScaleFactorTestValue = scale;
-          for (final phone in [320.0, 375.0, 412.0]) {
-            for (final MapEntry(key: state, value: words) in statuses.entries) {
-              await pumpAt(tester, phone, state);
-              final reason = '$words at $phone pt, ${scale}x, bold $bold';
-              expect(cut(tester, words), isFalse, reason: reason);
-              expect(drawn(tester), promised(tester, phone), reason: reason);
-            }
-          }
+      for (final (platform, height) in [
+        (TargetPlatform.macOS, 60.0),
+        (TargetPlatform.iOS, 68.0),
+      ]) {
+        on(platform);
+        final states = [
+          harness(recording(peaks: peaks)),
+          harness(
+            recording(peaks: peaks, summary: summary, transcript: transcript),
+            state: VoiceChipState.done,
+          ),
+          harness(
+            recording(peaks: peaks, summary: summary),
+            state: VoiceChipState.done,
+            playing: true,
+            progress: 0.4,
+          ),
+          harness(recording(peaks: peaks), opening: true),
+          harness(
+            recording(peaks: peaks),
+            failure: VoicePlaybackFailure.unreadable,
+          ),
+          for (final state in statuses.keys)
+            harness(recording(peaks: peaks), state: state),
+          harness(recording(peaks: peaks), onRemove: () {}),
+        ];
+        for (final state in states) {
+          await tester.pumpWidget(state);
+          expect(
+            tester.getSize(find.byKey(card)).height,
+            height,
+            reason: '$platform',
+          );
         }
+        expect(noteVoiceChipHeight, height);
       }
     });
 
-    testWidgets('one that fits keeps the single row', (tester) async {
-      await pumpAt(tester, 412, VoiceChipState.transcribing);
-      expect(drawn(tester), 56);
-      expect(
-        tester.getCenter(find.text('Transcribing…')).dy,
-        moreOrLessEquals(tester.getCenter(find.text('2:03')).dy, epsilon: 0.5),
-      );
-    });
-
-    const title = 'Standup thoughts on the pricing page and the launch';
-    final summarised = recording(
-      durationMs: 123000,
-      summary: VoiceSummary(
-        engine: 'cf/llama',
-        at: 1,
-        title: title,
-        points: const ['Ship it.'],
-      ),
-    );
-    final briefly = recording(
-      durationMs: 123000,
-      summary: VoiceSummary(
-        engine: 'cf/llama',
-        at: 1,
-        title: 'Standup',
-        points: const ['Ship it.'],
-      ),
-    );
-
-    testWidgets('is as tall at its title as all the way there', (tester) async {
-      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      addTearDown(
-        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
-      );
-      final path = <(VoiceChipState, NoteVoiceRef?)>[
-        (VoiceChipState.transcribing, null),
-        (VoiceChipState.summarising, null),
-        (VoiceChipState.done, summarised),
-        (VoiceChipState.done, null),
-        (VoiceChipState.idle, briefly),
-      ];
-      for (final bold in [false, true]) {
-        tester.platformDispatcher.accessibilityFeaturesTestValue =
-            FakeAccessibilityFeatures(boldText: bold);
-        for (final scale in [1.0, 1.3]) {
-          tester.platformDispatcher.textScaleFactorTestValue = scale;
-          for (final phone in [320.0, 375.0, 412.0]) {
-            final reason = '$phone pt, ${scale}x, bold $bold';
-            final heights = <double>{};
-            for (final (state, ref) in path) {
-              await pumpAt(tester, phone, state, ref: ref);
-              expect(drawn(tester), promised(tester, phone), reason: reason);
-              heights.add(drawn(tester));
-            }
-            expect(heights, hasLength(1), reason: reason);
-          }
-        }
-      }
-    });
-
-    testWidgets('one never queued keeps to the row at every size', (
+    testWidgets('is at most 460 wide with a pointer, the column on a phone', (
       tester,
     ) async {
-      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      addTearDown(
-        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
-      );
-      for (final bold in [false, true]) {
-        tester.platformDispatcher.accessibilityFeaturesTestValue =
-            FakeAccessibilityFeatures(boldText: bold);
-        for (final scale in [1.0, 1.3]) {
-          tester.platformDispatcher.textScaleFactorTestValue = scale;
-          for (final phone in [320.0, 375.0, 412.0]) {
-            final reason = '$phone pt, ${scale}x, bold $bold';
-            await pumpAt(tester, phone, VoiceChipState.idle);
-            expect(drawn(tester), 56, reason: reason);
-            expect(promised(tester, phone), 56, reason: reason);
-            expect(find.text('Voice note'), findsNothing, reason: reason);
-          }
-        }
-      }
+      on(TargetPlatform.macOS);
+      await tester.pumpWidget(harness(recording(peaks: peaks), width: 680));
+      expect(tester.getSize(find.byKey(card)).width, 460);
+      await tester.pumpWidget(harness(recording(peaks: peaks), width: 400));
+      expect(tester.getSize(find.byKey(card)).width, 400);
+
+      on(TargetPlatform.iOS);
+      await tester.pumpWidget(harness(recording(peaks: peaks), width: 350));
+      expect(tester.getSize(find.byKey(card)).width, 350);
     });
 
-    testWidgets(
-      "a summary's title takes the second line wherever its statuses do, "
-      "across the card's width",
-      (tester) async {
-        await pumpAt(tester, 320, VoiceChipState.done, ref: summarised);
-        final pill = tester.getRect(
-          find.byKey(const ValueKey('voice-chip-pill')),
-        );
-        final words = tester.getRect(find.text(title));
-        expect(drawn(tester), 83);
-        expect(cut(tester, title), isTrue);
-        expect(
-          tester.renderObject<RenderParagraph>(find.text(title)).overflow,
-          TextOverflow.ellipsis,
-        );
-        expect(
-          words.top,
-          greaterThanOrEqualTo(tester.getRect(find.text('2:03')).bottom),
-        );
-        expect(words.left, moreOrLessEquals(pill.left + 9, epsilon: 0.5));
-        expect(words.right, moreOrLessEquals(pill.right - 17, epsilon: 0.5));
-
-        await pumpAt(tester, 320, VoiceChipState.done);
-        expect(drawn(tester), 83);
-        expect(find.text('Voice note'), findsNothing);
-
-        await pumpAt(tester, 412, VoiceChipState.done, ref: summarised);
-        expect(drawn(tester), 56);
-        expect(cut(tester, title), isTrue);
-        expect(
-          tester.getCenter(find.text(title)).dy,
-          moreOrLessEquals(
-            tester.getCenter(find.text('2:03')).dy,
-            epsilon: 0.5,
+    testWidgets('names the recording first, with the status after its length', (
+      tester,
+    ) async {
+      on(TargetPlatform.macOS);
+      for (final MapEntry(key: state, value: words) in statuses.entries) {
+        await tester.pumpWidget(
+          harness(
+            recording(durationMs: 72000, peaks: peaks),
+            state: state,
+            width: 680,
+            onRemove: () {},
           ),
         );
+        final name = tester.getRect(find.text('Voice note'));
+        final length = tester.getRect(find.text('1:12'));
+        final status = tester.getRect(find.text(words));
+        expect(name.bottom, lessThanOrEqualTo(length.top), reason: words);
+        expect(
+          status.center.dy,
+          moreOrLessEquals(length.center.dy, epsilon: 0.5),
+          reason: words,
+        );
+        expect(status.left, greaterThan(length.right), reason: words);
+        expect(cut(tester, words), isFalse, reason: words);
+      }
+    });
 
-        await pumpAt(tester, 412, VoiceChipState.done);
-        expect(drawn(tester), 56);
-        expect(find.text('Voice note'), findsNothing);
-      },
-    );
+    testWidgets('on a phone ends the name\'s line with the status', (
+      tester,
+    ) async {
+      on(TargetPlatform.iOS);
+      for (final phone in [360.0, 375.0, 412.0]) {
+        for (final MapEntry(key: state, value: words) in statuses.entries) {
+          await tester.pumpWidget(
+            harness(
+              recording(durationMs: 72000, peaks: peaks),
+              state: state,
+              width: phone - EditorMetrics.phonePadding.horizontal,
+            ),
+          );
+          final reason = '$words at $phone pt';
+          expect(
+            baseline(tester, find.text(words)),
+            moreOrLessEquals(
+              baseline(tester, find.text('Voice note')),
+              epsilon: 0.5,
+            ),
+            reason: reason,
+          );
+          expect(
+            tester.getRect(find.text(words)).right,
+            moreOrLessEquals(tester.getRect(find.byKey(card)).right - 15),
+            reason: reason,
+          );
+          expect(cut(tester, words), isFalse, reason: reason);
+        }
+      }
+    });
+
+    testWidgets('plays from the window\'s tonal button and waveform', (
+      tester,
+    ) async {
+      for (final (platform, glyph) in [
+        (TargetPlatform.macOS, 16.0),
+        (TargetPlatform.iOS, 18.0),
+      ]) {
+        on(platform);
+        await tester.pumpWidget(harness(recording(peaks: peaks), width: 350));
+        final painter =
+            tester.widget<CustomPaint>(waveform()).painter!
+                as VoiceWaveformPainter;
+        final context = tester.element(find.byType(NoteVoiceChip));
+        expect(painter.unplayed, colours(tester).quoteBar);
+        expect(painter.played, Theme.of(context).colorScheme.primary);
+        expect(painter.bars, 32);
+        expect(tester.getSize(waveform()).width, 160);
+        expect(
+          tester.getSize(findKapyIcon(KapyIcons.playRounded)),
+          Size.square(glyph),
+          reason: 'centred in its button rather than stretched to fill it',
+        );
+        expect(surface(tester).borderRadius, BorderRadius.circular(10));
+      }
+    });
+
+    testWidgets('draws its bars at the floor when it has no waveform', (
+      tester,
+    ) async {
+      for (final platform in [TargetPlatform.macOS, TargetPlatform.iOS]) {
+        on(platform);
+        await tester.pumpWidget(harness(recording(), width: 350));
+        final middle = tester.getSize(waveform()).height / 2;
+        expect(
+          tester.renderObject(waveform()),
+          paintsExactlyCountTimes(#drawLine, 32),
+          reason: '$platform',
+        );
+        expect(
+          tester.renderObject(waveform()),
+          paints
+            ..line(p1: Offset(2.5, middle - 1), p2: Offset(2.5, middle + 1)),
+          reason: '$platform',
+        );
+      }
+    });
+
+    testWidgets('reads the time so far and the total while it plays', (
+      tester,
+    ) async {
+      for (final platform in [TargetPlatform.macOS, TargetPlatform.iOS]) {
+        on(platform);
+        await tester.pumpWidget(
+          harness(recording(peaks: peaks), playing: true, progress: 0.5),
+        );
+        expect(find.text('1:07 / 2:14'), findsOneWidget, reason: '$platform');
+        await tester.pumpWidget(harness(recording(peaks: peaks)));
+        expect(find.text('2:14'), findsOneWidget, reason: '$platform');
+      }
+    });
+
+    testWidgets('keeps its waveform on a narrow phone when playback starts', (
+      tester,
+    ) async {
+      on(TargetPlatform.iOS);
+      final long = recording(durationMs: 723000, peaks: peaks);
+      await tester.pumpWidget(harness(long, width: 280));
+      final idle = tester.getSize(waveform()).width;
+      expect(idle, lessThan(160));
+
+      await tester.pumpWidget(
+        harness(long, width: 280, playing: true, progress: 0.9),
+      );
+      expect(tester.getSize(waveform()).width, idle);
+      expect(cut(tester, '10:50 / 12:03'), isFalse);
+    });
+
+    testWidgets('opens from anywhere but the play button, waveform and ×', (
+      tester,
+    ) async {
+      for (final platform in [TargetPlatform.macOS, TargetPlatform.iOS]) {
+        on(platform);
+        final pointer = platform == TargetPlatform.macOS;
+        var opened = 0;
+        var played = 0;
+        var removed = 0;
+        final skips = <double>[];
+        await tester.pumpWidget(
+          harness(
+            recording(peaks: peaks),
+            state: VoiceChipState.transcribing,
+            width: pointer ? 680 : 350,
+            onOpen: () => opened++,
+            onPlayPause: () => played++,
+            onRemove: () => removed++,
+            onSeekFraction: skips.add,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final box = tester.getRect(find.byKey(card));
+        final bars = tester.getRect(waveform());
+        final reason = '$platform';
+        Future<void> tapAt(Offset at) async {
+          await tester.tapAt(at);
+          await tester.pumpAndSettle();
+        }
+
+        await tapAt(tester.getCenter(findKapyIcon(KapyIcons.playRounded)));
+        await tapAt(bars.center);
+        await tapAt(Offset(bars.center.dx, box.bottom - 2));
+        await tapAt(Offset(bars.left + 4, bars.top - 3));
+        expect(played, 1, reason: reason);
+        expect(skips, hasLength(3), reason: reason);
+        expect(skips.first, moreOrLessEquals(0.5, epsilon: 0.01));
+        expect(opened, 0, reason: reason);
+
+        await tapAt(tester.getCenter(find.text('Voice note')));
+        await tapAt(tester.getCenter(find.text('2:14')));
+        await tapAt(Offset(box.right - (pointer ? 60 : 20), bars.center.dy));
+        await tapAt(Offset(box.center.dx, box.top + 3));
+        expect(opened, 4, reason: reason);
+
+        if (pointer) {
+          await tester.tap(find.byKey(const ValueKey('remove-voice-note')));
+          await tester.pumpAndSettle();
+          expect(removed, 1);
+          expect(opened, 4);
+        } else {
+          expect(find.byKey(const ValueKey('remove-voice-note')), findsNothing);
+        }
+      }
+    });
+
+    testWidgets('lights up under the pointer and when pressed, but not for '
+        'its own controls', (tester) async {
+      on(TargetPlatform.macOS);
+      await tester.pumpWidget(
+        harness(
+          recording(peaks: peaks),
+          width: 680,
+          onOpen: () {},
+          onPlayPause: () {},
+          onSeekFraction: (_) {},
+          onRemove: () {},
+        ),
+      );
+      await tester.pumpAndSettle();
+      final palette = colours(tester);
+      Color? arrow() => tester
+          .widget<KapyIcon>(findKapyIcon(KapyIcons.chevronRightRounded))
+          .color;
+      expect(surface(tester).color, palette.controlBackground);
+      expect(arrow(), palette.textTertiary);
+
+      final mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+        pointer: 3,
+      );
+      await mouse.addPointer(location: const Offset(700, 500));
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(tester.getCenter(find.text('Voice note')));
+      await tester.pump();
+      expect(surface(tester).color, palette.hover);
+      expect(
+        (surface(tester).border! as Border).top.color,
+        palette.keycapBorder,
+      );
+      expect(arrow(), palette.textSecondary);
+      await mouse.moveTo(const Offset(700, 500));
+      await tester.pump();
+      expect(surface(tester).color, palette.controlBackground);
+      expect(arrow(), palette.textTertiary);
+
+      final press = await tester.startGesture(
+        tester.getCenter(find.text('Voice note')),
+      );
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(surface(tester).color, palette.selectedBackground);
+      await press.up();
+      await tester.pumpAndSettle();
+      expect(surface(tester).color, palette.controlBackground);
+
+      for (final control in [
+        findKapyIcon(KapyIcons.playRounded),
+        waveform(),
+        find.byKey(const ValueKey('remove-voice-note')),
+      ]) {
+        final hold = await tester.startGesture(tester.getCenter(control));
+        await tester.pump(const Duration(milliseconds: 200));
+        expect(surface(tester).color, palette.controlBackground);
+        await hold.up();
+        await tester.pumpAndSettle();
+      }
+    });
+
+    testWidgets('reads as one button: its name, length and any status', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        harness(
+          recording(summary: summary, transcript: transcript),
+          state: VoiceChipState.done,
+          onOpen: () {},
+          onRemove: () {},
+        ),
+      );
+      final titled = tester.getSemantics(
+        find.bySemanticsLabel(
+          'Standup thoughts on the pricing page and the launch, voice note, '
+          '2:14',
+        ),
+      );
+      expect(titled.hint, 'Open the summary and transcript');
+
+      await tester.pumpWidget(
+        harness(recording(), state: VoiceChipState.waiting, onOpen: () {}),
+      );
+      expect(
+        find.bySemanticsLabel('Voice note, 2:14, Waiting for connection'),
+        findsOneWidget,
+      );
+      semantics.dispose();
+    });
+
+    testWidgets('offers Remove to a screen reader', (tester) async {
+      final semantics = tester.ensureSemantics();
+      var removed = 0;
+      await tester.pumpWidget(
+        harness(
+          recording(),
+          state: VoiceChipState.waiting,
+          onOpen: () {},
+          onRemove: () => removed++,
+        ),
+      );
+      final node = tester.getSemantics(
+        find.bySemanticsLabel('Voice note, 2:14, Waiting for connection'),
+      );
+      final remove = CustomSemanticsAction.getIdentifier(
+        const CustomSemanticsAction(label: 'Remove voice note'),
+      );
+      expect(node.getSemanticsData().customSemanticsActionIds, [remove]);
+      node.owner!.performAction(node.id, SemanticsAction.customAction, remove);
+      expect(removed, 1);
+      semantics.dispose();
+    });
+
+    testWidgets('keeps to its column at the largest text sizes', (
+      tester,
+    ) async {
+      for (final (platform, widths) in [
+        (TargetPlatform.macOS, [347.0, 309.0, 232.0]),
+        (TargetPlatform.iOS, [173.0, 143.0, 107.0]),
+      ]) {
+        on(platform);
+        for (final width in widths) {
+          final cards = [
+            harness(
+              recording(peaks: peaks, summary: summary),
+              state: VoiceChipState.done,
+              width: width,
+              onRemove: () {},
+            ),
+            for (final state in statuses.keys)
+              harness(
+                recording(peaks: peaks),
+                state: state,
+                width: width,
+                onRemove: () {},
+              ),
+            for (final state in [VoiceChipState.idle, VoiceChipState.waiting])
+              harness(
+                recording(durationMs: 723000, peaks: peaks),
+                state: state,
+                playing: true,
+                progress: 0.9,
+                width: width,
+                onRemove: () {},
+              ),
+          ];
+          for (final card in cards) {
+            await tester.pumpWidget(card);
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: '$platform at $width',
+            );
+          }
+        }
+      }
+    });
+
+    testWidgets('carries no × in a note that can only be read', (tester) async {
+      on(TargetPlatform.macOS);
+      await tester.pumpWidget(
+        harness(recording(peaks: peaks), width: 680, onOpen: () {}),
+      );
+      expect(find.byKey(const ValueKey('remove-voice-note')), findsNothing);
+    });
   });
 }

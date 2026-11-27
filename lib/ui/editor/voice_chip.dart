@@ -13,27 +13,94 @@ import '../context_menu.dart';
 import 'note_image_layout.dart';
 import 'placeholder_scale.dart';
 
-/// How tall a recording's row is: Paper's 44px pill with a pointer, and the
-/// phone's 56pt card on touch.
+/// How tall a recording's card is: its name over its player, 60px with a
+/// pointer and 68pt on a phone.
 ///
-/// The same whatever the recording holds: a chip that grew once a transcript
-/// arrived would reflow the note under whoever was reading it. Only a phone's
-/// row too narrow for a status adds a line under it, as
-/// [NoteVoiceChip.heightIn] says.
-double get _rowHeight => AppPlatform.hasPointer ? 44 : 56;
+/// The same whatever the recording holds: a card that grew once a title
+/// arrived would reflow the note under whoever was reading it.
+double get noteVoiceChipHeight => AppPlatform.hasPointer ? 60 : 68;
 
-/// The phone card's insets, border, play button and gaps, which a status is
-/// measured against before the card is drawn.
-const _touchInsets = EdgeInsets.only(left: 8, right: 16);
-const double _touchBorder = 1;
-const double _touchPlay = 40;
+/// The widest a card gets with a pointer, so the recordings in a note line up.
+const double _cardMaxWidth = 460;
+
+/// The card's corners, a photo's and a video's.
+const double _cardRadius = 10;
+
+/// The waveform's width and bars, which no state changes, so a recording
+/// that gets its title moves nothing on its card.
+const double _waveWidth = 160;
+const int _waveBars = 32;
+
+/// Between the play button, the two lines and the ×.
 const double _gap = 12;
 
-/// The widest a label on the row gets.
-const double _labelMaxWidth = 280;
+/// Between the waveform and the length.
+const double _waveGap = 10;
 
-/// The room under a label that takes its own line.
-const double _belowInset = 10;
+/// The card's measurements: Paper's with a pointer, and the phone's larger
+/// ones. Top to bottom they fill the card inside its 1px border.
+class _CardMetrics {
+  const _CardMetrics({
+    required this.left,
+    required this.play,
+    required this.glyph,
+    required this.top,
+    required this.nameSize,
+    required this.nameLine,
+    required this.chevron,
+    required this.gap,
+    required this.lineSize,
+    required this.line,
+    required this.bottom,
+  });
+
+  /// From the border to the play button.
+  final double left;
+  final double play;
+  final double glyph;
+
+  /// Above the name's line.
+  final double top;
+  final double nameSize;
+  final double nameLine;
+  final double chevron;
+
+  /// Between the name's line and the player's.
+  final double gap;
+  final double lineSize;
+  final double line;
+
+  /// Under the player's line.
+  final double bottom;
+}
+
+const _pointerMetrics = _CardMetrics(
+  left: 10,
+  play: 40,
+  glyph: 16,
+  top: 10,
+  nameSize: 13,
+  nameLine: 17,
+  chevron: 13,
+  gap: 5,
+  lineSize: 12,
+  line: 16,
+  bottom: 10,
+);
+
+const _touchMetrics = _CardMetrics(
+  left: 12,
+  play: 44,
+  glyph: 18,
+  top: 11,
+  nameSize: 15,
+  nameLine: 20,
+  chevron: 15,
+  gap: 6,
+  lineSize: 13,
+  line: 18,
+  bottom: 11,
+);
 
 /// What a recording says on its usual way to its summary's title.
 const _transcribing = 'Transcribing…';
@@ -92,11 +159,13 @@ Widget _hoverHint(String? message, Widget child) => message == null
 
 /// A recording, sitting in the body of a note.
 ///
-/// Drawn as one row rather than a player: a note holding six recordings should
-/// read as a note, not as six media players stacked up. The waveform is the
-/// only picture, it is precomputed to 100 bytes, and it repaints inside its own
-/// boundary while playback moves so the text above it does nothing.
-class NoteVoiceChip extends StatelessWidget {
+/// A card with the recording's name first and its player under it: the name
+/// and its arrow say the card opens, the way a note in the list does, and
+/// play stays one press away. A note holding six recordings should still read
+/// as a note, so the waveform is the only picture. It is precomputed to 100
+/// bytes, and it repaints inside its own boundary while playback moves so the
+/// words around it do nothing.
+class NoteVoiceChip extends StatefulWidget {
   const NoteVoiceChip({
     super.key,
     required this.ref,
@@ -130,304 +199,485 @@ class NoteVoiceChip extends StatelessWidget {
   final VoidCallback? onRemove;
   final ValueChanged<double>? onSeekFraction;
 
-  String get _label {
-    final summary = ref.summary;
-    return switch (state) {
-      VoiceChipState.done when summary != null => summary.title,
-      VoiceChipState.done => 'Voice note',
-      VoiceChipState.transcribing => _transcribing,
-      VoiceChipState.summarising => _summarising,
-      VoiceChipState.waiting => 'Waiting for connection',
-      VoiceChipState.retrying => 'Trying again soon',
-      VoiceChipState.failed when ref.transcript != null => "Couldn't summarise",
-      VoiceChipState.failed => "Couldn't transcribe",
-      VoiceChipState.outOfMinutes => 'Out of minutes',
-      // Local transcription may finish while a cloud summary is waiting for
-      // sign-in. Keep the words readable instead of asking to transcribe them
-      // a second time.
-      VoiceChipState.needsConsent || VoiceChipState.needsAccount
-          when ref.transcript != null =>
-        'Transcript ready',
-      // Both say what to do rather than what is wrong, because both are one
-      // tap from being fixed and the chip is where the person is looking.
-      VoiceChipState.needsConsent => 'Turn on transcription',
-      VoiceChipState.needsAccount => 'Turn on transcription',
-      VoiceChipState.idle => summary?.title ?? 'Voice note',
-    };
-  }
+  /// Whether the recording goes by its summary's title.
+  bool get _titled =>
+      ref.summary != null &&
+      (state == VoiceChipState.done || state == VoiceChipState.idle);
 
-  /// What clicking the row does, which the label does not say.
+  /// What the recording is called: its summary's title, and "Voice note"
+  /// until it has one. Never a status, so the arrow after it always follows
+  /// the thing a click opens.
+  String get _name => _titled ? ref.summary!.title : 'Voice note';
+
+  /// What has become of the recording, when that is more than its name.
+  String? get _status => switch (state) {
+    VoiceChipState.done || VoiceChipState.idle => null,
+    VoiceChipState.transcribing => _transcribing,
+    VoiceChipState.summarising => _summarising,
+    VoiceChipState.waiting => 'Waiting for connection',
+    VoiceChipState.retrying => 'Trying again soon',
+    VoiceChipState.failed when ref.transcript != null => "Couldn't summarise",
+    VoiceChipState.failed => "Couldn't transcribe",
+    VoiceChipState.outOfMinutes => 'Out of minutes',
+    // Local transcription may finish while a cloud summary is waiting for
+    // sign-in. Keep the words readable instead of asking to transcribe them
+    // a second time.
+    VoiceChipState.needsConsent || VoiceChipState.needsAccount
+        when ref.transcript != null =>
+      'Transcript ready',
+    // Both say what to do rather than what is wrong, because both are one
+    // tap from being fixed and the chip is where the person is looking.
+    VoiceChipState.needsConsent => 'Turn on transcription',
+    VoiceChipState.needsAccount => 'Turn on transcription',
+  };
+
+  /// What clicking the card does, which its words do not say.
   ///
   /// Named after what is on the other side of the click rather than after the
-  /// recording's state: someone hovering is asking where this goes.
+  /// recording's state: someone hovering is asking where this goes. Every
+  /// hint the card gives is here, so they change together with the window
+  /// they open.
   String? get _openHint {
     if (onOpen == null) return null;
-    if (ref.transcript != null) return 'Read the transcript';
+    if (ref.summary != null) return 'Open the summary and transcript';
+    if (ref.transcript != null) return 'Open the transcript';
     return switch (state) {
       VoiceChipState.needsConsent => 'Turn transcription on in Settings',
       VoiceChipState.needsAccount => 'Choose transcription in Settings',
-      VoiceChipState.failed when ref.transcript != null =>
-        'Read the transcript or try the summary again',
       VoiceChipState.failed => 'Try transcribing again',
       _ => 'Open this recording',
     };
   }
 
-  /// A state the user could act on is drawn in the secondary colour rather
-  /// than as an error: a recording that failed to transcribe is still a
-  /// perfectly good recording, and nothing has been lost.
+  /// A state the user could act on is drawn in the muted colour rather than
+  /// as an error: a recording that failed to transcribe is still a perfectly
+  /// good recording, and nothing has been lost.
   bool get _isTransient =>
       state == VoiceChipState.transcribing ||
       state == VoiceChipState.summarising ||
       state == VoiceChipState.waiting ||
       state == VoiceChipState.retrying;
 
-  /// Whether the label is the summary's title rather than a status.
-  bool get _titled =>
-      ref.summary != null &&
-      (state == VoiceChipState.done || state == VoiceChipState.idle);
+  @override
+  State<NoteVoiceChip> createState() => _NoteVoiceChipState();
+}
 
-  /// Whether the chip is on a recording's usual way to its summary's title:
-  /// saying "Transcribing…" or "Summarising…", or where that way ended.
-  bool get _onUsualPath => switch (state) {
-    VoiceChipState.transcribing ||
-    VoiceChipState.summarising ||
-    VoiceChipState.done => true,
-    _ => _titled,
-  };
+class _NoteVoiceChipState extends State<NoteVoiceChip> {
+  bool _hovered = false;
+  bool _pressed = false;
 
-  /// How tall the chip is when it is handed [width] and its words are
-  /// scaled by [textScaler]: its row, and the label's own line under it when
-  /// the row would cut a status short.
-  double heightIn(BuildContext context, double width, TextScaler textScaler) =>
-      _height(_labelBelow(context, width, textScaler));
+  /// The play button, the waveform and the × each do their own thing, so a
+  /// press on one must not light the card as if it were opening. They note
+  /// their pointer as it goes down, before the card hears of it.
+  int? _controlPointer;
+  bool _pressOnControl = false;
 
-  double _height(double? below) =>
-      below == null ? _rowHeight : _rowHeight + below + _belowInset;
-
-  /// How tall the label is on its own line under the row, or null when it
-  /// sits on the row.
-  ///
-  /// Only on a phone, whose row splits what the play button and the length
-  /// leave evenly between the waveform and the label. A status wider than
-  /// its half would end in an ellipsis, and it is a few words that only help
-  /// when they read in full. A summary's title takes the second line
-  /// wherever "Transcribing…" and "Summarising…" would, and a recording done
-  /// with nothing more to say than "Voice note" keeps that line's room, so a
-  /// recording is as tall at the end of its usual path as all along it. One
-  /// that was never queued has nothing to say and keeps to the row.
-  double? _labelBelow(
-    BuildContext context,
-    double width,
-    TextScaler textScaler,
-  ) {
-    if (AppPlatform.hasPointer) return null;
-    final palette = context.palette;
-    final inherited = DefaultTextStyle.of(context);
-    TextPainter measure(String text, TextStyle style, double maxWidth) =>
-        TextPainter(
-          text: TextSpan(text: text, style: inherited.style.merge(style)),
-          textDirection: Directionality.of(context),
-          textScaler: textScaler,
-          textHeightBehavior:
-              inherited.textHeightBehavior ??
-              DefaultTextHeightBehavior.maybeOf(context),
-        )..layout(maxWidth: maxWidth);
-    final inner = width - _touchInsets.horizontal - 2 * _touchBorder;
-    final length = measure(
-      formatVoiceDuration(ref.duration),
-      _lengthStyle(palette),
-      double.infinity,
-    );
-    final share = math.min(
-      _labelMaxWidth,
-      (inner - _touchPlay - length.width - 3 * _gap) / 2,
-    );
-    length.dispose();
-    double? below;
-    for (final status
-        in _onUsualPath
-            ? const [_transcribing, _summarising]
-            : [if (_label != 'Voice note') _label]) {
-      final words = measure(status, _labelStyle(palette), inner);
-      if (words.width > share) below = math.max(below ?? 0, words.height);
-      words.dispose();
-    }
-    return below;
+  void _setHovered(bool hovered) {
+    if (mounted && _hovered != hovered) setState(() => _hovered = hovered);
   }
 
-  /// The length, in the row's small type with figures that keep their width.
-  TextStyle _lengthStyle(CalcPalette palette) => TextStyle(
-    fontFamily: AppFonts.ui,
-    fontFamilyFallback: AppFonts.uiFallback,
-    fontSize: 13,
-    height: 16 / 12.5,
-    fontWeight: AppWeight.font(AppWeight.rowTitle),
-    fontVariations: AppWeight.wght(AppWeight.rowTitle),
-    fontFeatures: const [FontFeature.tabularFigures()],
-    color: palette.textSecondary,
-  );
+  void _setPressed(bool pressed) {
+    if (mounted && _pressed != pressed) setState(() => _pressed = pressed);
+  }
 
-  /// The label, a step lighter than the length.
-  TextStyle _labelStyle(CalcPalette palette) => _lengthStyle(palette).copyWith(
-    fontWeight: AppWeight.font(AppWeight.body),
-    fontVariations: AppWeight.wght(AppWeight.body),
-    color: _isTransient ? palette.textTertiary : palette.textMuted,
+  Widget _control(Widget child) => Listener(
+    onPointerDown: (event) => _controlPointer = event.pointer,
+    child: child,
   );
 
   @override
   Widget build(BuildContext context) {
+    final chip = widget;
+    final card = _gestures(context, _card(context));
     return Semantics(
-      label: '$_label, ${formatVoiceDuration(ref.duration)}',
+      label: [
+        chip._name,
+        if (chip._titled) 'voice note',
+        formatVoiceDuration(chip.ref.duration),
+        ?chip._status,
+      ].join(', '),
+      hint: chip._openHint,
       button: true,
-      customSemanticsActions: onRemove == null
+      customSemanticsActions: chip.onRemove == null
           ? null
           : {
               const CustomSemanticsAction(label: 'Remove voice note'):
-                  onRemove!,
+                  chip.onRemove!,
             },
       child: Padding(
         padding: const EdgeInsets.only(bottom: noteImageGap),
-        child: _chip(context),
+        child: AppPlatform.hasPointer
+            ? Align(
+                alignment: Alignment.centerLeft,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: _cardMaxWidth),
+                  child: card,
+                ),
+              )
+            : card,
       ),
     );
   }
 
-  /// Paper's voice chip: a pill holding the play button, the waveform in
-  /// sage up to the play head, the length, and what has become of the
-  /// recording when that is more than "Voice note". On touch it is the
-  /// phone's card: the column's width, and removed from its long-press menu.
-  Widget _chip(BuildContext context) {
-    if (AppPlatform.hasPointer) return _card(context, null);
-    return LayoutBuilder(
-      builder: (context, constraints) => _card(
-        context,
-        _labelBelow(
-          context,
-          constraints.maxWidth,
-          MediaQuery.textScalerOf(context),
-        ),
-      ),
-    );
-  }
-
-  /// The chip with its label on the row, or on its own line [below] the
-  /// row, that line's height given.
-  Widget _card(BuildContext context, double? below) {
+  /// Paper's recording card: the play button, then the name and its arrow
+  /// over the waveform in sage up to the play head and the length. With a
+  /// pointer it is at most 460 wide and carries a ×; on a phone it is the
+  /// column's width and removed from its long-press menu.
+  Widget _card(BuildContext context) {
+    final chip = widget;
     final palette = context.palette;
     final touch = !AppPlatform.hasPointer;
-    final removable = onRemove != null && !touch;
-    final accent = Theme.of(context).colorScheme.primary;
-    final label = _label;
-    final labelStyle = _labelStyle(palette);
-    Widget waveform(int bars) => RepaintBoundary(
-      child: _Waveform(
-        peaks: ref.peaks,
-        progress: progress,
-        played: accent,
-        unplayed: palette.switchTrackOff,
-        onSeekFraction: onSeekFraction,
-        bars: bars,
+    final metrics = touch ? _touchMetrics : _pointerMetrics;
+    final removable = chip.onRemove != null && !touch;
+    final lit = chip.onOpen != null && (_hovered || _pressed);
+    final status = chip._status;
+    final statusStyle = _style(
+      palette,
+      metrics.lineSize,
+      metrics.line,
+      AppWeight.body,
+      chip._isTransient ? palette.textTertiary : palette.textMuted,
+    );
+    return Container(
+      key: const ValueKey('voice-chip-card'),
+      height: noteVoiceChipHeight,
+      padding: EdgeInsets.only(left: metrics.left, right: removable ? 6 : 14),
+      decoration: BoxDecoration(
+        color: !lit
+            ? palette.controlBackground
+            : _pressed
+            ? palette.selectedBackground
+            : palette.hover,
+        borderRadius: BorderRadius.circular(_cardRadius),
+        border: Border.all(
+          color: lit ? palette.keycapBorder : palette.controlBorder,
+        ),
+      ),
+      child: Row(
+        children: [
+          _control(
+            _PlayButton(
+              playing: chip.playing,
+              opening: chip.opening,
+              failure: chip.failure,
+              onPressed: chip.onPlayPause,
+              size: metrics.play,
+              glyph: metrics.glyph,
+            ),
+          ),
+          const SizedBox(width: _gap),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(height: metrics.top),
+                SizedBox(
+                  height: metrics.nameLine,
+                  child: _nameLine(
+                    palette,
+                    metrics,
+                    touch ? status : null,
+                    statusStyle,
+                  ),
+                ),
+                _playerLine(
+                  context,
+                  metrics,
+                  touch ? null : status,
+                  statusStyle,
+                ),
+              ],
+            ),
+          ),
+          if (removable) ...[
+            const SizedBox(width: _gap),
+            _control(_removeButton(palette)),
+          ],
+        ],
       ),
     );
-    final row = Row(
-      mainAxisSize: touch ? MainAxisSize.max : MainAxisSize.min,
-      spacing: _gap,
-      children: [
-        _PlayButton(
-          playing: playing,
-          opening: opening,
-          failure: failure,
-          onPressed: onPlayPause,
-          touch: touch,
+  }
+
+  /// The name and its arrow. A phone has no room for a status after the
+  /// length, so there it sits at the end of this line instead, at least 2
+  /// after the arrow's box: the box is mostly air on that side, so the arrow
+  /// still reads 7 clear of the words, and the longest status fits a 320
+  /// card.
+  Widget _nameLine(
+    CalcPalette palette,
+    _CardMetrics metrics,
+    String? status,
+    TextStyle statusStyle,
+  ) {
+    final name = Text(
+      widget._name,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+      style: _style(
+        palette,
+        metrics.nameSize,
+        metrics.nameLine,
+        AppWeight.rowTitle,
+        palette.textPrimary,
+      ),
+    );
+    final arrow = Padding(
+      padding: const EdgeInsets.only(left: 3),
+      child: KapyIcon(
+        KapyIcons.chevronRightRounded,
+        size: metrics.chevron,
+        color: widget.onOpen != null && _hovered
+            ? palette.textSecondary
+            : palette.textTertiary,
+      ),
+    );
+    if (status == null) {
+      return ExcludeSemantics(
+        child: Row(
+          children: [
+            Flexible(child: name),
+            arrow,
+          ],
         ),
-        if (touch)
-          Expanded(child: SizedBox(height: 24, child: waveform(40)))
-        else
-          SizedBox(width: 118, height: 18, child: waveform(24)),
-        Text(formatVoiceDuration(ref.duration), style: _lengthStyle(palette)),
-        if (below == null && label != 'Voice note')
-          Flexible(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: _labelMaxWidth),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: labelStyle,
+      );
+    }
+    return ExcludeSemantics(
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: constraints.maxWidth),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(child: name),
+                  arrow,
+                ],
               ),
             ),
-          ),
-        if (removable) _removeButton(palette),
-      ],
-    );
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: _gestures(
-        context,
-        Container(
-          key: const ValueKey('voice-chip-pill'),
-          height: _height(below),
-          width: touch ? double.infinity : null,
-          padding: touch
-              ? _touchInsets.copyWith(bottom: below == null ? 0 : _belowInset)
-              : EdgeInsets.only(left: 6, right: removable ? 6 : 16),
-          decoration: BoxDecoration(
-            color: palette.controlBackground,
-            borderRadius: BorderRadius.circular(touch ? 14 : AppRadii.pill),
-            border: Border.all(
-              color: palette.controlBorder,
-              width: touch ? _touchBorder : 1.5,
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.only(left: 2),
+                child: Text(
+                  status,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                  style: statusStyle,
+                ),
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The waveform, the length, and with a pointer the status after it.
+  ///
+  /// The waveform's target runs from under the name to the card's bottom
+  /// edge, a larger one than its bars. While the recording plays the length
+  /// reads as the time so far and the total. The waveform leaves room for
+  /// that, and with a pointer for the dot before a status too, so it is as
+  /// wide in every state and starting playback never narrows it. Where the
+  /// card is too narrow for 160 and that room, the waveform gives way.
+  Widget _playerLine(
+    BuildContext context,
+    _CardMetrics metrics,
+    String? status,
+    TextStyle statusStyle,
+  ) {
+    final chip = widget;
+    final palette = context.palette;
+    final touch = !AppPlatform.hasPointer;
+    final lengthStyle = _style(
+      palette,
+      metrics.lineSize,
+      metrics.line,
+      AppWeight.rowTitle,
+      palette.textSecondary,
+    ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+    final total = formatVoiceDuration(chip.ref.duration);
+    const separator = ' · ';
+    final length = ValueListenableBuilder<double?>(
+      valueListenable: chip.progress,
+      builder: (context, progress, _) => Text(
+        progress == null
+            ? total
+            : '${formatVoiceDuration(chip.ref.duration * progress)} / $total',
+        maxLines: 1,
+        softWrap: false,
+        style: lengthStyle,
+      ),
+    );
+    final waveform = SizedBox(
+      width: _waveWidth,
+      height: metrics.gap + metrics.line + metrics.bottom,
+      child: _control(
+        RepaintBoundary(
+          child: _Waveform(
+            peaks: chip.ref.peaks,
+            progress: chip.progress,
+            played: Theme.of(context).colorScheme.primary,
+            unplayed: palette.quoteBar,
+            onSeekFraction: chip.onSeekFraction,
+            bars: _waveBars,
+            band: EdgeInsets.only(top: metrics.gap, bottom: metrics.bottom),
           ),
-          child: below == null
-              ? row
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+      ),
+    );
+    final words = Padding(
+      padding: EdgeInsets.only(top: metrics.gap),
+      child: SizedBox(
+        height: metrics.line,
+        child: ExcludeSemantics(
+          child: touch
+              ? Stack(
                   children: [
-                    SizedBox(height: _rowHeight - 2 * _touchBorder, child: row),
-                    if (label != 'Voice note')
-                      Text(
-                        label,
-                        maxLines: _titled ? 1 : null,
-                        overflow: _titled ? TextOverflow.ellipsis : null,
-                        style: labelStyle,
+                    Visibility.maintain(
+                      visible: false,
+                      child: Text(
+                        '$total / $total',
+                        maxLines: 1,
+                        softWrap: false,
+                        style: lengthStyle,
                       ),
+                    ),
+                    length,
+                  ],
+                )
+              : Row(
+                  children: [
+                    length,
+                    if (status != null) ...[
+                      Text(separator, style: statusStyle),
+                      Flexible(
+                        child: Text(
+                          status,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          style: statusStyle,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
         ),
       ),
     );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final room = math.max(0.0, constraints.maxWidth - _waveGap);
+        if (touch) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Flexible(child: waveform),
+              const SizedBox(width: _waveGap),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: room),
+                child: words,
+              ),
+            ],
+          );
+        }
+        final reserved = TextPainter(
+          text: TextSpan(
+            style: DefaultTextStyle.of(context).style,
+            children: [
+              TextSpan(text: '$total / $total', style: lengthStyle),
+              TextSpan(text: separator, style: statusStyle),
+            ],
+          ),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+          maxLines: 1,
+        )..layout();
+        final wave = math.min(_waveWidth, math.max(0.0, room - reserved.width));
+        reserved.dispose();
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(width: wave, child: waveform),
+            const SizedBox(width: _waveGap),
+            Expanded(child: words),
+          ],
+        );
+      },
+    );
   }
 
-  /// What the whole chip answers to: a click opens the recording, and a
-  /// secondary click or a long press offers to remove it.
-  Widget _gestures(BuildContext context, Widget child) => MouseRegion(
-    // A recording is not text, and every part of the row does something.
-    cursor: onOpen == null && onPlayPause == null && onSeekFraction == null
-        ? MouseCursor.defer
-        : SystemMouseCursors.click,
-    child: _hoverHint(
-      _openHint,
-      GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onOpen,
-        onSecondaryTapDown: onRemove == null
-            ? null
-            : (details) => _showMenu(context, details.globalPosition),
-        onLongPressStart: onRemove == null
-            ? null
-            : (details) => _showMenu(context, details.globalPosition),
-        child: child,
-      ),
-    ),
+  /// The card's words, at [size] on lines [line] tall.
+  TextStyle _style(
+    CalcPalette palette,
+    double size,
+    double line,
+    double weight,
+    Color color,
+  ) => TextStyle(
+    fontFamily: AppFonts.ui,
+    fontFamilyFallback: AppFonts.uiFallback,
+    fontSize: size,
+    height: line / size,
+    fontWeight: AppWeight.font(weight),
+    fontVariations: AppWeight.wght(weight),
+    color: color,
   );
+
+  /// What the whole card answers to: a click opens the recording, and a
+  /// secondary click or a long press offers to remove it.
+  Widget _gestures(BuildContext context, Widget child) {
+    final chip = widget;
+    final opens = chip.onOpen != null;
+    return MouseRegion(
+      // A recording is not text, and every part of the card does something.
+      cursor:
+          chip.onOpen == null &&
+              chip.onPlayPause == null &&
+              chip.onSeekFraction == null
+          ? MouseCursor.defer
+          : SystemMouseCursors.click,
+      onEnter: (_) => _setHovered(true),
+      onExit: (_) => _setHovered(false),
+      child: _hoverHint(
+        chip._openHint,
+        Listener(
+          onPointerDown: (event) =>
+              _pressOnControl = event.pointer == _controlPointer,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTapDown: opens
+                ? (_) {
+                    if (!_pressOnControl) _setPressed(true);
+                  }
+                : null,
+            onTapUp: opens ? (_) => _setPressed(false) : null,
+            onTapCancel: opens ? () => _setPressed(false) : null,
+            onTap: chip.onOpen,
+            onSecondaryTapDown: chip.onRemove == null
+                ? null
+                : (details) => _showMenu(context, details.globalPosition),
+            onLongPressStart: chip.onRemove == null
+                ? null
+                : (details) => _showMenu(context, details.globalPosition),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
 
   Widget _removeButton(CalcPalette palette) => PlaceholderTooltip(
     message: 'Remove voice note',
     child: IconButton(
       key: const ValueKey('remove-voice-note'),
-      onPressed: onRemove,
+      onPressed: widget.onRemove,
       visualDensity: VisualDensity.compact,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 28, height: 28),
@@ -448,8 +698,8 @@ class NoteVoiceChip extends StatelessWidget {
         PopupMenuItem(value: 'remove', height: 36, child: Text('Remove')),
       ],
     );
-    if (choice == 'open') onOpen?.call();
-    if (choice == 'remove') onRemove?.call();
+    if (choice == 'open') widget.onOpen?.call();
+    if (choice == 'remove') widget.onRemove?.call();
   }
 }
 
@@ -524,7 +774,8 @@ class _PlayButton extends StatelessWidget {
     required this.opening,
     this.failure,
     this.onPressed,
-    this.touch = false,
+    required this.size,
+    required this.glyph,
   });
 
   final bool playing;
@@ -532,9 +783,10 @@ class _PlayButton extends StatelessWidget {
   final VoicePlaybackFailure? failure;
   final VoidCallback? onPressed;
 
-  /// The phone's card: a larger tonal button. Otherwise Paper's 32px sage
-  /// button with a dark glyph.
-  final bool touch;
+  /// The tonal circle the recording's window plays from, at the card's size,
+  /// and its glyph, centred in it rather than stretched to fill it.
+  final double size;
+  final double glyph;
 
   @override
   Widget build(BuildContext context) {
@@ -550,23 +802,21 @@ class _PlayButton extends StatelessWidget {
       child: _hoverHint(
         onPressed == null ? null : label,
         SizedBox.square(
-          dimension: touch ? _touchPlay : 32,
+          dimension: size,
           child: Material(
-            color: touch
-                ? palette.tonalBackground
-                : Theme.of(context).colorScheme.primary,
+            color: palette.tonalBackground,
             shape: const CircleBorder(),
             child: InkWell(
               customBorder: const CircleBorder(),
               onTap: onPressed,
-              child: VoicePlayGlyph(
-                playing: playing,
-                opening: opening,
-                failure: failure,
-                size: touch ? 16 : 14,
-                color: touch
-                    ? palette.tonalForeground
-                    : Theme.of(context).colorScheme.onPrimary,
+              child: Center(
+                child: VoicePlayGlyph(
+                  playing: playing,
+                  opening: opening,
+                  failure: failure,
+                  size: glyph,
+                  color: palette.tonalForeground,
+                ),
               ),
             ),
           ),
@@ -584,6 +834,7 @@ class _Waveform extends StatelessWidget {
     required this.unplayed,
     this.onSeekFraction,
     this.bars,
+    this.band = EdgeInsets.zero,
   });
 
   final Uint8List? peaks;
@@ -592,6 +843,9 @@ class _Waveform extends StatelessWidget {
   final Color unplayed;
   final ValueChanged<double>? onSeekFraction;
   final int? bars;
+
+  /// Where in its box the bars are drawn. A press anywhere in the box skips.
+  final EdgeInsets band;
 
   @override
   Widget build(BuildContext context) {
@@ -608,16 +862,22 @@ class _Waveform extends StatelessWidget {
                     1.0,
                   ),
                 ),
-          child: ValueListenableBuilder<double?>(
-            valueListenable: progress,
-            builder: (context, value, _) => CustomPaint(
-              size: Size(constraints.maxWidth, constraints.maxHeight),
-              painter: VoiceWaveformPainter(
-                peaks: peaks,
-                progress: value,
-                played: played,
-                unplayed: unplayed,
-                bars: bars,
+          child: Padding(
+            padding: band,
+            child: ValueListenableBuilder<double?>(
+              valueListenable: progress,
+              builder: (context, value, _) => CustomPaint(
+                size: Size(
+                  constraints.maxWidth - band.horizontal,
+                  constraints.maxHeight - band.vertical,
+                ),
+                painter: VoiceWaveformPainter(
+                  peaks: peaks,
+                  progress: value,
+                  played: played,
+                  unplayed: unplayed,
+                  bars: bars,
+                ),
               ),
             ),
           ),
@@ -648,20 +908,24 @@ class VoiceWaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final levels = peaks;
     // A recording from a client that never wrote peaks, or one still being
-    // adopted: a flat line reads as "no waveform", not as silence.
-    if (levels == null || levels.isEmpty || size.width <= 0) return;
-    final count = bars ?? levels.length;
+    // adopted, draws its bars at the floor, so it still reads as a player
+    // rather than a gap before its length.
+    final levels = (peaks?.isEmpty ?? true) ? null : peaks;
+    final count = bars ?? levels?.length;
+    if (count == null || size.width <= 0) return;
 
     final barWidth = size.width / count;
     final head = (progress ?? 0) * size.width;
     final paint = Paint()..strokeCap = StrokeCap.round;
 
     for (var i = 0; i < count; i++) {
-      final from = i * levels.length ~/ count;
-      final to = math.max(from + 1, (i + 1) * levels.length ~/ count);
-      final level = levels.sublist(from, to).reduce(math.max) / 255;
+      var level = 0.0;
+      if (levels != null) {
+        final from = i * levels.length ~/ count;
+        final to = math.max(from + 1, (i + 1) * levels.length ~/ count);
+        level = levels.sublist(from, to).reduce(math.max) / 255;
+      }
       // A floor, so silence is still a visible line rather than a gap.
       final height = (size.height * level).clamp(2.0, size.height);
       final x = i * barWidth + barWidth / 2;

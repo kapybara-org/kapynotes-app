@@ -7804,9 +7804,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         final chip = _voiceChip(ref);
         spans[ref.offset] = (
           width: columnWidth,
-          height:
-              chip.heightIn(context, columnWidth, TextScaler.noScaling) +
-              noteImageGap,
+          height: noteVoiceChipHeight + noteImageGap,
           child: SizedBox(width: columnWidth, child: chip),
         );
         continue;
