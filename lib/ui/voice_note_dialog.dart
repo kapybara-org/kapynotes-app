@@ -1594,7 +1594,32 @@ class _NoisePill extends StatelessWidget {
     }
 
     final percent = '${(state.progress * 100).floor()}%';
-    return Material(
+    final stop = Tooltip(
+      message: 'Stop',
+      child: Semantics(
+        button: true,
+        label: 'Stop',
+        excludeSemantics: true,
+        child: InkWell(
+          key: const ValueKey('voice-remove-noise-stop'),
+          onTap: () => noise.stop(hash),
+          child: SizedBox(
+            width: touch ? 44 : height,
+            height: touch ? 44 : height,
+            child: touch
+                ? null
+                : Center(
+                    child: KapyIcon(
+                      KapyIcons.closeRounded,
+                      size: 12,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+    final pill = Material(
       color: palette.wellBackground,
       shape: shape,
       child: Row(
@@ -1612,29 +1637,32 @@ class _NoisePill extends StatelessWidget {
                 : label,
           ),
           Container(width: 1, height: 14, color: palette.controlBorder),
-          Tooltip(
-            message: 'Stop',
-            child: Semantics(
-              button: true,
-              label: 'Stop',
-              excludeSemantics: true,
-              child: InkWell(
-                key: const ValueKey('voice-remove-noise-stop'),
-                onTap: () => noise.stop(hash),
-                child: SizedBox(
-                  width: touch ? 44 : 24,
-                  height: touch ? 44 : height,
-                  child: Center(
-                    child: KapyIcon(
-                      KapyIcons.closeRounded,
-                      size: 12,
-                      color: palette.textSecondary,
-                    ),
-                  ),
+          if (touch)
+            SizedBox.square(
+              dimension: height,
+              child: Center(
+                child: KapyIcon(
+                  KapyIcons.closeRounded,
+                  size: 12,
+                  color: palette.textSecondary,
                 ),
               ),
-            ),
-          ),
+            )
+          else
+            stop,
+        ],
+      ),
+    );
+    if (!touch) return pill;
+    // The pill keeps the row's 30 pt height; the ×'s 44 pt target lies over
+    // its end, reaching a little into the label's padding.
+    return SizedBox(
+      height: 44,
+      child: Stack(
+        alignment: Alignment.centerRight,
+        children: [
+          pill,
+          Positioned(right: 0, top: 0, bottom: 0, child: stop),
         ],
       ),
     );

@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:kapy_notes/audio/noise_removals.dart';
 import 'package:kapy_notes/audio/voice_player.dart';
+import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/clean_copies.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -161,37 +162,48 @@ void main() {
     );
   });
 
-  testWidgets('the first press downloads, shows it, and the × stops it', (
-    tester,
-  ) async {
-    final dir = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('kapy-remove-noise'),
-    ))!;
-    addTearDown(() => dir.delete(recursive: true));
-    final answer = Completer<http.StreamedResponse>();
-    final removals = noise(
-      made: false,
-      models: dir,
-      client: MockClient.streaming((_, _) => answer.future),
-    );
-    addTearDown(removals.dispose);
-    await tester.pumpWidget(
-      host(removals, VoiceNotePlayerRow(ref: ref, player: player)),
-    );
-    await tester.pump();
+  for (final phone in [false, true]) {
+    testWidgets(
+      'the first press downloads, shows it, and the × stops it${phone ? ' on a phone' : ''}',
+      (tester) async {
+        if (phone) {
+          AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        }
+        final dir = (await tester.runAsync(
+          () => Directory.systemTemp.createTemp('kapy-remove-noise'),
+        ))!;
+        addTearDown(() => dir.delete(recursive: true));
+        final answer = Completer<http.StreamedResponse>();
+        final removals = noise(
+          made: false,
+          models: dir,
+          client: MockClient.streaming((_, _) => answer.future),
+        );
+        addTearDown(removals.dispose);
+        await tester.pumpWidget(
+          host(removals, VoiceNotePlayerRow(ref: ref, player: player)),
+        );
+        await tester.pump();
 
-    await tester.tap(find.byKey(const ValueKey('voice-remove-noise')));
-    await settle(tester);
-    expect(find.text('Downloading'), findsOneWidget);
-    expect(find.byTooltip('Stop'), findsOneWidget);
-    expect(find.byKey(const ValueKey('voice-remove-noise')), findsNothing);
+        await tester.tap(find.byKey(const ValueKey('voice-remove-noise')));
+        await settle(tester);
+        expect(find.text('Downloading'), findsOneWidget);
+        expect(find.byTooltip('Stop'), findsOneWidget);
+        expect(
+          tester.getSize(find.byKey(const ValueKey('voice-remove-noise-stop'))),
+          AppPlatform.hasPointer ? const Size(24, 24) : const Size(44, 44),
+        );
+        expect(find.byKey(const ValueKey('voice-remove-noise')), findsNothing);
 
-    await tester.tap(find.byKey(const ValueKey('voice-remove-noise-stop')));
-    answer.completeError(http.ClientException('stopped'));
-    await settle(tester);
-    expect(find.text('Remove noise'), findsOneWidget);
-    expect(switched, isEmpty);
-  });
+        await tester.tap(find.byKey(const ValueKey('voice-remove-noise-stop')));
+        answer.completeError(http.ClientException('stopped'));
+        await settle(tester);
+        expect(find.text('Remove noise'), findsOneWidget);
+        expect(switched, isEmpty);
+      },
+    );
+  }
 
   testWidgets('the card shows the sign once the noise is removed', (
     tester,
