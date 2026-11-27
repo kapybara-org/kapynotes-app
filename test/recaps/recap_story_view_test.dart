@@ -1,8 +1,10 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/recaps/recap_lines.dart';
+import 'package:kapy_notes/recaps/recap_record.dart';
 import 'package:kapy_notes/recaps/recap_story.dart';
 import 'package:kapy_notes/ui/recaps/recap_story_view.dart';
 import 'package:material_ui/material_ui.dart';
@@ -19,6 +21,7 @@ class _Calls {
   final List<RecapQuote> played = [];
   final List<RecapNote> saved = [];
   final List<(Uint8List, String)> shared = [];
+  final List<KapyChat> pruned = [];
 
   late final actions = RecapStoryActions(
     openNote: opened.add,
@@ -27,6 +30,7 @@ class _Calls {
     shareImage: (png, name) async => shared.add((png, name)),
     onRemake: () => remade++,
     remakeCredits: credits,
+    onPruned: pruned.add,
   );
 }
 
@@ -459,6 +463,50 @@ void main() {
         expect(find.byType(RecapStoryView), findsNothing);
       });
     }
+
+    testWidgets('a story that left words out hands its chat back, once', (
+      tester,
+    ) async {
+      final day = sampleDay();
+      final chat = recapChat(
+        null,
+        record: day.record,
+        answer: 'TITLE: A full day\nNEXT: Pay for it before Friday',
+        model: KapyModel.cloud,
+        now: DateTime(2026, 11, 20),
+      );
+      final story = RecapStory(
+        record: day.record,
+        lines: const RecapLines(title: 'A full day'),
+        chat: chat,
+        dropped: true,
+      );
+      final calls = await open(tester, story);
+      await next(tester);
+      await next(tester);
+      final kept = calls.pruned.single;
+      expect(kept.id, chat.id);
+      expect(recapAnswer(kept), 'TITLE: A full day');
+    });
+
+    testWidgets('a story that left nothing out hands nothing back', (
+      tester,
+    ) async {
+      final day = sampleDay();
+      final chat = recapChat(
+        null,
+        record: day.record,
+        answer: day.lines.text,
+        model: KapyModel.cloud,
+        now: DateTime(2026, 11, 20),
+      );
+      final calls = await open(
+        tester,
+        RecapStory(record: day.record, lines: day.lines, chat: chat),
+      );
+      await next(tester);
+      expect(calls.pruned, isEmpty);
+    });
 
     testWidgets('with words left, no Remake', (tester) async {
       await open(tester, sampleDay());

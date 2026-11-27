@@ -125,6 +125,7 @@ class RecapEngine {
   }) async {
     final period = plan.period;
     final material = plan.material;
+    final started = _now();
     Future<RecapPiece> ask(RecapSlice slice) async {
       final items = material.within(slice.first, slice.last);
       final notes = packRecap(
@@ -246,7 +247,7 @@ class RecapEngine {
       period: period,
       timeZone: timeZone,
       firstWeekday: firstWeekday,
-      madeAt: now,
+      madeAt: started,
       numbers: RecapNumbers.of(digest, material),
       fingerprint: material.fingerprint,
       digest: period.kind == RecapKind.month && over && lines.digest.isNotEmpty

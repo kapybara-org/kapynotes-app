@@ -5,6 +5,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../ai/kapy_ai.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../recaps/recap_lines.dart';
@@ -22,6 +23,7 @@ class RecapStoryActions {
     required this.shareImage,
     required this.onRemake,
     required this.remakeCredits,
+    this.onPruned,
   });
 
   /// Opens the note a highlight is about, once the viewer has closed.
@@ -43,6 +45,10 @@ class RecapStoryActions {
 
   /// What making it again costs, as the drawer quotes it.
   final int remakeCredits;
+
+  /// Keeps the story's chat as it opened, once, when it left words out
+  /// ([recapPruned]).
+  final void Function(KapyChat chat)? onPruned;
 }
 
 /// What dims the app behind the desktop's frame.
@@ -131,6 +137,16 @@ class _RecapStoryViewState extends State<RecapStoryView>
       !MediaQuery.accessibleNavigationOf(context);
 
   RecapCard get _card => _cards[_index];
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.actions.onPruned case final kept?) {
+      if (recapPruned(widget.story, now: DateTime.now()) case final chat?) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => kept(chat));
+      }
+    }
+  }
 
   @override
   void didChangeDependencies() {

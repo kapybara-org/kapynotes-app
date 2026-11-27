@@ -108,7 +108,24 @@ void main() {
     expect(back.read![1].notes.mayHold('mon'), isFalse);
     expect(back.notesRead!.mayHold('mon'), isTrue);
     expect(record().toJson(), isNot(contains('read')));
+    expect(record().toJson(), isNot(contains('gone')));
     expect(RecapRecord.fromJson(record().toJson())!.read, isNull);
+  });
+
+  test('keeps that its words were left out', () {
+    final gone = RecapRecord(
+      period: week,
+      timeZone: 'UTC',
+      firstWeekday: DateTime.monday,
+      madeAt: made,
+      numbers: record().numbers,
+      fingerprint: '0123456789abcdef',
+      wordsGone: true,
+    );
+    final json = jsonDecode(jsonEncode(gone.toJson())) as Map;
+    expect(json['gone'], isTrue);
+    expect(RecapRecord.fromJson(json)!.wordsGone, isTrue);
+    expect(RecapRecord.fromJson({...json, 'gone': 'yes'})!.wordsGone, isFalse);
   });
 
   test('parts that do not hold together are read as none at all', () {

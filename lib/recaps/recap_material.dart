@@ -42,11 +42,10 @@ class RecapItem {
 
 /// A note a recap may have read that it may no longer: hidden at [at],
 /// waiting to be deleted (no [at]: it counts whenever the recap was made),
-/// or deleted at [at]. [day] is the period's day it sits under, or null when
-/// that is no longer known: a deleted note's is gone, and hiding a note
-/// moves its edit, and so its day, to when it was hidden, unless it was
-/// given a day of its own.
-typedef RecapLeft = ({String id, DateTime? at, DateTime? day});
+/// or deleted at [at]. It carries no day: hiding or editing a note moves
+/// its day, and a deleted note's is gone, so it is checked against every
+/// part of a recap.
+typedef RecapLeft = ({String id, DateTime? at});
 
 /// What a period gives a recap made with Kapy AI, chosen on the device: its
 /// visible notes, each recording in them as its summary and transcript, and
@@ -132,20 +131,13 @@ class RecapMaterial {
       return bySource != 0 ? bySource : a.note.edited.compareTo(b.note.edited);
     });
     final left = <RecapLeft>[
-      for (final stone in store.tombstones)
-        (id: stone.id, at: stone.deletedAt, day: null),
+      for (final stone in store.tombstones) (id: stone.id, at: stone.deletedAt),
+      for (final note in store.allNotes)
+        if (store.isDeleting(note.id))
+          (id: note.id, at: null)
+        else if (note.hiddenAt case final at?)
+          (id: note.id, at: at),
     ];
-    for (final note in store.allNotes) {
-      final own = ownDay?.call(note);
-      if (store.isDeleting(note.id)) {
-        final day = noteDay(note, displayTime, ownDay: own);
-        if (period.contains(day)) left.add((id: note.id, at: null, day: day));
-      } else if (note.hiddenAt case final at?) {
-        if (own == null || period.contains(own)) {
-          left.add((id: note.id, at: at, day: own));
-        }
-      }
-    }
     return RecapMaterial._(period, List.unmodifiable(items), {
       for (final note in held.keys) note.id: note.updatedAt,
     }, List.unmodifiable(left));

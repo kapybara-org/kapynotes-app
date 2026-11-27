@@ -84,6 +84,7 @@ class RecapRecord {
     required this.fingerprint,
     this.digest,
     this.read,
+    this.wordsGone = false,
   });
 
   final RecapPeriod period;
@@ -99,6 +100,11 @@ class RecapRecord {
   /// Each part that went into the recap. Null where a record has none, and
   /// then any part may have read any note.
   final List<RecapRead>? read;
+
+  /// Whether its words were left out on opening it again, because notes
+  /// they may have come from are hidden or gone ([recapPruned]): its answer
+  /// no longer has them to say so.
+  final bool wordsGone;
 
   /// Every note any part may have read, where the record says.
   RecapFilter? get notesRead => read?.fold<RecapFilter>(
@@ -152,6 +158,7 @@ class RecapRecord {
           ?.map((part) => [part.first, part.last, part.notes.toBase64()])
           .toList(),
       'digest': ?digest,
+      if (wordsGone) 'gone': true,
     };
     int size(Map<String, Object?> value) =>
         utf8.encode(jsonEncode(value)).length;
@@ -244,6 +251,7 @@ class RecapRecord {
       fingerprint: fingerprint,
       digest: digest is String && digest.isNotEmpty ? digest : null,
       read: _reads(raw['read'], period.days),
+      wordsGone: raw['gone'] == true,
     );
   }
 

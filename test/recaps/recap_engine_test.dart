@@ -9,6 +9,7 @@ import 'package:kapy_notes/recaps/recap_filter.dart';
 import 'package:kapy_notes/recaps/recap_period.dart';
 import 'package:kapy_notes/recaps/recap_plan.dart';
 import 'package:kapy_notes/recaps/recap_record.dart';
+import 'package:kapy_notes/recaps/recap_story.dart';
 
 import '../ai/ai_fakes.dart';
 import 'recap_fixtures.dart';
@@ -744,4 +745,27 @@ void main() {
       );
     });
   }
+
+  test(
+    'a note hidden during the last call drops its words on reopening',
+    () async {
+      world.note('mon', '2026-11-16T10:00:00Z', body: 'Monday plans\nShip it');
+      world.note('fri', '2026-11-20T10:00:00Z', body: 'Friday review\nQuit');
+      await notesOn(2025, const []);
+      final week = periodOf(DateTime(2026, 11, 19), RecapKind.week);
+      now = testNow.subtract(const Duration(hours: 1));
+      final ai = ScriptedEngine();
+      ai.reply = (request) {
+        if (ai.asked.length == 1) return 'Monday plans said to ship it.';
+        world.store.hide('fri');
+        now = testNow.add(const Duration(hours: 1));
+        return 'TITLE: Leaving soon\nNEXT: Hand in the notice';
+      };
+      await make(week, ai);
+      expect(world.store.byId('fri')!.hiddenAt, testNow);
+      final story = RecapStory.read(book.chats.single, world.material(week))!;
+      expect(story.lines.title, isNull);
+      expect(story.lines.next, isNull);
+    },
+  );
 }

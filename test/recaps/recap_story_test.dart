@@ -290,6 +290,59 @@ void main() {
       expectAllLeftOut(RecapStory.read(chat, world.material(thursday))!);
     });
 
+    test(
+      'a deleted note still drops its part once its tombstone is gone',
+      () async {
+        final chat = parted();
+        final local = MemoryStore()
+          ..data['notes.v1'] = [for (final note in world.notes) note.toJson()];
+        world.store = NotesStore(local, now: () => DateTime.utc(2026, 11, 25));
+        await world.store.load();
+        world.store.delete('trip');
+        await Future<void>.delayed(Duration.zero);
+        final saved = local.data['notes.v2']! as Map;
+        for (final stone in saved['tombstones'] as List) {
+          (stone as Map)['syncedAt'] = stone['deletedAt'];
+        }
+        final pruned = recapPruned(
+          RecapStory.read(chat, world.material(thursday))!,
+          now: DateTime.utc(2026, 11, 25),
+        )!;
+        expect(recapOf(pruned)!.wordsGone, isTrue);
+        world.store = NotesStore(local, now: () => DateTime.utc(2027, 1, 5));
+        await world.store.load();
+        expect(world.store.tombstones, isEmpty, reason: 'synced, 41 days on');
+        final story = RecapStory.read(pruned, world.material(thursday))!;
+        expectAllLeftOut(story);
+        expect(story.cards, [
+          RecapCard.cover,
+          RecapCard.numbers,
+          RecapCard.closing,
+        ]);
+        expect(recapPruned(story, now: DateTime.utc(2027, 1, 5)), isNull);
+        expect(
+          RecapStory.read(chat, world.material(thursday))!.lines.next,
+          'Pay for it before Friday',
+          reason: 'unpruned, its words come back once the tombstone goes',
+        );
+      },
+    );
+
+    test('a note edited onto another day, then held for deleting, still '
+        'drops', () async {
+      final chat = parted();
+      world.note('trip', '2026-11-26T08:00:00Z', body: 'Trip\n☑ Book\n☐ Pay');
+      await world.load();
+      world.store.holdDelete(['trip']);
+      expectAllLeftOut(RecapStory.read(chat, world.material(thursday))!);
+    });
+
+    test('with nothing left out, there is nothing to keep', () async {
+      final story = await reopenWith(parted());
+      expect(story.dropped, isFalse);
+      expect(recapPruned(story, now: made), isNull);
+    });
+
     test('a record with no parts treats every part as affected', () async {
       final chat = recapChat(
         null,
@@ -352,6 +405,15 @@ void main() {
       expect(story.lines.next, isNull);
       expect(story.lines.highlights.map((it) => it.noteId), ['deck']);
       expect(story.wordsGone, isFalse);
+
+      final pruned = recapPruned(story, now: made)!;
+      expect(pruned.messages, hasLength(chat.messages.length + 1));
+      expect(recapAnswer(pruned), 'HIGHLIGHT: Deck | Drafted on Monday');
+      expect(recapOf(pruned)!.wordsGone, isFalse);
+      final again = RecapStory.read(pruned, world.material(week))!;
+      expect(again.cards, story.cards);
+      expect(again.lines.text, story.lines.text);
+      expect(again.dropped, isFalse);
     });
 
     test('in a year, only the months of the part that read it', () async {

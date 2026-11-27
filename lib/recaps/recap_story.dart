@@ -39,6 +39,8 @@ class RecapStory {
     this.open = const [],
     this.voice,
     this.wordsGone = false,
+    this.chat,
+    this.dropped = false,
   });
 
   /// The recap [chat] holds, its newest answer read again against [now], the
@@ -104,7 +106,7 @@ class RecapStory {
         ? (changed.isEmpty ? const <RecapRead>[] : null)
         : [
             for (final part in parts)
-              if (changed.any((note) => _touches(part, note, period))) part,
+              if (changed.any((note) => part.notes.mayHold(note.id))) part,
           ];
     bool drops(String noteId) =>
         affected == null || affected.any((part) => part.notes.mayHold(noteId));
@@ -136,20 +138,18 @@ class RecapStory {
           );
 
     final quote = kept.quote;
+    final worded = answer
+        .where(
+          (line) => _worded.hasMatch(recapShown(line).replaceAll('**', '')),
+        )
+        .length;
+    final left = kept.text.isEmpty ? 0 : kept.text.split('\n').length;
     return RecapStory(
       record: record,
       lines: kept,
-      wordsGone:
-          answer.any(
-            (line) => _worded.hasMatch(recapShown(line).replaceAll('**', '')),
-          ) &&
-          kept.title == null &&
-          kept.highlights.isEmpty &&
-          kept.quote == null &&
-          kept.topics.isEmpty &&
-          kept.moments.isEmpty &&
-          kept.line == null &&
-          kept.next == null,
+      chat: chat,
+      dropped: left < worded,
+      wordsGone: record.wordsGone || (worded > 0 && left == 0),
       done: words(RecapSource.taskDone, record.numbers.done),
       open: words(RecapSource.taskOpen, record.numbers.open),
       voice: quote == null
@@ -177,6 +177,12 @@ class RecapStory {
   /// have come from are hidden or gone now: the closing card says so and
   /// offers to make it again.
   final bool wordsGone;
+
+  /// The chat it was read from.
+  final KapyChat? chat;
+
+  /// Whether any of the words in [chat]'s answer were left out.
+  final bool dropped;
 
   RecapPeriod get period => record.period;
   RecapNumbers get numbers => record.numbers;
@@ -346,6 +352,37 @@ class RecapStory {
   };
 }
 
+/// [story]'s chat with what it shows now as its newest answer, when it left
+/// out any of its words, else null. What told it to leave them out may not
+/// last (a deleted note's tombstone goes after [Tombstone.retention]), so
+/// keeping what is left makes the words stay gone on every device. It costs
+/// no call. With no words left, the record says so, so the story still
+/// tells why and offers Remake.
+KapyChat? recapPruned(RecapStory story, {required DateTime now}) {
+  final chat = story.chat;
+  if (chat == null || !story.dropped) return null;
+  final record = story.record;
+  return recapChat(
+    chat,
+    record: RecapRecord(
+      period: record.period,
+      timeZone: record.timeZone,
+      firstWeekday: record.firstWeekday,
+      madeAt: record.madeAt,
+      numbers: record.numbers,
+      fingerprint: record.fingerprint,
+      digest: record.digest,
+      read: record.read,
+      wordsGone: story.wordsGone,
+    ),
+    answer: story.lines.text.isEmpty
+        ? recapTitle(record.period)
+        : story.lines.text,
+    model: chat.model,
+    now: now,
+  );
+}
+
 /// A recap as a note: its text, and the ids of the notes it names.
 class RecapNote {
   const RecapNote({required this.body, required this.names});
@@ -372,16 +409,6 @@ final RegExp _worded = RegExp(
   r'^(?:[-*•]|\d+[.)])?\s*(?:TITLE|HIGHLIGHT|QUOTE|TOPIC|MOMENT|LINE|NEXT)\s*:',
   caseSensitive: false,
 );
-
-/// Whether [part] may have read [note]: on a day of its own, when the note
-/// still has one.
-bool _touches(RecapRead part, RecapLeft note, RecapPeriod period) {
-  if (note.day case final day?) {
-    final index = period.indexOf(day);
-    if (index == null || index < part.first || index > part.last) return false;
-  }
-  return part.notes.mayHold(note.id);
-}
 
 final RegExp _quotes = RegExp('^["“”\'‘’`_]+|["“”\'‘’`_]+\$');
 
