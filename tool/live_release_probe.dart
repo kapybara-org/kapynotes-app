@@ -16,9 +16,13 @@ import 'package:flutter/widgets.dart';
 import 'package:kapy_notes/speech/live_translation.dart';
 import 'package:path_provider/path_provider.dart';
 
-const _from = 'es';
-const _to = 'en';
-const _phrase = 'Hola, ¿cómo estás?';
+// Spanish to English first, as a person would turn it on. A phone whose
+// recogniser can't hear Spanish answers unsupported before the translator is
+// asked for, so English to Spanish follows then, to reach translation_runtime.
+const _pairs = [
+  (from: 'es', to: 'en', phrase: 'Hola, ¿cómo estás?'),
+  (from: 'en', to: 'es', phrase: 'Hello, how are you?'),
+];
 
 void _mark(String line) => print('LIVE_PROBE $line');
 
@@ -51,26 +55,38 @@ Future<void> main() async {
   const channel = MethodChannel(PlatformLiveTranslation.channelName);
 
   _mark('available=${await live.isAvailable()}');
-  _mark('pair_before=${_pair((await live.pairStatus(_from, _to)).status)}');
   _mark(
-    'prepare=${_prepared(await live.prepare(_from, _to, wifiOnly: false))}',
+    'spoken=${((await live.languages()).spoken.toList()..sort()).join(',')}',
   );
-  _mark('pair_after=${_pair((await live.pairStatus(_from, _to)).status)}');
 
-  try {
-    final out = await channel.invokeListMethod<String>('translate', {
-      'from': _from,
-      'to': _to,
-      'texts': [_phrase],
-    });
-    final ok =
-        out != null &&
-        out.length == 1 &&
-        out.single.trim().isNotEmpty &&
-        out.single != _phrase;
-    _mark('translate=${ok ? 'ok' : 'empty'}');
-  } on PlatformException catch (error) {
-    _mark('translate=error:${error.code}');
+  var pair = _pairs.first;
+  for (final candidate in _pairs) {
+    pair = candidate;
+    final tag = '${pair.from}-${pair.to}';
+    _mark(
+      '$tag pair_before=${_pair((await live.pairStatus(pair.from, pair.to)).status)}',
+    );
+    final prepared = await live.prepare(pair.from, pair.to, wifiOnly: false);
+    _mark('$tag prepare=${_prepared(prepared)}');
+    _mark(
+      '$tag pair_after=${_pair((await live.pairStatus(pair.from, pair.to)).status)}',
+    );
+    try {
+      final out = await channel.invokeListMethod<String>('translate', {
+        'from': pair.from,
+        'to': pair.to,
+        'texts': [pair.phrase],
+      });
+      final ok =
+          out != null &&
+          out.length == 1 &&
+          out.single.trim().isNotEmpty &&
+          out.single != pair.phrase;
+      _mark('$tag translate=${ok ? 'ok' : 'empty'}');
+    } on PlatformException catch (error) {
+      _mark('$tag translate=error:${error.code}');
+    }
+    if (prepared != LivePrepareResult.unsupported) break;
   }
 
   final path =
@@ -79,8 +95,8 @@ Future<void> main() async {
   var phrases = 0;
   live.phrases.listen((_) => phrases++);
   try {
-    await live.start(from: _from, to: _to, path: path);
-    _mark('live=started');
+    await live.start(from: pair.from, to: pair.to, path: path);
+    _mark('live=started ${pair.from}-${pair.to}');
     await Future<void>.delayed(const Duration(seconds: 20));
     final written = await live.stop();
     final bytes = written == null ? 0 : File(written).lengthSync();

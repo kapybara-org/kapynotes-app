@@ -13,7 +13,10 @@
 # (a) The app with live translation off launches and stays up with no crash,
 #     and translation_runtime isn't installed.
 # (b) The probe turns live translation on for Spanish to English: prepare
-#     installs translation_runtime, and a short phrase translates.
+#     installs translation_runtime, and a short phrase translates. Where the
+#     emulator's recogniser can't hear Spanish, which the probe shows by the
+#     languages it lists, it does the same for English to Spanish, and says
+#     so with a warning.
 # (c) After the probe's live session stops, with the app still running, none
 #     of the app's services runs, no recording of its is active, the file has
 #     stopped growing, and no session is left.
@@ -41,12 +44,13 @@ splits() { adb shell "find $data/files/splitcompat 2>/dev/null" | tr -d '\r'; }
 crashes() { adb logcat -d -b crash | grep -F "$pkg"; }
 
 # The app's active recordings in dumpsys audio's RecordActivityMonitor, one
-# line each: a "riid N; active true" entry whose configuration names the app.
+# line each: a "riid N; active? true" entry whose configuration names the
+# app. The section ends where its log of past events begins.
 recordings() {
   awk -v uid="uid:$uid " -v pack="pack:$pkg" '
     /RecordActivityMonitor dump time/ { on = 1; next }
-    on && /[Ee]vent log/ { on = 0 }
-    on && /^ *riid/ { active = /active true/; next }
+    on && /[Ee]vents? log/ { on = 0 }
+    on && /^ *riid/ { active = /active\?? true/; next }
     on && active && (index($0, uid) || index($0, pack)) { print }
   ' "$1"
 }
@@ -150,8 +154,20 @@ adb logcat -d > "$out/b-logcat.txt"
 adb exec-out screencap -p > "$out/b-probe.png"
 
 value() { sed -n "s/^LIVE_PROBE $1=\([^ ]*\).*/\1/p" "$out/probe.txt" | head -1; }
-prepared=$(value prepare)
-if [[ $prepared == ready ]]; then pass "prepare('es', 'en') answered ready"; else fail "prepare('es', 'en') answered ${prepared:-nothing}"; fi
+spoken=$(value spoken)
+echo "the recogniser hears: ${spoken:-nothing}"
+pair=es-en
+prepared=$(value "es-en prepare")
+if [[ $prepared == ready ]]; then
+  pass "prepare('es', 'en') answered ready"
+elif [[ $prepared == unsupported && ,$spoken, != *,es,* ]]; then
+  echo "::warning::prepare('es', 'en') answered unsupported because this emulator's recogniser can't hear Spanish (it hears ${spoken:-nothing}); checking English to Spanish instead"
+  pair=en-es
+  prepared=$(value "en-es prepare")
+  if [[ $prepared == ready ]]; then pass "prepare('en', 'es') answered ready"; else fail "prepare('en', 'es') answered ${prepared:-nothing}"; fi
+else
+  fail "prepare('es', 'en') answered ${prepared:-nothing}, with the recogniser hearing ${spoken:-nothing}"
+fi
 splits > "$out/b-splitcompat.txt"
 cat "$out/b-splitcompat.txt"
 if grep -q translation_runtime "$out/b-splitcompat.txt"; then
@@ -159,8 +175,8 @@ if grep -q translation_runtime "$out/b-splitcompat.txt"; then
 else
   fail "translation_runtime isn't installed after prepare"
 fi
-translated=$(value translate)
-if [[ $translated == ok ]]; then pass "the test phrase translated"; else fail "translate answered ${translated:-nothing}"; fi
+translated=$(value "$pair translate")
+if [[ $translated == ok ]]; then pass "the $pair test phrase translated"; else fail "$pair translate answered ${translated:-nothing}"; fi
 echo "::endgroup::"
 
 echo "::group::(c) after the live session stops"
@@ -173,7 +189,9 @@ else
   fail "the probe isn't running, so nothing left running proves nothing"
 fi
 if [[ $live == live=stopped ]]; then pass "the session started and stopped"; else fail "the live session ended as ${live:-nothing}"; fi
+echo "the session's own stop events: $(grep -o 'live_stop=[^ ]*' "$out/probe.txt" | tr '\n' ' ')"
 snapshot after
+sed -n '/RecordActivityMonitor dump time/,/[Ee]vents\{0,1\} log/p' "$out/during-audio.txt" "$out/after-audio.txt"
 if $during; then
   if [[ -n $(recordings "$out/during-audio.txt") ]]; then
     pass "during the session dumpsys audio showed the app recording"
