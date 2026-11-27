@@ -918,7 +918,7 @@ void main() {
   });
 
   testWidgets(
-    'the bar\'s picture button opens capture and inserts its result',
+    'the bar\'s attach button, then Photo, opens capture and inserts its result',
     (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);

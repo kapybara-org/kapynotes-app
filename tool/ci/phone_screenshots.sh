@@ -4,6 +4,8 @@
 #
 #   bash tool/ci/phone_screenshots.sh <device id>
 #
+# With --check in place of a device id, it only checks PHONE_TESTS's names.
+#
 # A shot a test takes with device: true is also read off the device's own
 # screen, keyboard included, as build/screenshots/<name>-device.png.
 #
@@ -18,7 +20,9 @@
 # as an app that hangs at launch, where that 10 minutes never starts, is
 # stopped with everything it started, counts as failed, and the next file runs.
 # PHONE_TESTS, when set, names the only tests to run, such as
-# `phone_recording_away`, for a run that checks one test.
+# `phone_recording_away`, for a run that checks one test. A name that isn't
+# one of the phone tests below fails the run, so a typo, or a desktop test
+# this script never drives, can't run nothing and pass.
 #
 # On an Android emulator, a file whose run the emulator spoiled before its
 # tests finished (the app's VM Service refused or never answered, or the
@@ -46,6 +50,25 @@ mkdir -p build/screenshots
 wanted() {
   [[ -z ${PHONE_TESTS:-} || " $PHONE_TESTS " == *" $1 "* ]]
 }
+
+tests=(phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet kapy_ai_notice phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_voice_window phone_time_line phone_video phone_camera)
+phone_tests=" ${tests[*]} phone_recording_away phone_bar_android "
+picked=
+set -f
+for name in ${PHONE_TESTS:-}; do
+  if [[ $phone_tests != *" $name "* ]]; then
+    echo "::error::PHONE_TESTS names $name, which isn't a phone test:$phone_tests"
+    exit 1
+  fi
+  picked+=" $name"
+done
+set +f
+if [[ -n ${PHONE_TESTS:-} && -z $picked ]]; then
+  echo "::error::PHONE_TESTS names no test"
+  exit 1
+fi
+PHONE_TESTS=$picked
+[[ $device == --check ]] && exit 0
 
 # Stops file $1's run, process group $2, with a screenshot of where it got to.
 # The shot is put off to one side, in a group of its own: a device stuck
@@ -150,7 +173,7 @@ navbar() {
   sleep 3
 }
 
-for test in phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet kapy_ai_notice phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_voice_window phone_time_line phone_video phone_camera; do
+for test in "${tests[@]}"; do
   drive "$test"
 done
 
