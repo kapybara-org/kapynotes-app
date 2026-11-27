@@ -33,8 +33,8 @@ class _Store extends LocalStore {
 }
 
 /// The toast after a picked delete, read the way a person meets it: notes
-/// of their own go for everyone, and notes somebody shares with them only
-/// leave their own notes.
+/// of their own go to Recently deleted, and notes somebody shares with them
+/// only leave their own notes.
 void main() {
   late FakeServer server;
   late Device priya;
@@ -160,7 +160,7 @@ void main() {
   }
 
   testWidgets('a pick of your own note and one shared with you says which '
-      'went for good', (tester) async {
+      'went to Recently deleted', (tester) async {
     await signIn(tester);
     await shareBothWays(tester);
     await pumpShared(tester);
@@ -170,7 +170,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('confirm-delete')));
     await tester.pumpAndSettle();
     expect(
-      find.text('Note deleted, and 1 removed from your notes'),
+      find.text('Moved to Recently deleted, and 1 removed from your notes'),
       findsOneWidget,
     );
   });
