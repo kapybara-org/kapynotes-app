@@ -7862,12 +7862,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             uploadProgress: ref.isUploaded
                 ? null
                 : widget.uploadProgressFor?.call(ref.hash),
-            onOpen: () => NoteVideoViewer.open(
-              context,
-              ref: ref,
-              store: store,
-              fetch: widget.imageFetch,
-            ),
             onRemove: widget.readOnly
                 ? null
                 : () => removeAttachment(ref.offset),

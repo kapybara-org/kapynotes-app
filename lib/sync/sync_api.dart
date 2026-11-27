@@ -891,6 +891,10 @@ const String keyGenerationHeader = 'x-kapynotes-key-generation';
 /// never retried on a timer — see `SyncService.spacesNeedingPro`.
 const String proRequiredCode = 'pro-required';
 
+/// The server's refusal of an upload, or of a move into a space, that the
+/// owning account has no room left for. Matches the attachments route's 413.
+const String storageFullCode = 'quota exceeded';
+
 class HttpSyncApi implements SyncApi {
   HttpSyncApi({
     required Uri baseUrl,

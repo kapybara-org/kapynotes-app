@@ -1,0 +1,14 @@
+name: denoise
+description: >-
+  Takes the background noise out of a voice recording on the device, with
+  DPDFNet-2. Private to Kapy Notes.
+publish_to: none
+version: 1.0.0
+
+environment:
+  sdk: ^3.10.0
+
+dependencies:
+  code_assets: ^1.2.0
+  ffi: ^2.1.0
+  hooks: ^2.0.0

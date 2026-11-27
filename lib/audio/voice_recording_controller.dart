@@ -42,6 +42,14 @@ class VoiceRecordingSession {
   /// so the bar can say "Saving…" rather than appearing to hang.
   final bool finishing;
 
+  /// Set until the microphone has started, which on Linux means until its
+  /// first samples arrive, so the bar never says it is recording before then.
+  final bool starting;
+
+  /// The microphone has been heard for [VoiceRecordingController.silentAfter]
+  /// and gave no sound in all of it: muted, unplugged, or not a microphone.
+  final bool silent;
+
   const VoiceRecordingSession({
     required this.noteId,
     this.elapsed = Duration.zero,
@@ -50,6 +58,8 @@ class VoiceRecordingSession {
     this.paused = false,
     this.interrupted = false,
     this.finishing = false,
+    this.starting = false,
+    this.silent = false,
   });
 
   VoiceRecordingSession copyWith({
@@ -59,6 +69,8 @@ class VoiceRecordingSession {
     bool? paused,
     bool? interrupted,
     bool? finishing,
+    bool? starting,
+    bool? silent,
   }) => VoiceRecordingSession(
     noteId: noteId,
     elapsed: elapsed ?? this.elapsed,
@@ -67,6 +79,8 @@ class VoiceRecordingSession {
     paused: paused ?? this.paused,
     interrupted: interrupted ?? this.interrupted,
     finishing: finishing ?? this.finishing,
+    starting: starting ?? this.starting,
+    silent: silent ?? this.silent,
   );
 }
 
@@ -139,9 +153,12 @@ class VoiceRecordingController extends ChangeNotifier {
   StreamSubscription<double>? _amplitudes;
   StreamSubscription<bool>? _paused;
   final List<double> _samples = [];
+
+  /// Whether any of [_samples] was sound rather than silence.
+  bool _heard = false;
   bool _userPaused = false;
   bool _disposed = false;
-  Future<void>? _finishing;
+  Future<bool>? _finishing;
 
   /// A recording is never allowed past this. Thirty minutes of AAC is about
   /// 10 MB, and 20 MB on Windows — both inside the 25 MB per-file limit the
@@ -168,6 +185,22 @@ class VoiceRecordingController extends ChangeNotifier {
 
   /// True once the recording is long enough that Cancel should confirm first.
   static const Duration confirmCancelAfter = Duration(seconds: 10);
+
+  /// The loudest level, in dBFS, that is still no sound at all. Every
+  /// platform reports the loudest sample of each tenth of a second, and one
+  /// step of a 16-bit sample is -90 dBFS, so this is a few steps: what a muted
+  /// or absent microphone delivers. A quiet room through a real one reads
+  /// -70 to -50, and its own hiss alone is above this.
+  static const double silenceCeiling = -80;
+
+  /// How long a microphone may give nothing but silence before the bar says
+  /// so, which is long enough for one that is slow to wake.
+  static const Duration silentAfter = Duration(seconds: 3);
+
+  /// Levels arrived and none of them was sound. Only that is silence: a
+  /// backend whose levels never arrive says nothing either way, and its
+  /// recording is kept.
+  bool get _neverHeard => _samples.isNotEmpty && !_heard;
 
   bool get shouldConfirmCancel =>
       (_session?.elapsed ?? Duration.zero) >= confirmCancelAfter;
@@ -206,9 +239,10 @@ class VoiceRecordingController extends ChangeNotifier {
     final path = '${directory.path}/$name.m4a';
 
     _samples.clear();
+    _heard = false;
     _userPaused = false;
     _path = path;
-    _session = VoiceRecordingSession(noteId: noteId);
+    _session = VoiceRecordingSession(noteId: noteId, starting: true);
     _notify();
 
     try {
@@ -221,6 +255,8 @@ class VoiceRecordingController extends ChangeNotifier {
       return false;
     }
 
+    _session = _session?.copyWith(starting: false);
+    _notify();
     _clock = clock.stopwatch()..start();
     _amplitudes = _recorder.amplitude.listen(_onAmplitude);
     _paused = _recorder.paused.listen(_onBackendPaused);
@@ -378,9 +414,11 @@ class VoiceRecordingController extends ChangeNotifier {
     final session = _session;
     if (session == null || session.paused || session.interrupted) return;
     _samples.add(dbfs);
+    if (dbfs > silenceCeiling) _heard = true;
     _session = session.copyWith(
       level: levelFromAmplitude(dbfs),
       sampleSequence: session.sampleSequence + 1,
+      silent: session.silent && !_heard,
     );
     _notify();
   }
@@ -417,7 +455,10 @@ class VoiceRecordingController extends ChangeNotifier {
     if (session.paused || session.interrupted) return;
 
     final elapsed = _elapsed;
-    _session = session.copyWith(elapsed: elapsed);
+    _session = session.copyWith(
+      elapsed: elapsed,
+      silent: _neverHeard && elapsed >= silentAfter,
+    );
     _notify();
     if (elapsed >= maxDuration) {
       // Stopped for them rather than truncated under them: the recording is
@@ -449,8 +490,9 @@ class VoiceRecordingController extends ChangeNotifier {
   }
 
   /// Ends the recording and returns it, or null when there was nothing worth
-  /// keeping. Does not deliver it anywhere; see [finishRecordingAndFlush].
-  Future<VoiceRecordingResult?> stop() async {
+  /// keeping: a mis-tap, or, with [discardSilent], a microphone that never
+  /// gave a sound. Does not deliver it anywhere; see [finishRecordingAndFlush].
+  Future<VoiceRecordingResult?> stop({bool discardSilent = false}) async {
     final session = _session;
     if (session == null) return null;
 
@@ -473,6 +515,10 @@ class VoiceRecordingController extends ChangeNotifier {
 
     final file = File(written ?? path);
     if (!await file.exists()) return null;
+    if (discardSilent && _neverHeard) {
+      await _delete(file);
+      return null;
+    }
 
     final bytes = await file.readAsBytes();
     if (bytes.isEmpty) {
@@ -538,19 +584,29 @@ class VoiceRecordingController extends ChangeNotifier {
   /// Safe to call from several places at once: the second caller awaits the
   /// first rather than racing it, which matters because a window close and an
   /// app exit can both fire.
-  Future<void> finishRecordingAndFlush() {
-    if (_session == null) return Future.value();
-    return _finishing ??= _finish().whenComplete(() => _finishing = null);
+  ///
+  /// With [discardSilent], a recording from a microphone that never gave a
+  /// sound is thrown away, and this resolves to true, so the person who
+  /// pressed Stop is told that instead of "stopped". Only their Stop asks for
+  /// it, because only then is someone there to tell. Every other ending keeps
+  /// what was recorded, as it always has: a recording is never lost on a
+  /// guess about the room it was made in.
+  Future<bool> finishRecordingAndFlush({bool discardSilent = false}) {
+    if (_session == null) return Future.value(false);
+    return _finishing ??= _finish(
+      discardSilent,
+    ).whenComplete(() => _finishing = null);
   }
 
-  Future<void> _finish() async {
+  Future<bool> _finish(bool discardSilent) async {
     final session = _session;
-    if (session == null) return;
+    if (session == null) return false;
     _session = session.copyWith(finishing: true);
     _notify();
 
     final noteId = session.noteId;
-    final result = await stop();
+    final silent = discardSilent && _neverHeard;
+    final result = await stop(discardSilent: discardSilent);
     if (result != null) {
       try {
         await _onFinished?.call(result, noteId);
@@ -563,6 +619,7 @@ class VoiceRecordingController extends ChangeNotifier {
     } catch (error) {
       debugPrint('KapyNotes: could not flush after recording: $error');
     }
+    return silent;
   }
 
   Future<void> _teardown() async {

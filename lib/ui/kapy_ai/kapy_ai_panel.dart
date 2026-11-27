@@ -1,3 +1,4 @@
+import '../back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -7,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../ai/kapy_ai.dart';
 import '../../core/phone_keyboard.dart';
 import '../../core/platform.dart';
+import '../../core/popup_keyboard.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import 'kapy_ai_chats.dart';
@@ -262,64 +264,82 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     child: Focus(
       focusNode: _panelFocus,
       onKeyEvent: _onKey,
-      child: Material(
-        key: const ValueKey('kapy-ai-panel'),
-        type: MaterialType.transparency,
-        child: ListenableBuilder(
-          listenable: Listenable.merge([_ai, widget.controller]),
-          builder: (context, _) {
-            final noteId = _noteId;
-            if (widget.compact && noteId != null) return _compact(noteId);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _header(),
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _chats
-                          ? KapyAiChats(
-                              kapyAi: _ai,
-                              now: widget.now(),
-                              onOpened: () => setState(() => _chats = false),
-                            )
-                          : _body(),
-                      if (_picking) ...[
-                        // Closes the picker and leaves the keyboard up.
-                        KeepsKeyboard(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => setState(() => _picking = false),
-                          ),
+      child: BackForwardArea(
+        onStep: _stepChats,
+        child: Material(
+          key: const ValueKey('kapy-ai-panel'),
+          type: MaterialType.transparency,
+          child: ListenableBuilder(
+            listenable: Listenable.merge([_ai, widget.controller]),
+            builder: (context, _) {
+              final noteId = _noteId;
+              if (widget.compact && noteId != null) return _compact(noteId);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _header(),
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        BackForwardSlide(
+                          child: _chats
+                              ? KapyAiChats(
+                                  kapyAi: _ai,
+                                  now: widget.now(),
+                                  onOpened: () =>
+                                      setState(() => _chats = false),
+                                )
+                              : _body(),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: KapyAiPicker(
-                              key: _menu,
-                              kapyAi: _ai,
-                              onPick: _pick,
-                              onManageAccounts: () {
-                                setState(() => _picking = false);
-                                widget.onManageAccounts();
-                              },
+                        if (_picking) ...[
+                          // Closes the picker and leaves the keyboard up.
+                          KeepsKeyboard(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => setState(() => _picking = false),
                             ),
                           ),
-                        ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: KapyAiPicker(
+                                key: _menu,
+                                kapyAi: _ai,
+                                onPick: _pick,
+                                onManageAccounts: () {
+                                  setState(() => _picking = false);
+                                  widget.onManageAccounts();
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                if (!_chats) _composer(),
-              ],
-            );
-          },
+                  if (!_chats) _composer(),
+                ],
+              );
+            },
+          ),
         ),
       ),
     ),
   );
+
+  /// A swipe or the mouse's Back and Forward over the panel: back from the
+  /// chat to the chats, and forward to the chat again.
+  bool _stepChats(BackForwardStep step) {
+    final chats = step == BackForwardStep.back;
+    if (chats == _chats) return false;
+    setState(() {
+      _chats = chats;
+      _picking = false;
+    });
+    return true;
+  }
 
   /// The sheet resting over the note (M10).
   Widget _compact(String noteId) {
@@ -570,11 +590,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
       return KapyAiEmpty(
         menu: _picking ? _menu : null,
         suggestions: noteId == null
-            ? const [
-                'What did I plan for this week?',
-                'Find my notes about Lisbon',
-                'Summarise what I wrote yesterday',
-              ]
+            ? kapyAiExamples
             : [
                 'Summarise this note',
                 'What’s still open here?',
@@ -957,9 +973,11 @@ const double _kapyAiSheetFull = 0.8;
 /// height. Pulled up it is the full panel, and pulled down past its rest, a
 /// tap on the scrim, or Close puts it away. [panel] is built for the sheet's
 /// layout of the moment, with what puts the sheet away and what pulls it up.
+/// [typing] lets its field keep the keyboard it asks for as it opens.
 Future<void> showKapyAiSheet(
   BuildContext context, {
   required bool rest,
+  bool typing = false,
   required Widget Function(
     VoidCallback close,
     VoidCallback expand,
@@ -973,6 +991,7 @@ Future<void> showKapyAiSheet(
     context: context,
     isScrollControlled: true,
     enableDrag: false,
+    routeSettings: typing ? const TypingPopupSettings() : null,
     backgroundColor: Colors.transparent,
     elevation: 0,
     barrierColor: palette.brightness == Brightness.dark

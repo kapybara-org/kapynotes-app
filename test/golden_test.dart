@@ -937,7 +937,7 @@ void main() {
       notes.archive(note.id);
     }
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.tap(find.byKey(const ValueKey('notes-view')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
     await tester.pumpAndSettle();
@@ -1593,7 +1593,7 @@ void main() {
       goldenTags.setTags(note.id, [for (final tag in tags) tag.id]);
     }
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.tap(find.byKey(const ValueKey('notes-view')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
     await tester.pumpAndSettle();
@@ -1614,10 +1614,10 @@ void main() {
       brightness: Brightness.dark,
     );
     for (final key in [
-      'sidebar-notes-filter',
+      'notes-view',
       'notes-filter-when',
       'notes-filter-when-thisWeek',
-      'sidebar-notes-filter',
+      'notes-view',
       'notes-filter-when',
     ]) {
       await tester.tap(find.byKey(ValueKey(key)));
