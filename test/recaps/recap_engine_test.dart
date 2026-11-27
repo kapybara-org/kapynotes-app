@@ -212,6 +212,15 @@ void main() {
     },
   );
 
+  test('never gathers a note waiting to be deleted', () async {
+    world.note('trip', '2026-11-19T08:00:00Z', body: 'Trip to Lisbon\nFlights');
+    world.note('secret', '2026-11-19T11:00:00Z', body: 'Secret plan\nQuit');
+    await notesOn(2025, const []);
+    world.store.holdDelete(['secret']);
+    final items = world.material(dayOf(DateTime(2026, 11, 19))).items;
+    expect(items.map((item) => item.note.id), ['trip']);
+  });
+
   group('a note hidden while the recap is made', () {
     final week = periodOf(DateTime(2026, 11, 19), RecapKind.week);
     setUp(() async {
@@ -233,13 +242,15 @@ void main() {
         ai.asked.last.notes.map((n) => '${n.title}\n${n.text}').join('\n'),
         isNot(contains(RegExp('secret|june', caseSensitive: false))),
       );
-      expect(made.lines.highlights.map((it) => it.noteId), ['mon', 'fri']);
+      expect(made.lines.highlights.map((it) => it.noteId), ['fri']);
       expect(made.lines.next, isNull);
+      expect(ai.paid, 2);
+      expect(ai.asked.last.notes.map((n) => n.title), ['Friday review']);
       expect(made.lines.text, isNot(contains('Secret')));
       expect(recapAnswer(book.chats.single), isNot(contains('Secret')));
     }
 
-    test('asks for the part again where the digest names it', () async {
+    test('leaves the part out where its digest names it', () async {
       final ai = ScriptedEngine();
       ai.reply = (request) {
         if (ai.asked.length == 1) {
@@ -247,37 +258,38 @@ void main() {
           return 'Monday plans said to ship it. Secret plan: quit in '
               'June.\nShip on Friday.';
         }
-        if (ai.asked.length == 2) {
-          return 'Monday plans said to ship it.\nShip on Friday.';
-        }
         return recap;
       };
-      final made = await make(week, ai) as RecapMade;
-      expect(ai.asked, hasLength(3));
-      expect(ai.asked[1].notes.map((n) => n.title), ['Monday plans']);
-      expect(
-        ai.asked.last.notes.first.text,
-        'Monday plans said to ship it.\n'
-        'Ship on Friday.',
-      );
-      expectLeftOut(ai, made);
+      expectLeftOut(ai, await make(week, ai) as RecapMade);
     });
 
-    test('asks for the part again where the digest never names it', () async {
+    test('leaves the part out where its digest never names it', () async {
       final ai = ScriptedEngine();
       ai.reply = (request) {
         if (ai.asked.length == 1) {
           world.store.hide('secret');
           return 'Monday plans said to ship it. Someone may quit in June.';
         }
-        if (ai.asked.length == 2) return 'Monday plans said to ship it.';
         return recap;
       };
-      final made = await make(week, ai) as RecapMade;
-      expect(ai.asked, hasLength(3));
-      expect(ai.asked[1].notes.map((n) => n.title), ['Monday plans']);
-      expect(ai.asked.last.notes.first.text, 'Monday plans said to ship it.');
-      expectLeftOut(ai, made);
+      expectLeftOut(ai, await make(week, ai) as RecapMade);
+    });
+
+    test('asks nothing more when no part is left', () async {
+      world = RecapWorld();
+      world.note('only', '2026-10-02T10:00:00Z', body: 'Only\nnote');
+      await notesOn(2025, const []);
+      final october = periodOf(DateTime(2026, 10, 1), RecapKind.month);
+      expect(plan(october).calls, 2);
+      final ai = ScriptedEngine();
+      ai.reply = (request) {
+        world.store.hide('only');
+        return 'Only note.';
+      };
+      final made = await make(october, ai) as RecapMade;
+      expect(ai.paid, 1);
+      expect(made.lines.text, isEmpty);
+      expect(recapAnswer(book.chats.single), 'Recap · October');
     });
 
     test(
@@ -329,10 +341,10 @@ void main() {
           return 'Monday plans said to ship it. Secret plan: quit in June. '
               'It means telling Bob first.';
         }
-        if (ai.asked.length == 2) return 'Monday plans said to ship it.';
         return 'TITLE: Shipped';
       };
       await make(week, ai);
+      expect(ai.paid, 2);
       expect(
         last(ai),
         isNot(contains(RegExp('june|bob', caseSensitive: false))),
@@ -350,10 +362,10 @@ void main() {
             gone('old');
             return 'Monday plans said to ship it. Booked the biopsy.';
           }
-          if (ai.asked.length == 2) return 'Monday plans said to ship it.';
           return 'TITLE: Shipped';
         };
         await make(week, ai);
+        expect(ai.paid, 2);
         for (final request in ai.asked.skip(1)) {
           expect(
             request.notes.map((n) => '${n.title}\n${n.text}').join('\n'),

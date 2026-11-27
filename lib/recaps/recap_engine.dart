@@ -159,25 +159,23 @@ class RecapEngine {
       return RecapStopped(null, pieces.length + 1, plan.parts);
     }
 
+    // A part that read a note gone since (hidden, archived or deleted) is
+    // left out rather than asked again, so nothing taken from that note goes
+    // out and the recap never costs more than its plan said.
     final readable = _readable();
     final gone = <String>{};
     final digests = <ReadNote>[];
     for (final (index, slice) in plan.slices.indexed) {
-      var piece = pieces[index];
+      final piece = pieces[index];
       final hidden = {
         for (final item in material.within(slice.first, slice.last))
           if (!readable.contains(item.note.id)) item.note.id,
       };
       if (hidden.isNotEmpty) {
-        try {
-          piece = await ask(slice);
-        } on AnswerFailure catch (failure) {
-          return RecapStopped(failure, index + 1, plan.parts);
+        for (final MapEntry(key: title, value: id) in piece.sent.entries) {
+          if (hidden.contains(id)) gone.add(title);
         }
-      }
-      for (final MapEntry(key: title, value: id)
-          in pieces[index].sent.entries) {
-        if (hidden.contains(id)) gone.add(title);
+        continue;
       }
       sent.notes.addAll(piece.sent);
       if (period.kind == RecapKind.year) sent.months.add(slice.first.month);
@@ -193,11 +191,13 @@ class RecapEngine {
       ...recapNotesFor(items, _notes, today: _now()),
     ], budget);
     sent.heard(notes, items);
-    final String answer;
-    try {
-      answer = await _ask(engine, model, recapQuestion(period), notes);
-    } on AnswerFailure catch (failure) {
-      return RecapStopped(failure, plan.parts, plan.parts);
+    var answer = '';
+    if (notes.isNotEmpty) {
+      try {
+        answer = await _ask(engine, model, recapQuestion(period), notes);
+      } on AnswerFailure catch (failure) {
+        return RecapStopped(failure, plan.parts, plan.parts);
+      }
     }
     final stillReadable = _readable();
     for (final MapEntry(key: title, value: id) in sent.notes.entries) {

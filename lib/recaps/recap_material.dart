@@ -54,15 +54,19 @@ class RecapMaterial {
     required DateTime Function(DateTime) displayTime,
     DateTime? Function(Note note)? ownDay,
   }) {
+    final notes = [
+      for (final note in store.allNotes)
+        if (!store.isDeleting(note.id)) note,
+    ];
     final held = recapNotes(
       period,
-      notes: store.allNotes,
+      notes: notes,
       displayTime: displayTime,
       ownDay: ownDay,
     );
     final days = {for (final entry in held.entries) entry.key.id: entry.value};
     final visible = {
-      for (final note in store.allNotes)
+      for (final note in notes)
         if (!note.isHidden && !note.isArchived) note.id,
     };
     final items = <RecapItem>[];
