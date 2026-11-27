@@ -100,7 +100,7 @@ class TableGeometry {
         natural[c] = math.max(natural[c], painter.width);
         longestWord[c] = math.max(longestWord[c], painter.minIntrinsicWidth);
         painters.add(painter);
-        sources.add(_sourcesOf(analysis, cell, painter.plainText));
+        sources.add(sourcesOf(analysis, cell, painter.plainText));
         widths.add((
           natural: painter.width,
           longestWord: painter.minIntrinsicWidth,
@@ -376,7 +376,7 @@ class TableGeometry {
   /// either end and around a break left out, so each painted character is
   /// matched to the next source character it can be. An ellipsis, which the
   /// source never holds, and what follows it map past the cell's end.
-  static List<int> _sourcesOf(
+  static List<int> sourcesOf(
     MarkdownAnalysis analysis,
     MarkdownTableCell cell,
     String plain,

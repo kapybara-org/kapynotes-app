@@ -100,7 +100,14 @@ class KapyCloudClient implements AnswerEngine {
         );
       case 429:
         final usage = _usageFrom(body['usage']);
-        if (usage == null) throw const AnswerFailed(_busy);
+        if (usage == null) {
+          final wait =
+              int.tryParse(response.headers['retry-after'] ?? '') ??
+              body['retryAfter'];
+          throw wait is int && wait > 0
+              ? AnswerTooFast(_busy, Duration(seconds: wait))
+              : const AnswerFailed(_busy);
+        }
         this.usage = usage;
         throw AnswerLimitReached(usage);
       case 502:

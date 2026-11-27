@@ -34,6 +34,7 @@ class PhoneNoteHeader extends StatelessWidget {
     this.onMembers,
     this.assistant,
     this.typing = false,
+    this.ends = true,
   });
 
   final VoidCallback onHome;
@@ -74,6 +75,12 @@ class PhoneNoteHeader extends StatelessWidget {
   /// buttons steps back, and the week and the tasks line stay as they are.
   final bool typing;
 
+  /// Whether the header ends itself: the room under an open week with no
+  /// tasks line, its [tabs] and its hairline. Where it does not, the page
+  /// under it draws that end as a [PhoneNoteHeaderEnd], so it turns with
+  /// the note while the header stays put.
+  final bool ends;
+
   /// The row of buttons, and the line that opens the tasks.
   static const double rowHeight = 52;
   static const double tasksHeight = 44;
@@ -101,7 +108,9 @@ class PhoneNoteHeader extends StatelessWidget {
       child: DecoratedBox(
         key: const ValueKey('phone-note-header'),
         decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: palette.railBorder)),
+          border: ends
+              ? Border(bottom: BorderSide(color: palette.railBorder))
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -165,7 +174,7 @@ class PhoneNoteHeader extends StatelessWidget {
                   label: tasksLine(tasks, day, today),
                   onPressed: onTasks,
                 )
-              else if (tabs == null)
+              else if (tabs == null && ends)
                 const SizedBox(height: 8),
             ],
             ?tabs,
@@ -196,6 +205,32 @@ class PhoneNoteHeader extends StatelessWidget {
       }),
     );
   }
+}
+
+/// The end of a [PhoneNoteHeader] that does not end itself, drawn by the
+/// page under it so it turns with the note: the room under an open week
+/// with no tasks line, or the day's notes as tabs, then the hairline.
+class PhoneNoteHeaderEnd extends StatelessWidget {
+  const PhoneNoteHeaderEnd({super.key, required this.room, this.tabs});
+
+  /// Whether an open week with no tasks line is over it, which keeps room
+  /// under the week where there are no [tabs].
+  final bool room;
+  final Widget? tabs;
+
+  @override
+  Widget build(BuildContext context) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: 1.3,
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: context.palette.railBorder)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [if (room && tabs == null) const SizedBox(height: 8), ?tabs],
+      ),
+    ),
+  );
 }
 
 /// ⌂ Home: back to the notes, whichever list the note was opened from.

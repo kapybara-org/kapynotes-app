@@ -954,6 +954,34 @@ void main() {
       );
     });
 
+    test('a recap stays out of the chat list', () async {
+      final book = KapyChatBook(store);
+      await book.load();
+      final at = testNow.subtract(const Duration(days: 1));
+      book.put(
+        KapyChat(
+          id: 'recap',
+          title: 'Recap · Mon 16',
+          createdAt: at,
+          updatedAt: at,
+          model: KapyModel.cloud,
+          recap: const {'kind': 'day'},
+        ),
+      );
+      final ai = await build();
+      expect(ai.chats, isEmpty);
+      expect(ai.hasRecaps, isTrue);
+      await ai.ask('Lisbon?');
+      expect(ai.chats.map((c) => c.title), ['Lisbon?']);
+      ai.openChat('recap');
+      expect(ai.current!.id, isNot('recap'));
+      expect((await build()).chats.map((c) => c.title), ['Lisbon?']);
+      expect(
+        (store.data['kapyAi.chats.v1']! as Map)['chats'] as List,
+        hasLength(2),
+      );
+    });
+
     test('a long first question is clipped for the title', () async {
       final ai = await build();
       await ai.ask('x' * 100);

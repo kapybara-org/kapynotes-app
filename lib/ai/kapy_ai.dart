@@ -276,6 +276,7 @@ class KapyChat {
     DateTime? titleAt,
     DateTime? modelAt,
     this.recording,
+    this.recap,
   }) : titleAt = titleAt ?? createdAt,
        modelAt = modelAt ?? createdAt;
 
@@ -297,6 +298,11 @@ class KapyChat {
   /// The recording this chat asks about, which it reads instead of the
   /// notes. Null for a chat about the notes.
   final KapyRecordingRef? recording;
+
+  /// A recap's record (lib/recaps/recap_record.dart), as the chat record
+  /// carries it. A chat with one is a recap, opened as a story and kept out
+  /// of the chat list.
+  final Map<String, Object?>? recap;
 }
 
 /// What holds up the last question, drawn inline under it (kapy-ai-7/8).
@@ -443,6 +449,10 @@ abstract class KapyAi extends ChangeNotifier {
   /// Whether the chats are syncing to the account's other devices right now:
   /// Pro, and signed in with sync on. False keeps them on this device.
   bool get chatsSync => false;
+
+  /// Whether the book holds a recap, which [clearHistory] deletes with the
+  /// chats although it shows in the timeline rather than the chat list.
+  bool get hasRecaps => false;
 
   /// Newest first.
   List<KapyChat> get chats;
