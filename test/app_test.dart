@@ -989,6 +989,75 @@ void main() {
         },
         variant: desktop,
       );
+
+      testWidgets(
+        'over the list, Forward will not go back down into a folder that is '
+        'no longer a child of the one in front',
+        (tester) async {
+          final folders = await pumpWithFolders(tester);
+          final trips = folders.create('Trips')!;
+          final lisbon = folders.create('Lisbon', parentId: trips.id)!;
+          prefs.setFolderOpen(trips.id, true);
+          prefs.foldersShown = true;
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Lisbon'));
+          await tester.pumpAndSettle();
+          final list = find.byType(Sidebar);
+
+          await stepOver(tester, list, back, StepBy.pan);
+          expect(folderInFront(tester), trips.id);
+          folders.move(lisbon.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(folderInFront(tester), trips.id, reason: 'Lisbon moved out');
+          expect(prefs.foldersShown, isTrue);
+          folders.move(lisbon.id, parentId: trips.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(
+            folderInFront(tester),
+            trips.id,
+            reason: 'the way is forgotten',
+          );
+        },
+        variant: desktop,
+      );
+
+      testWidgets(
+        'over the list, Forward forgets every way down once one of them is '
+        'gone',
+        (tester) async {
+          final folders = await pumpWithFolders(tester);
+          final trips = folders.create('Trips')!;
+          final lisbon = folders.create('Lisbon', parentId: trips.id)!;
+          final oldTown = folders.create('Old town', parentId: lisbon.id)!;
+          prefs.setFolderOpen(trips.id, true);
+          prefs.setFolderOpen(lisbon.id, true);
+          prefs.foldersShown = true;
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Old town'));
+          await tester.pumpAndSettle();
+          expect(folderInFront(tester), oldTown.id);
+          final list = find.byType(Sidebar);
+
+          await stepOver(tester, list, back, StepBy.pan);
+          await stepOver(tester, list, back, StepBy.pan);
+          expect(folderInFront(tester), trips.id);
+          folders.move(lisbon.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(folderInFront(tester), trips.id, reason: 'Lisbon moved out');
+          folders.move(oldTown.id, parentId: trips.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(
+            folderInFront(tester),
+            trips.id,
+            reason: 'Old town is a child again, but the way was forgotten',
+          );
+        },
+        variant: desktop,
+      );
     },
   );
 
@@ -4363,6 +4432,66 @@ void main() {
         expect(recorder.startedAt, isNull, reason: 'nothing may record');
         expect(recording.isRecording, isFalse);
         expect(notes.byId(note.id)!.attachments, isEmpty);
+        await tester.pump(const Duration(seconds: 5));
+      });
+    }
+  });
+
+  group('with a silent microphone (KAP-424)', () {
+    for (final platform in [
+      TargetPlatform.linux,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+    ]) {
+      testWidgets('on ${platform.name} the bar says so, and the shortcut that '
+          'stops it saves nothing', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final temp = Directory.systemTemp.createTempSync('kapy-silent-mic');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        final recorder = FakeVoiceRecorder(writesFile: false);
+        final recording = VoiceRecordingController(
+          recorder: recorder,
+          tempDirectory: temp,
+        );
+        addTearDown(recording.dispose);
+        final note = notes.create(body: 'Standup');
+        await pumpApp(
+          tester,
+          size: const Size(1400, 800),
+          recording: recording,
+        );
+        final shortcut = shortcuts.bindingFor(ShortcutAction.recordVoiceNote)!;
+
+        await sendShortcut(tester, shortcut);
+        await tester.pump();
+        expect(recording.isRecording, isTrue);
+        // A muted microphone: a level every tenth of a second, all silence.
+        for (var tenth = 0; tenth < 35; tenth++) {
+          recorder.amplitudes.add(-160);
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(
+          tester.widget<Text>(find.byKey(const ValueKey('recording-status'))).data,
+          'Microphone is silent',
+        );
+        expect(find.byKey(const ValueKey('recording-elapsed')), findsOneWidget);
+        expect(find.text('0:03'), findsOneWidget);
+
+        await sendShortcut(tester, shortcut);
+        final told = find.text('Nothing saved: the microphone was silent');
+        for (var wait = 0; wait < 100 && told.evaluate().isEmpty; wait++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump();
+        }
+
+        expect(recording.isRecording, isFalse);
+        expect(told, findsOneWidget);
+        expect(find.text('Recording stopped'), findsNothing);
+        expect(notes.byId(note.id)!.attachments, isEmpty);
+        expect(temp.listSync(), isEmpty, reason: 'no clip and no marker left');
         await tester.pump(const Duration(seconds: 5));
       });
     }

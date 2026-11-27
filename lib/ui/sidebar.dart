@@ -1492,7 +1492,7 @@ extension on Sidebar {
               key: const ValueKey('sidebar-pinned-heading'),
               children: [
                 Expanded(
-                  child: _PhoneDayHeading(
+                  child: PhoneDayHeading(
                     lead: 'Pinned',
                     date: '${groups.pinned.length}',
                   ),
@@ -1544,7 +1544,7 @@ extension on Sidebar {
           displayTime: displayTime,
           ownDay: ownDay,
         )) {
-          heading(_PhoneDayHeading(lead: day.lead, date: day.date));
+          heading(PhoneDayHeading(lead: day.lead, date: day.date));
           section(day.notes, clockOnly: true);
         }
       }
@@ -4213,8 +4213,8 @@ class _PhoneShareHeading extends StatelessWidget {
 /// the serif, then the date 8 after it in small quiet sans. A day with no
 /// name is headed by its date alone, in the serif, muted. Folders heads its
 /// notes in no folder with it too (M02): the words alone, unmuted.
-class _PhoneDayHeading extends StatelessWidget {
-  const _PhoneDayHeading({required this.lead, this.date});
+class PhoneDayHeading extends StatelessWidget {
+  const PhoneDayHeading({super.key, required this.lead, this.date});
 
   final String? lead;
   final String? date;
