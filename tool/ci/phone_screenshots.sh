@@ -4,7 +4,8 @@
 #
 #   bash tool/ci/phone_screenshots.sh <device id>
 #
-# With --check in place of a device id, it only checks PHONE_TESTS's names.
+# With --check in place of a device id, it only checks PHONE_TESTS's names and
+# that integration_test/phones.dart has an entry for every test below.
 #
 # A shot a test takes with device: true is also read off the device's own
 # screen, keyboard included, as build/screenshots/<name>-device.png.
@@ -23,6 +24,13 @@
 # `phone_recording_away`, for a run that checks one test. A name that isn't
 # one of the phone tests below fails the run, so a typo, or a desktop test
 # this script never drives, can't run nothing and pass.
+# A file whose app never connected, so that no test ran (flutter drive ends
+# with "Error waiting for a debug connection"), runs once more and is listed in
+# the job summary; a test that ran and failed is never run again.
+# PHONE_APP, when set, names an app already built from
+# integration_test/phones.dart, as Phones' iOS job builds it: each file then
+# runs on that build instead of building one of its own, after the script
+# writes its name to PHONE_TEST_FILE, the file that build reads.
 #
 # On an Android emulator, a file whose run the emulator spoiled before its
 # tests finished (the app's VM Service refused or never answered, or the
@@ -51,7 +59,7 @@ wanted() {
   [[ -z ${PHONE_TESTS:-} || " $PHONE_TESTS " == *" $1 "* ]]
 }
 
-tests=(phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet kapy_ai_notice phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_voice_window phone_time_line phone_video)
+tests=(phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet kapy_ai_notice phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_voice_window phone_time_line phone_video phone_camera)
 phone_tests=" ${tests[*]} phone_remove_noise phone_recording_away phone_bar_android "
 picked=
 set -f
@@ -68,7 +76,16 @@ if [[ -n ${PHONE_TESTS:-} && -z $picked ]]; then
   exit 1
 fi
 PHONE_TESTS=$picked
-[[ $device == --check ]] && exit 0
+if [[ $device == --check ]]; then
+  map=$(dirname "$0")/../../integration_test/phones.dart
+  for name in $phone_tests; do
+    if ! grep -q "'$name':" "$map"; then
+      echo "::error::$map has no entry for $name, which this script drives"
+      exit 1
+    fi
+  done
+  exit 0
+fi
 
 # Stops file $1's run, process group $2, with a screenshot of where it got to.
 # The shot is put off to one side, in a group of its own: a device stuck
@@ -111,7 +128,11 @@ spoiled() {
 
 drive() {
   wanted "$1" || return 0
-  local tries=0 code
+  local tries=0 code target=integration_test/$1_test.dart built=()
+  if [[ -n ${PHONE_APP:-} ]]; then
+    target=integration_test/phones.dart
+    built=(--use-application-binary "$PHONE_APP")
+  fi
   while :; do
     if $android && [[ $(adb -s "$device" get-state 2>/dev/null) != device ]]; then
       echo "::warning::the emulator was offline before $1_test.dart; restarting adb"
@@ -119,23 +140,22 @@ drive() {
     fi
     local args=(drive --no-pub -d "$device"
       --driver test_driver/integration_test.dart
-      --target "integration_test/$1_test.dart"
+      --target "$target" ${built[@]+"${built[@]}"}
       --dart-define=KAPYNOTES_SYNC=false
       --dart-define=KAPYNOTES_DEVICE_SHOTS="$device"
       --timeout=600 --screenshot=build/screenshots)
     : > "$log"
+    if [[ -n ${PHONE_APP:-} ]]; then echo "$1" > "$PHONE_TEST_FILE"; fi
+    local hung=false
     set -m
-    if $android; then
-      flutter "${args[@]}" > >(tee "$log") 2>&1 &
-    else
-      flutter "${args[@]}" &
-    fi
+    flutter "${args[@]}" > >(tee "$log") 2>&1 &
     local pid=$! waited=0
     set +m
     while kill -0 "$pid" 2>/dev/null; do
       if (( waited >= limit )); then
         echo "::error::$1_test.dart was still running after $(( limit / 60 )) minutes and was stopped"
         stop "$1" "$pid"
+        hung=true
         break
       fi
       if $android && { grep -q 'Exception attempting to connect to the VM Service' "$log" ||
@@ -149,9 +169,17 @@ drive() {
     done
     wait "$pid"
     code=$?
+    if $hung && (( code == 0 )); then code=1; fi
     limit=$(( ${PHONE_FILE_MINUTES:-20} * 60 ))
     if (( code == 0 )); then return 0; fi
     sleep 1
+    if (( tries == 0 )) && { ! $android || (( SECONDS < retry_until )); } &&
+      grep -q 'Error waiting for a debug connection' "$log" && ! grep -qE '[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
+      tries=1
+      echo "::warning::$1_test.dart never connected to the app, so no test ran; running it again"
+      echo "- $1_test.dart: the app never connected and no test ran, so it ran again" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+      continue
+    fi
     if $android && spoiled && grep -q 'All tests passed!' "$log"; then
       echo "::warning::$1_test.dart passed, but the emulator dropped before its results came back, so its Flutter screenshots are missing; restarting adb"
       reconnect "$1"

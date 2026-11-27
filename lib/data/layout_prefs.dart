@@ -133,6 +133,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _loginItemDefaultKey = 'loginItemDefaulted.v1';
   static const String _menuBarTasksKey = 'menuBarOpensTasks.v1';
   static const String _lastSlashCommandKey = 'lastSlashCommand.v1';
+  static const String _cameraVideoKey = 'cameraVideo.v1';
 
   /// The version whose "What's new" notice was closed. A later version shows
   /// the notice again.
@@ -207,6 +208,7 @@ class LayoutPrefs extends ChangeNotifier {
   bool _loginItemDefaultApplied = false;
   bool _menuBarOpensTasks = false;
   String? _lastSlashCommand;
+  bool _cameraVideo = false;
   String? _dismissedWhatsNewVersion;
   bool _alwaysOnTop = false;
   String? _lastOpenedNoteId;
@@ -505,6 +507,7 @@ class LayoutPrefs extends ChangeNotifier {
     _loginItemDefaultApplied = _store.read<bool>(_loginItemDefaultKey) ?? false;
     _menuBarOpensTasks = _store.read<bool>(_menuBarTasksKey) ?? false;
     _lastSlashCommand = _store.read<String>(_lastSlashCommandKey);
+    _cameraVideo = _store.read<bool>(_cameraVideoKey) ?? false;
     final dismissed = _store.read<String>(_whatsNewDismissedKey)?.trim();
     _dismissedWhatsNewVersion = dismissed == null || dismissed.isEmpty
         ? null
@@ -929,6 +932,16 @@ class LayoutPrefs extends ChangeNotifier {
     if (value == _lastSlashCommand) return;
     _lastSlashCommand = value;
     _store.put(_lastSlashCommandKey, value ?? '');
+    notifyListeners();
+  }
+
+  /// Whether the camera was last left in Video, which it opens in next time.
+  bool get cameraVideo => _cameraVideo;
+
+  set cameraVideo(bool value) {
+    if (value == _cameraVideo) return;
+    _cameraVideo = value;
+    _store.put(_cameraVideoKey, value);
     notifyListeners();
   }
 

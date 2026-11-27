@@ -1,21 +1,28 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
+import 'package:kapy_notes/ai/recording_translation.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
+import 'package:kapy_notes/speech/languages.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
 import 'package:kapy_notes/ui/voice_note_ask.dart';
 import 'package:kapy_notes/ui/voice_note_dialog.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../ai/ai_fakes.dart' show MemoryStore;
 import '../fake_kapy_ai.dart';
+import '../kapy_icon_finder.dart';
 import '../test_fonts.dart';
 
 const _hash = 'pricing-call';
 const _link = KapyRecordingRef(noteId: 'note-1', hash: _hash);
 
-NoteVoiceRef _recording({bool transcribed = true}) => NoteVoiceRef(
+NoteVoiceRef _recording({
+  bool transcribed = true,
+  String lang = 'en',
+}) => NoteVoiceRef(
   offset: 0,
   hash: _hash,
   key: Uint8List(32),
@@ -24,7 +31,7 @@ NoteVoiceRef _recording({bool transcribed = true}) => NoteVoiceRef(
   peaks: Uint8List.fromList(List.filled(100, 128)),
   transcript: transcribed
       ? VoiceTranscript(
-          lang: 'en',
+          lang: lang,
           engine: 'test',
           at: 1,
           speakers: const {0: 'Me', 1: 'Arjun'},
@@ -100,6 +107,7 @@ Widget _window(
   void Function(String text)? onInsert,
   Future<String> Function(String instruction)? onRewrite,
   void Function(NoteVoiceRef next)? onChanged,
+  RecentLanguages? recents,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   // As in the app, where the window is a route of its own, nothing around
@@ -121,6 +129,7 @@ Widget _window(
           onManageAccounts: () => ai.calls.add('manageAccounts'),
           onSignIn: () => ai.calls.add('signIn'),
           onUpgrade: () => ai.calls.add('upgrade'),
+          recents: recents,
         ),
       ),
     ),
@@ -818,6 +827,446 @@ void main() {
       );
       expect(_hint(tester), 'Ask needs a transcript');
       expect(find.text('What did we decide?'), findsNothing);
+    });
+  });
+
+  group('Translate to…', () {
+    final starters = find.byKey(const ValueKey('voice-ask-starters'));
+    final chip = find.byKey(const ValueKey('voice-ask-translate'));
+    final more = find.byKey(const ValueKey('voice-ask-translate-more'));
+    final picker = find.byKey(const ValueKey('voice-translate-picker'));
+    Future<String> write(String instruction) async => 'A post.';
+
+    double left(WidgetTester tester, Finder finder) =>
+        tester.getTopLeft(finder).dx;
+
+    testWidgets(
+      'in the person\'s language it waits before Your own words…, and opens the picker',
+      (tester) async {
+        final ai = FakeKapyAi(pro: true);
+        await _show(tester, _window(ai, onRewrite: write));
+        await tester.dragUntilVisible(
+          find.text('Your own words…'),
+          starters,
+          const Offset(-120, 0),
+        );
+        expect(find.text('Translate to…'), findsOneWidget);
+        expect(more, findsNothing);
+        expect(
+          left(tester, chip),
+          greaterThan(left(tester, find.text('What did Arjun ask for?'))),
+        );
+        expect(
+          left(tester, find.text('Your own words…')),
+          greaterThan(left(tester, chip)),
+        );
+        expect(
+          find.descendant(
+            of: chip,
+            matching: findKapyIcon(KapyIcons.translateRounded),
+          ),
+          findsOneWidget,
+        );
+
+        await tester.ensureVisible(chip);
+        await tester.pumpAndSettle();
+        await tester.tap(chip);
+        await tester.pumpAndSettle();
+        expect(picker, findsOneWidget);
+        expect(find.byType(Dialog), findsNWidgets(2), reason: 'a dialog');
+        expect(ai.calls, isNot(contains(startsWith('askRecording'))));
+      },
+    );
+
+    testWidgets(
+      'in another language it offers theirs after the first question, and a tap translates the page in view',
+      (tester) async {
+        final ai = FakeKapyAi(
+          pro: true,
+          chatList: [_chat('c1', 'What did we decide?', answer: 'Annual.')],
+        );
+        await _show(tester, _window(ai, ref: _recording(lang: 'hi')));
+        expect(find.text('Translate to English'), findsOneWidget);
+        expect(find.text('Translate to…'), findsNothing);
+        expect(
+          left(tester, chip),
+          greaterThan(left(tester, find.text('What did we decide?'))),
+          reason: 'after the first question',
+        );
+        expect(
+          left(tester, find.text('What are the next steps?')),
+          greaterThan(left(tester, more)),
+          reason: 'before the second question',
+        );
+
+        await tester.tap(chip);
+        ai.set(answering: true);
+        await tester.pump();
+        expect(ai.calls, [
+          'newChat',
+          'askRecording:Translate the summary to English:$_hash',
+        ]);
+        expect(
+          find.descendant(
+            of: _drawer,
+            matching: find.text('Summary in English'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('voice-ask-translating')),
+          findsOneWidget,
+        );
+        expect(find.text('Translating…'), findsOneWidget);
+        ai.set(answering: false);
+        await tester.tap(find.byKey(const ValueKey('voice-ask-fold')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byKey(const ValueKey('voice-transcript')));
+        await tester.pumpAndSettle();
+        await tester.tap(chip);
+        await tester.pump();
+        expect(
+          ai.calls.last,
+          'askRecording:Translate the transcript to English:$_hash',
+        );
+      },
+    );
+
+    testWidgets(
+      'on a phone the chip starts in view after a question, and its chevron has a 44 pt target',
+      (tester) async {
+        tester.view
+          ..physicalSize = const Size(360, 780)
+          ..devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        final ai = FakeKapyAi(
+          pro: true,
+          chatList: [_chat('c1', 'What did we decide?', answer: 'Annual.')],
+        );
+        await tester.pumpWidget(
+          _window(ai, ref: _recording(lang: 'hi'), asSheet: true),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Earlier'), findsNothing, reason: 'clock only');
+        expect(tester.getSize(_earlier), const Size(44, 44));
+        expect(
+          tester.getRect(find.text('What did we decide?')).right,
+          lessThanOrEqualTo(360),
+          reason: 'the first question is in view',
+        );
+        expect(
+          left(tester, chip),
+          lessThan(360),
+          reason: 'the chip starts in view at rest',
+        );
+
+        await tester.dragUntilVisible(more, starters, const Offset(-120, 0));
+        await tester.pumpAndSettle();
+        expect(tester.getRect(more).right, lessThanOrEqualTo(360));
+        expect(tester.getSize(more).width, greaterThanOrEqualTo(44));
+        expect(
+          tester.getSize(find.byTooltip('Other languages')).height,
+          greaterThanOrEqualTo(44),
+        );
+
+        await tester.tap(more);
+        await tester.pumpAndSettle();
+        expect(picker, findsOneWidget);
+        expect(find.byType(BottomSheet), findsOneWidget);
+        final row = tester.getSize(
+          find.byKey(const ValueKey('voice-translate-yours-en')),
+        );
+        expect(row.height, greaterThanOrEqualTo(44));
+        expect(
+          tester
+              .getTopLeft(find.byKey(const ValueKey('voice-translate-search')))
+              .dy,
+          lessThan(tester.getTopLeft(find.text('Your languages')).dy),
+          reason: 'search first',
+        );
+        expect(ai.calls, isNot(contains(startsWith('askRecording'))));
+      },
+    );
+
+    testWidgets(
+      'the picker: the page in view, the person\'s languages and recent picks, and search by either name',
+      (tester) async {
+        final store = MemoryStore();
+        RecentLanguages(store).add(languageNamed('ja')!);
+        final ai = FakeKapyAi(pro: true);
+        await _show(tester, _window(ai, recents: RecentLanguages(store)));
+        await tester.tap(find.byKey(const ValueKey('voice-transcript')));
+        await tester.pumpAndSettle();
+        await tester.dragUntilVisible(chip, starters, const Offset(-120, 0));
+        await tester.ensureVisible(chip);
+        await tester.pumpAndSettle();
+        await tester.tap(chip);
+        await tester.pumpAndSettle();
+
+        expect(find.text('Your languages'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('voice-translate-yours-en')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('voice-translate-yours-ja')),
+          findsOneWidget,
+        );
+        expect(find.text('日本語 · Japanese'), findsWidgets);
+        final search = find.byKey(const ValueKey('voice-translate-search'));
+        await tester.enterText(search, 'हिन्');
+        await tester.pump();
+        expect(find.text('Your languages'), findsNothing);
+        expect(find.text('हिन्दी · Hindi'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('voice-translate-all-en')),
+          findsNothing,
+        );
+        await tester.enterText(search, 'hind');
+        await tester.pump();
+        expect(find.text('हिन्दी · Hindi'), findsOneWidget);
+        await tester.enterText(search, 'elvish');
+        await tester.pump();
+        expect(find.text('No language by that name'), findsOneWidget);
+        await tester.enterText(search, 'hindi');
+        await tester.pump();
+
+        // The transcript is in view, so it is what goes, unless switched.
+        await tester.tap(
+          find.byKey(const ValueKey('voice-translate-scope-summary')),
+        );
+        await tester.pump();
+        await tester.tap(
+          find.byKey(const ValueKey('voice-translate-scope-transcript')),
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const ValueKey('voice-translate-all-hi')));
+        await tester.pumpAndSettle();
+        expect(picker, findsNothing);
+        expect(
+          ai.calls.last,
+          'askRecording:Translate the transcript to Hindi:$_hash',
+        );
+        expect(
+          [for (final l in RecentLanguages(store).languages) l.code],
+          ['hi', 'ja'],
+        );
+
+        // And the summary, when it is picked.
+        ai.set(answering: false);
+        await tester.tap(find.byKey(const ValueKey('voice-ask-fold')));
+        await tester.pumpAndSettle();
+        await tester.dragUntilVisible(chip, starters, const Offset(-120, 0));
+        await tester.ensureVisible(chip);
+        await tester.pumpAndSettle();
+        await tester.tap(chip);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('voice-translate-scope-summary')),
+        );
+        await tester.pump();
+        await tester.tap(
+          find.byKey(const ValueKey('voice-translate-yours-hi')),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          ai.calls.last,
+          'askRecording:Translate the summary to Hindi:$_hash',
+        );
+      },
+    );
+
+    testWidgets(
+      'a translation streams in, then offers Copy, Insert and its moments',
+      (tester) async {
+        final ai = FakeKapyAi(pro: true);
+        final played = <Duration>[];
+        final inserted = <String>[];
+        final copied = <String>[];
+        tester.view
+          ..physicalSize = const Size(620, 900)
+          ..devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: KapyTheme.dark(),
+            home: Scaffold(
+              body: VoiceAsk(
+                actions: VoiceAskActions(
+                  kapyAi: ai,
+                  noteId: _link.noteId,
+                  onManageAccounts: () {},
+                ),
+                ref: _recording(lang: 'hi'),
+                page: const SizedBox.expand(),
+                onPlay: played.add,
+                onInsert: inserted.add,
+                onCopy: copied.add,
+              ),
+            ),
+          ),
+        );
+        await tester.tap(chip);
+        ai.set(
+          answering: true,
+          draft: const KapyTranslationDraft(
+            text: '[0:00] Me: Thanks for jumping on.',
+            done: 1,
+            parts: 3,
+          ),
+        );
+        await tester.pump();
+        expect(find.text('Translating part 2 of 3…'), findsOneWidget);
+        expect(find.text('Me: Thanks for jumping on.'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('voice-ask-moment-0')),
+          findsOneWidget,
+        );
+        for (final key in ['voice-ask-insert', 'voice-ask-copy']) {
+          expect(find.byKey(ValueKey(key)), findsNothing, reason: key);
+        }
+
+        // A part that fails is the usual card, and the parts in so far go.
+        ai.set(
+          answering: false,
+          clearDraft: true,
+          pending: const KapyFailed("Couldn't answer just now. Try again."),
+        );
+        await tester.pump();
+        expect(find.text('Try again'), findsOneWidget);
+        expect(find.text('Me: Thanks for jumping on.'), findsNothing);
+        await tester.tap(find.text('Try again'));
+        await tester.pump();
+        expect(ai.calls.last, 'proceed');
+
+        final asked = ai.current!;
+        final parts = [
+          '[0:00] Me: Thanks for jumping on.',
+          '[0:08] Arjun: The annual plan first.',
+          '[0:38] Arjun: Can billing split the invoice?',
+        ];
+        final answered = KapyChat(
+          id: asked.id,
+          title: 'Transcript in English',
+          createdAt: asked.createdAt,
+          updatedAt: asked.updatedAt,
+          model: KapyModel.cloud,
+          recording: asked.recording,
+          messages: [
+            ...asked.messages,
+            for (final (i, part) in parts.indexed)
+              KapyMessage(
+                id: 'part-$i',
+                role: KapyRole.assistant,
+                text: part,
+                at: asked.updatedAt.add(Duration(milliseconds: i)),
+                model: KapyModel.cloud,
+              ),
+          ],
+        );
+        ai.set(current: answered, chats: [answered]);
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('voice-ask-translating')),
+          findsNothing,
+        );
+        expect(
+          find.text('Arjun: Can billing split the invoice?'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Read the'), findsNothing);
+        for (final ms in [0, 8000, 38000]) {
+          expect(find.byKey(ValueKey('voice-ask-moment-$ms')), findsOneWidget);
+        }
+        await tester.tap(find.byKey(const ValueKey('voice-ask-moment-8000')));
+        expect(played, [const Duration(seconds: 8)]);
+        await tester.tap(find.byKey(const ValueKey('voice-ask-insert')));
+        await tester.tap(find.byKey(const ValueKey('voice-ask-copy')));
+        expect(inserted, [parts.join('\n')]);
+        expect(copied, [parts.join('\n')]);
+        expect(_hint(tester), 'Ask a follow-up…');
+      },
+    );
+
+    testWidgets('Earlier lists a translation by its plain title', (
+      tester,
+    ) async {
+      final at = DateTime(2026, 11, 19, 10, 50);
+      final translated = KapyChat(
+        id: 't1',
+        title: 'Transcript in Hindi',
+        createdAt: at,
+        updatedAt: at,
+        model: KapyModel.cloud,
+        recording: _link,
+        messages: [
+          KapyMessage(
+            id: 't1-q',
+            role: KapyRole.user,
+            text: 'Translate the transcript to Hindi',
+            at: at,
+          ),
+          KapyMessage(
+            id: 't1-a0',
+            role: KapyRole.assistant,
+            text: '[0:00] Me: आने के लिए धन्यवाद।',
+            at: at,
+            model: KapyModel.cloud,
+          ),
+          KapyMessage(
+            id: 't1-a1',
+            role: KapyRole.assistant,
+            text: '[0:08] Arjun: पहले सालाना प्लान।',
+            at: at.add(const Duration(milliseconds: 1)),
+            model: KapyModel.cloud,
+          ),
+        ],
+      );
+      final ai = FakeKapyAi(
+        pro: true,
+        chatList: [
+          translated,
+          _chat('c1', 'What did we decide?', answer: 'Annual.'),
+        ],
+      );
+      await _show(tester, _window(ai));
+      await tester.tap(_earlier);
+      await tester.pumpAndSettle();
+      final row = find.byKey(const ValueKey('voice-ask-earlier-t1'));
+      expect(
+        find.descendant(of: row, matching: find.text('Transcript in Hindi')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: findKapyIcon(KapyIcons.translateRounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text('[0:00] Me: आने के लिए धन्यवाद।'),
+        ),
+        findsOneWidget,
+        reason: 'it starts where the translation does',
+      );
+      await tester.tap(row);
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: _drawer,
+          matching: find.text('Transcript in Hindi'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('voice-ask-moment-8000')),
+        findsOneWidget,
+      );
+      expect(find.text('Arjun: पहले सालाना प्लान।'), findsOneWidget);
     });
   });
 }

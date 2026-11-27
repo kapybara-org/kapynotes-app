@@ -20,6 +20,7 @@ import 'package:kapy_notes/ui/editor/editor_formatting.dart';
 import 'package:kapy_notes/ui/editor/note_sliver.dart'
     show RenderNoteLine, lineTrailingGap;
 import 'package:kapy_notes/ui/celebrate.dart';
+import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_cursor_peek.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
@@ -85,6 +86,7 @@ Widget harness(
   WritingFont writingFont = WritingFont.handwritten,
   double editorTextScale = 1,
   ShortcutPrefs? shortcuts,
+  bool markdown = false,
 }) {
   final editor = NoteEditor(
     // Keyed by body so re-pumping with different text remounts the editor,
@@ -116,6 +118,7 @@ Widget harness(
     writingFont: writingFont,
     editorTextScale: editorTextScale,
     shortcuts: shortcuts ?? shortcutPrefs,
+    markdownEnabled: markdown,
   );
   return MaterialApp(
     theme: KapyTheme.dark().copyWith(platform: platform),
@@ -454,32 +457,20 @@ void main() {
   });
 
   group('clicking the blank page below a note', () {
-    /// The middle of ruled row [row], counting the title as row 0 and the
-    /// first row under it as row 1 — the point a reader aims at when they
-    /// click an empty line.
-    Offset rowCenter(WidgetTester tester, int row) {
+    /// A point on the empty page [rows] ruled rows under the note's last
+    /// line, [x] in from the field's left edge.
+    Offset underNote(WidgetTester tester, int rows, {double x = 40}) {
       final editable = NoteDriver(tester);
       final origin = editable.toGlobal(Offset.zero);
-      final body = editable.state.layout.heights!.topOf(1);
+      final end = editable.state.layout.heights!.total;
       return Offset(
-        origin.dx + 40,
-        origin.dy + body + (row - 0.5) * editable.rowHeight,
+        origin.dx + x,
+        origin.dy + end + (rows - 0.5) * editable.rowHeight,
       );
     }
 
-    /// Which ruled row the caret is drawn on.
-    int caretRow(WidgetTester tester) {
-      final state = tester.state<NoteFieldState>(noteField);
-      final editable = NoteDriver(tester);
-      final rect = editable.caretRect(
-        TextPosition(
-          offset: state.widget.controller.value.selection.baseOffset,
-        ),
-      );
-      final body = editable.state.layout.heights!.topOf(1);
-      if (rect.center.dy < body) return 0;
-      return ((rect.center.dy - body) / editable.rowHeight).floor() + 1;
-    }
+    TextSelection selectionOf(WidgetTester tester) =>
+        tester.state<NoteFieldState>(noteField).widget.controller.selection;
 
     Future<void> pumpEditor(
       WidgetTester tester,
@@ -496,51 +487,57 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('the caret lands on the line that was clicked', (tester) async {
+    testWidgets('the caret goes to the end of the note, and nothing is '
+        'written', (tester) async {
       const body = 'one\ntwo\nthree';
       var saved = body;
       await pumpEditor(tester, body, onBodyChanged: (text) => saved = text);
 
-      await tester.tapAt(rowCenter(tester, 8));
-      await tester.pumpAndSettle();
-
-      // Not the end of "three", which is where the field would have put it.
-      expect(caretRow(tester), 8);
-      expect(saved, 'one\ntwo\nthree\n\n\n\n\n\n');
+      // Under the start of the lines as well as across the page: below the
+      // writing is after it, whichever column the click was in.
+      for (final x in [4.0, 40.0, 400.0]) {
+        await tester.tapAt(underNote(tester, 6, x: x));
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+        expect(
+          selectionOf(tester),
+          const TextSelection.collapsed(offset: body.length),
+          reason: 'x = $x',
+        );
+      }
+      expect(saved, body);
       expect(
         tester.state<NoteFieldState>(noteField).widget.focusNode.hasFocus,
         isTrue,
       );
     });
 
-    testWidgets('an empty note can be started part way down the page', (
-      tester,
-    ) async {
+    testWidgets('an empty note stays empty', (tester) async {
       var saved = '';
       await pumpEditor(tester, '', onBodyChanged: (text) => saved = text);
 
-      await tester.tapAt(rowCenter(tester, 3));
+      await tester.tapAt(underNote(tester, 3));
       await tester.pumpAndSettle();
 
-      expect(caretRow(tester), 3);
-      expect(saved, '\n\n\n');
+      expect(selectionOf(tester), const TextSelection.collapsed(offset: 0));
+      expect(saved, '');
     });
 
-    testWidgets('clicking the same line again writes nothing more', (
+    testWidgets('a note that ends in an empty line gains no more', (
       tester,
     ) async {
-      const body = 'one';
+      const body = 'one\n';
       var saved = body;
       await pumpEditor(tester, body, onBodyChanged: (text) => saved = text);
 
-      await tester.tapAt(rowCenter(tester, 5));
+      await tester.tapAt(underNote(tester, 4));
       await tester.pumpAndSettle();
-      expect(saved, 'one\n\n\n\n\n');
 
-      await tester.tapAt(rowCenter(tester, 5));
-      await tester.pumpAndSettle();
-      expect(saved, 'one\n\n\n\n\n');
-      expect(caretRow(tester), 5);
+      expect(saved, body);
+      expect(
+        selectionOf(tester),
+        const TextSelection.collapsed(offset: body.length),
+      );
     });
 
     testWidgets('a click on a line the note reaches leaves it alone', (
@@ -551,11 +548,14 @@ void main() {
       await pumpEditor(tester, body, onBodyChanged: (text) => saved = text);
 
       // Past the end of the second line, which is still that line.
-      await tester.tapAt(rowCenter(tester, 1));
+      final editable = NoteDriver(tester);
+      final two = editable.caretRect(TextPosition(offset: body.indexOf('two')));
+      await tester.tapAt(editable.toGlobal(Offset(400, two.center.dy)));
       await tester.pumpAndSettle();
 
       expect(saved, body);
-      expect(caretRow(tester), 1);
+      expect(selectionOf(tester).isCollapsed, isTrue);
+      expect(selectionOf(tester).baseOffset, body.indexOf('two') + 3);
     });
 
     testWidgets('a view-only note gains no lines', (tester) async {
@@ -568,7 +568,7 @@ void main() {
         onBodyChanged: (text) => saved = text,
       );
 
-      await tester.tapAt(rowCenter(tester, 7));
+      await tester.tapAt(underNote(tester, 7));
       await tester.pumpAndSettle();
 
       expect(saved, body);
@@ -4397,5 +4397,419 @@ total to usd''';
         .shift(driver.toGlobal(Offset.zero));
     expect(caret.bottom, lessThanOrEqualTo(field.bottom + 0.5));
     expect(caret.top, greaterThanOrEqualTo(field.top - 0.5));
+  });
+
+  group('find in the note', () {
+    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    final bar = find.byKey(const ValueKey('note-find-bar'));
+    final field = find.byKey(const ValueKey('note-find-field'));
+
+    TextEditingController words(WidgetTester tester) =>
+        tester.widget<TextField>(field).controller!;
+
+    String? count(WidgetTester tester) =>
+        tester.widget<Text>(find.byKey(const ValueKey('note-find-count'))).data;
+
+    Future<void> openFind(WidgetTester tester, [String? text]) async {
+      tester.state<NoteEditorState>(find.byType(NoteEditor)).openFind();
+      await tester.pumpAndSettle();
+      if (text == null) return;
+      await tester.enterText(field, text);
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> press(
+      WidgetTester tester,
+      LogicalKeyboardKey key, {
+      bool shift = false,
+      bool meta = false,
+    }) async {
+      if (meta) await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(key);
+      if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      if (meta) await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets("finds the words in a table's cells, each cell on its own", (
+      tester,
+    ) async {
+      const body =
+          'Gear\n\n| Item | Qty |\n| --- | --- |\n| Stove | 1 |\n'
+          '| Tent pegs | 8 |\n\nSpare pegs';
+      await tester.pumpWidget(harness(body, autofocus: true, markdown: true));
+      await tester.pumpAndSettle();
+
+      await openFind(tester, 'pegs');
+      expect(count(tester), '1 of 2');
+      final at = body.indexOf('pegs');
+      expect(
+        NoteDriver(tester).state.layout.marks.found!.ranges.first,
+        TextRange(start: at, end: at + 4),
+      );
+
+      // The grid's lines are not words, and a match never runs from one
+      // cell into the next.
+      for (final words in ['pegs8', 'pegs 8', 'pegs | 8']) {
+        await tester.enterText(field, words);
+        await tester.pumpAndSettle();
+        expect(count(tester), 'No matches', reason: words);
+      }
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('counts the matches, marks them, and steps through them', (
+      tester,
+    ) async {
+      const body = 'Camping\nPack the tent\nTent pegs\nA tent for two';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+
+      await openFind(tester, 'tent');
+      expect(bar, findsOneWidget);
+      expect(count(tester), '1 of 3');
+      final found = NoteDriver(tester).state.layout.marks.found!;
+      expect(found.ranges, [
+        for (final at in [
+          body.indexOf('tent'),
+          body.indexOf('Tent'),
+          body.lastIndexOf('tent'),
+        ])
+          TextRange(start: at, end: at + 4),
+      ]);
+      expect(found.current, 0);
+      // The match it is on filled as the selection is, which is what esc
+      // leaves of it.
+      expect(found.currentColor, KapyTheme.darkPalette.selection);
+      expect(found.color, isNot(found.currentColor));
+
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '2 of 3');
+      expect(NoteDriver(tester).state.layout.marks.found!.current, 1);
+      await press(tester, LogicalKeyboardKey.enter, shift: true);
+      expect(count(tester), '1 of 3');
+      await press(tester, LogicalKeyboardKey.enter, shift: true);
+      expect(count(tester), '3 of 3');
+      await press(tester, LogicalKeyboardKey.f3);
+      expect(count(tester), '1 of 3');
+      await press(tester, LogicalKeyboardKey.f3, shift: true);
+      expect(count(tester), '3 of 3');
+      await press(tester, LogicalKeyboardKey.keyG, meta: true);
+      expect(count(tester), '1 of 3');
+      await press(tester, LogicalKeyboardKey.keyG, meta: true, shift: true);
+      expect(count(tester), '3 of 3');
+      await tester.tap(find.byKey(const ValueKey('note-find-next')));
+      await tester.pumpAndSettle();
+      expect(count(tester), '1 of 3');
+
+      // Enter that ends a word an input method is still putting together
+      // belongs to the input method.
+      final query = words(tester);
+      query.value = query.value.copyWith(
+        composing: const TextRange(start: 0, end: 4),
+      );
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '1 of 3');
+
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+      expect(NoteDriver(tester).value.text, body);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('esc closes it on its match, back in the note', (tester) async {
+      const body = 'Camping\nPack the tent\nTent pegs';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      await openFind(tester, 'tent');
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '2 of 2');
+
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(bar, findsNothing);
+      final note = NoteDriver(tester);
+      expect(note.state.layout.marks.found, isNull);
+      final at = body.indexOf('Tent');
+      expect(
+        note.value.selection,
+        TextSelection(baseOffset: at, extentOffset: at + 4),
+      );
+      expect(note.state.widget.focusNode.hasFocus, isTrue);
+      expect(note.value.text, body);
+
+      // It opens again on the words the note has selected, ready to type
+      // over.
+      await openFind(tester);
+      expect(words(tester).text, 'Tent');
+      expect(
+        words(tester).selection,
+        const TextSelection(baseOffset: 0, extentOffset: 4),
+      );
+      expect(count(tester), '2 of 2');
+
+      await tester.tap(find.byKey(const ValueKey('note-find-close')));
+      await tester.pumpAndSettle();
+      expect(bar, findsNothing);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('the bar pushes the note down, never over what it finds', (
+      tester,
+    ) async {
+      const body = 'Camping\nPack the tent';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      Rect title() => note
+          .caretRect(const TextPosition(offset: 0))
+          .shift(note.toGlobal(Offset.zero));
+      final closed = title();
+
+      await openFind(tester, 'tent');
+      final strip = tester.getRect(bar);
+      expect(strip.top, tester.getRect(find.byType(NoteEditor)).top);
+      expect(title().top, moreOrLessEquals(closed.top + strip.height));
+      expect(title().top, greaterThan(strip.bottom));
+      // The words start where the writing does.
+      expect(
+        tester.getRect(field).left,
+        moreOrLessEquals(closed.left, epsilon: 3),
+      );
+
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(title().top, moreOrLessEquals(closed.top));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('a selection over more than one line is not what it finds', (
+      tester,
+    ) async {
+      const body = 'Camping\nPack the tent\nTent pegs';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      note.controller.selection = TextSelection(
+        baseOffset: body.indexOf('the'),
+        extentOffset: body.indexOf('pegs'),
+      );
+      await tester.pump();
+
+      await openFind(tester);
+      expect(words(tester).text, isEmpty);
+      expect(find.byKey(const ValueKey('note-find-count')), findsNothing);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('finds the words the note shows, not its markdown', (
+      tester,
+    ) async {
+      // Bold's stars and the link's brackets and address draw as nothing,
+      // so the link's words read as one with the letters after it.
+      const body = 'Plans\n**Bold** move, and [bo](https://example.com)ld too';
+      await tester.pumpWidget(harness(body, autofocus: true, markdown: true));
+      await tester.pumpAndSettle();
+
+      await openFind(tester, 'bold');
+      expect(count(tester), '1 of 2');
+      expect(
+        NoteDriver(tester).state.layout.marks.found!.ranges.last,
+        TextRange(
+          start: body.indexOf('[bo') + 1,
+          end: body.indexOf('ld too') + 2,
+        ),
+      );
+
+      await tester.enterText(field, 'example');
+      await tester.pumpAndSettle();
+      expect(count(tester), 'No matches');
+
+      await tester.enterText(field, '**');
+      await tester.pumpAndSettle();
+      expect(count(tester), 'No matches');
+      expect(NoteDriver(tester).state.layout.marks.found, isNull);
+      for (final key in ['note-find-next', 'note-find-previous']) {
+        final button = tester.widget<CompactIconButton>(
+          find.byKey(ValueKey(key)),
+        );
+        expect(button.onPressed, isNull);
+        expect(
+          tester
+              .widget<KapyIcon>(
+                find.descendant(
+                  of: find.byKey(ValueKey(key)),
+                  matching: find.byType(KapyIcon),
+                ),
+              )
+              .color,
+          tester.element(find.byKey(ValueKey(key))).palette.textTertiary,
+          reason: key,
+        );
+      }
+      expect(
+        tester
+            .widget<KapyIcon>(
+              find.descendant(
+                of: find.byKey(const ValueKey('note-find-close')),
+                matching: find.byType(KapyIcon),
+              ),
+            )
+            .color,
+        isNull,
+      );
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('the count keeps up as the note changes', (tester) async {
+      const body = 'Camping\nPack the tent';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      await openFind(tester, 'tent');
+      expect(count(tester), '1 of 1');
+
+      NoteDriver(tester).controller.text = '$body\nA second tent';
+      await tester.pumpAndSettle();
+      expect(count(tester), '1 of 2');
+      expect(NoteDriver(tester).state.layout.marks.found!.ranges, hasLength(2));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('a match in a table is filled in its cell, and esc leaves it '
+        'selected there', (tester) async {
+      const body =
+          'Gear\n\n| Item | Qty |\n| --- | --- |\n| Tent pegs | 8 |\n\n'
+          'Spare pegs';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      final at = body.indexOf('pegs');
+
+      await openFind(tester, 'pegs');
+      expect(count(tester), '1 of 2');
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '2 of 2');
+      // The cell's match is filled where a selection of its words would be,
+      // over the words in the cell.
+      final lines = note.state.lines;
+      final line = lines.lineAt(at);
+      final from = at - lines.startOf(line);
+      expect(note.state.layout.marks.found!.ranges.first.start, at);
+      expect(
+        note.state.layout.selectionOf!(
+          line,
+          TextRange(start: from, end: from + 4),
+        ),
+        [isA<Rect>().having((rect) => rect.width, 'width', greaterThan(1))],
+      );
+
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '1 of 2');
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(bar, findsNothing);
+      expect(
+        note.value.selection,
+        TextSelection(baseOffset: at, extentOffset: at + 4),
+      );
+      expect(note.value.text, body);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('a match in a table below the page is scrolled into sight', (
+      tester,
+    ) async {
+      final body = [
+        'Long',
+        for (var line = 0; line < 80; line++) 'line $line',
+        '',
+        '| Item | Qty |',
+        '| --- | --- |',
+        '| Tent pegs | 8 |',
+      ].join('\n');
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      Rect pegs() => note
+          .caretRect(TextPosition(offset: body.indexOf('pegs')))
+          .shift(note.toGlobal(Offset.zero));
+      final page = tester.getRect(find.byType(NoteEditor));
+      expect(pegs().top, greaterThan(page.bottom));
+
+      await openFind(tester, 'pegs');
+      expect(count(tester), '1 of 1');
+      expect(pegs().top, greaterThanOrEqualTo(page.top));
+      expect(pegs().bottom, lessThanOrEqualTo(page.bottom));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('a match below the page is scrolled into sight', (
+      tester,
+    ) async {
+      final body = [
+        'Long',
+        for (var line = 0; line < 80; line++) 'line $line',
+        'the needle',
+      ].join('\n');
+      await tester.pumpWidget(harness(body));
+      await tester.pumpAndSettle();
+      final note = NoteDriver(tester);
+      Rect needle() => note
+          .caretRect(TextPosition(offset: body.indexOf('needle')))
+          .shift(note.toGlobal(Offset.zero));
+      final page = tester.getRect(find.byType(NoteEditor));
+      expect(needle().top, greaterThan(page.bottom));
+
+      await openFind(tester, 'needle');
+      expect(count(tester), '1 of 1');
+      expect(needle().top, greaterThanOrEqualTo(page.top));
+      expect(needle().bottom, lessThanOrEqualTo(page.bottom));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    // A desktop's click outside a text field takes the keyboard from it,
+    // which Android's tap does not, so this one runs as each desktop.
+    testWidgets('a click on Next or Previous leaves the keyboard in the bar', (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
+      const body = 'Camping\nPack the tent\nTent pegs\nA tent for two';
+      await tester.pumpWidget(harness(body, autofocus: true));
+      await tester.pumpAndSettle();
+      await openFind(tester, 'tent');
+      expect(count(tester), '1 of 3');
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      for (final (key, after) in [
+        ('note-find-next', '2 of 3'),
+        ('note-find-previous', '1 of 3'),
+      ]) {
+        final at = tester.getCenter(find.byKey(ValueKey(key)));
+        await mouse.moveTo(at);
+        await mouse.down(at);
+        await mouse.up();
+        await tester.pumpAndSettle();
+        expect(count(tester), after, reason: key);
+        expect(
+          tester.widget<TextField>(field).focusNode!.hasFocus,
+          isTrue,
+          reason: key,
+        );
+      }
+      await mouse.moveTo(Offset.zero);
+      await tester.pumpAndSettle();
+
+      // Enter still steps, and esc still closes it on its match.
+      await press(tester, LogicalKeyboardKey.enter);
+      expect(count(tester), '2 of 3');
+      await press(tester, LogicalKeyboardKey.escape);
+      expect(bar, findsNothing);
+      final at = body.indexOf('Tent');
+      expect(
+        NoteDriver(tester).value.selection,
+        TextSelection(baseOffset: at, extentOffset: at + 4),
+      );
+    }, variant: TargetPlatformVariant.desktop());
+
+    testWidgets('phones have no find bar', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      await tester.pumpWidget(harness('Camping\nPack the tent'));
+      await tester.pumpAndSettle();
+
+      tester.state<NoteEditorState>(find.byType(NoteEditor)).openFind();
+      await tester.pumpAndSettle();
+      expect(bar, findsNothing);
+    });
   });
 }

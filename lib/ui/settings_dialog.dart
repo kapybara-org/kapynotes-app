@@ -2255,7 +2255,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// Kapy AI, only where the build carries it.
   KapyAi? get _kapyAi => kapyAiAvailable ? widget.kapyAi : null;
 
-  /// What ⌘K is called: it also asks Kapy AI while that is on.
+  /// What Search is called: it also asks Kapy AI while that is on.
   String _shortcutLabel(ShortcutAction action) =>
       action == ShortcutAction.findNotes && (_kapyAi?.enabled ?? false)
       ? 'Search or Ask Kapy AI'
@@ -2364,11 +2364,13 @@ class _SettingsDialogState extends State<SettingsDialog>
       builder: (context) => AlertDialog(
         title: const Text('Clear chat history?'),
         content: Text(
-          ai.chatsSync
-              ? 'Every Kapy AI chat is deleted on all your devices. This '
-                    'can’t be undone.'
-              : 'Every Kapy AI chat on this $kapyDeviceWord is deleted. This '
-                    'can’t be undone.',
+          [
+            ai.chatsSync
+                ? 'Every Kapy AI chat is deleted on all your devices.'
+                : 'Every Kapy AI chat on this $kapyDeviceWord is deleted.',
+            if (ai.hasRecaps) 'This also deletes your recaps.',
+            'This can’t be undone.',
+          ].join(' '),
         ),
         actions: [
           TextButton(
@@ -3497,6 +3499,7 @@ extension on ShortcutAction {
     ShortcutAction.openMenuBarPanel => _ShortcutGroup.fromAnywhere,
     ShortcutAction.newNote ||
     ShortcutAction.findNotes ||
+    ShortcutAction.findInNote ||
     ShortcutAction.newTask ||
     ShortcutAction.newDrawing ||
     ShortcutAction.nextNote ||
