@@ -1033,6 +1033,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('1 finished today'), findsOneWidget);
+    expect(
+      find.text('Done one'),
+      findsOneWidget,
+      reason: 'the done row names it, so the finished line does not',
+    );
+    expect(box('Done one'), findsOneWidget);
     expect(find.byKey(const ValueKey('tasks-pair')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('tasks-finished-today')));

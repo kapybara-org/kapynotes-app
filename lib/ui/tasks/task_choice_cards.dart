@@ -1104,21 +1104,22 @@ class TaskEveningCard extends StatelessWidget {
   }
 }
 
-/// "5 finished today" and their names, under the evening card; opens Done.
+/// "5 finished today" under the evening card; opens Done. The tasks
+/// themselves are the done rows at the end of Today.
 class TaskFinishedLine extends StatelessWidget {
   const TaskFinishedLine({
     super.key,
-    required this.finished,
+    required this.count,
     required this.onPressed,
   });
 
-  final List<TaskItem> finished;
+  final int count;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
-    final title = '${finished.length} finished today';
+    final title = '$count finished today';
     return Semantics(
       button: true,
       label: title,
@@ -1138,15 +1139,7 @@ class TaskFinishedLine extends StatelessWidget {
               KapyIcon(KapyIcons.checkRounded, size: 16, color: ink.quiet),
               const SizedBox(width: 10),
               Text(title, style: taskText(13, 18, ink.secondary, 460)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  [for (final item in finished) item.words].join(', '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: taskText(12, 16, ink.quiet),
-                ),
-              ),
+              const Spacer(),
               const SizedBox(width: 10),
               KapyIcon(
                 KapyIcons.chevronRightRounded,

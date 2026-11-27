@@ -858,7 +858,7 @@ class TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: TaskFinishedLine(
-              finished: finished,
+              count: finished.length,
               onPressed: widget.onOpenDone,
             ),
           ),
