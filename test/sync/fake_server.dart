@@ -2718,7 +2718,11 @@ class FakeApi implements SyncApi {
     final owner = space.ownerId;
     final used = server.storageUsed[owner] ?? 0;
     if (used + bytes > server.storageQuota) {
-      throw const SyncProtocolException('over quota');
+      // What HttpSyncApi makes of the server's 413.
+      throw SyncRefusedException(413, storageFullCode, {
+        'usedBytes': used,
+        'quotaBytes': server.storageQuota,
+      });
     }
     final id = 'att-${server.attachments.length + 1}';
     server.attachments[id] = FakeAttachment(

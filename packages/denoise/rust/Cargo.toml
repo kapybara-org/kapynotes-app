@@ -1,0 +1,18 @@
+[package]
+name = "kapy_denoise"
+version = "1.0.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+realfft = "3.4"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+strip = true

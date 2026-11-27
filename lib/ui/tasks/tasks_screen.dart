@@ -10,6 +10,7 @@ import '../../core/theme.dart';
 import '../../data/blob_store.dart';
 import '../../data/note.dart';
 import '../../data/task_board.dart';
+import '../back_forward.dart';
 import '../checklist_pie.dart';
 import '../context_menu.dart';
 import '../sidebar.dart' show PhoneFiltersButton, SidebarSearchField;
@@ -476,13 +477,15 @@ class TasksScreenState extends State<TasksScreen> {
                     ),
                     child: SizedBox(
                       width: width,
-                      child: widget.filter.done
-                          ? _done(board)
-                          : Focus(
-                              focusNode: _listFocus,
-                              onKeyEvent: _listKey,
-                              child: _today(board),
-                            ),
+                      child: BackForwardSlide(
+                        child: widget.filter.done
+                            ? _done(board)
+                            : Focus(
+                                focusNode: _listFocus,
+                                onKeyEvent: _listKey,
+                                child: _today(board),
+                              ),
+                      ),
                     ),
                   ),
                 ),

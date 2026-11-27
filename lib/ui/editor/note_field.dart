@@ -855,7 +855,9 @@ class NoteFieldState extends State<NoteField>
   // it for [TextSelectionGestureDetectorBuilder] (see [NoteGestures]).
 
   /// The note position under [global], a point on the screen: in the line at
-  /// that height, or in the first or last line above or below the note.
+  /// that height, or in the first line above the note. Below the note is its
+  /// end, wherever across the page: a click under the writing means after it,
+  /// not the column it happened to land in.
   TextPosition positionAt(Offset global) {
     final local = (context.findRenderObject()! as RenderBox).globalToLocal(
       global,
@@ -863,6 +865,7 @@ class NoteFieldState extends State<NoteField>
     final heights = layout.heights!;
     final scroll = widget.scrollController;
     final y = local.dy + (scroll.hasClients ? scroll.offset : 0.0);
+    if (y >= heights.total) return TextPosition(offset: _text.length);
     final line = heights.lineAt(y);
     final found = layout
         .paragraphOf(line)

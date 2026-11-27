@@ -11,6 +11,7 @@ import '../data/local_store.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/notes_store.dart';
+import '../speech/languages.dart';
 import '../sync/config.dart';
 import '../sync/key_store.dart';
 import 'answer_engine.dart';
@@ -22,6 +23,7 @@ import 'kapy_chat_book.dart';
 import 'local_tools.dart';
 import 'open_router.dart';
 import 'recording_context.dart';
+import 'recording_translation.dart';
 import 'retrieval.dart';
 import 'tool_helper.dart';
 
@@ -132,6 +134,12 @@ class KapyAiController extends KapyAi {
   KapyModel? _next;
   KapyPending? _pending;
   bool _answering = false;
+  KapyTranslationDraft? _draft;
+
+  /// The parts of a translation that came back before another failed, by
+  /// the question they answer and what each part sent, so Try again asks
+  /// only for the rest.
+  ({String question, List<String> sent, List<String> done})? _translated;
 
   /// The held question's "This note" chip, kept for Try again.
   String? _heldNoteId;
@@ -567,6 +575,9 @@ class KapyAiController extends KapyAi {
   KapyPending? get pending => _pending;
 
   @override
+  KapyTranslationDraft? get draft => _draft;
+
+  @override
   Future<void> ask(
     String question, {
     String? noteId,
@@ -587,9 +598,14 @@ class KapyAiController extends KapyAi {
         : null;
     if (chat == null) {
       final at = _now();
+      final translation = recording == null
+          ? null
+          : parseTranslationRequest(asked.text);
       final created = KapyChat(
         id: NotesStore.newId(),
-        title: _titleFor(asked.text),
+        title: translation == null
+            ? _titleFor(asked.text)
+            : translationTitle(translation.scope, translation.language),
         createdAt: at,
         updatedAt: at,
         model: model,
@@ -659,8 +675,20 @@ class KapyAiController extends KapyAi {
       return;
     }
 
-    final using = model;
-    final held = _holdFor(using, recording: recording != null);
+    // A translation is long work that a device's model does poorly, so it
+    // is always made in the cloud: Kapy AI Cloud, or the person's own account.
+    final translation = recording == null
+        ? null
+        : parseTranslationRequest(question.text);
+    final cloudOnly = translation != null;
+    final using = cloudOnly && model.kind == KapyModelKind.device
+        ? KapyModel.cloud
+        : model;
+    final held = _holdFor(
+      using,
+      recording: recording != null,
+      cloudOnly: cloudOnly,
+    );
     if (held != null) {
       _pending = held;
       _downloadMoved = false;
@@ -673,78 +701,19 @@ class KapyAiController extends KapyAi {
     _notify();
     KapyPending? failed;
     try {
-      final budget = _budgetFor(using);
-      final heard = voice == null
-          ? null
-          : readRecording(voice.note, voice.ref, budget);
-      final retrieval = heard == null
-          ? retrieve(
-              store: _notes,
-              question: question.text,
-              noteId: _heldNoteId,
-              budget: budget,
-            )
-          : Retrieval(notes: heard.parts, matching: 0);
-      final read = readableNotes(_notes, retrieval.notes);
-      final hidden = {
-        for (final note in _notes.allNotes)
-          if (note.isHidden) note.id,
-      };
-      final before = chat.messages.sublist(0, chat.messages.length - 1);
-      final cut = before.indexWhere(
-        (message) => message.read.any((ref) => hidden.contains(ref.noteId)),
-      );
-      final earlier = cut < 0 ? before : before.sublist(0, cut);
-      final text = await _engineFor(using).answer(
-        using,
-        AnswerRequest(
-          question: question.text,
-          notes: read,
-          history: [
-            for (final message in earlier.sublist(
-              max(0, earlier.length - AnswerRequest.maxHistory),
-            ))
-              _clipped(message),
-          ],
-          today: _now(),
-        ),
-      );
-      final now = _chat(chat.id);
-      if (now != null) {
-        _replace(
-          _edit(
-            now,
-            messages: [
-              ...now.messages,
-              KapyMessage(
-                id: NotesStore.newId(),
-                role: KapyRole.assistant,
-                text: text,
-                at: _now(),
-                read: [
-                  for (final note in {
-                    for (final note in read) note.id: note,
-                  }.values)
-                    KapyNoteRef(
-                      noteId: note.id,
-                      title: note.title,
-                      edited: note.edited,
-                    ),
-                ],
-                matching: retrieval.matching,
-                model: using,
-                readTo: heard?.readTo,
-              ),
-            ],
-          ),
-        );
+      if (translation != null) {
+        await _translate(chat, voice!, question, translation, using);
+      } else {
+        await _reply(chat, question, voice, using);
       }
     } on AnswerOffline {
-      failed = KapyOffline(fallback: _otherDeviceModel(using));
+      failed = KapyOffline(
+        fallback: cloudOnly ? null : _otherDeviceModel(using),
+      );
     } on AnswerLimitReached catch (limit) {
       failed = KapyLimitReached(
         resetsAt: limit.usage.resetsAt,
-        fallback: _otherDeviceModel(using),
+        fallback: cloudOnly ? null : _otherDeviceModel(using),
       );
     } on AnswerAccountRejected catch (rejected) {
       if (_isTool(rejected.account)) {
@@ -756,16 +725,16 @@ class KapyAiController extends KapyAi {
       failed = KapyAccountError(
         account: rejected.account,
         model: using,
-        fallbacks: _alternativesTo(using),
+        fallbacks: _alternativesTo(using, device: !cloudOnly),
       );
     } on AnswerSignInNeeded {
-      failed = _cloudLocked(using, signIn: true);
+      failed = _cloudLocked(using, signIn: true, device: !cloudOnly);
     } on AnswerProNeeded {
-      failed = _cloudLocked(using, upgrade: true);
+      failed = _cloudLocked(using, upgrade: true, device: !cloudOnly);
     } on AnswerFailed catch (failure) {
       failed = KapyFailed(
         failure.message,
-        fallbacks: _alternativesTo(using),
+        fallbacks: _alternativesTo(using, device: !cloudOnly),
         retry: failure.retry,
       );
     } catch (error) {
@@ -773,9 +742,184 @@ class KapyAiController extends KapyAi {
       failed = const KapyFailed('Something went wrong. Try again.');
     } finally {
       _answering = false;
+      _draft = null;
     }
     if (_currentId == chat.id) _pending = failed;
     _notify();
+  }
+
+  /// Answers [question], the last of [chat], with [using]: from the notes
+  /// that match it, or from [voice] when the chat is about a recording.
+  Future<void> _reply(
+    KapyChat chat,
+    KapyMessage question,
+    ({Note note, NoteVoiceRef ref})? voice,
+    KapyModel using,
+  ) async {
+    final budget = _budgetFor(using);
+    final heard = voice == null
+        ? null
+        : readRecording(voice.note, voice.ref, budget);
+    final retrieval = heard == null
+        ? retrieve(
+            store: _notes,
+            question: question.text,
+            noteId: _heldNoteId,
+            budget: budget,
+          )
+        : Retrieval(notes: heard.parts, matching: 0);
+    final read = readableNotes(_notes, retrieval.notes);
+    final hidden = {
+      for (final note in _notes.allNotes)
+        if (note.isHidden) note.id,
+    };
+    final before = chat.messages.sublist(0, chat.messages.length - 1);
+    final cut = before.indexWhere(
+      (message) => message.read.any((ref) => hidden.contains(ref.noteId)),
+    );
+    final earlier = cut < 0 ? before : before.sublist(0, cut);
+    final text = await _engineFor(using).answer(
+      using,
+      AnswerRequest(
+        question: question.text,
+        notes: read,
+        history: [
+          for (final message in earlier.sublist(
+            max(0, earlier.length - AnswerRequest.maxHistory),
+          ))
+            _clipped(message),
+        ],
+        today: _now(),
+      ),
+    );
+    final now = _chat(chat.id);
+    if (now != null) {
+      _replace(
+        _edit(
+          now,
+          messages: [
+            ...now.messages,
+            KapyMessage(
+              id: NotesStore.newId(),
+              role: KapyRole.assistant,
+              text: text,
+              at: _now(),
+              read: [
+                for (final note in {
+                  for (final note in read) note.id: note,
+                }.values)
+                  KapyNoteRef(
+                    noteId: note.id,
+                    title: note.title,
+                    edited: note.edited,
+                  ),
+              ],
+              matching: retrieval.matching,
+              model: using,
+              readTo: heard?.readTo,
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  /// Translates [voice] as [asked] says, a part at a time with [using], and
+  /// adds the parts to [chat], each an answer of its own so that every one
+  /// fits a synced record, once all of them are in. A translation that stops
+  /// partway is never kept: the parts that came back wait for Try again,
+  /// which asks only for the rest.
+  Future<void> _translate(
+    KapyChat chat,
+    ({Note note, NoteVoiceRef ref}) voice,
+    KapyMessage question,
+    ({TranslateScope scope, Language language}) asked,
+    KapyModel using,
+  ) async {
+    final sent = translationParts(voice.ref, asked.scope);
+    if (sent.isEmpty) {
+      throw AnswerFailed(switch (asked.scope) {
+        TranslateScope.summary => 'This recording has no summary to translate.',
+        TranslateScope.transcript =>
+          "This recording's transcript has no words to translate.",
+      }, retry: false);
+    }
+    final kept = _translated;
+    final done =
+        kept != null &&
+            kept.question == question.id &&
+            listEquals(kept.sent, sent)
+        ? kept.done
+        : <String>[];
+    _translated = (question: question.id, sent: sent, done: done);
+    final named = voice.ref.summary?.title.trim() ?? '';
+    final title = named.isEmpty ? voice.note.title : named;
+    for (var i = done.length; i < sent.length; i++) {
+      _draft = KapyTranslationDraft(
+        text: stitchTranslation(done),
+        done: i,
+        parts: sent.length,
+      );
+      _notify();
+      final notes = readableNotes(_notes, [
+        ReadNote(
+          id: voice.note.id,
+          title: title.length > 180 ? title.substring(0, 180) : title,
+          text: sent[i],
+          edited: voice.note.updatedAt,
+        ),
+      ]);
+      if (notes.isEmpty) {
+        throw AnswerFailed(_refusal(chat.recording!), retry: false);
+      }
+      final reply = await _engineFor(using).answer(
+        using,
+        AnswerRequest(
+          question: translationQuestion(
+            asked.scope,
+            asked.language,
+            part: i + 1,
+            parts: sent.length,
+          ),
+          notes: notes,
+          today: _now(),
+        ),
+      );
+      final part = translatedPart(sent[i], reply);
+      if (part == null) {
+        throw const AnswerFailed(
+          "Part of the translation didn't come back whole. Try again.",
+        );
+      }
+      done.add(part);
+    }
+    _translated = null;
+    final now = _chat(chat.id);
+    if (now == null) return;
+    final at = _now();
+    final read = KapyNoteRef(
+      noteId: voice.note.id,
+      title: title,
+      edited: voice.note.updatedAt,
+    );
+    _replace(
+      _edit(
+        now,
+        messages: [
+          ...now.messages,
+          // A millisecond apart, so every device puts them in this order.
+          for (final (index, text) in done.indexed)
+            KapyMessage(
+              id: NotesStore.newId(),
+              role: KapyRole.assistant,
+              text: text,
+              at: at.add(Duration(milliseconds: index)),
+              read: [read],
+              model: using,
+            ),
+        ],
+      ),
+    );
   }
 
   /// The note and recording [link] names, when Kapy AI may read it: the
@@ -807,12 +951,18 @@ class KapyAiController extends KapyAi {
       : RetrievalBudget.cloud;
 
   /// What has to happen before [model] may answer, or null when nothing.
-  /// [recording] when the question is about one.
-  KapyPending? _holdFor(KapyModel model, {bool recording = false}) {
+  /// [recording] when the question is about one, and [cloudOnly] when it
+  /// can't be answered on this device, which no card then offers.
+  KapyPending? _holdFor(
+    KapyModel model, {
+    bool recording = false,
+    bool cloudOnly = false,
+  }) {
     final blocked = _device.state.note;
     // Nothing on this device can answer and the person is not on Pro: the
     // note says more than "part of Pro" would, so it goes first.
     if (blocked != null &&
+        !cloudOnly &&
         !isPro &&
         model.kind != KapyModelKind.codex &&
         model.kind != KapyModelKind.claudeCode &&
@@ -827,7 +977,7 @@ class KapyAiController extends KapyAi {
         return KapyAccountError(
           account: account,
           model: model,
-          fallbacks: _alternativesTo(model),
+          fallbacks: _alternativesTo(model, device: !cloudOnly),
         );
       }
       return _store.hasAccountConsent(account)
@@ -835,11 +985,11 @@ class KapyAiController extends KapyAi {
           : KapyAccountConsent(account);
     }
     if (model.kind == KapyModelKind.cloud) {
-      if (!isPro) return _cloudLocked(model);
+      if (!isPro) return _cloudLocked(model, device: !cloudOnly);
       if (_store.cloudConsent || (recording && _store.recordingCloudConsent)) {
         return null;
       }
-      return KapyCloudConsent(recording: recording);
+      return KapyCloudConsent(recording: recording, device: !cloudOnly);
     }
     final state = _device.state;
     return switch (state.status) {
@@ -862,23 +1012,26 @@ class KapyAiController extends KapyAi {
 
   /// Kapy AI Cloud refused [model]'s question: [signIn] when the server said
   /// the session ended, [upgrade] when it said there's no Pro, and either
-  /// whenever this device already knows it.
+  /// whenever this device already knows it. [device] offers the device's
+  /// model among the ways out.
   KapyCloudLocked _cloudLocked(
     KapyModel model, {
     bool signIn = false,
     bool upgrade = false,
+    bool device = true,
   }) => KapyCloudLocked(
     signIn: signIn || !_signedIn,
     upgrade: upgrade || !isPro,
-    fallbacks: _alternativesTo(model),
+    fallbacks: _alternativesTo(model, device: device),
   );
 
-  /// What could answer instead of [using], as choices for the person to make.
-  /// Never applied on their behalf: each still asks for its own consent.
-  List<KapyModel> _alternativesTo(KapyModel using) {
+  /// What could answer instead of [using], as choices for the person to make,
+  /// the device's model among them when [device]. Never applied on their
+  /// behalf: each still asks for its own consent.
+  List<KapyModel> _alternativesTo(KapyModel using, {bool device = true}) {
     final out = <KapyModel>[];
-    final device = _deviceModel;
-    if (device != null && device != using && _usable(device)) out.add(device);
+    final local = device ? _deviceModel : null;
+    if (local != null && local != using && _usable(local)) out.add(local);
     if (isPro && using.kind != KapyModelKind.cloud) out.add(KapyModel.cloud);
     for (final account in accounts) {
       if (!account.enabled) continue;

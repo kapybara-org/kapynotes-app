@@ -55,6 +55,28 @@ List<Duration> momentsIn(
 
 final RegExp _sentenceEnd = RegExp(r'(?<=[.!?;:,])\s+|\n+');
 
+/// `[0:08]` or `[1:02:03]`, the time a line of a recording's text starts
+/// at, as Kapy AI reads a transcript and as a translation of one keeps it.
+String timeMark(Duration at) => '[${formatVoiceDuration(at)}]';
+
+/// The times marked at the start of [text]'s lines by [timeMark], in order.
+List<Duration> marksIn(String text) => [
+  for (final match in timeMarkPattern.allMatches(text)) markTime(match),
+];
+
+/// The time a match of [timeMarkPattern] marks.
+Duration markTime(Match mark) => Duration(
+  hours: int.parse(mark[1] ?? '0'),
+  minutes: int.parse(mark[2]!),
+  seconds: int.parse(mark[3]!),
+);
+
+/// A [timeMark] at the start of a line.
+final RegExp timeMarkPattern = RegExp(
+  r'^\[(?:(\d+):)?(\d{1,2}):(\d{2})\]',
+  multiLine: true,
+);
+
 /// The silences between [segments] longer than [longerThan], each trimmed by
 /// [cushion] at both ends so a jump never clips the first or last word.
 List<({Duration from, Duration to})> pausesIn(

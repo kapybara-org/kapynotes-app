@@ -16,8 +16,7 @@ import 'time_zones.dart';
 /// device.
 enum NumberSystem { auto, international, indian }
 
-/// How the notes list groups what Pinned leaves: the choices on the sort menu
-/// in its controls row.
+/// How the notes list groups what Pinned leaves: the View menu's Group by.
 enum NotesGrouping {
   byDate('By date'),
   byTag('By tag'),
