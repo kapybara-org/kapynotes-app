@@ -9,12 +9,19 @@
 # the list, and apt retries each file. Runs as root, on a runner or in a
 # container; on Debian it sets only the retries, and without apt it does
 # nothing.
+#
+# apt starts every file at the first mirror again, so a first mirror that
+# has stopped answering costs the timeout on each of a hundred files: the
+# Azure mirror did that on 23 Nov and ran linux-smoke jobs to their
+# 30-minute cap (KAP-316). So each mirror is timed fetching its release
+# file first, and the list puts the ones that answered first, fastest
+# first, and the rest after them in their usual order.
 set -eu
 
 [ -d /etc/apt/apt.conf.d ] || exit 0
 cat > /etc/apt/apt.conf.d/80-retries <<'EOF'
 Acquire::Retries "5";
-Acquire::http::Timeout "30";
+Acquire::http::Timeout "10";
 EOF
 
 grep -qi '^ID=ubuntu' /etc/os-release || exit 0
@@ -26,11 +33,30 @@ case "$(dpkg --print-architecture)" in
     set -- http://azure.ports.ubuntu.com/ubuntu-ports/ http://ports.ubuntu.com/ubuntu-ports/ \
       http://mirrors.mit.edu/ubuntu-ports/ ;;
 esac
-i=0
+
+codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+probe=$(mktemp -d)
+chmod 777 "$probe"
+answered='' silent=''
 for uri; do
-  i=$((i + 1))
-  printf '%s\tpriority:%d\n' "$uri" "$i"
-done > /etc/apt/apt-mirrors.txt
+  start=$(date +%s%N)
+  if timeout 15 /usr/lib/apt/apt-helper -o Acquire::Retries=0 download-file \
+    "${uri}dists/$codename/InRelease" "$probe/InRelease" >/dev/null 2>&1; then
+    ms=$((($(date +%s%N) - start) / 1000000))
+    echo "apt-mirrors.sh: $uri answered in $ms ms" >&2
+    answered="$answered$ms $uri
+"
+  else
+    echo "apt-mirrors.sh: $uri did not answer within 15 s; it goes last" >&2
+    silent="$silent$uri
+"
+  fi
+  rm -f "$probe/InRelease"
+done
+rm -rf "$probe"
+
+printf '%s' "$answered" | sort -n | cut -d' ' -f2 | { cat; printf '%s' "$silent"; } |
+  awk 'NF { printf "%s\tpriority:%d\n", $1, NR }' > /etc/apt/apt-mirrors.txt
 
 for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
   [ -f "$f" ] || continue

@@ -1218,9 +1218,8 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('orders the bar from the line tools to the marks and links', (
-    tester,
-  ) async {
+  testWidgets('orders the bar from attach and the line tools to the marks '
+      'and links', (tester) async {
     _onPhone();
     await tester.pumpWidget(harness('2 + 2'));
     await tester.pumpAndSettle();
@@ -1230,6 +1229,7 @@ void main() {
     expect(bar.height, 44);
     double leftOf(String key) => tester.getRect(find.byKey(ValueKey(key))).left;
     final order = [
+      'format-attach',
       'format-style',
       'format-bold',
       'format-italic',
@@ -1239,7 +1239,6 @@ void main() {
       'format-quote',
       'format-code',
       'format-link',
-      'format-attach',
     ];
     for (var i = 1; i < order.length; i++) {
       expect(
