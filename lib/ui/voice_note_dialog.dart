@@ -569,7 +569,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
         busy: true,
       ),
       VoiceChipState.waiting => const _Empty(
-        message: 'Waiting for network…',
+        message: 'Waiting to connect…',
       ),
       VoiceChipState.retrying => const _Empty(
         message: 'Transcription failed. Retrying soon…',

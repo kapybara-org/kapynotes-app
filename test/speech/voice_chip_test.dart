@@ -137,7 +137,7 @@ void main() {
       const expected = {
         VoiceChipState.transcribing: 'Transcribing…',
         VoiceChipState.summarising: 'Summarising…',
-        VoiceChipState.waiting: 'Waiting for network',
+        VoiceChipState.waiting: 'Waiting to connect',
         VoiceChipState.retrying: 'Trying again soon',
         VoiceChipState.failed: "Couldn't transcribe",
         VoiceChipState.outOfMinutes: 'Out of minutes',
@@ -548,7 +548,7 @@ void main() {
     const statuses = {
       VoiceChipState.transcribing: 'Transcribing…',
       VoiceChipState.summarising: 'Summarising…',
-      VoiceChipState.waiting: 'Waiting for network',
+      VoiceChipState.waiting: 'Waiting to connect',
       VoiceChipState.retrying: 'Trying again soon',
       VoiceChipState.failed: "Couldn't transcribe",
       VoiceChipState.outOfMinutes: 'Out of minutes',
@@ -910,7 +910,7 @@ void main() {
         harness(recording(), state: VoiceChipState.waiting, onOpen: () {}),
       );
       expect(
-        find.bySemanticsLabel('Voice note, 2:14, Waiting for network'),
+        find.bySemanticsLabel('Voice note, 2:14, Waiting to connect'),
         findsOneWidget,
       );
       semantics.dispose();
@@ -928,7 +928,7 @@ void main() {
         ),
       );
       final node = tester.getSemantics(
-        find.bySemanticsLabel('Voice note, 2:14, Waiting for network'),
+        find.bySemanticsLabel('Voice note, 2:14, Waiting to connect'),
       );
       final remove = CustomSemanticsAction.getIdentifier(
         const CustomSemanticsAction(label: 'Remove voice note'),

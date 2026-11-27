@@ -157,7 +157,10 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
     double width,
   ) {
     final painter = TextPainter(
-      text: TextSpan(text: text, style: style),
+      text: TextSpan(
+        text: text,
+        style: DefaultTextStyle.of(context).style.merge(style),
+      ),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
     )..layout(maxWidth: math.max(0, width));
