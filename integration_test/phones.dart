@@ -30,6 +30,7 @@ import 'phone_keyboard_test.dart' as phone_keyboard;
 import 'phone_note_page_test.dart' as phone_note_page;
 import 'phone_note_swipe_test.dart' as phone_note_swipe;
 import 'phone_recording_away_test.dart' as phone_recording_away;
+import 'phone_remove_noise_test.dart' as phone_remove_noise;
 import 'phone_sharing_test.dart' as phone_sharing;
 import 'phone_tasks_test.dart' as phone_tasks;
 import 'phone_time_line_test.dart' as phone_time_line;
@@ -51,6 +52,7 @@ const _tests = <String, void Function()>{
   'phone_note_page': phone_note_page.main,
   'phone_note_swipe': phone_note_swipe.main,
   'phone_recording_away': phone_recording_away.main,
+  'phone_remove_noise': phone_remove_noise.main,
   'phone_sharing': phone_sharing.main,
   'phone_tasks': phone_tasks.main,
   'phone_time_line': phone_time_line.main,

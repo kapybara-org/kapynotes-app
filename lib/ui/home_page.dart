@@ -11,6 +11,7 @@ import 'package:flutter/services.dart'
         SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
+import '../audio/noise_removals.dart';
 import '../audio/voice_player.dart';
 import '../audio/voice_recording_controller.dart';
 import '../billing/note_limit.dart';
@@ -1170,6 +1171,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // works out which of those it is when it next drains.
     widget.transcriptions?.enqueue(noteId, hash);
     unawaited(_drainTranscriptions());
+    if (mounted) NoiseRemovalScope.read(context)?.recorded(hash);
   }
 
   String _bodyForEndAttachment(Note note) {
