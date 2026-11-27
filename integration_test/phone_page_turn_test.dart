@@ -1,6 +1,7 @@
 // Every sideways page turn on a phone (KAP-429), for KAPY-35 to judge the
 // motion: a note's page turned a day back and on, a short drag let go that
-// springs back, and Home turned from Notes to Tasks and back. Each runs in
+// springs back, a turn let go and caught before it settles, and Home turned
+// from Notes to Tasks and back. Each runs in
 // light and dark, recorded off the device's own screen as
 // build/screenshots/page-turn-<appearance>.mp4 when the run's host reads
 // screens, and the frames the turns take are counted from the engine's own
@@ -14,6 +15,7 @@
 // in a debug build, as every phone test does for its screenshots, so its
 // frame times are the debug build's, slower than a release build's.
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -28,6 +30,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/tasks/tasks_screen.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -149,6 +152,42 @@ void main() {
       await drag(header(), 0.12, 500);
       expect(_dayShown(tester), contains('18'));
       await drag(header(), -0.5, 500);
+      expect(_dayShown(tester), contains('19'));
+
+      // A turn let go and caught before it settles, then taken back: the
+      // page stays on its own day. Whether the catch lands before the settle
+      // ends depends on the device's frames, so it is printed, not asserted;
+      // the widget tests pin it.
+      await tester.timedDragFrom(
+        header(),
+        Offset(0.3 * width, 0),
+        const Duration(milliseconds: 600),
+      );
+      // One frame of the settle, with the header on the day it turns to.
+      await tester.pump();
+      final back = await tester.startGesture(header());
+      await back.moveBy(const Offset(-20, 0));
+      await back.moveBy(const Offset(-20, 0));
+      await tester.pump();
+      final caught = _dayShown(tester).contains('19');
+      if (caught) {
+        // Back by most of the way the page still stands off, so it springs
+        // back however far the settle had got.
+        final standsOff = [
+          for (final editor in find.byType(NoteEditor).evaluate())
+            (editor.renderObject! as RenderBox).localToGlobal(Offset.zero).dx,
+        ].where((x) => x > 0 && x < width).fold(0.0, math.max);
+        for (var i = 0; i < 6; i++) {
+          await back.moveBy(Offset(-0.15 * standsOff, 0));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+      }
+      await back.up();
+      await tester.pumpAndSettle();
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      // ignore: avoid_print
+      print('PAGE-TURN-CAUGHT $name $caught');
+      if (!caught) await drag(header(), -0.5, 500);
       expect(_dayShown(tester), contains('19'));
 
       // Home, turned to Tasks and back to Notes from its header.
