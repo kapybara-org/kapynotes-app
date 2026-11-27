@@ -6,7 +6,9 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/audio/adts.dart';
 import 'package:kapy_notes/audio/audio_decode.dart';
+import 'package:kapy_notes/audio/mp4_duration.dart';
 import 'package:kapy_notes/audio/recording_controls.dart';
 import 'package:kapy_notes/audio/voice_recorder.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
@@ -20,11 +22,15 @@ import 'package:kapy_notes/core/platform.dart';
 class FakeVoiceRecorder implements VoiceRecorderBackend {
   FakeVoiceRecorder({
     this.permitted = true,
+    this.microphone = true,
     this.bytes,
     this.writesFile = true,
   });
 
   bool permitted;
+
+  /// Whether the computer has a microphone at all.
+  bool microphone;
 
   /// Whether `start` puts real bytes on disk. Off for the clock tests, which
   /// run inside `fakeAsync` where real file I/O would never complete.
@@ -45,6 +51,9 @@ class FakeVoiceRecorder implements VoiceRecorderBackend {
 
   @override
   Future<bool> hasPermission() async => permitted;
+
+  @override
+  Future<bool> hasMicrophone() async => microphone;
 
   @override
   Future<void> start(String path) async {
@@ -123,6 +132,12 @@ class FakeRecordingControls implements RecordingControls {
 
 /// Controls whose question is answered only when [_answer] completes: a
 /// dialog left up, or a platform that never replies.
+/// A backend whose look for a microphone fails rather than answering.
+class _MicrophoneUnknown extends FakeVoiceRecorder {
+  @override
+  Future<bool> hasMicrophone() async => throw StateError('no answer');
+}
+
 class _UnansweredControls extends FakeRecordingControls {
   _UnansweredControls(this._answer);
 
@@ -285,6 +300,16 @@ void main() {
     expect(order, ['flush']);
   });
 
+  test('a backend that cannot tell whether there is a microphone lets the '
+      'recording try', () async {
+    final controller = VoiceRecordingController(
+      recorder: _MicrophoneUnknown(),
+      tempDirectory: temp,
+    );
+    addTearDown(controller.dispose);
+    expect(await controller.hasMicrophone(), isTrue);
+  });
+
   test('the sweep removes stray recordings, and only old ones', () async {
     final old = File('${temp.path}/voice-old.m4a')..writeAsBytesSync([1]);
     final fresh = File('${temp.path}/voice-fresh.m4a')..writeAsBytesSync([1]);
@@ -296,6 +321,22 @@ void main() {
     expect(await old.exists(), isFalse);
     expect(await fresh.exists(), isTrue);
     expect(await other.exists(), isTrue);
+  });
+
+  test('the sweep removes a stray phone recording no note claims', () async {
+    final stray = File('${temp.path}/voice-old.aac')..writeAsBytesSync([1]);
+    final claimed = File('${temp.path}/voice-kept.aac')..writeAsBytesSync([1]);
+    File('${temp.path}/voice-kept.json').writeAsStringSync('{"noteId":"n1"}');
+    for (final file in [stray, claimed]) {
+      file.setLastModifiedSync(
+        DateTime.now().subtract(const Duration(hours: 2)),
+      );
+    }
+
+    await VoiceRecordingController.sweepTempFiles(directory: temp);
+
+    expect(await stray.exists(), isFalse);
+    expect(await claimed.exists(), isTrue);
   });
 
   group('durationFor', () {
@@ -645,6 +686,61 @@ void main() {
         expect(peaks.last, greaterThan(200));
         // The decoded copy is the caller's to throw away.
         expect(pcm.existsSync(), isFalse);
+      });
+
+      /// What a phone leaves when the app is killed outright mid-recording:
+      /// its marker, and the ADTS written so far, with no `.m4a` yet.
+      File killedDuring(String name, String noteId, List<int> adts) {
+        File(
+          '${temp.path}/$name.json',
+        ).writeAsStringSync(jsonEncode({'noteId': noteId}));
+        File('${temp.path}/$name.aac').writeAsBytesSync(adts);
+        return File('${temp.path}/$name.m4a');
+      }
+
+      final toneAdts = File('test/fixtures/tone_5s.aac').readAsBytesSync();
+
+      test('delivers a phone recording the app was killed during', () async {
+        // 42 whole frames, and the start of a 43rd the kill cut short.
+        final audio = killedDuring(
+          'voice-11-12',
+          'n7',
+          toneAdts.sublist(0, 15000),
+        );
+
+        await controller.recoverInterrupted();
+
+        expect(delivered.keys, ['n7']);
+        expect(delivered['n7']!.file.path, audio.path);
+        expect(delivered['n7']!.duration, const Duration(milliseconds: 2688));
+        expect(mp4DurationMs(audio.readAsBytesSync()), 2688);
+        expect(File(adtsBeside(audio.path)).existsSync(), isFalse);
+        expect(markerOf(audio.path).existsSync(), isFalse);
+        expect(flushes, 1);
+      });
+
+      test(
+        'rewraps it again when the last launch was cut off doing so',
+        () async {
+          final audio = killedDuring('voice-13-14', 'n7', toneAdts)
+            ..writeAsBytesSync(tone.sublist(0, 4096));
+
+          await controller.recoverInterrupted();
+
+          expect(delivered['n7']!.duration, const Duration(milliseconds: 5120));
+          expect(File(adtsBeside(audio.path)).existsSync(), isFalse);
+        },
+      );
+
+      test('lets go of one killed before its first frame', () async {
+        final audio = killedDuring('voice-15-16', 'n7', [0xFF, 0xF1, 0x60]);
+
+        await controller.recoverInterrupted();
+
+        expect(delivered, isEmpty);
+        expect(flushes, 0);
+        expect(File(adtsBeside(audio.path)).existsSync(), isFalse);
+        expect(markerOf(audio.path).existsSync(), isFalse);
       });
 
       test('leaves a file killed before it was closed to the sweep', () async {

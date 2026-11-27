@@ -40,7 +40,7 @@ class PhoneNoteHeader extends StatelessWidget {
 
   /// Everything the note offers, in its groups, under More.
   final KapyMenu menu;
-  final void Function(String value, Offset at) onMenu;
+  final void Function(String value, MenuSpot at) onMenu;
 
   /// The note's day, which the day button shows, and today, which turns its
   /// figure sage. Null on a page with no days, such as Shared's, which has no week.
@@ -180,17 +180,19 @@ class PhoneNoteHeader extends StatelessWidget {
     final box = button.findRenderObject() as RenderBox?;
     if (box == null) return;
     final at = box.localToGlobal(Offset(box.size.width, box.size.height + 4));
+    var spot = spotAt(at);
     unawaited(
       showKapyContextMenu<String>(
         context: button,
         globalPosition: at,
+        onClosed: (placed) => spot = placed,
         items: kapyMenuItems(
           menu,
           key: (value) => 'page-more-$value',
           height: 44,
         ),
       ).then((choice) {
-        if (choice != null) onMenu(choice, at);
+        if (choice != null) onMenu(choice, spot);
       }),
     );
   }

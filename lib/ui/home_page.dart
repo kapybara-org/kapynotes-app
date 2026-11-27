@@ -24,12 +24,14 @@ import '../speech/local_model_store.dart';
 import '../speech/summarizer.dart';
 import '../speech/transcriber.dart';
 import '../speech/transcription_queue.dart';
+import '../core/app_zoom.dart';
 import '../core/desktop_integration.dart';
 import '../core/platform.dart';
 import '../core/quick_capture.dart';
 import '../core/status_bar.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
+import '../core/type_ahead.dart';
 import '../data/engine_provider.dart';
 import '../data/attachment_limits.dart';
 import '../data/auto_titles.dart';
@@ -53,6 +55,7 @@ import '../data/notes_store.dart';
 import '../data/onboarding.dart';
 import 'editor/voice_chip.dart';
 import 'editor/voice_insertion.dart';
+import 'voice_note_ask.dart';
 import 'voice_note_dialog.dart';
 import '../speech/speech_api.dart';
 import '../speech/speech_errors.dart';
@@ -144,8 +147,8 @@ const double kCrampedPageHeight = 240;
 bool isCrampedPage(Size size, double keyboardInset) =>
     keyboardInset > 0 && size.height - keyboardInset < kCrampedPageHeight;
 
-/// What the toast says once notes are gone: [deleted] of the reader's own,
-/// gone for good, and [removed] that somebody else shares, which only left
+/// What the toast says as notes go: [deleted] of the reader's own, which
+/// go for good, and [removed] that somebody else shares, which only leave
 /// the reader's notes.
 String forgottenMessage({required int deleted, required int removed}) {
   if (deleted == 0) return 'Removed from your notes';
@@ -555,6 +558,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _showTabOf(_selectedId);
     HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     widget.notes.addListener(_onNotesChanged);
+    widget.dayTabs?.addListener(_onDayTabsChanged);
     if (widget.folders case final folders?) {
       folders.addListener(_onFoldersChanged);
       unawaited(
@@ -606,6 +610,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_statusBarHidden) unawaited(StatusBar.setHidden(false));
     WidgetsBinding.instance.removeObserver(this);
     widget.notes.removeListener(_onNotesChanged);
+    widget.dayTabs?.removeListener(_onDayTabsChanged);
     widget.folders?.removeListener(_onFoldersChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
     widget.account?.removeListener(_offerRecoveryKey);
@@ -1023,6 +1028,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         }
         return;
       }
+      if (!await recording.hasMicrophone()) {
+        if (mounted) {
+          progress.error('No microphone found');
+        } else {
+          progress.dismiss();
+        }
+        return;
+      }
       final started = await recording.start(noteId: id);
       if (!mounted) {
         progress.dismiss();
@@ -1205,6 +1218,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final noteId = _selectedId;
     final note = widget.notes.byId(noteId ?? '');
     final canEdit = _canWriteNote(note);
+    final ai = _kapyAiOn ? _kapyAi : null;
     await openVoiceNoteDialog(
       context,
       ref: ref,
@@ -1267,6 +1281,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             : (instruction) =>
                   widget.voicePrefs!.summaryInstruction = instruction,
         failureReason: _failureReasonFor(ref),
+        ask: ai == null || note == null
+            ? null
+            : VoiceAskActions(
+                kapyAi: ai,
+                noteId: note.id,
+                hidden: note.isHidden,
+                onManageAccounts: () => _manageKapyAccounts(ai),
+                onSignIn: _kapySignIn,
+                onUpgrade: _kapyUpgrade,
+              ),
       ),
     );
   }
@@ -1436,8 +1460,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// build.
   bool get _listFits {
     final view = WidgetsBinding.instance.platformDispatcher.views.first;
-    return view.physicalSize.width / view.devicePixelRatio >=
-        kTwoPaneBreakpoint;
+    return zoomedSizeOf(view).width >= kTwoPaneBreakpoint;
   }
 
   /// Whether the notes list is on screen, beside the page or over it.
@@ -1770,9 +1793,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Opens an empty pane beside the focused note, for the next note chosen.
+  /// The note's editor lets go of the keyboard first: More hands it back to
+  /// that editor as it closes, which would focus the note's pane again.
   void _splitEditor() {
     if (_usesCompactLayout || _specialMode || !_workspace.canSplit) return;
     final previous = _selectedId;
+    _selectedEditor?.releaseKeyboard();
     setState(() {
       _workspace.split();
       _adoptWorkspaceSelection(previous);
@@ -1917,9 +1943,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Opens the tab closed last again, in front.
+  /// Opens the tab closed last again, in front and in its place on the row,
+  /// and takes down the toast that offered it back.
   void _reopenTab() {
     if (!_workspace.canReopen) return;
+    Toast.withdraw(_reopenTab);
     _changeTabs(_workspace.openNoteIds, _workspace.reopen);
   }
 
@@ -2102,14 +2130,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _dayOfFreshNote[note.id] ??
       noteDay(note, widget.prefs.displayTime, ownDay: _ownDayOf(note));
 
-  /// A day picked in the page's week or its month: [notes], its notes, the
-  /// earliest written first, become the tabs, one to a tab and the first in
-  /// front, up to [EditorWorkspace.dayTabLimit] of them, a later day's too,
-  /// though the list leaves that day out until it comes. All of them are lit
-  /// in the list, which stays whole. A day with none opens a page to write on
-  /// it, in the folder in front if there is one. The tabs open before the
-  /// first day was picked come back with the notice's Undo, or a click on the
-  /// day picked.
+  /// A day picked in the page's week or its month: [notes], its notes, become
+  /// the tabs in the day's own order where it has one, pinned tabs first, and
+  /// otherwise the earliest written first. They open one to a tab, the first
+  /// in front, up to [EditorWorkspace.dayTabLimit] of them, a later day's
+  /// too, though the list leaves that day out until it comes. All of them are
+  /// lit in the list, which stays whole. A day with none opens a page to
+  /// write on it, in the folder in front if there is one. The tabs open
+  /// before the first day was picked come back with the notice's Undo, or a
+  /// click on the day picked.
   void _openDay(DateTime day, List<Note> notes) {
     if (day == _workspace.dayInTabs) return _leaveDay();
     if (notes.isEmpty &&
@@ -2125,9 +2154,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!mounted) return;
       final previous = _selectedId;
       final first = _workspace.dayInTabs == null;
-      final opened = _workspace.showDay(day, [
-        for (final note in notes) note.id,
-      ]);
+      final ids = [for (final note in notes) note.id];
+      final opened = _workspace.showDay(
+        day,
+        widget.dayTabs?.arrange(day, ids).order ?? ids,
+      );
       if (keyboard) _holdEditorAutofocus();
       setState(() => _adoptWorkspaceSelection(previous));
       Toast.show(
@@ -2153,6 +2184,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (keyboard) _holdEditorAutofocus();
       return _workspace.leaveDay();
     }, focus: !keyboard);
+  }
+
+  /// A day's tabs arranged anew, here or on another device: the tabs of the
+  /// day open now take the new order, the one in front staying in front.
+  void _onDayTabsChanged() {
+    final day = _workspace.dayInTabs;
+    final tabs = widget.dayTabs;
+    if (day == null || tabs == null) return;
+    final order = tabs.arrange(day, [..._workspace.dayNoteIds]).order;
+    if (_workspace.arrangeDay(order)) setState(() {});
   }
 
   /// Whether the keyboard is on a day of the page's week, there by Tab. A day
@@ -2648,12 +2689,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
-  /// Throws one note away for good.
+  /// Throws one note away, for good once its toast's Undo has gone: see
+  /// [_forget].
   ///
-  /// Guarded by a question, because nothing here can undo it: the note leaves
-  /// this device and, through the tombstone, every other one it syncs to. A
-  /// note somebody else shares with this account only leaves its own notes.
-  /// The question offers not to be asked again, and Settings asks it again.
+  /// The note leaves this device and, through the tombstone, every other one
+  /// it syncs to. A note somebody else shares with this account only leaves
+  /// its own notes. A question goes first; it offers not to be asked again,
+  /// and Settings asks it again.
   Future<void> _deleteNote(String id) async {
     final note = widget.notes.byId(id);
     if (note == null || !_canRemoveNote(note)) return;
@@ -2664,7 +2706,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final confirmed = await _confirmDelete(
         title: owner == null ? 'Delete note?' : 'Remove from your notes?',
         body: owner == null
-            ? 'Permanently deletes $name from every synced device.'
+            ? 'Deletes $name from every synced device.'
             : 'Removes $name from your notes, and from your other devices '
                   'once they are up to date. $owner and '
                   "everyone it's shared with keep it.",
@@ -2674,11 +2716,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       if (!confirmed || !mounted) return;
     }
     _forget([id]);
-    if (owner == null) {
-      _announceDeleted(1);
-    } else {
-      Toast.show(context, 'Removed from your notes', icon: deleteIcon);
-    }
   }
 
   /// Who owns [note]'s shared space, when that is somebody else. Only they
@@ -2698,12 +2735,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         'Notes shared with you are removed from your notes, and from your '
         'other devices once they are up to date. Their owners keep them.';
     if (theirs == 0) {
-      return 'Permanently deletes ${_noteCount(ids.length).toLowerCase()} '
-          'from every synced device.';
+      return 'Deletes ${_noteCount(ids.length).toLowerCase()} from every '
+          'synced device.';
     }
     if (theirs == ids.length) return shared;
-    return 'Permanently deletes your own notes from every synced device. '
-        '$shared';
+    return 'Deletes your own notes from every synced device. $shared';
   }
 
   /// Empties the archive.
@@ -2721,12 +2757,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     if (!confirmed || !mounted) return;
     _forget(ids);
-    _announceForgotten(ids.length, removed);
   }
 
   /// Throws picked notes away. One goes as its row's Delete does, asking
   /// only if the reader still wants to be asked; several always ask, with
-  /// how many, because nothing brings them back.
+  /// how many.
   Future<void> _deletePicked(List<String> picked) async {
     if (picked.length == 1) return _deleteNote(picked.single);
     final ids = picked
@@ -2747,25 +2782,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!confirmed || !mounted) return;
     _forget(ids);
     _picks.clear();
-    _announceForgotten(ids.length, removed);
   }
 
-  /// How many of [ids] somebody else shares with this account. Counted
-  /// before they go: once forgotten, a note is no longer here to ask.
+  /// How many of [ids] somebody else shares with this account.
   int _sharedByOthers(List<String> ids) =>
       ids.where((id) => _sharedBy(widget.notes.byId(id)) != null).length;
 
-  void _announceForgotten(int total, int removed) => Toast.show(
-    context,
-    forgottenMessage(deleted: total - removed, removed: removed),
-    icon: deleteIcon,
-  );
-
-  /// The part every delete shares: take the notes out, drop whatever the
-  /// selection and the editor were holding onto, and reclaim the pictures and
-  /// recordings nothing refers to any more.
+  /// The part every delete shares: take the notes out of every list, drop
+  /// whatever the selection and the editor were holding onto, and say so,
+  /// with Undo. They go for good once the toast does, with the pictures and
+  /// recordings nothing else refers to. Until then nothing of them has
+  /// changed, so Undo puts them back as they were, the open one open again
+  /// on a desktop's page, and the app being killed keeps them. Leaving the
+  /// app ends the toast as its time running out would: see
+  /// [Toast.giveUpUndo].
   void _forget(List<String> ids) {
     final removing = ids.toSet();
+    final removed = _sharedByOthers(ids);
     _letGo(removing);
     final losingSelected = removing.contains(_selectedId);
     final index = losingSelected
@@ -2774,7 +2807,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final othersOpen =
         !_usesCompactLayout &&
         (_workspace.isSplit || _workspace.tabs.length > 1);
-    widget.notes.deleteAll(removing);
+    final reopen =
+        losingSelected && !_usesCompactLayout && (_specialMode || !othersOpen)
+        ? _selectedId
+        : null;
+    final notes = widget.notes..holdDelete(removing);
     _picks.drop(removing);
     setState(() {
       if (losingSelected && _specialMode) {
@@ -2786,17 +2823,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } else if (losingSelected) {
       _openInPlaceOf(index, othersOpen: othersOpen);
     }
-    // The notes are gone, so their attachments have no owner. See
-    // [NotesStore.sweepBlobs] for why this is the only place that counts.
-    unawaited(widget.notes.sweepBlobs());
-  }
-
-  void _announceDeleted(int count) {
-    if (!mounted) return;
+    final inItsPlace = _selectedId;
     Toast.show(
       context,
-      count == 1 ? 'Note deleted' : '$count notes deleted',
+      forgottenMessage(deleted: ids.length - removed, removed: removed),
       icon: deleteIcon,
+      action: 'Undo',
+      onAction: () {
+        notes.undoDelete(removing);
+        if (reopen == null || !mounted || _selectedId != inItsPlace) return;
+        setState(() => _setSelectedId(reopen));
+        widget.prefs.lastOpenedNoteId = reopen;
+      },
+      onGone: () {
+        notes.deleteAll(removing);
+        // The notes are gone, so their attachments have no owner. See
+        // [NotesStore.sweepBlobs] for why this is the only place that counts.
+        unawaited(notes.sweepBlobs());
+      },
     );
   }
 
@@ -3510,24 +3554,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     controller: _kapyPanel,
     noteTitle: _kapyNoteTitle,
     onOpenNote: onOpenNote,
-    onManageAccounts: () => _showSettings(
-      section: SettingsSection.voice,
-      reveal: ai.accounts.isEmpty
-          ? 'kapy-ai-toggle'
-          : kapyAccountRowId(ai.accounts.first.kind),
-    ),
-    onSignIn: widget.account == null
-        ? null
-        : () => _showSettings(section: SettingsSection.account),
-    onUpgrade: switch (widget.account?.billing) {
-      final billing? => () => unawaited(
-        showProSheet(context, billing: billing),
-      ),
-      null => null,
-    },
+    onManageAccounts: () => _manageKapyAccounts(ai),
+    onSignIn: _kapySignIn,
+    onUpgrade: _kapyUpgrade,
     onClose: onClose,
     now: widget.notes.now,
   );
+
+  /// Settings › Voice & AI, at the accounts Kapy AI can answer with.
+  void _manageKapyAccounts(KapyAi ai) => _showSettings(
+    section: SettingsSection.voice,
+    reveal: ai.accounts.isEmpty
+        ? 'kapy-ai-toggle'
+        : kapyAccountRowId(ai.accounts.first.kind),
+  );
+
+  VoidCallback? get _kapySignIn => widget.account == null
+      ? null
+      : () => _showSettings(section: SettingsSection.account);
+
+  VoidCallback? get _kapyUpgrade => switch (widget.account?.billing) {
+    final billing? => () => unawaited(showProSheet(context, billing: billing)),
+    null => null,
+  };
 
   /// The page with Kapy AI's panel beside it or over it, while it is open.
   Widget _withKapyAi(Widget page) {
@@ -3633,6 +3682,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         (_selectedId != null && _selectedId == _untouchedWelcomeId)) {
       return;
     }
+    TypeAhead.hold();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _editorFocusSuppressed) return;
       _selectedEditor?.focusAtEnd();
@@ -3757,6 +3807,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     bool field = false,
     bool again = false,
   }) async {
+    TypeAhead.hold();
     final shown = _tasksMode ? null : _shownNote(_selectedId);
     _findOnBack = null;
     if (!again) _findWords.clear();
@@ -3839,9 +3890,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         unawaited(
           moveNotesToFolder(
             context,
-            Offset(
-              (window.width - TagPopover.defaultWidth) / 2,
-              commandMenuTop(window),
+            spotAt(
+              Offset(
+                (window.width - TagPopover.defaultWidth) / 2,
+                commandMenuTop(window),
+              ),
             ),
             widget.folders!,
             [note.id],
@@ -3891,6 +3944,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       unawaited(tasks.add(text));
       return;
     }
+    TypeAhead.hold();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _taskAddFocus.requestFocus();
     });
@@ -4229,9 +4283,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     : () => _focusPane(index),
             ],
             onOpenSettings: _showSettings,
-            onIncreaseEditorTextSize: widget.prefs.increaseEditorTextSize,
-            onDecreaseEditorTextSize: widget.prefs.decreaseEditorTextSize,
-            onResetEditorTextSize: widget.prefs.resetEditorTextSize,
+            onZoomIn: widget.prefs.zoomIn,
+            onZoomOut: widget.prefs.zoomOut,
+            onResetZoom: widget.prefs.resetZoom,
             onInsertImage: () => unawaited(
               _selectedEditor?.pickAndInsertImages() ?? Future<void>.value(),
             ),
@@ -4244,7 +4298,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 : null,
             onDeleteNote: _removeOpenNote,
             onToggleKapyAi: _kapyAi == null ? null : _toggleKapyAi,
-            autofocus: _selectedId == null || !widget.prefs.readyToTypeOnOpen,
             child: content,
           ),
         );
@@ -4383,7 +4436,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ownDay: widget.days == null ? null : _ownDayOf,
               ofPickedDay: switch (_workspace.dayInTabs) {
                 null => null,
-                final day => (note) => _dayOfNote(note) == day,
+                final day =>
+                  (note) =>
+                      _dayOfNote(note) == day ||
+                      _workspace.dayNoteIds.contains(note.id),
               },
               when: _when,
               onWhenChanged: _setWhen,
@@ -4844,7 +4900,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Does what the page's More menu names: the window's own actions, then
   /// the folder's in front or the open note's. [at] is where a list or a
   /// field it opens goes.
-  void _runPageAction(String action, Note? note, Offset at) {
+  void _runPageAction(String action, Note? note, MenuSpot at) {
     switch (action) {
       case 'split':
         _splitEditor();
@@ -4953,6 +5009,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// The open tabs, under the toolbar while there is more than one.
   Widget _buildTabRow() {
     final front = _workspace.frontTab;
+    final day = _workspace.dayInTabs;
+    final ofDay = _workspace.dayNoteIds;
+    var pinned = const <String>{};
+    if ((day, widget.dayTabs) case (final day?, final tabs?)) {
+      final arranged = tabs.arrange(day, [...ofDay]);
+      pinned = arranged.order.take(arranged.pinned).toSet();
+    }
     return NoteTabRow(
       tabs: [
         for (final tab in _workspace.tabs)
@@ -4964,13 +5027,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 icon: KapyIcons.folderOutlined,
               ),
           ] else if (widget.notes.byId(tab.noteId) case final note?)
-            NoteTab(id: '${tab.id}', title: note.title, icon: _tabIcon(note)),
+            NoteTab(
+              id: '${tab.id}',
+              title: note.title,
+              icon: _tabIcon(note),
+              pinned:
+                  widget.dayTabs != null &&
+                      tab.noteIds.length == 1 &&
+                      ofDay.contains(note.id)
+                  ? pinned.contains(note.id)
+                  : null,
+            ),
       ],
       activeId: front == null ? null : '${front.id}',
       recentIds: [for (final tab in _workspace.recentTabs) '${tab.id}'],
       onSelect: _activateTab,
       onClose: _closeTab,
       onCloseOthers: _closeOtherTabs,
+      onPin: day == null
+          ? null
+          : (id, {required pin}) {
+              final tab = _workspace.tabs.firstWhere(
+                (tab) => '${tab.id}' == id,
+              );
+              if (tab.noteId case final noteId?) {
+                _pinDayTab(
+                  day,
+                  noteId,
+                  pin: pin,
+                  kept: {..._workspace.dayNoteIds},
+                );
+              }
+            },
       // While the tab is split, the chord closes its focused pane first.
       closeShortcut: _workspace.isSplit
           ? null
@@ -5058,14 +5146,21 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// A folder card's menu on its folder's page.
   Future<void> _showFolderMenu(Folder folder, Offset at) async {
-    final action = await showFolderMenu(context, at, folder, newInside: false);
+    var spot = spotAt(at);
+    final action = await showFolderMenu(
+      context,
+      at,
+      folder,
+      newInside: false,
+      onClosed: (placed) => spot = placed,
+    );
     if (action == null || !mounted) return;
-    await _runFolderAction(action, folder, at);
+    await _runFolderAction(action, folder, spot);
   }
 
   /// Does a folder's action from its card or, while it is in front, from the
   /// page's More. [at] is where a list or a field it opens goes.
-  Future<void> _runFolderAction(String action, Folder folder, Offset at) =>
+  Future<void> _runFolderAction(String action, Folder folder, MenuSpot at) =>
       runFolderAction(
         context,
         action,
@@ -6006,7 +6101,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               onList: () =>
                   unawaited(_openPhoneDayNotes(tabsOn, tabs.notes, note.id)),
               onPin: (id, {required pin}) =>
-                  _pinPhoneTab(tabsOn, id, pin: pin, kept: kept),
+                  _pinDayTab(tabsOn, id, pin: pin, kept: kept),
               onMove: (id, to) => _movePhoneTab(tabsOn, id, to, kept: kept),
             ),
       tasks: tasks,
@@ -6147,7 +6242,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  void _pinPhoneTab(
+  void _pinDayTab(
     DateTime day,
     String id, {
     required bool pin,
@@ -6623,9 +6718,9 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onGoForward,
     required this.onFocusPane,
     required this.onOpenSettings,
-    required this.onIncreaseEditorTextSize,
-    required this.onDecreaseEditorTextSize,
-    required this.onResetEditorTextSize,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onResetZoom,
     required this.onInsertImage,
     required this.onRecordVoice,
     required this.onToggleSidebar,
@@ -6635,7 +6730,6 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onDeleteNote,
     required this.onToggleKapyAi,
     required this.shortcuts,
-    required this.autofocus,
   });
 
   final Widget child;
@@ -6698,9 +6792,9 @@ class _DesktopShortcuts extends StatelessWidget {
   /// One per pane position, left to right; null past the panes that are open.
   final List<VoidCallback?> onFocusPane;
   final VoidCallback onOpenSettings;
-  final VoidCallback onIncreaseEditorTextSize;
-  final VoidCallback onDecreaseEditorTextSize;
-  final VoidCallback onResetEditorTextSize;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onResetZoom;
   final VoidCallback onInsertImage;
   final VoidCallback onRecordVoice;
   final VoidCallback onToggleSidebar;
@@ -6712,7 +6806,6 @@ class _DesktopShortcuts extends StatelessWidget {
   /// Null where Kapy AI is not built in, which leaves its chord unbound.
   final VoidCallback? onToggleKapyAi;
   final ShortcutPrefs shortcuts;
-  final bool autofocus;
 
   ShortcutBinding get _find => ShortcutBinding(
     logicalKey: LogicalKeyboardKey.keyF,
@@ -6772,12 +6865,9 @@ class _DesktopShortcuts extends StatelessWidget {
             ?onFocusPane[2],
         ?shortcuts.bindingFor(ShortcutAction.openSettings)?.activator:
             onOpenSettings,
-        ?shortcuts.bindingFor(ShortcutAction.increaseEditorTextSize)?.activator:
-            onIncreaseEditorTextSize,
-        ?shortcuts.bindingFor(ShortcutAction.decreaseEditorTextSize)?.activator:
-            onDecreaseEditorTextSize,
-        ?shortcuts.bindingFor(ShortcutAction.resetEditorTextSize)?.activator:
-            onResetEditorTextSize,
+        ?shortcuts.bindingFor(ShortcutAction.zoomIn)?.activator: onZoomIn,
+        ?shortcuts.bindingFor(ShortcutAction.zoomOut)?.activator: onZoomOut,
+        ?shortcuts.bindingFor(ShortcutAction.resetZoom)?.activator: onResetZoom,
         ?shortcuts.bindingFor(ShortcutAction.insertImage)?.activator:
             onInsertImage,
         ?shortcuts.bindingFor(ShortcutAction.recordVoiceNote)?.activator:
@@ -6797,7 +6887,7 @@ class _DesktopShortcuts extends StatelessWidget {
       },
       child: FocusScope(
         node: focusNode,
-        autofocus: autofocus,
+        autofocus: true,
         onKeyEvent: _pairKey,
         child: child,
       ),

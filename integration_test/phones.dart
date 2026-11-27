@@ -35,6 +35,7 @@ import 'phone_time_line_test.dart' as phone_time_line;
 import 'phone_v2_test.dart' as phone_v2;
 import 'phone_video_test.dart' as phone_video;
 import 'phone_voice_chip_test.dart' as phone_voice_chip;
+import 'phone_voice_window_test.dart' as phone_voice_window;
 
 const _tests = <String, void Function()>{
   'kapy_ai_notice': kapy_ai_notice.main,
@@ -54,6 +55,7 @@ const _tests = <String, void Function()>{
   'phone_v2': phone_v2.main,
   'phone_video': phone_video.main,
   'phone_voice_chip': phone_voice_chip.main,
+  'phone_voice_window': phone_voice_window.main,
 };
 
 const _pick = String.fromEnvironment('KAPYNOTES_PHONE_TEST_FILE');

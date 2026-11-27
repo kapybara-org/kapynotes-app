@@ -92,19 +92,12 @@ class CompactIconButton extends StatelessWidget {
                 if (selected) {
                   return selectedBackground ?? palette.selectedBackground;
                 }
-                if (states.contains(WidgetState.hovered) ||
-                    states.contains(WidgetState.focused)) {
+                if (states.contains(WidgetState.hovered)) {
                   return palette.hover;
                 }
                 return Colors.transparent;
               }),
               overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-              side: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.focused)) {
-                  return BorderSide(color: palette.selectedBorder, width: 1);
-                }
-                return BorderSide.none;
-              }),
               shape: WidgetStatePropertyAll(
                 RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(radius),

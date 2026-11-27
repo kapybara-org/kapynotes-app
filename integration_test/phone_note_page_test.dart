@@ -36,6 +36,7 @@ import 'package:kapy_notes/ui/editor/note_field.dart'
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
 import 'package:material_ui/material_ui.dart';
 
+import 'keyboard_support.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
 
@@ -152,15 +153,6 @@ void main() {
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
 
-    Future<void> keyboard({required bool up}) async {
-      for (var i = 0; i < 100; i++) {
-        if ((tester.view.viewInsets.bottom > 0) == up) break;
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-      await tester.pumpAndSettle(const Duration(milliseconds: 500));
-      expect(tester.view.viewInsets.bottom > 0, up, reason: 'keyboard');
-    }
-
     Future<void> shot(String board) async {
       expect(tester.takeException(), isNull, reason: board);
       await screenshot('note-page-$board', device: true);
@@ -182,7 +174,7 @@ void main() {
 
     // M07: the note at rest, the week open and the day's tasks under it.
     FocusManager.instance.primaryFocus?.unfocus();
-    await keyboard(up: false);
+    await settleKeyboard(tester, up: false);
     expect(field().controller.text, startsWith('Call with Arjun'));
     expect(find.byKey(const ValueKey('page-tasks-line')), findsOneWidget);
     expect(find.byKey(const ValueKey('note-path')), findsOneWidget);
@@ -236,7 +228,7 @@ void main() {
         box.top + caret.center.dy - field().scrollController.offset,
       ),
     );
-    await keyboard(up: true);
+    await settleKeyboard(tester, up: true);
     expect(field().controller.selection.baseOffset, paragraphEnd);
     final controller = field().controller;
     controller.value = TextEditingValue(
@@ -257,7 +249,7 @@ void main() {
 
     // M12: More › Move to another day, the calendar open over the note.
     FocusManager.instance.primaryFocus?.unfocus();
-    await keyboard(up: false);
+    await settleKeyboard(tester, up: false);
     await tap(find.byKey(const ValueKey('page-more')));
     await tap(find.byKey(const ValueKey('page-more-day')));
     expect(find.byType(DayPicker), findsOneWidget);
@@ -290,7 +282,7 @@ void main() {
     // M11: Fri 21 in the week, a blank page for that day, ready to type, the
     // week still open.
     await tap(find.byKey(const ValueKey('day-strip-2025-11-21')));
-    await keyboard(up: true);
+    await settleKeyboard(tester, up: true);
     expect(find.byKey(const ValueKey('day-strip-2025-11-21')), findsOneWidget);
     await shot('m11-another-day-blank-page');
     // Back while typing (KAP-305): the words are kept and the keyboard
@@ -306,7 +298,7 @@ void main() {
     final written = field().controller;
     if (AppPlatform.isAndroid) {
       await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
-      await keyboard(up: false);
+      await settleKeyboard(tester, up: false);
       expect(find.byType(NoteEditor), findsOneWidget);
       await tester.binding.handlePopRoute();
     } else {
@@ -317,7 +309,7 @@ void main() {
       );
     }
     await tester.pumpAndSettle();
-    await keyboard(up: false);
+    await settleKeyboard(tester, up: false);
     expect(find.byType(NoteEditor), findsNothing);
     expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
     expect(written.text, words);
@@ -378,7 +370,7 @@ void main() {
     expect(find.text('Unpin tab'), findsNothing);
     // A8: + starts a note on the day as the last tab, ready to type.
     await tap(find.byKey(const ValueKey('day-tabs-new')));
-    await keyboard(up: true);
+    await settleKeyboard(tester, up: true);
     const plumber = 'Call the plumber';
     field().controller.value = const TextEditingValue(
       text: plumber,

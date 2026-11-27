@@ -57,7 +57,9 @@ jobs:
     needs: names
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # A green run takes 38 to 45 minutes, so 60 leaves room for a slow cold
+    # build and one rerun of a file the emulator spoiled.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,10 +90,13 @@ jobs:
       - run: flutter pub get --enforce-lockfile
 
       - name: Screenshots on an Android 16 emulator
-        # The job has 45 minutes; a file that hangs gives up 15 or 12 of them.
+        # A file that hangs gives up 15 or 12 of the job's 60 minutes. A file
+        # the emulator spoils before its tests finish runs once more within
+        # the first 40.
         env:
           PHONE_FIRST_FILE_MINUTES: 15
           PHONE_FILE_MINUTES: 12
+          PHONE_RETRY_MINUTES: 40
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 36
@@ -170,6 +175,10 @@ jobs:
           key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ steps.lock.outputs.hash }}
 
       - run: flutter pub get --enforce-lockfile
+
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh ios_sim_arm64
 
       # One build for every test file, while the iPhone boots: built per file,
       # the app took 1.5 to 6 minutes of Xcode each time (KAP-325).

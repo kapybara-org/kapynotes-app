@@ -97,8 +97,9 @@ class EditorTab {
 /// A note or a folder, as Back's walk keeps them.
 typedef _Place = ({String id, bool folder});
 
-/// A closed tab: its notes left to right, or its folder.
-typedef _Closed = ({List<String> notes, String? folderId});
+/// A closed tab: its notes left to right, or its folder, and its place on
+/// the row, where it had one.
+typedef _Closed = ({List<String> notes, String? folderId, int? at});
 
 /// The tabs a day's notes took the place of: in the row's order, most
 /// recently used first, and the one that was in front.
@@ -255,6 +256,9 @@ class EditorWorkspace {
   /// while the tabs are the reader's own.
   DateTime? get dayInTabs => _dayInTabs;
 
+  /// The notes [showDay] opened for [dayInTabs], in the order it opened them.
+  Iterable<String> get dayNoteIds => _dayNotes;
+
   /// Where [noteId] is on screen, or -1.
   int paneOf(String noteId) => frontTab?._paneOf(noteId) ?? -1;
 
@@ -355,10 +359,18 @@ class EditorWorkspace {
         }.take(historyLimit),
       );
       if (raw['closed'] case final List closed) {
-        for (final entry in closed) {
+        final places = switch (raw['closedAt']) {
+          final List places => places,
+          _ => const [],
+        };
+        for (final (index, entry) in closed.indexed) {
+          final at = switch (places.elementAtOrNull(index)) {
+            final int at when at >= 0 => at,
+            _ => null,
+          };
           if (entry case {'folder': final String folderId}) {
             if (placedFolders.add(folderId)) {
-              _closed.add((notes: [], folderId: folderId));
+              _closed.add((notes: [], folderId: folderId, at: at));
             }
           } else if (entry is List) {
             final kept = [
@@ -366,7 +378,9 @@ class EditorWorkspace {
                 if (id is String && available.contains(id) && placed.add(id))
                   id,
             ];
-            if (kept.isNotEmpty) _closed.add((notes: kept, folderId: null));
+            if (kept.isNotEmpty) {
+              _closed.add((notes: kept, folderId: null, at: at));
+            }
           }
           if (_closed.length == closedLimit) break;
         }
@@ -581,20 +595,27 @@ class EditorWorkspace {
     _persist();
   }
 
-  /// Opens the tab closed most recently again, in front: its notes side by
-  /// side as they were, or its folder. A note opened elsewhere since stays
-  /// where it is. Returns whether a tab came back.
+  /// Opens the tab closed most recently again, in front and in its place on
+  /// the row: its notes side by side as they were, or its folder. A note
+  /// opened elsewhere since stays where it is. Returns whether a tab came
+  /// back.
   bool reopen() {
     if (_closed.isEmpty) return false;
     _settle();
-    final (:notes, :folderId) = _closed.removeAt(0);
+    final (:notes, :folderId, :at) = _closed.removeAt(0);
     final kept = [
       for (final id in notes)
         if (tabOf(id) < 0) id,
     ];
     final back = folderId != null || kept.isNotEmpty;
     if (back) {
-      _addTab(kept, front: true, folderId: folderId);
+      final tab = _addTab(kept, front: true, folderId: folderId);
+      if (at != null && at < _front) {
+        _tabs
+          ..removeAt(_front)
+          ..insert(at, tab);
+        _front = at;
+      }
       _useFront();
     }
     _persist();
@@ -663,6 +684,34 @@ class EditorWorkspace {
       _useFront();
     }
     _dayNotes = const {};
+    _persist();
+    return true;
+  }
+
+  /// Puts the day's tabs in [order], the day's notes as it is now arranged,
+  /// and any tab of a note it doesn't name after them, as they were. The tab
+  /// in front stays in front. Returns whether a tab moved.
+  bool arrangeDay(List<String> order) {
+    if (_dayInTabs == null) return false;
+    final place = {for (final (index, id) in order.indexed) id: index};
+    final was = {for (final (index, tab) in _tabs.indexed) tab: index};
+    int rank(EditorTab tab) => switch (tab.noteIds) {
+      [final id] when tab.folderId == null => place[id] ?? order.length,
+      _ => order.length,
+    };
+    final arranged = [..._tabs]
+      ..sort(
+        (a, b) => switch (rank(a).compareTo(rank(b))) {
+          0 => was[a]!.compareTo(was[b]!),
+          final by => by,
+        },
+      );
+    if (listEquals(arranged, _tabs)) return false;
+    final front = frontTab;
+    _tabs
+      ..clear()
+      ..addAll(arranged);
+    if (front != null) _front = _tabs.indexOf(front);
     _persist();
     return true;
   }
@@ -1082,7 +1131,12 @@ class EditorWorkspace {
   }
 
   void _remember(EditorTab tab) {
-    _closed.insert(0, (notes: tab.noteIds, folderId: tab.folderId));
+    final at = _tabs.indexOf(tab);
+    _closed.insert(0, (
+      notes: tab.noteIds,
+      folderId: tab.folderId,
+      at: at < 0 ? null : at,
+    ));
     if (_closed.length > closedLimit) _closed.length = closedLimit;
   }
 
@@ -1201,9 +1255,10 @@ class EditorWorkspace {
         for (final (:id, :folder) in _used) folder ? {'folder': id} : id,
       ],
       'closed': [
-        for (final (:notes, :folderId) in _closed)
+        for (final (:notes, :folderId, at: _) in _closed)
           folderId == null ? List.of(notes) : {'folder': folderId},
       ],
+      'closedAt': [for (final tab in _closed) tab.at],
       'day': ?_day,
       'draft': ?_draft,
       if (_dayInTabs case final day?) ...{

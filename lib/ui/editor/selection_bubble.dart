@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
+import '../../core/type_ahead.dart';
 import '../back_entry.dart';
 import '../keycap.dart';
 
@@ -143,6 +144,7 @@ class SelectionBubbleController extends ChangeNotifier {
     _editingLink = true;
     _link.clear();
     notifyListeners();
+    TypeAhead.hold();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_editingLink) _linkFocus.requestFocus();
     });

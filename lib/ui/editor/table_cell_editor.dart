@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
+import '../focus_ring.dart';
 import 'table_controls.dart';
 
 /// The field that opens over one cell of a table.
@@ -43,7 +44,7 @@ class TableCellEditor extends ChangeNotifier {
   /// The handler sits on the field's own node, so Tab is seen before focus
   /// traversal can claim it. The note's field is watched the same way, one level
   /// above it.
-  late final FocusNode focus = FocusNode(
+  late final FocusNode focus = NoRingFocusNode(
     debugLabel: 'table cell',
     onKeyEvent: (node, event) =>
         _handleKey(event) ? KeyEventResult.handled : KeyEventResult.ignored,

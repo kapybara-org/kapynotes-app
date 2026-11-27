@@ -9,6 +9,7 @@
 // container we cannot read back.
 //
 //   flutter test integration_test/voice_recording_test.dart -d macos
+//   flutter test integration_test/voice_recording_test.dart -d windows
 //   flutter test integration_test/voice_recording_test.dart -d <android id>
 //   flutter test integration_test/voice_recording_test.dart -d <ios sim id>
 //
@@ -21,11 +22,13 @@
 // not what is on it.
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/audio/mp4_duration.dart';
 import 'package:kapy_notes/audio/voice_player.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
+import 'package:record/record.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -51,11 +54,33 @@ void main() {
     expect(
       started,
       isTrue,
-      reason: 'the microphone was refused — check the purpose string, the '
+      reason:
+          'the microphone was refused — check the purpose string, the '
           'macOS audio-input entitlement, and that RECORD_AUDIO is granted',
     );
     expect(controller.isRecording, isTrue);
     await controller.cancel();
+  });
+
+  testWidgets('the microphone is found before anything records', (
+    tester,
+  ) async {
+    // What decides whether the app says "No microphone found" instead of
+    // recording (KAP-372): on a computer that has a microphone it must be
+    // there, or nobody on this platform could record at all.
+    final probe = AudioRecorder();
+    final devices = await probe.listInputDevices();
+    await probe.dispose();
+    debugPrint('Inputs: ${devices.map((device) => device.label).join(', ')}');
+    expect(await controller.hasMicrophone(), isTrue);
+
+    expect(await controller.start(noteId: 'n1'), isTrue);
+    await Future<void>.delayed(const Duration(seconds: 3));
+    final result = await controller.stop();
+    expect(result, isNotNull);
+    final loudest = result!.peaks.reduce((a, b) => a > b ? a : b);
+    debugPrint('Loudest of the recording: $loudest of 255.');
+    expect(loudest, greaterThan(0), reason: 'the recording is silent');
   });
 
   testWidgets('a real recording produces a file we can read the length of', (
@@ -71,7 +96,11 @@ void main() {
     final file = result!.file;
     expect(await file.exists(), isTrue);
     final bytes = await file.readAsBytes();
-    expect(bytes.length, greaterThan(1024), reason: 'the file is suspiciously empty');
+    expect(
+      bytes.length,
+      greaterThan(1024),
+      reason: 'the file is suspiciously empty',
+    );
 
     // The whole reason mp4_duration.dart exists: every platform writes its own
     // container, and this build has to read all of them. A null here means the
@@ -80,7 +109,8 @@ void main() {
     expect(
       headerMs,
       isNotNull,
-      reason: 'could not find moov/mvhd in what ${Platform.operatingSystem} '
+      reason:
+          'could not find moov/mvhd in what ${Platform.operatingSystem} '
           'recorded — the chip would fall back to the elapsed timer',
     );
     expect(headerMs, greaterThan(1500));
@@ -137,7 +167,11 @@ void main() {
     await Future<void>.delayed(const Duration(seconds: 2));
 
     final result = await controller.stop();
-    expect(result, isNotNull, reason: 'a paused-and-resumed recording was lost');
+    expect(
+      result,
+      isNotNull,
+      reason: 'a paused-and-resumed recording was lost',
+    );
     expect(mp4DurationMs(await result!.file.readAsBytes()), isNotNull);
   });
 
