@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -9,15 +10,19 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/kapy_ai_controller.dart';
 import 'package:kapy_notes/ai/kapy_chat_book.dart';
 import 'package:kapy_notes/ai/local_tools.dart';
+import 'package:kapy_notes/ai/recording_context.dart';
 import 'package:kapy_notes/ai/tool_helper.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
+import 'package:kapy_notes/data/note_attachment.dart';
+import 'package:kapy_notes/speech/moments.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../billing/billing_fakes.dart';
 import 'ai_fakes.dart';
 import 'fake_cli.dart';
 
@@ -28,6 +33,45 @@ final _usage = {
   'remaining': 497,
   'resetsAt': _resetsAt.toUtc().toIso8601String(),
 };
+
+const _link = KapyRecordingRef(noteId: 'standup', hash: 'pricing-call');
+
+/// A recording of [minutes], a paragraph every ten seconds, Sanjay and Arjun
+/// in turn.
+NoteVoiceRef _voice({int minutes = 1, bool transcribed = true}) => NoteVoiceRef(
+  offset: 8,
+  hash: _link.hash,
+  key: Uint8List(32),
+  bytes: 2048,
+  durationMs: minutes * 60000,
+  transcript: transcribed
+      ? VoiceTranscript(
+          lang: 'en',
+          engine: 'test',
+          at: 0,
+          segments: [
+            for (var i = 0; i < minutes * 6; i++)
+              TranscriptSegment(
+                s: i * 10000,
+                e: i * 10000 + 2000,
+                t: i == 1
+                    ? 'Can we split the first invoice across two months?'
+                    : 'Line $i is about the pricing page, the annual plan '
+                          'for next quarter, and what finance said about '
+                          'the first invoice.',
+                speaker: i % 2,
+              ),
+          ],
+          speakers: const {0: 'Sanjay', 1: 'Arjun'},
+        )
+      : null,
+  summary: VoiceSummary(
+    engine: 'test',
+    at: 0,
+    title: 'Pricing call',
+    points: ['Annual plan first'],
+  ),
+);
 
 void main() {
   late MemoryStore store;
@@ -61,6 +105,7 @@ void main() {
     Map<String, String> environment = const {},
     ToolHelper? toolHelper,
     bool realTools = false,
+    String? Function()? token,
   }) async {
     final controller = KapyAiController(
       store: local ?? store,
@@ -71,7 +116,7 @@ void main() {
       ),
       device: device,
       billing: billing,
-      token: () => 'session-token',
+      token: token ?? () => 'session-token',
       client: MockClient((request) async {
         sent.add(request);
         return server(request);
@@ -108,10 +153,96 @@ void main() {
       expect(ai.defaultModel, KapyModel.cloud);
       expect(ai.cloudUsage, isNull);
       await ai.ask('Lisbon?');
-      final failed = ai.pending! as KapyFailed;
-      expect(failed.message, 'Kapy AI Cloud is part of Pro.');
-      expect(failed.fallbacks, [FakeDeviceModel.apple]);
+      final locked = ai.pending! as KapyCloudLocked;
+      expect(locked.upgrade, isTrue);
+      expect(locked.signIn, isFalse);
+      expect(locked.fallbacks, [FakeDeviceModel.apple]);
       expect(sent.where((r) => r.url.path.contains('/ai/')), isEmpty);
+    });
+
+    test('signed out, Cloud asks them to sign in and upgrade', () async {
+      final ai = await build(
+        billing: billingFor(FakeSession(), FakeBillingApi()),
+        token: () => null,
+      );
+      ai.defaultModel = KapyModel.cloud;
+      await ai.ask('Lisbon?');
+      final locked = ai.pending! as KapyCloudLocked;
+      expect(locked.signIn, isTrue);
+      expect(locked.upgrade, isTrue);
+      expect(sent, isEmpty);
+    });
+
+    test('signing in to Pro from the card moves the question on', () async {
+      final session = FakeSession();
+      final api = FakeBillingApi()..answer = () => entitlementsFor(pro: true);
+      final ai = await build(
+        billing: billingFor(session, api),
+        token: () => session.userId == null ? null : 'session-token',
+      );
+      ai.defaultModel = KapyModel.cloud;
+      await ai.ask('Lisbon?');
+      expect(ai.pending, isA<KapyCloudLocked>());
+      session.signIn('user-1');
+      await settle();
+      // Next is Cloud's own first-use notice, and nothing has been sent.
+      expect(ai.pending, isA<KapyCloudConsent>());
+      expect(sent.where((r) => r.method == 'POST'), isEmpty);
+    });
+
+    test('signed in without Pro, the card asks only for Pro', () async {
+      final session = FakeSession();
+      final api = FakeBillingApi()..answer = () => entitlementsFor(pro: false);
+      final ai = await build(
+        billing: billingFor(session, api),
+        token: () => session.userId == null ? null : 'session-token',
+      );
+      ai.defaultModel = KapyModel.cloud;
+      await ai.ask('Lisbon?');
+      expect((ai.pending! as KapyCloudLocked).signIn, isTrue);
+      session.signIn('user-1');
+      await settle();
+      final locked = ai.pending! as KapyCloudLocked;
+      expect(locked.signIn, isFalse);
+      expect(locked.upgrade, isTrue);
+    });
+
+    Future<KapyPending?> cloudSays(int status, [String body = '{}']) async {
+      server = (request) => request.url.path.endsWith('/ai/usage')
+          ? http.Response(jsonEncode(_usage), 200)
+          : http.Response(body, status);
+      final ai = await build(billing: await billingOn(pro: true));
+      await ai.ask('Lisbon?');
+      await ai.proceed();
+      return ai.pending;
+    }
+
+    test('the server saying no Pro asks for an upgrade', () async {
+      final locked = await cloudSays(402) as KapyCloudLocked;
+      expect(locked.upgrade, isTrue);
+      expect(locked.signIn, isFalse);
+    });
+
+    test('the server ending the session asks them to sign in', () async {
+      final locked =
+          await cloudSays(401, '{"error":"unauthorized"}') as KapyCloudLocked;
+      expect(locked.signIn, isTrue);
+      expect(locked.upgrade, isFalse);
+    });
+
+    test("a 401 that isn't the server's, from a Wi-Fi sign-in page, is "
+        'tried again', () async {
+      final failed =
+          await cloudSays(401, '<html>Sign in to the Wi-Fi</html>')
+              as KapyFailed;
+      expect(failed.retry, isTrue);
+    });
+
+    test('only what a retry can fix is tried again', () async {
+      final update = await cloudSays(426) as KapyFailed;
+      expect(update.message, 'Update Kapy Notes to use Kapy AI Cloud.');
+      expect(update.retry, isFalse);
+      expect((await cloudSays(502) as KapyFailed).retry, isTrue);
     });
 
     test('a Free chat on Cloud is held, not swapped', () async {
@@ -131,7 +262,9 @@ void main() {
       ai.openChat('c');
       expect(ai.model, KapyModel.cloud);
       await ai.ask('Lisbon?');
-      expect((ai.pending! as KapyFailed).fallbacks, [FakeDeviceModel.apple]);
+      expect((ai.pending! as KapyCloudLocked).fallbacks, [
+        FakeDeviceModel.apple,
+      ]);
     });
 
     test('own accounts and the device answer on Free', () async {
@@ -958,5 +1091,283 @@ void main() {
     await settle();
     expect(sent, isEmpty);
     expect(ai.chats, isEmpty);
+  });
+
+  group('a recording', () {
+    List<Map<String, Object?>> notes({
+      NoteVoiceRef? voice,
+      bool hidden = false,
+    }) => [
+      noteJson('lisbon', 'Lisbon trip\nflights'),
+      {
+        ...noteJson(
+          'standup',
+          'Standup\n${NoteAttachmentRef.placeholder}',
+          hidden: hidden,
+        ),
+        'attachments': [(voice ?? _voice()).toJson()],
+      },
+    ];
+
+    Iterable<http.Request> answers() =>
+        sent.where((request) => request.url.path.endsWith('/ai/answer'));
+
+    test(
+      'a question reads only its transcript, with times and speakers',
+      () async {
+        final ai = await build(notes: notes());
+        await ai.ask('What did Arjun ask for?', recording: _link);
+        final read = device.asked.single.notes.single;
+        expect(read.id, 'standup');
+        expect(read.title, 'Pricing call');
+        expect(
+          read.text,
+          startsWith(
+            'Summary: Pricing call\n- Annual plan first\nTranscript:\n'
+            '[0:00] Sanjay: ',
+          ),
+        );
+        expect(
+          read.text,
+          contains(
+            '\n[0:10] Arjun: Can we split the first invoice across two months?\n',
+          ),
+        );
+        expect(read.text, isNot(contains('Lisbon')));
+        final chat = ai.current!;
+        expect(chat.recording, _link);
+        expect(chat.messages.last.text, 'device answer');
+        expect(chat.messages.last.read.single.noteId, 'standup');
+        expect(chat.messages.last.readTo, isNull);
+        expect((await build(notes: notes())).chats.single.recording, _link);
+      },
+    );
+
+    test(
+      'follow-ups stay on its chat, and a question from elsewhere starts one',
+      () async {
+        final ai = await build(notes: notes());
+        await ai.ask('What did we decide?', recording: _link);
+        await ai.ask('And the next steps?', recording: _link);
+        expect(ai.chats, hasLength(1));
+        expect(ai.current!.messages, hasLength(4));
+
+        // The panel's composer, on the same chat, still reads the recording.
+        await ai.ask('Anything else?');
+        expect(ai.current!.messages, hasLength(6));
+        expect(device.asked.last.notes.single.id, 'standup');
+        expect(device.asked.last.history, hasLength(4));
+
+        ai.newChat();
+        await ai.ask('Lisbon?');
+        expect(ai.current!.recording, isNull);
+        expect(device.asked.last.notes.single.id, 'lisbon');
+        await ai.ask('What did we decide?', recording: _link);
+        expect(ai.chats, hasLength(3));
+        expect(ai.current!.recording, _link);
+        expect(ai.current!.messages, hasLength(2));
+      },
+    );
+
+    test(
+      'a long one goes in up to four parts and says how far it read',
+      () async {
+        final ai = await build(
+          notes: notes(voice: _voice(minutes: 90)),
+          billing: await billingOn(pro: true),
+        );
+        await ai.ask('What did we decide?', recording: _link);
+        expect(ai.pending, isA<KapyCloudConsent>());
+        await ai.proceed();
+        final body = jsonDecode(answers().single.body) as Map;
+        final parts = (body['notes'] as List).cast<Map>();
+        expect(
+          [for (final part in parts) part['title']],
+          [for (var i = 1; i <= 4; i++) 'Pricing call (part $i of 4)'],
+        );
+        final texts = [for (final part in parts) part['text'] as String];
+        for (final text in texts) {
+          expect(text.length, lessThanOrEqualTo(12000));
+        }
+        expect(texts.join().length, lessThanOrEqualTo(48000));
+        final cloudRead = ai.current!.messages.last.readTo!;
+        expect(cloudRead, greaterThan(const Duration(minutes: 40)));
+        expect(cloudRead, lessThan(const Duration(minutes: 90)));
+        expect(
+          texts.last.split('\n').last,
+          startsWith(
+            '[${formatVoiceDuration(cloudRead - const Duration(seconds: 10))}]',
+          ),
+          reason: 'it stops at the start of a paragraph, and says which',
+        );
+
+        ai.newChat();
+        ai.pickModel(FakeDeviceModel.apple);
+        await ai.ask('What did we decide?', recording: _link);
+        final onDevice = device.asked.single.notes.single;
+        expect(onDevice.title, 'Pricing call');
+        expect(onDevice.text.length, lessThanOrEqualTo(device.noteChars));
+        final deviceRead = ai.current!.messages.last.readTo!;
+        expect(deviceRead, lessThan(cloudRead));
+        expect(
+          onDevice.text.split('\n').last,
+          startsWith(
+            '[${formatVoiceDuration(deviceRead - const Duration(seconds: 10))}]',
+          ),
+        );
+      },
+    );
+
+    test('in a hidden note it sends nothing and says why', () async {
+      final ai = await build(
+        notes: notes(hidden: true),
+        billing: await billingOn(pro: true),
+      );
+      await ai.ask('What did we decide?', recording: _link);
+      final failed = ai.pending! as KapyFailed;
+      expect(failed.message, "Kapy AI doesn't read hidden notes.");
+      expect(failed.retry, isFalse);
+      expect(answers(), isEmpty);
+      expect(device.asked, isEmpty);
+    });
+
+    test('without a transcript it sends nothing and says so', () async {
+      final ai = await build(notes: notes(voice: _voice(transcribed: false)));
+      await ai.ask('What did we decide?', recording: _link);
+      expect(
+        (ai.pending! as KapyFailed).message,
+        'This recording has no transcript to read.',
+      );
+      expect(device.asked, isEmpty);
+    });
+
+    test('Kapy AI Cloud on Free holds it with the same Pro card', () async {
+      final ai = await build(
+        notes: notes(),
+        billing: await billingOn(pro: false),
+      );
+      ai.defaultModel = KapyModel.cloud;
+      await ai.ask('What did we decide?', recording: _link);
+      final locked = ai.pending! as KapyCloudLocked;
+      expect(locked.upgrade, isTrue);
+      expect(locked.fallbacks, [FakeDeviceModel.apple]);
+      expect(answers(), isEmpty);
+    });
+
+    test(
+      'agreeing to send a transcript covers recordings, and not the notes',
+      () async {
+        final ai = await build(
+          notes: notes(),
+          billing: await billingOn(pro: true),
+        );
+        await ai.ask('What did we decide?', recording: _link);
+        expect((ai.pending! as KapyCloudConsent).recording, isTrue);
+        await ai.proceed();
+        expect(answers(), hasLength(1));
+
+        ai.newChat();
+        await ai.ask('What are the next steps?', recording: _link);
+        expect(ai.pending, isNull);
+        expect(answers(), hasLength(2));
+
+        ai.newChat();
+        await ai.ask('Lisbon?');
+        expect((ai.pending! as KapyCloudConsent).recording, isFalse);
+        expect(answers(), hasLength(2));
+      },
+    );
+
+    test("the panel's agreement covers recordings too", () async {
+      final ai = await build(
+        notes: notes(),
+        billing: await billingOn(pro: true),
+      );
+      await ai.ask('Lisbon?');
+      expect((ai.pending! as KapyCloudConsent).recording, isFalse);
+      await ai.proceed();
+      expect(answers(), hasLength(1));
+      await ai.ask('What did we decide?', recording: _link);
+      expect(ai.pending, isNull);
+      expect(answers(), hasLength(2));
+    });
+
+    test('another model answers the same question again', () async {
+      final ai = await build(notes: notes());
+      await ai.ask('What did we decide?', recording: _link);
+      await ai.answerWith(FakeDeviceModel.apple);
+      final messages = ai.current!.messages;
+      expect(
+        [for (final message in messages) message.role],
+        [KapyRole.user, KapyRole.assistant, KapyRole.user, KapyRole.assistant],
+      );
+      expect(messages[2].text, 'What did we decide?');
+      expect(messages[2].id, isNot(messages[0].id));
+      expect(messages.last.model, FakeDeviceModel.apple);
+      expect(device.asked, hasLength(2));
+      expect(device.asked.last.notes.single.id, 'standup');
+    });
+
+    test(
+      'reads the whole of a transcript that fits, with no mark to say so',
+      () async {
+        final ai = await build(notes: notes());
+        await ai.ask('What did we decide?', recording: _link);
+        final whole = ai.current!.messages.last;
+        expect(whole.readTo, isNull);
+        expect(ai.readWhole(ai.current!, whole), isTrue);
+      },
+    );
+
+    test(
+      'reads part of one that does not fit, whether it says so or not',
+      () async {
+        final long = await build(notes: notes(voice: _voice(minutes: 90)));
+        await long.ask('What did we decide?', recording: _link);
+        final part = long.current!.messages.last;
+        expect(part.readTo, isNotNull);
+        expect(long.readWhole(long.current!, part), isFalse);
+        // As a build from before recording chats sends it again: no mark.
+        final unmarked = KapyMessage(
+          id: 'unmarked',
+          role: KapyRole.assistant,
+          text: part.text,
+          at: part.at,
+          model: part.model,
+        );
+        expect(long.readWhole(long.current!, unmarked), isFalse);
+      },
+    );
+
+    test('suggests two questions, and one about a named speaker', () {
+      const two = ['What did we decide?', 'What are the next steps?'];
+      VoiceTranscript said(Map<int, String> speakers, {int people = 2}) =>
+          VoiceTranscript(
+            lang: 'en',
+            engine: 'test',
+            at: 0,
+            segments: [
+              for (var i = 0; i < 4; i++)
+                TranscriptSegment(
+                  s: i * 1000,
+                  e: i * 1000 + 500,
+                  t: 'Line $i',
+                  speaker: i % people,
+                ),
+            ],
+            speakers: speakers,
+          );
+      expect(recordingQuestions(null), two);
+      expect(recordingQuestions(_voice().transcript), [
+        ...two,
+        'What did Arjun ask for?',
+      ]);
+      expect(recordingQuestions(said({})), two);
+      expect(recordingQuestions(said({0: 'Sanjay'})), [
+        ...two,
+        'What did Sanjay ask for?',
+      ]);
+      expect(recordingQuestions(said({0: 'Sanjay'}, people: 1)), two);
+    });
   });
 }

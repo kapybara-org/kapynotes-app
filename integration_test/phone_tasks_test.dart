@@ -33,6 +33,7 @@ import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'keyboard_support.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
 
@@ -239,7 +240,7 @@ void main() {
     await tester.enterText(field, 'Split the Acme invoice in two');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pumpAndSettle();
+    await settleKeyboard(tester, up: false);
     clock = clock.add(const Duration(minutes: 30));
     await tap('tasks-done');
     expect(find.byKey(const ValueKey('tasks-just-done')), findsOneWidget);
@@ -348,7 +349,7 @@ void main() {
     await shot('m13-search');
     await tester.tap(find.byTooltip('Clear search'));
     FocusManager.instance.primaryFocus?.unfocus();
-    await tester.pumpAndSettle();
+    await settleKeyboard(tester, up: false);
 
     await tap('tasks-filters');
     expect(find.byKey(const ValueKey('tasks-filter-menu-all')), findsOneWidget);

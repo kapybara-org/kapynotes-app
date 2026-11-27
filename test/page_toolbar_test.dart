@@ -62,7 +62,7 @@ void main() {
     int unloadedPictures = 0,
     List<SpaceMember> members = const [],
     List<KapyMenuAction> moreActions = const [],
-    void Function(String value, Offset at)? onMore,
+    void Function(String value, MenuSpot at)? onMore,
     VoidCallback? onShowList,
     VoidCallback? onNew,
     void Function(String folderId, {required bool behind})? onOpenFolder,
@@ -128,11 +128,7 @@ void main() {
       style.foregroundColor!.resolve({WidgetState.disabled}),
       palette.textTertiary,
     );
-    expect(style.side!.resolve({}), BorderSide.none);
-    expect(
-      style.side!.resolve({WidgetState.focused}),
-      BorderSide(color: palette.selectedBorder, width: 1),
-    );
+    expect(style.side, isNull);
   });
 
   testWidgets('the band has a hairline along its bottom, but none under the '

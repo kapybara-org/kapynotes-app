@@ -13,6 +13,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../core/type_ahead.dart';
 import 'highlighting_controller.dart';
 import 'note_gestures.dart';
 import 'note_lines.dart';
@@ -124,6 +125,12 @@ typedef _Remote = ({int start, TextEditingValue value});
 /// How long the caret is shown, and then hidden, as it blinks.
 const _blinkHalfPeriod = Duration(milliseconds: 500);
 
+/// How long the caret blinks on Linux after the last key or move before it
+/// stays on, as GTK's own fields do (its gtk-cursor-blink-timeout). Each blink
+/// draws the whole window again, which a machine without a graphics card
+/// pays for on the processor, so an idle window should draw nothing.
+const _linuxBlinkTimeout = Duration(seconds: 10);
+
 bool get _apple => switch (defaultTargetPlatform) {
   TargetPlatform.iOS || TargetPlatform.macOS => true,
   _ => false,
@@ -142,7 +149,7 @@ class NoteFieldState extends State<NoteField>
         TextInputClient,
         DeltaTextInputClient,
         WidgetsBindingObserver
-    implements TextLayoutMetrics {
+    implements TextLayoutMetrics, TypeAheadField {
   /// The note as the field lays it out, kept equal to the controller's text.
   late final NoteLines _lines = NoteLines(_text);
   late String _text = widget.controller.text;
@@ -163,7 +170,9 @@ class NoteFieldState extends State<NoteField>
   bool _afterFrameScheduled = false;
   bool _revealScheduled = false;
 
-  /// The caret's opacity as it blinks, and what times the blink.
+  /// The caret's opacity as it blinks, and what times the blink. The timer
+  /// stays set, cancelled, while the caret rests on Linux, so that the next
+  /// key or move starts the blink again.
   late final AnimationController _blink = AnimationController(vsync: this)
     ..addListener(_mark);
   Timer? _blinkTimer;
@@ -696,6 +705,15 @@ class NoteFieldState extends State<NoteField>
     if (!widget.focusNode.hasFocus) widget.focusNode.requestFocus();
   }
 
+  @override
+  void takeTyping(String text) {
+    if (widget.readOnly) return;
+    userUpdateTextEditingValue(
+      typedInto(_value, text),
+      SelectionChangedCause.keyboard,
+    );
+  }
+
   /// Takes the value an undo or redo restores, exactly, as [UndoHistory]
   /// requires, then moves the caret to the text the step changed before the
   /// frame reveals it.
@@ -803,7 +821,14 @@ class NoteFieldState extends State<NoteField>
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       _blink.animateWith(_CaretBlink()).whenComplete(_blinkTick);
     } else {
-      _blinkTimer = Timer.periodic(_blinkHalfPeriod, (_) => _blinkTick());
+      _blinkTimer = Timer.periodic(_blinkHalfPeriod, (timer) {
+        _blinkTick();
+        if (defaultTargetPlatform == TargetPlatform.linux &&
+            _blinkHalfPeriod * timer.tick >= _linuxBlinkTimeout) {
+          timer.cancel();
+          _blink.value = 1;
+        }
+      });
     }
   }
 

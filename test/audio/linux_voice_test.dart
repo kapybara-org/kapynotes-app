@@ -27,6 +27,63 @@ void main() {
       ? false
       : 'needs ffmpeg on PATH and a PulseAudio server to capture from';
 
+  group('a microphone', () {
+    // What ffmpeg 7.1's `-sources pulse` prints, read off a PulseAudio
+    // server with nothing but its null sink, then with a source added.
+    const nullSinkOnly = '''
+Auto-detected sources for pulse:
+* auto_null.monitor [Monitor of Dummy Output] (none)
+''';
+    const withSource = '''
+Auto-detected sources for pulse:
+  auto_null.monitor [Monitor of Dummy Output] (none)
+* fakemic [Null Input] (none)
+''';
+
+    test('is a source that is not a monitor', () {
+      expect(LinuxVoiceRecorder.listsMicrophone(withSource), isTrue);
+    });
+
+    test('is found when the default source is a monitor', () {
+      expect(
+        LinuxVoiceRecorder.listsMicrophone(
+          'Auto-detected sources for pulse:\n'
+          '* auto_null.monitor [Monitor of Dummy Output] (none)\n'
+          '  fakemic [Null Input] (none)\n',
+        ),
+        isTrue,
+      );
+    });
+
+    test('is not an output\'s monitor, which records silence', () {
+      expect(LinuxVoiceRecorder.listsMicrophone(nullSinkOnly), isFalse);
+    });
+
+    test('is not there when there is no sound server to ask', () {
+      expect(
+        LinuxVoiceRecorder.listsMicrophone(
+          'Auto-detected sources for pulse:\n'
+          'Cannot list sources: Generic error in an external library\n',
+        ),
+        isFalse,
+      );
+    });
+
+    test('is not ruled out by an answer that says neither', () {
+      expect(LinuxVoiceRecorder.listsMicrophone(''), isNull);
+      expect(
+        LinuxVoiceRecorder.listsMicrophone(
+          'Auto-detected sources for pulse:\n',
+        ),
+        isNull,
+      );
+      expect(
+        LinuxVoiceRecorder.listsMicrophone('Unknown input format: pulse\n'),
+        isNull,
+      );
+    });
+  });
+
   late Directory temp;
   late VoiceRecordingController controller;
 
@@ -44,6 +101,21 @@ void main() {
   });
 
   group('recording', () {
+    test('finds the microphone first, then records sound from it', () async {
+      expect(await controller.hasMicrophone(), isTrue);
+
+      expect(await controller.start(noteId: 'n1'), isTrue);
+      await Future<void>.delayed(const Duration(seconds: 2));
+      final result = await controller.stop();
+
+      expect(result, isNotNull);
+      expect(
+        result!.peaks.reduce((a, b) => a > b ? a : b),
+        greaterThan(0),
+        reason: 'the recording is silent',
+      );
+    }, skip: skip);
+
     test('stops into an .m4a whose header has its length', () async {
       expect(await controller.start(noteId: 'n1'), isTrue);
       await Future<void>.delayed(const Duration(seconds: 3));

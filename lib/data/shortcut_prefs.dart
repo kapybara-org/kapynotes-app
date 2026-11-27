@@ -34,9 +34,9 @@ enum ShortcutAction {
   toggleKapyAi,
   deleteNote,
   openSettings,
-  increaseEditorTextSize,
-  decreaseEditorTextSize,
-  resetEditorTextSize,
+  zoomIn,
+  zoomOut,
+  resetZoom,
   insertImage,
   insertVideo,
   insertFile,
@@ -83,9 +83,9 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.toggleKapyAi => 'Open or close Kapy AI',
     ShortcutAction.deleteNote => 'Archive current note',
     ShortcutAction.openSettings => 'Open settings',
-    ShortcutAction.increaseEditorTextSize => 'Increase editor text',
-    ShortcutAction.decreaseEditorTextSize => 'Decrease editor text',
-    ShortcutAction.resetEditorTextSize => 'Reset editor text size',
+    ShortcutAction.zoomIn => 'Zoom in',
+    ShortcutAction.zoomOut => 'Zoom out',
+    ShortcutAction.resetZoom => 'Reset zoom',
     ShortcutAction.insertImage => 'Add an image',
     ShortcutAction.insertVideo => 'Add a video',
     ShortcutAction.insertFile => 'Attach a file',
@@ -122,7 +122,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.goForward => 'Go forward again after going back',
     ShortcutAction.closeTab =>
       'Close the tab you are in. Its note stays in the list',
-    ShortcutAction.reopenTab => 'Open the tab you closed last again',
+    ShortcutAction.reopenTab => 'Bring back closed tabs, the last one first',
     ShortcutAction.splitEditor =>
       'Open a pane beside this note, for up to three side by side',
     ShortcutAction.focusFirstPane => 'Move the keyboard to the leftmost pane',
@@ -142,12 +142,9 @@ extension ShortcutActionCopy on ShortcutAction {
       'Move the note you are editing to Archived Notes, or delete it for good '
           'if it is already there',
     ShortcutAction.openSettings => 'Open Settings',
-    ShortcutAction.increaseEditorTextSize =>
-      'Make the writing in every editor one step larger',
-    ShortcutAction.decreaseEditorTextSize =>
-      'Make the writing in every editor one step smaller',
-    ShortcutAction.resetEditorTextSize =>
-      'Return editor writing to its default size',
+    ShortcutAction.zoomIn => 'Make everything in the window one step larger',
+    ShortcutAction.zoomOut => 'Make everything in the window one step smaller',
+    ShortcutAction.resetZoom => 'Return the window to its usual size',
     ShortcutAction.insertImage => 'Choose a picture or take a photo',
     ShortcutAction.insertVideo => 'Choose a video to play in the note',
     ShortcutAction.insertFile =>
@@ -330,11 +327,19 @@ class ShortcutPrefs extends ChangeNotifier {
   /// written down, in a word rather than as an absence.
   static const String _unbound = 'unbound';
 
+  /// Where the saved map lists the actions the person put back on a default
+  /// since retired. No action has this name.
+  static const String _repickedKey = 'repicked';
+
   final LocalStore _store;
 
   /// Only the actions that have a key. An action missing from here is one the
   /// user cleared, which is why [bindingFor] can answer null.
   late Map<ShortcutAction, ShortcutBinding> _bindings;
+
+  /// Actions on a retired default because the person picked it again, which
+  /// [load] must not mistake for an install that never moved off it.
+  Set<ShortcutAction> _repicked = {};
 
   void load() {
     final raw = _store.data[_key];
@@ -346,6 +351,11 @@ class ShortcutPrefs extends ChangeNotifier {
               ShortcutBinding.fromJson(_saved(saved, action)) ??
               defaultFor(action),
     };
+    final repicked = saved[_repickedKey];
+    _repicked = {
+      for (final action in ShortcutAction.values)
+        if (repicked is List && repicked.contains(action.name)) action,
+    };
 
     // Changing the default alone would only reach new installs. Anyone still
     // carrying a superseded binding never chose it — it was simply what
@@ -354,7 +364,9 @@ class ShortcutPrefs extends ChangeNotifier {
     var migrated = false;
     for (final action in ShortcutAction.values) {
       final current = _bindings[action];
-      if (current == null || !_supersededDefaults(action).contains(current)) {
+      if (current == null ||
+          _repicked.contains(action) ||
+          !_supersededDefaults(action).contains(current)) {
         continue;
       }
       final replacement = defaultFor(action);
@@ -406,6 +418,15 @@ class ShortcutPrefs extends ChangeNotifier {
           control: !useMeta,
           alt: useMeta,
           shift: !useMeta,
+        ),
+        // Then Shift+Option+Cmd+X and Alt+Shift+X, one modifier away from
+        // strikethrough.
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyX,
+          physicalKey: PhysicalKeyboardKey.keyX,
+          meta: useMeta,
+          alt: true,
+          shift: true,
         ),
       ],
       // Option+Cmd+N and Ctrl+Shift+N: Finder's New Smart Folder, Explorer's
@@ -499,15 +520,19 @@ class ShortcutPrefs extends ChangeNotifier {
 
   /// Link answers only while words are selected, and leaves its chord to
   /// Search everywhere else, so the two may share one.
-  static bool sharesChord(ShortcutAction a, ShortcutAction? b) =>
-      {a, b}.containsAll(const {
-        ShortcutAction.findNotes,
-        ShortcutAction.formatLink,
-      });
+  static bool sharesChord(ShortcutAction a, ShortcutAction? b) => {
+    a,
+    b,
+  }.containsAll(const {ShortcutAction.findNotes, ShortcutAction.formatLink});
 
   void update(ShortcutAction action, ShortcutBinding binding) {
     if (_bindings[action] == binding) return;
     _bindings[action] = binding;
+    if (_supersededDefaults(action).contains(binding)) {
+      _repicked.add(action);
+    } else {
+      _repicked.remove(action);
+    }
     _persist();
   }
 
@@ -522,6 +547,7 @@ class ShortcutPrefs extends ChangeNotifier {
     _bindings = {
       for (final action in ShortcutAction.values) action: defaultFor(action),
     };
+    _repicked = {};
     _persist();
   }
 
@@ -529,6 +555,7 @@ class ShortcutPrefs extends ChangeNotifier {
     _store.putNow(_key, {
       for (final action in ShortcutAction.values)
         action.name: _bindings[action]?.toJson() ?? _unbound,
+      _repickedKey: [for (final action in _repicked) action.name],
     });
     notifyListeners();
   }
@@ -550,8 +577,9 @@ class ShortcutPrefs extends ChangeNotifier {
       // app loses the chord: its own shortcut there simply stops working. The
       // bar is therefore "nothing else uses it", not "nothing here does".
       //
-      // macOS: Shift+Option+Cmd, which nothing we checked binds to X — no
-      // system shortcut, no Services item, no app menu. Option+Cmd alone was
+      // macOS: Shift+Option+Cmd, which no system shortcut, Services item or
+      // common app menu binds to L (RStudio's Unfold Selected and Lightroom
+      // Classic's select command are the ones found). Option+Cmd alone was
       // the previous pair and is crowded: +X is Xcode's Pull, and +N is
       // Finder's New Smart Folder, IntelliJ's Inline and Arc's Little Arc,
       // which Arc also holds system-wide. Control stays out because
@@ -564,17 +592,21 @@ class ShortcutPrefs extends ChangeNotifier {
       // whenever a Polish or German user typed a character in that layer.
       // Ctrl+Shift is where apps keep their own shortcuts: Ctrl+Shift+X was
       // VS Code's Extensions, Slack's strikethrough and Teams' compose box.
-      // What claims Alt+Shift+X is narrow — Word's Mark Index Entry,
-      // Photoshop's Exclusion blend mode, Eclipse's Run As.
+      // What claims Alt+Shift+L is narrow: Eclipse's Extract Local Variable
+      // and a handful of tools' own bindings.
       //
       // Untested: Left Alt+Shift on its own is Windows' switch-language chord,
       // and fires on release. Whether a letter RegisterHotKey swallows still
       // cancels it has not been tried on a machine with two input languages.
       //
-      // X sits bottom-left, so the whole chord is one comfortable left hand.
+      // L because no shortcut inside the app uses it on any platform. A
+      // system-wide chord one modifier away from one of the app's own is a
+      // slip waiting to happen: X, its letter until 1.35.x, sat beside
+      // strikethrough, and reaching for that with Alt or Option instead of
+      // Ctrl or Cmd hid the window mid-sentence.
       ShortcutAction.openApp => ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.keyX,
-        physicalKey: PhysicalKeyboardKey.keyX,
+        logicalKey: LogicalKeyboardKey.keyL,
+        physicalKey: PhysicalKeyboardKey.keyL,
         meta: useMeta,
         alt: true,
         shift: true,
@@ -642,11 +674,26 @@ class ShortcutPrefs extends ChangeNotifier {
       // Option+Cmd and a number on a Mac, beside the Cmd and a number that
       // focus the panes. Alt and a number elsewhere: Ctrl+Alt is AltGr on
       // international layouts, where it types ² and ³.
-      ShortcutAction.showNotes => _section(LogicalKeyboardKey.digit1, PhysicalKeyboardKey.digit1),
-      ShortcutAction.showTasks => _section(LogicalKeyboardKey.digit2, PhysicalKeyboardKey.digit2),
-      ShortcutAction.showDrawings => _section(LogicalKeyboardKey.digit3, PhysicalKeyboardKey.digit3),
-      ShortcutAction.showShared => _section(LogicalKeyboardKey.digit4, PhysicalKeyboardKey.digit4),
-      ShortcutAction.showArchive => _section(LogicalKeyboardKey.digit5, PhysicalKeyboardKey.digit5),
+      ShortcutAction.showNotes => _section(
+        LogicalKeyboardKey.digit1,
+        PhysicalKeyboardKey.digit1,
+      ),
+      ShortcutAction.showTasks => _section(
+        LogicalKeyboardKey.digit2,
+        PhysicalKeyboardKey.digit2,
+      ),
+      ShortcutAction.showDrawings => _section(
+        LogicalKeyboardKey.digit3,
+        PhysicalKeyboardKey.digit3,
+      ),
+      ShortcutAction.showShared => _section(
+        LogicalKeyboardKey.digit4,
+        PhysicalKeyboardKey.digit4,
+      ),
+      ShortcutAction.showArchive => _section(
+        LogicalKeyboardKey.digit5,
+        PhysicalKeyboardKey.digit5,
+      ),
       // Control on both platforms, and the one pair of defaults that does not
       // follow [useMeta]. Cmd+Tab is the macOS application switcher: the window
       // server takes it before any app is told a key moved, so a Cmd default
@@ -806,19 +853,19 @@ class ShortcutPrefs extends ChangeNotifier {
       // The same three zoom keys used by browsers and document editors. The
       // unshifted equals key is intentional: it works without knowing which
       // keyboard layout puts `+` above it.
-      ShortcutAction.increaseEditorTextSize => ShortcutBinding(
+      ShortcutAction.zoomIn => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.equal,
         physicalKey: PhysicalKeyboardKey.equal,
         meta: useMeta,
         control: !useMeta,
       ),
-      ShortcutAction.decreaseEditorTextSize => ShortcutBinding(
+      ShortcutAction.zoomOut => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.minus,
         physicalKey: PhysicalKeyboardKey.minus,
         meta: useMeta,
         control: !useMeta,
       ),
-      ShortcutAction.resetEditorTextSize => ShortcutBinding(
+      ShortcutAction.resetZoom => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.digit0,
         physicalKey: PhysicalKeyboardKey.digit0,
         meta: useMeta,

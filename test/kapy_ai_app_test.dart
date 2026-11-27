@@ -14,7 +14,14 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/tags.dart';
+import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
+import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/sync/key_store.dart';
+import 'package:kapy_notes/sync/sync_state.dart';
+import 'package:kapy_notes/ui/billing/pro_sheet.dart';
 import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
@@ -26,7 +33,9 @@ import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'billing/billing_fakes.dart';
 import 'fake_kapy_ai.dart';
+import 'sync/fake_server.dart';
 import 'test_fonts.dart';
 
 /// Where Kapy AI sits in the app: the button, the shortcut, the panel beside
@@ -60,6 +69,7 @@ Future<void> _pump(
   TargetPlatform platform = TargetPlatform.macOS,
   bool sidebar = false,
   FolderStore? folders,
+  Account? account,
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -80,6 +90,7 @@ Future<void> _pump(
       shortcuts: shortcuts,
       kapyAi: ai,
       folders: folders,
+      account: account,
     ),
   );
   await tester.pumpAndSettle();
@@ -152,6 +163,70 @@ void main() {
   tearDown(() {
     kapyAiAvailable = wasAvailable;
     ai.dispose();
+  });
+
+  group('Kapy AI Cloud without Pro, in the app', () {
+    /// A signed-out account with billing, and the panel open on a question
+    /// Kapy AI Cloud won't answer.
+    Future<Finder> lockedCard(WidgetTester tester) async {
+      final state = SyncState(store);
+      final account = Account(
+        auth: FakeAuth(),
+        syncApi: (_) => FakeApi(FakeServer()),
+        keys: KeyStore(InMemorySecureStore()),
+        notes: notes,
+        state: state,
+        store: store,
+        tags: TagStore(store),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          state: state,
+          storage: MemoryDocStorage(),
+        ),
+      )..billing = billingFor(FakeSession(), FakeBillingApi());
+      addTearDown(account.dispose);
+      final at = DateTime(2026, 11, 26, 9, 41);
+      ai.set(
+        current: KapyChat(
+          id: 'c',
+          title: 'Lisbon?',
+          createdAt: at,
+          updatedAt: at,
+          model: KapyModel.cloud,
+          messages: [
+            KapyMessage(id: 'q', role: KapyRole.user, text: 'Lisbon?', at: at),
+          ],
+        ),
+        pending: const KapyCloudLocked(signIn: true, upgrade: true),
+      );
+      notes.create(body: 'Trip budget\n900 flights');
+      await _pump(tester, account: account);
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      return find.byKey(const ValueKey('kapy-ai-notice'));
+    }
+
+    testWidgets('Sign in opens Settings at Account & sync', (tester) async {
+      final notice = await lockedCard(tester);
+      await tester.tap(
+        find.descendant(of: notice, matching: find.text('Sign in')),
+      );
+      await tester.pumpAndSettle();
+      final settings = tester.widget<SettingsDialog>(
+        find.byType(SettingsDialog),
+      );
+      expect(settings.section, SettingsSection.account);
+    });
+
+    testWidgets('Upgrade opens the Pro sheet', (tester) async {
+      final notice = await lockedCard(tester);
+      await tester.tap(
+        find.descendant(of: notice, matching: find.text('Upgrade')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ProSheet), findsOneWidget);
+    });
   });
 
   group('on the page', () {
@@ -251,6 +326,161 @@ void main() {
       await _toggleWithKeys(tester);
       expect(_panel, findsNothing);
     });
+
+    testWidgets(
+      'a click elsewhere in it leaves the panel focused, and Esc then '
+      'closes it',
+      (tester) async {
+        notes.create(body: 'Trip budget');
+        await _pump(tester);
+        await _toggleWithKeys(tester);
+        await tester.tap(find.byKey(const ValueKey('kapy-ai-field')));
+        await tester.pumpAndSettle();
+
+        await tester.tap(
+          find.descendant(of: _panel, matching: find.text('Kapy AI')).first,
+        );
+        await tester.pumpAndSettle();
+
+        expect(FocusManager.instance.primaryFocus?.debugLabel, 'kapy-ai-panel');
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(_panel, findsNothing);
+      },
+      variant: TargetPlatformVariant.desktop(),
+    );
+
+    testWidgets(
+      'a press in its focused field leaves the field focused throughout',
+      (tester) async {
+        notes.create(body: 'Trip budget');
+        await _pump(tester);
+        await _toggleWithKeys(tester);
+        final field = find.byKey(const ValueKey('kapy-ai-field'));
+        await tester.tap(field);
+        await tester.pumpAndSettle();
+
+        final press = await tester.startGesture(tester.getCenter(field));
+        await tester.pump();
+        expect(
+          FocusManager.instance.primaryFocus?.debugLabel,
+          'kapy-ai-composer',
+        );
+        await press.up();
+        await tester.pumpAndSettle();
+        expect(
+          FocusManager.instance.primaryFocus?.debugLabel,
+          'kapy-ai-composer',
+        );
+      },
+      variant: TargetPlatformVariant.desktop(),
+    );
+
+    testWidgets('Esc closes it from the field and from anywhere in it, but '
+        'not while an input method is composing', (tester) async {
+      notes.create(body: 'Trip budget');
+      await _pump(tester);
+      final field = find.byKey(const ValueKey('kapy-ai-field'));
+
+      await _toggleWithKeys(tester);
+      await tester.tap(field);
+      await tester.enterText(field, 'What did I budget?');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(_panel, findsNothing, reason: 'Esc in the field');
+
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      expect(_panel, findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(_panel, findsNothing, reason: 'Esc after opening it with a click');
+
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      // Back to the note, then a click on the panel's header, which takes no
+      // focus of its own.
+      await tester.tap(find.byType(NoteField));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(of: _panel, matching: find.text('Kapy AI')).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(_panel, findsNothing, reason: 'Esc after a click on the header');
+
+      await _toggleWithKeys(tester);
+      await tester.tap(field);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'にほ',
+          selection: TextSelection.collapsed(offset: 2),
+          composing: TextRange(start: 0, end: 2),
+        ),
+      );
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(_panel, findsOneWidget, reason: 'Esc ends the composing first');
+    });
+
+    testWidgets('on a tablet, a tap in it leaves the keyboard up', (
+      tester,
+    ) async {
+      notes.create(body: 'Trip budget');
+      await _pump(
+        tester,
+        size: const Size(1366, 1024),
+        platform: TargetPlatform.iOS,
+      );
+      await tester.tap(_button);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(NoteField));
+      await tester.pumpAndSettle();
+      tester.testTextInput.log.clear();
+
+      await tester.tap(
+        find.descendant(of: _panel, matching: find.text('Kapy AI')).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-field')));
+      await tester.pumpAndSettle();
+
+      expect([
+        for (final call in tester.testTextInput.log) call.method,
+      ], isNot(contains('TextInput.hide')));
+    });
+
+    for (final platform in [TargetPlatform.linux, TargetPlatform.macOS]) {
+      for (final sidebar in [false, true]) {
+        testWidgets('over a narrow page it fits, down to the smallest window '
+            '(${platform.name}, ${sidebar ? 'with' : 'no'} notes list)', (
+          tester,
+        ) async {
+          notes.create(body: 'Trip budget');
+          for (final width in [1100.0, 800.0, 640.0, 520.0, 400.0]) {
+            await _pump(
+              tester,
+              size: Size(width, 700),
+              platform: platform,
+              sidebar: sidebar,
+            );
+            if (_panel.evaluate().isEmpty) await _toggleWithKeys(tester);
+            expect(_panel, findsOneWidget, reason: 'open at $width');
+            expect(tester.takeException(), isNull, reason: 'at $width');
+            final panel = tester.getRect(_panel);
+            final dock = tester.getRect(find.byType(KapyAiDock));
+            expect(
+              panel.left >= dock.left && panel.right <= dock.right,
+              isTrue,
+              reason: 'the panel $panel inside $dock at $width',
+            );
+            expect(panel.left, greaterThanOrEqualTo(0), reason: 'at $width');
+          }
+        });
+      }
+    }
 
     testWidgets('a narrow window has it over the page, not beside it', (
       tester,

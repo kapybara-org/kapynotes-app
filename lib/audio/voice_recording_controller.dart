@@ -8,6 +8,7 @@ import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/platform.dart';
+import 'adts.dart';
 import 'audio_decode.dart';
 import 'linux_voice_recorder.dart';
 import 'mp4_duration.dart';
@@ -171,6 +172,19 @@ class VoiceRecordingController extends ChangeNotifier {
   bool get shouldConfirmCancel =>
       (_session?.elapsed ?? Duration.zero) >= confirmCancelAfter;
 
+  /// Whether there is a microphone to record from, asked before [start] so
+  /// that a computer with none says "No microphone found" rather than
+  /// recording silence. Only a definite no blocks: a backend that cannot
+  /// tell, or fails to ask, answers yes, and [start] finds out for itself.
+  Future<bool> hasMicrophone() async {
+    try {
+      return await _recorder.hasMicrophone();
+    } catch (error) {
+      debugPrint('KapyNotes: could not look for a microphone: $error');
+      return true;
+    }
+  }
+
   /// Begins recording into [noteId]. Returns false when the microphone was
   /// refused, which the caller turns into the one piece of UI this needs.
   Future<bool> start({required String noteId}) async {
@@ -223,15 +237,17 @@ class VoiceRecordingController extends ChangeNotifier {
   /// Delivers the recordings an earlier run of the app never got to.
   ///
   /// A phone can end a recording while nobody is looking: the app swiped away
-  /// from the app switcher, or stopped by the system. The recorder closes its
-  /// file on the way out, but the app is not there to put it in its note. The
-  /// marker [start] left beside the file says which note that is, so it goes
-  /// there now, with a waveform drawn from the audio itself: the levels heard
-  /// while recording went with the app.
+  /// from the app switcher, stopped by the system, or killed outright for
+  /// memory, by a crash or by Force stop. The app is not there to put it in
+  /// its note. The marker [start] left beside the file says which note that
+  /// is, so it goes there now, with a waveform drawn from the audio itself:
+  /// the levels heard while recording went with the app.
   ///
-  /// A file the app was killed too hard to close has no index, so it cannot
-  /// be read. Its marker goes, and the file is left for [sweepTempFiles],
-  /// which is all that could ever be done with it.
+  /// A phone records ADTS, which a kill leaves readable up to its last few
+  /// frames, so that is rewrapped first: see [mp4FromAdts]. An `.m4a` the
+  /// app was killed too hard to close, which only a computer writes, has no
+  /// index and cannot be read. Its marker goes, and the file is left for
+  /// [sweepTempFiles], which is all that could ever be done with it.
   Future<void> recoverInterrupted({
     AudioDecoder decoder = const AudioDecoder(),
   }) async {
@@ -252,7 +268,12 @@ class VoiceRecordingController extends ChangeNotifier {
         try {
           final noteId =
               (jsonDecode(await marker.readAsString()) as Map)['noteId'];
-          if (noteId is! String || !await audio.exists()) continue;
+          if (noteId is! String) continue;
+          final adts = File(adtsBeside(audio.path));
+          if (await adts.exists() && !await finishAdtsRecording(adts, audio)) {
+            continue;
+          }
+          if (!await audio.exists()) continue;
           final fromFile = mp4DurationMs(await audio.readAsBytes());
           if (fromFile == null) continue;
           final duration = Duration(milliseconds: fromFile);
@@ -314,7 +335,7 @@ class VoiceRecordingController extends ChangeNotifier {
   /// What lets the next launch finish a recording this run never got to: see
   /// [recoverInterrupted]. Removed by [stop] and [cancel].
   static File _markerFor(String audioPath) =>
-      File('${audioPath.substring(0, audioPath.length - '.m4a'.length)}.json');
+      File('${audioPath.substring(0, audioPath.lastIndexOf('.'))}.json');
 
   /// Synchronous, and small enough to be: written before anything can end the
   /// recording, never after [stop] has already cleared it away.
@@ -569,11 +590,13 @@ class VoiceRecordingController extends ChangeNotifier {
     }
   }
 
-  /// Removes stray `voice-*.m4a` files an hour old or more.
+  /// Removes stray `voice-*.m4a` and `voice-*.aac` files an hour old or more
+  /// that no marker claims.
   ///
-  /// A force quit or an OOM kill is the one exit nothing can catch: the file
-  /// is left without its `moov` box, so it is unreadable and unrecoverable.
-  /// It still takes up space, and nothing else will ever clean it up.
+  /// A computer's recording killed outright is left without its `moov` box,
+  /// so it is unreadable and unrecoverable, and a marker that could not be
+  /// written leaves a phone's recording with no note to go to. Either still
+  /// takes up space, and nothing else will ever clean it up.
   static Future<void> sweepTempFiles({Directory? directory}) async {
     try {
       final dir = directory ?? Directory.systemTemp;
@@ -582,7 +605,8 @@ class VoiceRecordingController extends ChangeNotifier {
       await for (final entity in dir.list()) {
         if (entity is! File) continue;
         final name = entity.uri.pathSegments.last;
-        if (!name.startsWith('voice-') || !name.endsWith('.m4a')) continue;
+        if (!name.startsWith('voice-')) continue;
+        if (!name.endsWith('.m4a') && !name.endsWith('.aac')) continue;
         // Still to be delivered by [recoverInterrupted], however old.
         if (await _markerFor(entity.path).exists()) continue;
         final stat = await entity.stat();

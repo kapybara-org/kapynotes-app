@@ -645,7 +645,7 @@ class _EmptyPaneState extends State<EmptyPane> {
     super.dispose();
   }
 
-  /// Takes the keyboard from the editor this pane was split off from, so
+  /// Takes the keyboard the editor this pane was split off from let go of, so
   /// typing cannot land in a note that is no longer the focused one — while
   /// the window's shortcuts, which sit above every pane, keep answering.
   void _takeKeyboard() {

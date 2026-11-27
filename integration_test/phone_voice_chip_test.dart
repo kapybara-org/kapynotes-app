@@ -15,6 +15,7 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/voice_chip.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'keyboard_support.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
 
@@ -34,8 +35,8 @@ class _MemoryStore extends LocalStore {
 final _now = DateTime(2025, 11, 19, 9, 41);
 
 /// A note with a summarised recording and one at rest, at the phone's own
-/// width and at Android's Large text, where the chip's words grow once with
-/// the writing and a title takes the line under the row.
+/// width and at Android's Large text, where each card grows once with the
+/// writing and keeps its title to its first line.
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -103,7 +104,7 @@ void main() {
         );
         await tester.pumpAndSettle(const Duration(seconds: 1));
         FocusManager.instance.primaryFocus?.unfocus();
-        await tester.pumpAndSettle(const Duration(seconds: 1));
+        await settleKeyboard(tester, up: false);
 
         expect(find.byType(NoteVoiceChip), findsNWidgets(2));
         expect(tester.takeException(), isNull);

@@ -2,11 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
-
-/// The app's binding on Linux: Flutter's own, with a mouse wheel that
-/// scrolls as far a notch as GTK apps do.
-class LinuxBinding extends WidgetsFlutterBinding with GtkWheelSteps {}
 
 /// One notch of a mouse wheel scrolls as far as it does in a GTK app.
 ///
