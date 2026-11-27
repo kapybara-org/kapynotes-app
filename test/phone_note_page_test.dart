@@ -2302,6 +2302,190 @@ void main() {
       expect(header, findsNothing);
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
   });
+
+  group('a day turn (KAP-429)', () {
+    Future<void> turn(WidgetTester tester, Offset from, double dx) async {
+      await tester.timedDragFrom(
+        from,
+        Offset(dx, 0),
+        const Duration(milliseconds: 400),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Offset onHeader(WidgetTester tester) =>
+        tester.getCenter(find.byKey(const ValueKey('page-day'))) +
+        const Offset(60, 0);
+    Offset onText(WidgetTester tester) =>
+        tester.getCenter(find.byType(NoteEditor)) + const Offset(0, 120);
+
+    void keyboardDown() => FocusManager.instance.primaryFocus?.unfocus();
+
+    testWidgets('a drag on the header turns to the day before and after, as '
+        'the week picks them, in place, so Back still goes Home', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      await turn(tester, onHeader(tester), 200);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+
+      await turn(tester, onHeader(tester), 200);
+      expect(openNoteBody(tester), startsWith('Gym plan'));
+      expect(find.byKey(const ValueKey('day-tabs')), findsOneWidget);
+
+      await turn(tester, onHeader(tester), -200);
+      await turn(tester, onHeader(tester), -200);
+      expect(openNoteBody(tester), startsWith('Errands'));
+
+      await turn(tester, onHeader(tester), -200);
+      expect(openNoteBody(tester), isEmpty);
+      expect(find.text('Start typing…'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('page-day')),
+          matching: find.text('20'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(header, findsNothing);
+      expect(find.widgetWithText(NoteRow, 'Call with Arjun'), findsOneWidget);
+    });
+
+    testWidgets('the page follows the finger with the day coming in beside '
+        'it, which becomes the page as it was drawn', (tester) async {
+      seed();
+      await pump(tester);
+      keyboardDown();
+      await tester.pumpAndSettle();
+      final left = tester.getTopLeft(header).dx;
+      final drag = await tester.startGesture(onHeader(tester));
+      await drag.moveBy(const Offset(30, 0));
+      await drag.moveBy(const Offset(70, 0));
+      await tester.pump();
+      expect(tester.getTopLeft(header.first).dx, isNot(left));
+      expect(
+        tester
+            .widgetList<NoteEditor>(find.byType(NoteEditor))
+            .map((editor) => editor.initialBody.split('\n').first),
+        containsAll(['Call with Arjun', 'Standup notes']),
+      );
+      final editors = tester
+          .stateList<NoteEditorState>(find.byType(NoteEditor))
+          .toList();
+      expect(editors, hasLength(2));
+      await drag.moveBy(const Offset(60, 0));
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(
+        tester.state<NoteEditorState>(find.byType(NoteEditor)),
+        isIn(editors),
+        reason: 'the page coming in is kept, not drawn again',
+      );
+    });
+
+    testWidgets('a short slow drag springs back on the same day', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      await tester.timedDragFrom(
+        onHeader(tester),
+        const Offset(70, 0),
+        const Duration(milliseconds: 700),
+      );
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(find.byType(NoteEditor), findsOneWidget);
+    });
+
+    testWidgets('with the keyboard down, a drag on the text turns the day', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      keyboardDown();
+      await tester.pumpAndSettle();
+      await turn(tester, onText(tester), 200);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+    testWidgets("on Android, a drag on the text is the text's own, which "
+        'Android claims at once, and the header still turns the day', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      keyboardDown();
+      await tester.pumpAndSettle();
+      await turn(tester, onText(tester), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      await turn(tester, onHeader(tester), 200);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    testWidgets('with the caret in the text, a drag on the text stays the '
+        "text's, and the header still turns the day", (tester) async {
+      seed();
+      await pump(tester);
+      await tester.tap(find.byType(NoteEditor));
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<NoteEditorState>(find.byType(NoteEditor)).writing,
+        isTrue,
+      );
+      await turn(tester, onText(tester), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      await turn(tester, onHeader(tester), 200);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    });
+
+    testWidgets('with the keyboard up, only the header turns the day', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      keyboardDown();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      await turn(tester, onText(tester) - const Offset(0, 120), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      await turn(tester, onHeader(tester), 200);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    });
+
+    testWidgets('a scroll down the note, drifting sideways, never turns', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      keyboardDown();
+      await tester.pumpAndSettle();
+      await tester.timedDragFrom(
+        onText(tester),
+        const Offset(150, -200),
+        const Duration(milliseconds: 400),
+      );
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+    });
+
+    testWidgets("on an iPhone, a drag from the left edge is iOS's back, not "
+        'a turn', (tester) async {
+      seed();
+      await pump(tester);
+      await turn(tester, Offset(4, tester.getCenter(header).dy), 300);
+      expect(header, findsNothing);
+      expect(find.widgetWithText(NoteRow, 'Call with Arjun'), findsOneWidget);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+  });
 }
 
 /// A recording into [noteId] that lands only when [finish] completes, as a

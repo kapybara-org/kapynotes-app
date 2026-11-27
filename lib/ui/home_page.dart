@@ -111,6 +111,7 @@ import 'notes_grouping.dart';
 import 'notes_list.dart';
 import 'page_pane.dart';
 import 'page_toolbar.dart';
+import 'page_turn.dart';
 import 'phone_folder_tiles.dart';
 import 'phone_home_header.dart';
 import 'phone_note_header.dart';
@@ -5490,8 +5491,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   GlobalKey<NoteEditorState> _phoneEditorFor(String? id) {
     final returning = _phoneReturning;
     _phoneReturning = null;
+    final turned = _phoneTurnEditors[id];
+    _phoneTurnEditors.clear();
     if (returning == null || returning.id != id) {
-      return GlobalKey<NoteEditorState>();
+      return turned ?? GlobalKey<NoteEditorState>();
     }
     _phonePagesUnder.remove(returning);
     _phoneDay = returning.day;
@@ -5533,40 +5536,56 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   Widget _phoneListBody() {
-    final tasks = _tasksMode && _phoneTab == PhoneTab.notes
-        ? _taskController
-        : null;
+    final home = _phoneHome ? _taskController : null;
+    final tasks = _tasksMode ? home : null;
     final ai = _phoneTab == PhoneTab.kapyAi && _kapyAiOn ? _kapyAi : null;
-    // A swipe left turns Home to Tasks, and a swipe right turns Tasks
-    // back to Notes, or goes back from a level's page, as its left
-    // edge does.
-    final turns = _taskController != null && _phoneHome;
-    final level = _phoneLevel != null;
-    // The Notes list stays built under Tasks, out of sight, so it comes
-    // back scrolled and narrowed as it was left.
+    // Home turns from Notes to Tasks and back with a sideways drag that
+    // follows the finger, and the Notes list stays built under Tasks, out
+    // of sight, so it comes back scrolled and narrowed as it was left. Each
+    // is drawn as it will be once turned to, while it slides in. A level's
+    // page goes back from a drag right, as its left edge does.
+    final notes = _asHome(
+      tasks: false,
+      () => KeyedSubtree(
+        key: const ValueKey('phone-notes-turn'),
+        child:
+            _phoneTab == PhoneTab.folders &&
+                !_drawingsOnly &&
+                !_sharedPage &&
+                widget.folders == null
+            // A build without folders still has Drawings to open.
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  PhoneListTitle(title: 'Folders', trailing: _phoneAccount()),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                    child: _phoneFolderTiles(),
+                  ),
+                ],
+              )
+            : _phoneNotes(),
+      ),
+    );
+    final tasksPage = home == null
+        ? null
+        : _asHome(tasks: true, () => _phoneTasksPage(home));
     final page = Stack(
       fit: StackFit.expand,
       children: [
         Visibility(
-          visible: tasks == null && ai == null,
+          visible: ai == null,
           maintainState: true,
-          child:
-              _phoneTab == PhoneTab.folders &&
-                  !_drawingsOnly &&
-                  !_sharedPage &&
-                  widget.folders == null
-              // A build without folders still has Drawings to open.
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    PhoneListTitle(title: 'Folders', trailing: _phoneAccount()),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-                      child: _phoneFolderTiles(),
-                    ),
-                  ],
-                )
-              : _phoneNotes(),
+          child: PageTurn(
+            before: tasks != null ? (_) => notes : null,
+            keepBefore: true,
+            after: tasks == null && tasksPage != null ? (_) => tasksPage : null,
+            onTurn: (tasks) => _showHome(tasks: tasks),
+            onBack: _phoneLevel != null
+                ? () => unawaited(_phoneNavigator.currentState?.maybePop())
+                : null,
+            child: tasks != null ? tasksPage! : notes,
+          ),
         ),
         if (ai != null)
           KapyAiPage(
@@ -5580,46 +5599,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
             account: _phoneAccount(),
             now: widget.notes.now,
-          ),
-        if (tasks != null)
-          Navigator(
-            key: _tasksNavigator,
-            pages: [
-              MaterialPage(
-                key: const ValueKey('phone-tasks'),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _phoneHomeHeader(),
-                    Expanded(
-                      child: TasksScreen(
-                        key: _tasksPage,
-                        phone: true,
-                        controller: tasks,
-                        filter: _taskFilter,
-                        onFilter: (filter) =>
-                            setState(() => _taskFilter = filter),
-                        addFocus: _taskAddFocus,
-                        words: _taskWords,
-                        labelOf: _taskNoteLabel,
-                        onOpenNote: _openTaskNote,
-                        onOpenTask: (item) {
-                          widget.prefs.rememberCaret(
-                            item.note.id,
-                            item.line.end,
-                          );
-                          _openTaskNote(item.note.id);
-                        },
-                        onOpenDone: _openTasksDone,
-                        images: widget.notes.blobs,
-                        displayTime: widget.prefs.displayTime,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            onDidRemovePage: (_) {},
           ),
       ],
     );
@@ -5663,32 +5642,60 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ),
       ],
       onCreateAction: _createFromPhone,
-      child: SafeArea(
-        bottom: false,
-        child: PhoneHomeSwipe(
-          onTurn: turns || level ? _phoneTurn : null,
-          // Android's pages have no back swipe of their own, so there the
-          // edge goes back ahead of a row's swipe, out of a level or Tasks.
-          backFromEdge:
-              (level || _tasksMode) &&
-              Theme.of(context).platform != TargetPlatform.iOS,
-          child: page,
-        ),
-      ),
+      child: SafeArea(bottom: false, child: page),
     );
   }
 
-  /// A sideways swipe on a phone's list, left for Tasks: see [PhoneHomeSwipe].
-  void _phoneTurn(bool tasks) {
-    final taskPage = _tasksNavigator.currentState;
-    if (tasks) {
-      if (_taskController != null && _phoneHome) _showHome(tasks: true);
-    } else if (_phoneLevel != null) {
-      unawaited(_phoneNavigator.currentState?.maybePop());
-    } else if (taskPage != null && taskPage.canPop()) {
-      unawaited(taskPage.maybePop());
-    } else {
-      _showHome(tasks: false);
+  /// Home's Tasks on a phone, on a navigator of its own that its task
+  /// pages go over, under the header that turns back to Notes.
+  Widget _phoneTasksPage(TasksController tasks) => KeyedSubtree(
+    key: const ValueKey('phone-tasks-turn'),
+    child: Navigator(
+      key: _tasksNavigator,
+      pages: [
+        MaterialPage(
+          key: const ValueKey('phone-tasks'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _phoneHomeHeader(),
+              Expanded(
+                child: TasksScreen(
+                  key: _tasksPage,
+                  phone: true,
+                  controller: tasks,
+                  filter: _taskFilter,
+                  onFilter: (filter) => setState(() => _taskFilter = filter),
+                  addFocus: _taskAddFocus,
+                  words: _taskWords,
+                  labelOf: _taskNoteLabel,
+                  onOpenNote: _openTaskNote,
+                  onOpenTask: (item) {
+                    widget.prefs.rememberCaret(item.note.id, item.line.end);
+                    _openTaskNote(item.note.id);
+                  },
+                  onOpenDone: _openTasksDone,
+                  images: widget.notes.blobs,
+                  displayTime: widget.prefs.displayTime,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+      onDidRemovePage: (_) {},
+    ),
+  );
+
+  /// Draws [build] as Home has Notes, or with [tasks] Tasks, on screen: the
+  /// page Home turns to, which slides in before it is the one shown.
+  T _asHome<T>(T Function() build, {required bool tasks}) {
+    final was = _tasksMode;
+    _tasksMode = tasks;
+    try {
+      return build();
+    } finally {
+      _tasksMode = was;
     }
   }
 
@@ -5986,12 +5993,117 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  /// A phone note's page, which a sideways drag turns to the day before or
+  /// after, following the finger: the day as its week picks it, on the same
+  /// page, so Back still goes where it went (see [_turnPhoneDay]).
   Widget _phonePageBody(
     Note note,
     GlobalKey<NoteEditorState> editor,
     DateTime? day,
     Set<String> kept,
-  ) => Builder(
+  ) {
+    final shown =
+        _space == LibrarySpace.notes && !_specialMode && widget.days != null
+        ? day ??
+              noteDay(
+                note,
+                widget.prefs.displayTime,
+                ownDay: _dayOfFreshNote[note.id] ?? _ownDayOf(note),
+              )
+        : null;
+    DateTime by(int days) =>
+        DateTime(shown!.year, shown.month, shown.day + days);
+    return PageTurn(
+      before: shown == null ? null : (_) => _phoneDayAhead(note, by(-1)),
+      after: shown == null ? null : (_) => _phoneDayAhead(note, by(1)),
+      onTurn: (later) => _turnPhoneDay(by(later ? 1 : -1)),
+      canStart: (at) => _phoneDayTurnsFrom(at, note, editor),
+      child: KeyedSubtree(
+        key: ObjectKey(editor),
+        child: _phoneDayView(note, editor, day: day, kept: kept),
+      ),
+    );
+  }
+
+  /// [day] as a turn to it shows it while it slides in: its first note, on
+  /// the editor that note then keeps, under its tabs where it has several,
+  /// or a blank page under [from]'s header where it has none.
+  Widget _phoneDayAhead(Note from, DateTime day) {
+    final tabs = _phoneTabsOn(day).notes;
+    final note = tabs.firstOrNull;
+    if (note == null) {
+      return KeyedSubtree(
+        key: ValueKey(('blank-day', day)),
+        child: _phoneDayView(from, null, on: day),
+      );
+    }
+    final editor = _phoneTurnEditors[note.id] ??= GlobalKey();
+    final several = tabs.length > 1;
+    return KeyedSubtree(
+      key: ObjectKey(editor),
+      child: _phoneDayView(
+        note,
+        editor,
+        day: several ? day : null,
+        kept: several ? _phoneDayIds(day).toSet() : const {},
+        ahead: true,
+      ),
+    );
+  }
+
+  /// Whether a drag from [at] may turn [note]'s page to another day: from
+  /// its header always, and from the page under it only with the keyboard
+  /// down and nothing being written there, so a drag on the text, its
+  /// caret, a selection or a drawing stays theirs.
+  bool _phoneDayTurnsFrom(
+    Offset at,
+    Note note,
+    GlobalKey<NoteEditorState> editor,
+  ) {
+    final header = _phoneHeaders[editor]?.currentContext?.findRenderObject();
+    if (header is RenderBox &&
+        header.hasSize &&
+        at.dy <= header.localToGlobal(Offset(0, header.size.height)).dy) {
+      return true;
+    }
+    return MediaQuery.viewInsetsOf(context).bottom == 0 &&
+        !_opensAsDrawing(note) &&
+        !(editor.currentState?.writing ?? false);
+  }
+
+  /// The editors a turn's page coming in was drawn with, by note, which the
+  /// note keeps once the turn makes it the one open; see [_phoneEditorFor].
+  final Map<String, GlobalKey<NoteEditorState>> _phoneTurnEditors = {};
+
+  /// The header over each phone page's editor, which a day's turn starts
+  /// from with the keyboard up.
+  final _phoneHeaders = Expando<GlobalKey>();
+
+  /// A day turned to on a phone note's page: as its week picks it (see
+  /// [_pickPhoneDay]), the day's note, its first under its tabs, or a blank
+  /// page to write on it, but always in place, so the turn adds nothing to
+  /// go Back through.
+  void _turnPhoneDay(DateTime day) {
+    final tabs = _phoneTabsOn(day).notes;
+    final several = tabs.length > 1;
+    setState(() {
+      _phoneDayPage ??= _phoneTopPage;
+      _phoneDay = several ? day : null;
+      _phoneDayKept = several ? _phoneDayIds(day).toSet() : const {};
+    });
+    final note = tabs.firstOrNull;
+    if (note == null) return _writeOnDay(day);
+    _select(note.id, focusEditor: false);
+  }
+
+  Widget _phoneDayView(
+    Note note,
+    GlobalKey<NoteEditorState>? editor, {
+    DateTime? day,
+    Set<String> kept = const {},
+    DateTime? on,
+    bool ahead = false,
+  }) => Builder(
     builder: (outer) => Scaffold(
       backgroundColor: context.palette.paperColor,
       body: ListenableBuilder(
@@ -6010,6 +6122,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               // lines take its room; Back is still the phone's gesture.
               if (!cramped)
                 SafeArea(
+                  key: editor == null
+                      ? null
+                      : _phoneHeaders[editor] ??= GlobalKey(),
                   bottom: false,
                   child: _phoneNoteHeader(
                     note,
@@ -6019,20 +6134,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     // page (M11) keeps its header as it is until the first
                     // words.
                     typing:
+                        !ahead &&
                         note.body.isNotEmpty &&
                         MediaQuery.viewInsetsOf(outer).bottom > 0,
                     tabsOn: day,
                     kept: {...kept, note.id},
+                    on: on,
                   ),
                 ),
               Expanded(
-                child: SafeArea(
-                  top: false,
-                  // The footer insets its own controls past the home indicator,
-                  // as the page bar does past the status bar.
-                  bottom: false,
-                  child: _phoneEditor(note, editor, cramped: cramped),
-                ),
+                child: editor == null
+                    ? const SizedBox.shrink()
+                    : SafeArea(
+                        top: false,
+                        // The footer insets its own controls past the home
+                        // indicator, as the page bar does past the status bar.
+                        bottom: false,
+                        child: _phoneEditor(
+                          note,
+                          editor,
+                          cramped: cramped,
+                          ahead: ahead,
+                        ),
+                      ),
               ),
             ],
           );
@@ -6050,14 +6174,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     required bool typing,
     DateTime? tabsOn,
     Set<String> kept = const {},
+    DateTime? on,
   }) {
     final displayTime = widget.prefs.displayTime;
     final today = dayShown(widget.notes.now(), displayTime);
-    final day = noteDay(
-      note,
-      displayTime,
-      ownDay: _dayOfFreshNote[note.id] ?? _ownDayOf(note),
-    );
+    final day =
+        on ??
+        noteDay(
+          note,
+          displayTime,
+          ownDay: _dayOfFreshNote[note.id] ?? _ownDayOf(note),
+        );
     final hasDays = _space == LibrarySpace.notes && !_specialMode;
     final counted = hasDays
         ? _filtered(widget.notes.search(''), anyTime: true)
@@ -6411,10 +6538,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Note note,
     GlobalKey<NoteEditorState> key, {
     required bool cramped,
+    bool ahead = false,
   }) {
     if (_opensAsDrawing(note)) return _buildDrawing(note);
     final folders = widget.folders;
-    final editor = _phoneNoteEditor(note, key, cramped: cramped);
+    final editor = _phoneNoteEditor(note, key, cramped: cramped, ahead: ahead);
     return folders == null
         ? editor
         : NoteFolders(tree: folders.tree, child: editor);
@@ -6424,7 +6552,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     Note note,
     GlobalKey<NoteEditorState> key, {
     required bool cramped,
+    bool ahead = false,
   }) {
+    // A page coming in with a turn neither takes the caret nor raises the
+    // keyboard.
+    final ready = !ahead && _readyToTypeIn(note);
     return ListenableBuilder(
       listenable: widget.engines,
       builder: (context, _) => ListenableBuilder(
@@ -6454,16 +6586,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           highlighter: widget.engines.highlighter,
           keepResultRoom: true,
           resultsVisible: true,
-          autofocus: _readyToTypeIn(note),
-          startAtEnd: _readyToTypeIn(note),
+          autofocus: ready,
+          startAtEnd: ready,
           namedByPerson: !(_namer?.willName(note) ?? false),
           onDefaultTitleEntered: () => _namer?.personNaming(note.id),
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),
           ensureKeyboardVisible:
-              _readyToTypeIn(note) &&
-              (AppPlatform.isMobile || AppPlatform.isFlutterTest),
+              ready && (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
           createdAt: note.createdAt,
           idlePeekHeld: () => _kapyAi?.answering ?? false,
