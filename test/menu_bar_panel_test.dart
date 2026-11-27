@@ -23,11 +23,13 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/ui/menu_bar_panel.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/back_forward.dart';
 import 'test_fonts.dart';
 
 class _MemoryStore extends LocalStore {
@@ -230,6 +232,23 @@ void main() {
     await tasks.reconcileNow();
     later();
     return note;
+  }
+
+  for (final by in StepBy.values) {
+    testWidgets('${by.name}: a swipe or the mouse buttons turn between Notes '
+        'and Tasks, on the Mac, the one with the panel', (tester) async {
+      asDesktop();
+      await pumpPanel(tester);
+      final panel = find.byKey(const ValueKey('menu-bar-panel'));
+      expect(prefs.menuBarOpensTasks, isFalse);
+
+      await stepOver(tester, panel, BackForwardStep.forward, by);
+      expect(prefs.menuBarOpensTasks, isTrue);
+      await stepOver(tester, panel, BackForwardStep.forward, by);
+      expect(prefs.menuBarOpensTasks, isTrue, reason: 'Tasks is the last');
+      await stepOver(tester, panel, BackForwardStep.back, by);
+      expect(prefs.menuBarOpensTasks, isFalse);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
   }
 
   group('tabs', () {
