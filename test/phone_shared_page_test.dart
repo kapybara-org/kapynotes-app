@@ -213,7 +213,7 @@ void main() {
       expect(group, findsOne);
 
       final words = tester.widget<Text>(find.text(title));
-      expect(words.style?.fontFamily, AppFonts.title);
+      expect(words.style?.fontFamily, AppFonts.ui);
       expect(words.style?.fontSize, 19);
       expect(words.style?.height, 24 / 19);
       expect(words.style?.color, palette.textPrimary);

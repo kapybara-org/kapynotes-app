@@ -118,6 +118,14 @@ void main() {
       ),
       findsOneWidget,
     );
+    final badge = find.descendant(
+      of: find.byKey(const ValueKey('rail-shared-badge')),
+      matching: find.byType(Container),
+    );
+    expect(
+      (tester.widget<Container>(badge).decoration! as BoxDecoration).color,
+      Theme.of(tester.element(badge)).colorScheme.errorContainer,
+    );
     expect(
       find.bySemanticsLabel('Shared with me, 2 invitations'),
       findsOneWidget,
@@ -126,7 +134,7 @@ void main() {
 
   testWidgets('icons and captions rest in T2, light to T1 under the pointer, '
       'and take the tonal ink when open', (tester) async {
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     await tester.pumpWidget(harness(rail()));
     final drawings = find.byKey(const ValueKey('rail-drawings'));
     Color? icon(Finder item, KapyIconData data) => tester
@@ -143,7 +151,7 @@ void main() {
     expect(caption(drawings), palette.textSecondary);
     expect(
       icon(find.byKey(const ValueKey('rail-notes')), KapyIcons.noteOutlined),
-      palette.tonalForeground,
+      palette.textPrimary,
     );
     expect(
       icon(
@@ -238,8 +246,9 @@ void main() {
       expect(opened, 1);
     });
 
-    testWidgets("is D01's #2A2722 circle with a 1 px #312D27 line in "
-        'Riverbank dark, and plain in light', (tester) async {
+    testWidgets('is a control fill circle with no line, in dark and light', (
+      tester,
+    ) async {
       BoxDecoration face() =>
           tester
                   .widget<Container>(
@@ -256,8 +265,8 @@ void main() {
       await tester.pumpWidget(
         harness(rail(onAccountPressed: () {}, user: user)),
       );
-      expect(face().color, const Color(0xFF2A2722));
-      expect(face().border, Border.all(color: const Color(0xFF312D27)));
+      expect(face().color, KapyTheme.darkPalette.controlBackground);
+      expect(face().border, isNull);
 
       await tester.pumpWidget(
         MaterialApp(

@@ -200,7 +200,7 @@ class _AskFirstState extends State<_AskFirst> {
     final label = chromeStyle(
       size: 15,
       line: 20,
-      weight: AppWeight.body,
+      weight: AppWeight.regular,
       color: palette.textPrimary,
     );
     return SingleChildScrollView(
@@ -215,8 +215,8 @@ class _AskFirstState extends State<_AskFirst> {
             style: TextStyle(
               fontSize: 17,
               height: 22 / 17,
-              fontWeight: AppWeight.font(AppWeight.section),
-              fontVariations: AppWeight.wght(AppWeight.section),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               color: palette.textPrimary,
             ),
           ),
@@ -252,7 +252,7 @@ class _AskFirstState extends State<_AskFirst> {
                     textStyle: chromeStyle(
                       size: 15,
                       line: 20,
-                      weight: AppWeight.button,
+                      weight: AppWeight.regular,
                       color: palette.textPrimary,
                     ),
                     shape: shape,
@@ -272,7 +272,7 @@ class _AskFirstState extends State<_AskFirst> {
                     textStyle: chromeStyle(
                       size: 15,
                       line: 20,
-                      weight: AppWeight.page,
+                      weight: AppWeight.semibold,
                       color: palette.tonalForeground,
                     ),
                     shape: shape,
@@ -305,7 +305,7 @@ class _OptionRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) => InkWell(
     key: const ValueKey('sharing-ask-option'),
-    borderRadius: BorderRadius.circular(AppRadii.compact),
+    borderRadius: BorderRadius.circular(AppRadii.control),
     onTap: () => onChanged(!value),
     child: ConstrainedBox(
       constraints: const BoxConstraints(minHeight: 44),

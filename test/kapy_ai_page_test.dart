@@ -34,7 +34,7 @@ List<KapyChat> get _chats => [
 FakeKapyAi _ai({bool pro = true}) =>
     FakeKapyAi(pro: pro, chatList: _chats)..set(model: KapyModel.cloud);
 
-const _account = SizedBox.square(
+final _account = SizedBox.square(
   key: ValueKey('account'),
   dimension: 32,
   child: DecoratedBox(
@@ -140,7 +140,7 @@ void main() {
     List<FontVariation>? wghtOf(String label) =>
         tester.widget<Text>(find.text(label)).style?.fontVariations;
     for (final label in ['Yesterday', 'Previous 7 days', 'October']) {
-      expect(wghtOf(label), [const FontVariation('wght', 520)], reason: label);
+      expect(wghtOf(label), [const FontVariation('wght', 600)], reason: label);
     }
     final dispatcher = tester.binding.platformDispatcher;
     dispatcher.accessibilityFeaturesTestValue = FakeAccessibilityFeatures.allOn;
@@ -359,10 +359,10 @@ void main() {
       expect(pickerText(tester), [
         'On this device',
         'Answers stay on this phone',
-        'KAPY AI',
+        'Kapy AI',
         'Kapy AI Cloud',
         'Part of Pro',
-        'YOUR ACCOUNTS',
+        'Your accounts',
         'Fast',
         'Quick answers and short notes',
         'Manage accounts…',
@@ -380,13 +380,13 @@ void main() {
       );
 
       expect(pickerText(tester), [
-        'ON THIS DEVICE',
+        'On this device',
         'Apple Intelligence',
         'Answers stay on this iPhone',
-        'KAPY AI',
+        'Kapy AI',
         'Kapy AI Cloud',
         'Part of Pro',
-        'YOUR ACCOUNTS',
+        'Your accounts',
         'Fast',
         'Quick answers and short notes',
         'Manage accounts…',

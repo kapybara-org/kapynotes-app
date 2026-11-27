@@ -214,7 +214,7 @@ class NoteVoiceChip extends StatefulWidget {
     VoiceChipState.done || VoiceChipState.idle => null,
     VoiceChipState.transcribing => _transcribing,
     VoiceChipState.summarising => _summarising,
-    VoiceChipState.waiting => 'Waiting for connection',
+    VoiceChipState.waiting => 'Waiting for network',
     VoiceChipState.retrying => 'Trying again soon',
     VoiceChipState.failed when ref.transcript != null => "Couldn't summarise",
     VoiceChipState.failed => "Couldn't transcribe",
@@ -335,7 +335,7 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
       palette,
       metrics.lineSize,
       metrics.line,
-      AppWeight.body,
+      AppWeight.regular,
       chip._isTransient ? palette.textTertiary : palette.textMuted,
     );
     return Container(
@@ -418,7 +418,7 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
         palette,
         metrics.nameSize,
         metrics.nameLine,
-        AppWeight.rowTitle,
+        AppWeight.regular,
         palette.textPrimary,
       ),
     );
@@ -498,7 +498,7 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
       palette,
       metrics.lineSize,
       metrics.line,
-      AppWeight.rowTitle,
+      AppWeight.regular,
       palette.textSecondary,
     ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
     final total = formatVoiceDuration(chip.ref.duration);

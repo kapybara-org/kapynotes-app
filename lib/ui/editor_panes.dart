@@ -167,8 +167,8 @@ class NoteDragFeedback extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: AppTypeScale.control,
-                  fontWeight: AppWeight.font(AppWeight.body),
-                  fontVariations: AppWeight.wght(AppWeight.body),
+                  fontWeight: AppWeight.font(AppWeight.regular),
+                  fontVariations: AppWeight.wght(AppWeight.regular),
                   color: palette.textPrimary,
                 ),
               ),
@@ -425,8 +425,8 @@ class _EditorPaneFrameState extends State<EditorPaneFrame> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: AppTypeScale.small,
-                              fontWeight: AppWeight.font(AppWeight.body),
-                              fontVariations: AppWeight.wght(AppWeight.body),
+                              fontWeight: AppWeight.font(AppWeight.regular),
+                              fontVariations: AppWeight.wght(AppWeight.regular),
                               color: scheme.onPrimary,
                             ),
                           ),
@@ -552,8 +552,8 @@ class _PaneHeaderState extends State<_PaneHeader> {
                         style: TextStyle(
                           fontSize: AppTypeScale.small,
                           height: 1,
-                          fontWeight: AppWeight.font(AppWeight.body),
-                          fontVariations: AppWeight.wght(AppWeight.body),
+                          fontWeight: AppWeight.font(AppWeight.regular),
+                          fontVariations: AppWeight.wght(AppWeight.regular),
                           fontStyle: title == null ? FontStyle.italic : null,
                           color: widget.active
                               ? palette.textPrimary
@@ -679,8 +679,8 @@ class _EmptyPaneState extends State<EmptyPane> {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: AppTypeScale.title,
-                    fontWeight: AppWeight.font(AppWeight.body),
-                    fontVariations: AppWeight.wght(AppWeight.body),
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                     color: palette.textPrimary,
                   ),
                 ),

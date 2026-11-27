@@ -13,7 +13,7 @@ import 'task_details_sheet.dart';
 
 /// The Tasks boards' colours (KAPY-62, row D), each the nearest of the
 /// palette's own. In dark, the few the palette has no role for are steps off
-/// the card, worked out so Riverbank dark keeps the colours it was drawn in.
+/// the card, worked out from the neutral ladder's steps.
 class TaskInk {
   const TaskInk._({
     required this.card,

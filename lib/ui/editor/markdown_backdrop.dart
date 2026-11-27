@@ -481,7 +481,6 @@ class RenderMarkdownBackdrop extends RenderBox {
   /// The page's is Paper's 20px box with a 6px corner.
   static const double _boxInset = 0;
   static const double _boxSide = 20;
-  static const double _boxRadius = 6;
 
   /// Paper's link chip is 28 tall.
   static const double _chipHeight = 28;
@@ -566,10 +565,7 @@ class RenderMarkdownBackdrop extends RenderBox {
       side,
       side,
     );
-    final rounded = RRect.fromRectAndRadius(
-      square,
-      Radius.circular(_boxRadius),
-    );
+    final rounded = RRect.fromRectAndRadius(square, Radius.circular(side / 2));
     if (!checkbox.checked) {
       canvas.drawRRect(
         rounded.deflate(0.75),

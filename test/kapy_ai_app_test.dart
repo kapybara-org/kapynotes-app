@@ -613,7 +613,7 @@ void main() {
         expect(_panel, findsOneWidget);
         expect(sheet, findsNothing);
         final style = titleStyle(tester);
-        expect(style?.fontFamily, 'Figtree');
+        expect(style?.fontFamily, AppFonts.ui);
         expect(style?.fontSize, 13);
         expect(
           icon(tester).paths,
@@ -648,7 +648,7 @@ void main() {
 
         expect(sheet, findsOneWidget);
         final style = titleStyle(tester);
-        expect(style?.fontFamily, 'Shantell Sans');
+        expect(style?.fontFamily, AppFonts.ui);
         expect(style?.fontSize, 17);
         expect(icon(tester), same(KapyIcons.scheduleRounded));
         expect(hairline(tester), isNull);
@@ -1416,6 +1416,11 @@ void main() {
     final searchRow = find.byKey(
       const ValueKey('settings-search-result-shortcut-row-findNotes'),
     );
+    // The row's own label, not the settings search field's "Search" hint.
+    Finder shortcutLabel(String text) => find.descendant(
+      of: find.byKey(const ValueKey('shortcut-row-findNotes')),
+      matching: find.text(text),
+    );
 
     testWidgets('the Search shortcut says Ask Kapy AI while it is on', (
       tester,
@@ -1425,8 +1430,8 @@ void main() {
         kapyAi: ai,
         section: SettingsSection.shortcuts,
       );
-      expect(find.text('Search or Ask Kapy AI'), findsOneWidget);
-      expect(find.text('Search'), findsNothing);
+      expect(shortcutLabel('Search or Ask Kapy AI'), findsOneWidget);
+      expect(shortcutLabel('Search'), findsNothing);
 
       await tester.enterText(searchField, 'ask kapy');
       await tester.pumpAndSettle();
@@ -1442,8 +1447,8 @@ void main() {
         kapyAi: ai,
         section: SettingsSection.shortcuts,
       );
-      expect(find.text('Search'), findsOneWidget);
-      expect(find.text('Search or Ask Kapy AI'), findsNothing);
+      expect(shortcutLabel('Search'), findsOneWidget);
+      expect(shortcutLabel('Search or Ask Kapy AI'), findsNothing);
 
       await tester.enterText(searchField, 'ask kapy');
       await tester.pumpAndSettle();
@@ -1462,8 +1467,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Shortcuts'));
       await tester.pumpAndSettle();
-      expect(find.text('Search or Ask Kapy AI'), findsNothing);
-      expect(find.text('Search'), findsOneWidget);
+      expect(shortcutLabel('Search or Ask Kapy AI'), findsNothing);
+      expect(shortcutLabel('Search'), findsOneWidget);
     });
 
     testWidgets('the Search shortcut is plain Search without Kapy AI', (
@@ -1475,8 +1480,8 @@ void main() {
         kapyAi: ai,
         section: SettingsSection.shortcuts,
       );
-      expect(find.text('Search'), findsOneWidget);
-      expect(find.text('Search or Ask Kapy AI'), findsNothing);
+      expect(shortcutLabel('Search'), findsOneWidget);
+      expect(shortcutLabel('Search or Ask Kapy AI'), findsNothing);
     });
     testWidgets('Pro: both groups, and their rows', (tester) async {
       ai = FakeKapyAi(

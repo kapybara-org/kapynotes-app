@@ -9387,7 +9387,7 @@ class _UnknownChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: palette.controlBackground,
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           border: Border.all(color: palette.controlBorder),
         ),
         child: Text(
@@ -9461,8 +9461,8 @@ class _CodeBlockHeader extends StatelessWidget {
                 fontFamily: AppFonts.mono,
                 fontFamilyFallback: AppFonts.monoFallback,
                 fontSize: 11.5,
-                fontWeight: AppWeight.font(AppWeight.rowTitle),
-                fontVariations: AppWeight.wght(AppWeight.rowTitle),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: quiet,
               ),
             ),
@@ -9488,8 +9488,8 @@ class _CodeBlockHeader extends StatelessWidget {
                       style: TextStyle(
                         fontFamily: AppFonts.ui,
                         fontSize: 12,
-                        fontWeight: AppWeight.font(AppWeight.section),
-                        fontVariations: AppWeight.wght(AppWeight.section),
+                        fontWeight: AppWeight.font(AppWeight.regular),
+                        fontVariations: AppWeight.wght(AppWeight.regular),
                         color: quiet,
                       ),
                     ),

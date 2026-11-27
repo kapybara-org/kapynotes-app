@@ -1,8 +1,10 @@
 # Fonts
 
-## Writing font
+## Handwritten font
 
-The note editor defaults to Shantell Sans by Shantell Martin and Arrow Type.
+The Handwritten writing font, Mixed's titles and headings, and the few
+friendly moments in the app's chrome that use the handwritten accent style
+(`AppFonts.hand`) are set in Shantell Sans by Shantell Martin and Arrow Type.
 Its variable axes are configured with low informality and no baseline bounce,
 keeping the writing surface human without making longer notes feel busy. The
 bundled upright and italic variable fonts are distributed through Google Fonts
@@ -33,46 +35,40 @@ License: [`ShantellSans-OFL.txt`](ShantellSans-OFL.txt)
 
 ## Interface fonts
 
-The app's controls and labels are set in Figtree by Erik Kennedy, bundled so
-that menus, buttons and fields render the same face on every platform instead
-of each system's own. Calculation results and keycaps are set in Geist Mono by
-the Geist Project Authors (Vercel). Both are the upstream variable fonts as
-Google Fonts distributes them, unmodified: Figtree upright and italic with a
-`wght` axis from 300 to 900, and Geist Mono upright with `wght` from 100 to
-900. Both are licensed under the SIL Open Font License 1.1.
+On a Mac and an iPhone the interface is set in San Francisco, through the
+system face: its licence allows it only on Apple's platforms, so it is never
+bundled. Windows, Android and Linux get Inter by Rasmus Andersson, the closest
+free match, under the SIL Open Font License 1.1. The Clean writing font and
+Mixed's body text use the same face.
 
-Geist Mono has no ⌘, ⌥ or ⌃, so a keycap draws those from the platform
-monospace face (`AppFonts.monoFallback` in `lib/core/theme.dart`).
-
-| File | Source | Size |
-| --- | --- | --- |
-| `Figtree-Variable.ttf` | [`ofl/figtree/Figtree[wght].ttf`](https://github.com/google/fonts/tree/main/ofl/figtree), from [erikdkennedy/figtree](https://github.com/erikdkennedy/figtree) at `032dfa7` | 63 KB |
-| `Figtree-Italic-Variable.ttf` | [`ofl/figtree/Figtree-Italic[wght].ttf`](https://github.com/google/fonts/tree/main/ofl/figtree) | 63 KB |
-| `GeistMono-Variable.ttf` | [`ofl/geistmono/GeistMono[wght].ttf`](https://github.com/google/fonts/tree/main/ofl/geistmono), from [vercel/geist-font](https://github.com/vercel/geist-font) at `77f0563` | 172 KB |
-
-Licenses: [`Figtree-OFL.txt`](Figtree-OFL.txt),
-[`GeistMono-OFL.txt`](GeistMono-OFL.txt)
-
-## Title font
-
-A note's title, in the default Clean writing font, is set in Newsreader by
-Production Type, under the SIL Open Font License 1.1. Any other writing font
-titles the note in its own face, and scripts Newsreader lacks fall back to the
-writing face.
-
-The app draws the title at one weight and one size, so the file is a static
-instance of the upstream variable font at `wght` 400 and `opsz` 36: 119 KB
-in place of 452 KB. To regenerate it:
+The app sets interface text at 400 and 600 only, and 700 when the system's
+Bold Text is on, so the two files here are instances of Inter 4.1's variable
+fonts with the optical size pinned to text (opsz 14) and the weight axis cut
+to 400–700: 880 KB + 910 KB became 514 KB + 520 KB. To regenerate them from
+the release's InterVariable.ttf and InterVariable-Italic.ttf:
 
 ```sh
 pip install fonttools
-fonttools varLib.instancer -o Newsreader-Title.ttf \
-  "Newsreader[opsz,wght].ttf" wght=400 opsz=36
+fonttools varLib.instancer -o Inter-Variable.ttf InterVariable.ttf opsz=14 wght=400:700
+fonttools varLib.instancer -o Inter-Italic-Variable.ttf InterVariable-Italic.ttf opsz=14 wght=400:700
 ```
 
-Source: <https://github.com/google/fonts/tree/main/ofl/newsreader>
+Source: <https://github.com/rsms/inter/releases/tag/v4.1>
 
-License: [`Newsreader-OFL.txt`](Newsreader-OFL.txt)
+Calculation results, keycaps and code are set in Geist Mono by the Geist
+Project Authors (Vercel), the upstream variable font as Google Fonts
+distributes it, unmodified, with `wght` from 100 to 900, under the SIL Open
+Font License 1.1. Geist Mono has no ⌘, ⌥ or ⌃, so a keycap draws those from
+the platform monospace face (`AppFonts.monoFallback` in `lib/core/theme.dart`).
+
+| File | Source | Size |
+| --- | --- | --- |
+| `Inter-Variable.ttf` | Inter 4.1, `InterVariable.ttf`, instanced as above | 514 KB |
+| `Inter-Italic-Variable.ttf` | Inter 4.1, `InterVariable-Italic.ttf`, instanced as above | 520 KB |
+| `GeistMono-Variable.ttf` | [`ofl/geistmono/GeistMono[wght].ttf`](https://github.com/google/fonts/tree/main/ofl/geistmono), from [vercel/geist-font](https://github.com/vercel/geist-font) at `77f0563` | 172 KB |
+
+Licenses: [`Inter-OFL.txt`](Inter-OFL.txt),
+[`GeistMono-OFL.txt`](GeistMono-OFL.txt)
 
 ## Formula fonts
 

@@ -245,9 +245,8 @@ flutter:
     - assets/branding/kapynotes_tray_macos.png
     - assets/branding/kapynotes_tray_linux.png
     - assets/fonts/ShantellSans-OFL.txt
-    - assets/fonts/Figtree-OFL.txt
+    - assets/fonts/Inter-OFL.txt
     - assets/fonts/GeistMono-OFL.txt
-    - assets/fonts/Newsreader-OFL.txt
     # The notice KaTeX's fonts come with, which flutter_math_fork bundles
     # without: its own LICENSE is the package's, not the fonts'.
     - packages/flutter_math_fork/katex_fonts/LICENSE
@@ -265,14 +264,11 @@ flutter:
         - asset: assets/fonts/ShantellSans-Variable.ttf
         - asset: assets/fonts/ShantellSans-Italic-Variable.ttf
           style: italic
-    - family: Figtree
+    - family: Inter
       fonts:
-        - asset: assets/fonts/Figtree-Variable.ttf
-        - asset: assets/fonts/Figtree-Italic-Variable.ttf
+        - asset: assets/fonts/Inter-Variable.ttf
+        - asset: assets/fonts/Inter-Italic-Variable.ttf
           style: italic
     - family: Geist Mono
       fonts:
         - asset: assets/fonts/GeistMono-Variable.ttf
-    - family: Newsreader
-      fonts:
-        - asset: assets/fonts/Newsreader-Title.ttf

@@ -6,7 +6,6 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../core/editor_font.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -37,8 +36,7 @@ import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
-import 'tasks/task_marks.dart'
-    show dayTitleStyle, handStyle, metaStyle, uiStyle;
+import 'tasks/task_marks.dart' show dayTitleStyle, metaStyle, uiStyle;
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
@@ -638,6 +636,7 @@ extension on Sidebar {
     final nothingShared = query.trim().isEmpty && _onSharedTab;
     final onStartSharing = this.onStartSharing;
     return SidebarEmpty(
+      hand: query.trim().isEmpty,
       message: query.trim().isEmpty
           ? archiveMode
                 ? 'Archived Notes is empty'
@@ -1355,26 +1354,64 @@ extension on Sidebar {
         style: style,
         clockOnly: clockOnly,
       );
+      // A hairline between two rows, from the text to the edge, left out
+      // beside the open row, whose fill is edge enough.
+      Widget hairline(BuildContext context, int index) => Divider(
+        height: AppHairline.of(context),
+        thickness: AppHairline.of(context),
+        indent: NoteListRowFace.textStart(touch: phone),
+        endIndent: phone ? 0 : 10,
+        color:
+            list[index - 1].id == selectedId || list[index].id == selectedId
+            ? Colors.transparent
+            : context.palette.pageBorder,
+      );
       if (phone && !cards) {
+        // One card a section, built a row at a time so a long folder stays
+        // lazy: the first row rounds its top, the last its foot.
+        Widget carded(
+          BuildContext context,
+          Widget child, {
+          bool first = false,
+          bool last = false,
+        }) => Padding(
+          padding: EdgeInsets.symmetric(horizontal: margin),
+          child: ClipRRect(
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(first ? AppRadii.card : 0),
+              bottom: Radius.circular(last ? AppRadii.card : 0),
+            ),
+            child: ColoredBox(
+              color: context.palette.cardBackground,
+              child: child,
+            ),
+          ),
+        );
         for (final (index, each) in list.indexed) {
           if (index > 0) {
-            rows.add(
-              (context) => Divider(
-                height: AppHairline.of(context),
-                thickness: AppHairline.of(context),
-                indent: margin,
-                endIndent: margin,
-                color: context.palette.separator,
-              ),
-            );
+            rows.add((context) => carded(context, hairline(context, index)));
           }
-          rows.add((_) => note(each));
+          rows.add(
+            (context) => carded(
+              context,
+              note(each),
+              first: index == 0,
+              last: index == list.length - 1,
+            ),
+          );
         }
         return;
       }
       if (!cards) {
         for (final (index, each) in list.indexed) {
-          if (index > 0) gap(2);
+          if (index > 0) {
+            rows.add(
+              (context) => Padding(
+                padding: const EdgeInsets.only(left: 10),
+                child: hairline(context, index),
+              ),
+            );
+          }
           rows.add(
             (_) => Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -2006,8 +2043,8 @@ class _PickActions extends StatelessWidget {
       DefaultTextStyle.of(context).style.merge(
         TextStyle(
           fontSize: AppTypeScale.small,
-          fontWeight: AppWeight.font(AppWeight.body),
-          fontVariations: AppWeight.wght(AppWeight.body),
+          fontWeight: AppWeight.font(AppWeight.regular),
+          fontVariations: AppWeight.wght(AppWeight.regular),
           color: context.palette.textSecondary,
         ),
       );
@@ -2102,7 +2139,6 @@ class SidebarWindowBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    const handwritten = WritingFont.handwritten;
     final newNoteShortcut = this.newNoteShortcut;
     final hideShortcut = this.hideShortcut;
     final onAskKapy = this.onAskKapy;
@@ -2110,18 +2146,15 @@ class SidebarWindowBar extends StatelessWidget {
     final titleStyle = chromeStyle(
       size: AppTypeScale.spaceTitle,
       line: AppTypeScale.spaceTitle * 1.3,
-      weight: AppWeight.button,
-      color: palette.textPrimary,
-      family: handwritten.fontFamily,
-      fallback: handwritten.fontFamilyFallback,
-      extra: handwritten.faceVariations,
+      weight: AppWeight.semibold,
+      color: palette.textHeading,
     );
     final countText = [count, ?countLabel].join(' ');
     final countStyle = chromeStyle(
       size: AppTypeScale.small,
       line: 16,
-      weight: AppWeight.body,
-      color: palette.textTertiary,
+      weight: AppWeight.regular,
+      color: palette.textQuiet,
       tabular: true,
     );
     double widthOf(String text, TextStyle style) {
@@ -2139,11 +2172,8 @@ class SidebarWindowBar extends StatelessWidget {
       return width;
     }
 
-    return Container(
+    return SizedBox(
       height: AppControlMetrics.scaleBar(context, height),
-      foregroundDecoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: palette.railBorder)),
-      ),
       child: Stack(
         children: [
           const Positioned.fill(
@@ -2236,7 +2266,7 @@ class SidebarWindowBar extends StatelessWidget {
                               ? 'Ask Kapy'
                               : 'Ask Kapy  ${askKapyShortcut.displayLabel}',
                           extent: 32,
-                          radius: 8,
+                          radius: AppRadii.control,
                           onPressed: onAskKapy,
                           icon: const KapyIcon(
                             KapyIcons.sparklesOutlined,
@@ -2267,7 +2297,7 @@ class SidebarWindowBar extends StatelessWidget {
                             ? 'Hide notes'
                             : 'Hide notes  ${hideShortcut.displayLabel}',
                         extent: 32,
-                        radius: 8,
+                        radius: AppRadii.control,
                         onPressed: onHide,
                         icon: KapyIcon(
                           KapyIcons.menuOpenRounded,
@@ -2476,8 +2506,8 @@ class _InvitationCard extends StatelessWidget {
       fontFamilyFallback: AppFonts.uiFallback,
       fontSize: touch ? 15 : 13,
       height: touch ? 20 / 15 : 18 / 13,
-      fontWeight: AppWeight.font(AppWeight.button),
-      fontVariations: AppWeight.wght(AppWeight.button),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     final buttonStyle = TextButton.styleFrom(
       minimumSize: Size(0, button),
@@ -2488,7 +2518,7 @@ class _InvitationCard extends StatelessWidget {
       textStyle: label,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(
-          touch ? AppRadii.control : AppRadii.compact,
+          touch ? AppRadii.control : AppRadii.control,
         ),
       ),
     );
@@ -2522,8 +2552,8 @@ class _InvitationCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: touch ? 14 : 12,
                       height: touch ? 18 / 14 : 16 / 12,
-                      fontWeight: AppWeight.font(AppWeight.button),
-                      fontVariations: AppWeight.wght(AppWeight.button),
+                      fontWeight: AppWeight.font(AppWeight.regular),
+                      fontVariations: AppWeight.wght(AppWeight.regular),
                       color: palette.textPrimary,
                     ),
                   ),
@@ -2654,7 +2684,7 @@ class _BelowInvitations extends StatelessWidget {
 ///
 /// The one search a list keeps is the menu's way into Archive, which shows
 /// here as [query] with a ✕ that drops it.
-class SidebarSearchField extends StatelessWidget {
+class SidebarSearchField extends StatefulWidget {
   const SidebarSearchField({
     super.key,
     required this.onSearch,
@@ -2686,9 +2716,17 @@ class SidebarSearchField extends StatelessWidget {
   final ShortcutBinding? shortcut;
   final String placeholder;
 
+  @override
+  State<SidebarSearchField> createState() => _SidebarSearchFieldState();
+}
+
+class _SidebarSearchFieldState extends State<SidebarSearchField> {
+  /// The desktop field's keycap shows only under the pointer.
+  bool _hovered = false;
+
   Widget? _end(CalcPalette palette, double extent) {
-    final onClear = this.onClear;
-    if (query.isNotEmpty && onClear != null) {
+    final onClear = widget.onClear;
+    if (widget.query.isNotEmpty && onClear != null) {
       // Inside the field's tap region, so Clear keeps the keyboard up.
       return TextFieldTapRegion(
         child: CompactIconButton(
@@ -2704,24 +2742,23 @@ class SidebarSearchField extends StatelessWidget {
         ),
       );
     }
-    final shortcut = this.shortcut;
-    if (shortcut == null || !AppPlatform.hasPointer) return null;
+    final shortcut = widget.shortcut;
+    if (shortcut == null || !AppPlatform.hasPointer || !_hovered) return null;
     return Tooltip(
-      message: '$placeholder · ${shortcut.displayLabel}',
+      message: '${widget.placeholder} · ${shortcut.displayLabel}',
       child: Semantics(
         label: 'Search shortcut ${shortcut.displayLabel}',
         excludeSemantics: true,
         child: Text(
           shortcut.keycapLabel,
           key: const ValueKey('sidebar-search-shortcut'),
-          style: TextStyle(
-            fontFamily: AppFonts.mono,
-            fontFamilyFallback: AppFonts.monoFallback,
-            fontSize: 11,
-            height: 14 / 11,
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+          style: chromeStyle(
+            size: AppTypeScale.keycap,
+            line: 14,
+            weight: AppWeight.regular,
             color: palette.textTertiary,
+            family: AppFonts.mono,
+            fallback: AppFonts.monoFallback,
           ),
         ),
       ),
@@ -2731,9 +2768,12 @@ class SidebarSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    final query = widget.query;
+    final placeholder = widget.placeholder;
+    final onSearch = widget.onSearch;
     final searching = query.isNotEmpty;
-    final end = _end(palette, phone ? 32 : 20);
-    if (!phone) {
+    final end = _end(palette, widget.phone ? 32 : 20);
+    if (!widget.phone) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Semantics(
@@ -2745,12 +2785,14 @@ class SidebarSearchField extends StatelessWidget {
             onTap: onSearch,
             child: MouseRegion(
               cursor: SystemMouseCursors.text,
+              onEnter: (_) => setState(() => _hovered = true),
+              onExit: (_) => setState(() => _hovered = false),
               child: Container(
                 key: const ValueKey('sidebar-search-box'),
-                height: 32,
+                height: 30,
                 padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
-                  color: palette.fillRest,
+                  color: palette.controlBackground,
                   borderRadius: BorderRadius.circular(AppRadii.control),
                 ),
                 child: Row(
@@ -2758,7 +2800,7 @@ class SidebarSearchField extends StatelessWidget {
                     KapyIcon(
                       KapyIcons.searchRounded,
                       size: 14,
-                      color: palette.textTertiary,
+                      color: palette.textSecondary,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -2766,12 +2808,13 @@ class SidebarSearchField extends StatelessWidget {
                         searching ? query : placeholder,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 16 / 13,
-                          color: searching
+                        style: uiStyle(
+                          AppTypeScale.control,
+                          16,
+                          FontWeight.w400,
+                          searching
                               ? palette.textPrimary
-                              : palette.textTertiary,
+                              : palette.textSecondary,
                         ),
                       ),
                     ),
@@ -2785,8 +2828,8 @@ class SidebarSearchField extends StatelessWidget {
       );
     }
 
-    final trailing = this.trailing;
-    final field = this.field;
+    final trailing = widget.trailing;
+    final field = widget.field;
     final well = MouseRegion(
       cursor: SystemMouseCursors.text,
       child: Container(
@@ -2797,15 +2840,15 @@ class SidebarSearchField extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: 44),
         padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
         decoration: BoxDecoration(
-          color: palette.fillRest,
-          borderRadius: BorderRadius.circular(AppRadii.control),
+          color: palette.controlBackground,
+          borderRadius: BorderRadius.circular(AppRadii.surface),
         ),
         child: Row(
           children: [
             KapyIcon(
               KapyIcons.searchRounded,
               size: 16,
-              color: palette.textTertiary,
+              color: palette.textSecondary,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -2815,11 +2858,11 @@ class SidebarSearchField extends StatelessWidget {
                     searching ? query : placeholder,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: searching
-                          ? palette.textPrimary
-                          : palette.textTertiary,
+                    style: uiStyle(
+                      AppTypeScale.row,
+                      22,
+                      FontWeight.w400,
+                      searching ? palette.textPrimary : palette.textSecondary,
                     ),
                   ),
             ),
@@ -3291,7 +3334,7 @@ class _NoteRowState extends State<NoteRow> {
             decoration: BoxDecoration(
               color: palette.surfaceBackground,
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppRadii.dialog),
+                top: Radius.circular(AppRadii.surface),
               ),
             ),
             child: SafeArea(
@@ -3321,8 +3364,8 @@ class _NoteRowState extends State<NoteRow> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: AppTypeScale.body,
-                            fontWeight: AppWeight.font(AppWeight.body),
-                            fontVariations: AppWeight.wght(AppWeight.body),
+                            fontWeight: AppWeight.font(AppWeight.regular),
+                            fontVariations: AppWeight.wght(AppWeight.regular),
                             color: palette.textPrimary,
                           ),
                         ),
@@ -3804,8 +3847,8 @@ class _ShareGroupHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: AppTypeScale.caption,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               letterSpacing: 0.3,
               color: palette.textTertiary,
             ),
@@ -3856,7 +3899,7 @@ class _ShareGroupHeader extends StatelessWidget {
         child: ExcludeSemantics(
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(AppRadii.compact),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 4, 6, 3),
               child: heading,
@@ -3878,7 +3921,6 @@ class _DrawingsEmpty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    const handwritten = WritingFont.handwritten;
     final onNewDrawing = this.onNewDrawing;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 96, 24, 24),
@@ -3890,9 +3932,8 @@ class _DrawingsEmpty extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: palette.editorBackground,
-                border: Border.all(color: palette.separator),
-                borderRadius: BorderRadius.circular(AppRadii.dialog),
+                color: palette.cardBackground,
+                borderRadius: BorderRadius.circular(AppRadii.surface),
               ),
               alignment: Alignment.center,
               child: KapyIcon(
@@ -3906,18 +3947,7 @@ class _DrawingsEmpty extends StatelessWidget {
           Text(
             'No drawings yet',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: handwritten.fontFamily,
-              fontFamilyFallback: handwritten.fontFamilyFallback,
-              fontSize: 16,
-              height: 22 / 16,
-              fontWeight: AppWeight.font(AppWeight.button),
-              fontVariations: AppWeight.wght(
-                AppWeight.button,
-                extra: handwritten.fontVariations ?? const [],
-              ),
-              color: palette.textSubheading,
-            ),
+            style: handAccent(palette),
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -3929,8 +3959,8 @@ class _DrawingsEmpty extends StatelessWidget {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 height: 18 / 13,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: palette.textTertiary,
               ),
             ),
@@ -3958,9 +3988,14 @@ class SidebarEmpty extends StatelessWidget {
     required this.message,
     this.detail,
     this.action,
+    this.hand = false,
   });
 
   final String message;
+
+  /// Sets [message] in the handwritten accent: only for an empty list's own
+  /// line, never a search's miss or a filter's.
+  final bool hand;
 
   /// A quieter line under [message], saying what will fill the space.
   final String? detail;
@@ -3979,19 +4014,24 @@ class SidebarEmpty extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: AppTypeScale.body,
-              color: context.palette.textTertiary,
-            ),
+            style: hand
+                ? handAccent(context.palette)
+                : uiStyle(
+                    AppTypeScale.body,
+                    AppTypeScale.body * 1.4,
+                    FontWeight.w400,
+                    context.palette.textSecondary,
+                  ),
           ),
           if (detail case final detail?) ...[
             const SizedBox(height: 4),
             Text(
               detail,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: AppTypeScale.small,
-                color: context.palette.textTertiary,
+              style: metaStyle(
+                AppTypeScale.small,
+                AppTypeScale.small * 1.4,
+                context.palette.textTertiary,
               ),
             ),
           ],
@@ -4249,10 +4289,10 @@ class _PhoneShareHeading extends StatelessWidget {
   }
 }
 
-/// A day's heading on a phone's list, as Tasks draws its own: "Today" in
-/// the serif, then the date 8 after it in small quiet sans. A day with no
-/// name is headed by its date alone, in the serif, muted. Folders heads its
-/// notes in no folder with it too (M02): the words alone, unmuted.
+/// A day's heading over its card on a phone's list: "Today" in the section
+/// label's grey, then the date a grey quieter. A day with no name is headed
+/// by its date alone. Folders heads its notes in no folder with it too
+/// (M02): the words alone.
 class _PhoneDayHeading extends StatelessWidget {
   const _PhoneDayHeading({required this.lead, this.date});
 
@@ -4262,37 +4302,37 @@ class _PhoneDayHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final lead = this.lead;
-    final date = this.date;
     return Semantics(
       header: true,
       label: [?lead, ?date].join(', '),
       excludeSemantics: true,
-      child: lead == null || date == null
-          ? Text(
-              lead ?? date ?? '',
-              key: const ValueKey('phone-day-heading'),
-              style: dayTitleStyle(
-                lead == null ? palette.textTertiary : palette.textPrimary,
-              ),
-            )
-          : Row(
-              key: const ValueKey('phone-day-heading'),
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              spacing: 8,
-              children: [
-                Text(lead, style: dayTitleStyle(palette.textPrimary)),
-                Flexible(
-                  child: Text(
-                    date,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: metaStyle(13, 16, palette.textTertiary),
+      child: Padding(
+        // In line with the words in the card under it.
+        padding: const EdgeInsets.only(left: 16),
+        child: Row(
+          key: const ValueKey('phone-day-heading'),
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          spacing: 6,
+          children: [
+            if (lead case final lead?)
+              Text(lead, style: metaStyle(13, 18, palette.textSecondary)),
+            if (date case final date?)
+              Flexible(
+                child: Text(
+                  date,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: metaStyle(
+                    13,
+                    18,
+                    lead == null ? palette.textSecondary : palette.textQuiet,
                   ),
                 ),
-              ],
-            ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -4311,7 +4351,7 @@ class PhonePinnedCards extends StatelessWidget {
   final List<Widget> children;
 
   /// Between two cards, across and down.
-  static const double gap = 8;
+  static const double gap = 10;
 
   /// How much of the third card shows past the second.
   static const double peek = 34;
@@ -4350,22 +4390,18 @@ class _PhoneHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Semantics(
     header: true,
-    child: Text(
-      label,
-      style: uiStyle(
-        13,
-        18,
-        FontWeight.w500,
-        context.palette.textTertiary,
-        axis: 520,
+    child: Padding(
+      padding: const EdgeInsets.only(left: 16),
+      child: Text(
+        label,
+        style: metaStyle(13, 18, context.palette.textSecondary),
       ),
     ),
   );
 }
 
-/// A phone list's title: the space's name large in the hand face, its count
-/// small beside it (M02, M03). The clay mark is Home's alone, under the title
-/// its swipe has on screen.
+/// A phone list's title: the space's name large, its count small and quiet
+/// beside it (M02, M03).
 class PhoneListTitle extends StatelessWidget {
   const PhoneListTitle({
     super.key,
@@ -4405,7 +4441,12 @@ class PhoneListTitle extends StatelessWidget {
               key: const ValueKey('phone-list-title'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: handStyle(26, 32, FontWeight.w600, palette.textPrimary),
+              style: uiStyle(
+                AppTypeScale.spaceTitle,
+                32,
+                FontWeight.w600,
+                palette.textHeading,
+              ),
             ),
           ),
           if (count != null) ...[
@@ -4416,7 +4457,7 @@ class PhoneListTitle extends StatelessWidget {
                 13,
                 16,
                 FontWeight.w400,
-                palette.textTertiary,
+                palette.textQuiet,
                 tabular: true,
               ),
             ),

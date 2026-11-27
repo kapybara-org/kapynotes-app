@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
@@ -135,42 +136,81 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
   @override
   Widget build(BuildContext context) {
     final updates = widget.updates;
-    final palette = context.palette;
     final staged = AppPlatform.isMobile ? null : updates.staged;
     final version = updates.currentVersion;
     if (staged == null &&
         (version.isEmpty || !widget.layoutPrefs.showWhatsNew(version))) {
       return const SizedBox.shrink();
     }
+    return LayoutBuilder(
+      builder: (context, constraints) =>
+          _fitted(context, constraints.maxWidth - 2 * _pad),
+    );
+  }
+
+  /// How tall [text] sets in [style] across [width]: a title that wraps in a
+  /// narrow rail counts at its real height, not as one line.
+  static double _textHeight(
+    BuildContext context,
+    String text,
+    TextStyle style,
+    double width,
+  ) {
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: math.max(0, width));
+    final height = painter.height;
+    painter.dispose();
+    return height;
+  }
+
+  /// The card for [inner], the width inside its padding.
+  Widget _fitted(BuildContext context, double inner) {
+    final updates = widget.updates;
+    final palette = context.palette;
+    final staged = AppPlatform.isMobile ? null : updates.staged;
+    final version = updates.currentVersion;
 
     final title = TextStyle(
       fontSize: 13,
       height: 18 / 13,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       color: palette.textPrimary,
     );
     final body = TextStyle(
       fontSize: 12.5,
       height: _lineHeight / 12.5,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       color: palette.textDescription,
     );
     Widget card(Widget child, {double padding = _pad}) => KapyControlSurface(
       key: const ValueKey('settings-update-card'),
-      radius: AppRadii.surface,
+      radius: AppRadii.group,
       padding: EdgeInsets.all(padding),
       color: palette.cardBackground,
-      borderColor: palette.controlBorder,
+      borderColor: Colors.transparent,
       child: child,
     );
     final room = widget.maxHeight;
 
     if (staged != null) {
       final error = updates.downloadError;
+      final heading = _textHeight(
+        context,
+        'Restart to update to ${staged.version}',
+        title,
+        inner,
+      );
       final fullHeight =
-          2 * _pad + 18 + (error == null ? 0 : 4 + 2 * _lineHeight) + 10 + 30;
+          2 * _pad +
+          heading +
+          (error == null ? 0 : 4 + 2 * _lineHeight) +
+          10 +
+          30;
       final compact = fullHeight > room;
       if (compact && 38 > room) return const SizedBox.shrink();
       final restart = TextButton(
@@ -196,8 +236,8 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             fontSize: AppTypeScale.caption,
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
           ),
         ),
       );
@@ -230,7 +270,11 @@ class _SettingsUpdateCardState extends State<SettingsUpdateCard> {
     // The close button sets the title row's height. On a pointer it is 24;
     // on touch, 44.
     final titleRow = AppControlMetrics.iconButtonExtent;
-    final compactHeight = 2 * _pad + titleRow + 8 + _lineHeight;
+    final heading = math.max(
+      titleRow,
+      _textHeight(context, "What's new in $version", title, inner - titleRow),
+    );
+    final compactHeight = 2 * _pad + heading + 8 + _lineHeight;
     final fullHeight = compactHeight + notes.length * (6 + 2 * _lineHeight);
     final compact = fullHeight > room;
     if (compact && compactHeight > room) return const SizedBox.shrink();

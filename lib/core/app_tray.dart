@@ -45,8 +45,7 @@ class AppTray with TrayListener {
   /// Linux panel scales one full-colour PNG, which reads on light panels and
   /// dark ones alike.
   static const String _icon = 'assets/branding/kapynotes_tray_windows.ico';
-  static const String templateIcon =
-      'assets/branding/kapynotes_tray_macos.png';
+  static const String templateIcon = 'assets/branding/kapynotes_tray_macos.png';
   static const String _linuxIcon = 'assets/branding/kapynotes_tray_linux.png';
 
   /// The icon's own button, which takes a press through accessibility

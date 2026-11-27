@@ -57,8 +57,10 @@ class Keycap extends StatelessWidget {
     fontFamily: AppFonts.mono,
     fontFamilyFallback: AppFonts.monoFallback,
     fontSize: tonal ? AppTypeScale.micro : AppTypeScale.keycap,
-    fontWeight: AppWeight.font(plain ? AppWeight.body : AppWeight.rowTitle),
-    fontVariations: AppWeight.wght(plain ? AppWeight.body : AppWeight.rowTitle),
+    fontWeight: AppWeight.font(plain ? AppWeight.regular : AppWeight.regular),
+    fontVariations: AppWeight.wght(
+      plain ? AppWeight.regular : AppWeight.regular,
+    ),
     height: plain ? 14 / 11 : 1.1,
     leadingDistribution: TextLeadingDistribution.even,
     letterSpacing: 0,

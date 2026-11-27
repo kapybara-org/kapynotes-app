@@ -80,16 +80,16 @@ struct RecordingCard: View {
       HStack(spacing: 8) {
         RecordingDot(recording: state.recording)
         Text(state.status)
-          .font(Figtree.semibold(15))
+          .font(WidgetFace.semibold(15))
           .foregroundStyle(widgetText)
         Spacer(minLength: 8)
         Text("Kapy Notes")
-          .font(Figtree.regular(13))
+          .font(WidgetFace.regular(13))
           .foregroundStyle(widgetTextSecondary)
       }
       HStack(spacing: 12) {
         RecordingTime(state: state)
-          .font(Figtree.semibold(34))
+          .font(WidgetFace.semibold(34))
           .tracking(-0.5)
           .foregroundStyle(state.recording ? widgetText : widgetTextSecondary)
         Spacer(minLength: 8)
@@ -171,7 +171,7 @@ struct RecordingIslandTime: View {
 
   var body: some View {
     RecordingTime(state: state)
-      .font(Figtree.semibold(size))
+      .font(WidgetFace.semibold(size))
       .foregroundStyle(state.recording ? Color.white : islandGrey)
   }
 }
@@ -184,7 +184,7 @@ struct RecordingIslandStatus: View {
     HStack(spacing: 8) {
       RecordingMic(state: state, size: 22)
       Text(state.status)
-        .font(Figtree.semibold(15))
+        .font(WidgetFace.semibold(15))
         .foregroundStyle(Color.white)
         .lineLimit(1)
     }
@@ -199,7 +199,7 @@ struct RecordingIslandFooter: View {
   var body: some View {
     HStack(spacing: 12) {
       Text("Kapy Notes")
-        .font(Figtree.regular(13))
+        .font(WidgetFace.regular(13))
         .foregroundStyle(islandGrey)
       Spacer(minLength: 8)
       if #available(iOS 17.0, *) {

@@ -1028,8 +1028,8 @@ typedef _Earlier = ({
 /// What a post is called on its starter, over it in the drawer and in
 /// Earlier: the starter's label, or the person's own words.
 String _postTitle(VoiceTakeKind kind, [String? instruction]) => switch (kind) {
-  VoiceTakeKind.x => 'Create X Post',
-  VoiceTakeKind.linkedin => 'Create LinkedIn Post',
+  VoiceTakeKind.x => 'Create X post',
+  VoiceTakeKind.linkedin => 'Create LinkedIn post',
   VoiceTakeKind.custom => instruction ?? 'Your own words',
 };
 

@@ -360,8 +360,9 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
         if (prepared is PreparedPassphrase) {
           Toast.show(context, 'Passphrase changed');
         }
-        Navigator.of(context)
-            .pop(prepared is PreparedPassphrase ? null : prepared);
+        Navigator.of(
+          context,
+        ).pop(prepared is PreparedPassphrase ? null : prepared);
       case KeyChangeNeedsCode():
         setState(() {
           _proof = null;
@@ -710,8 +711,8 @@ class _GeneratedPassphraseState extends State<GeneratedPassphrase> {
               fontFamily: AppPlatform.monoFontFallback.first,
               fontFamilyFallback: AppPlatform.monoFontFallback,
               fontSize: AppTypeScale.control,
-              fontWeight: AppWeight.font(AppWeight.rowTitle),
-              fontVariations: AppWeight.wght(AppWeight.rowTitle),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               height: 1.6,
               letterSpacing: 0.45,
               color: palette.textPrimary,

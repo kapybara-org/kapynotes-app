@@ -75,7 +75,11 @@ void main() {
                   )
                   .decoration!
               as BoxDecoration;
-      expect(decoration.color, KapyTheme.darkPalette.fillRest);
+      expect(decoration.color, KapyTheme.darkPalette.cardBackground);
+      expect(
+        decoration.borderRadius,
+        BorderRadius.circular(AppRadii.card),
+      );
       expect(decoration.border, isNull);
     }
   });
@@ -142,14 +146,14 @@ void main() {
     expect(opened, (drawings: 1, shared: 1));
   });
 
-  testWidgets("the clay badge on Shared's icon counts the invitations "
+  testWidgets("the red badge on Shared's icon counts the invitations "
       'waiting, and a screen reader hears them', (tester) async {
     final semantics = tester.ensureSemantics();
     await pumpTiles(tester, shared: const [], invitations: 2);
     expect(badge, findsOneWidget);
     expect(
       (tester.widget<Container>(badge).decoration! as BoxDecoration).color,
-      KapyTheme.darkPalette.clay,
+      Theme.of(tester.element(badge)).colorScheme.errorContainer,
     );
     expect(find.descendant(of: badge, matching: find.text('2')), findsOne);
     expect(

@@ -127,7 +127,7 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  testWidgets('the title is set in Shantell at 30/38 with the meta row under '
+  testWidgets('the title is set in Shantell at 26/32 with the meta row under '
       'it', (tester) async {
     window(tester);
     await tester.pumpWidget(_page(_body));
@@ -135,7 +135,7 @@ void main() {
 
     final title = (_spanAt(tester, 2) as TextSpan).style!;
     expect(title.fontFamily, 'Shantell Sans');
-    expect(title.fontSize, 30);
+    expect(title.fontSize, 26);
     expect(title.fontWeight, EditorMetrics.titleWeight);
     final (firstLine, secondLine) = _rows(tester, 1);
     expect(secondLine - firstLine, moreOrLessEquals(EditorMetrics.lineHeight));
@@ -188,7 +188,7 @@ void main() {
     }
   });
 
-  testWidgets('the writing is a 680px column of Figtree at weight 400', (
+  testWidgets('the writing is a 680px column of the interface face at weight 400', (
     tester,
   ) async {
     window(tester);
@@ -196,7 +196,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final body = (_spanAt(tester, _body.indexOf('ahrefs')) as TextSpan).style!;
-    expect(body.fontFamily, 'Figtree');
+    expect(body.fontFamily, AppFonts.ui);
     expect(body.fontSize, 16);
     expect(body.fontWeight, FontWeight.w400);
     final field = _editable(tester);

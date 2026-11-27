@@ -24,10 +24,8 @@ import 'window_placement.dart';
 /// note; and, for those who ask for it, staying alive in the tray once the
 /// window is closed.
 class DesktopIntegration extends ChangeNotifier with WindowListener {
-  DesktopIntegration({
-    required this.layoutPrefs,
-    MenuBarPanelController? panel,
-  }) : panel = panel ?? MenuBarPanelController() {
+  DesktopIntegration({required this.layoutPrefs, MenuBarPanelController? panel})
+    : panel = panel ?? MenuBarPanelController() {
     _tray = AppTray(
       onOpen: () => unawaited(_summon()),
       onNewNote: () => unawaited(_summonForNewNote()),

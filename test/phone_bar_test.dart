@@ -176,21 +176,18 @@ void main() {
   });
 
   testWidgets("iOS's bar is a quiet opaque pill with an 8% edge, and the open "
-      'tab is the 7% fill', (tester) async {
+      'tab is the control fill', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpBar(tester, scale: 1, size: const Size(393, 852));
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     BoxDecoration decorationOf(Finder finder) =>
         tester.widget<Container>(finder).decoration! as BoxDecoration;
 
     final bar = decorationOf(find.byKey(const ValueKey('phone-bar')));
-    expect(
-      bar.color,
-      Color.alphaBlend(palette.fillRest, palette.sidebarBackground),
-    );
+    expect(bar.color, palette.cardBackground);
     expect(bar.color!.a, 1);
-    expect((bar.border! as Border).top.color, palette.edge);
+    expect(bar.border, isNull);
     Color? tab(String name) => decorationOf(
       find
           .descendant(
@@ -199,23 +196,23 @@ void main() {
           )
           .first,
     ).color;
-    expect(tab('notes'), palette.fillSelected);
+    expect(tab('notes'), palette.controlBackground);
     expect(tab('folders'), isNull);
     expect(tab('kapyAi'), isNull);
     expect(find.byType(BackdropFilter), findsNothing);
   });
 
-  testWidgets("iOS's bar is 56 high, its tabs 46 high with radius 23", (
+  testWidgets("iOS's bar is 58 high, its tabs 48 high with radius 24", (
     tester,
   ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpBar(tester, scale: 1, size: const Size(393, 852));
     final bar = find.byKey(const ValueKey('phone-bar'));
-    expect(tester.getSize(bar).height, 56);
+    expect(tester.getSize(bar).height, 58);
     expect(
       (tester.widget<Container>(bar).decoration! as BoxDecoration).borderRadius,
-      BorderRadius.circular(28),
+      BorderRadius.circular(29),
     );
     for (final name in ['notes', 'folders', 'kapyAi']) {
       final tab = find
@@ -224,11 +221,11 @@ void main() {
             matching: find.byType(Container),
           )
           .first;
-      expect(tester.getSize(tab).height, 46, reason: name);
+      expect(tester.getSize(tab).height, 48, reason: name);
       expect(
         (tester.widget<Container>(tab).decoration! as BoxDecoration)
             .borderRadius,
-        BorderRadius.circular(23),
+        BorderRadius.circular(24),
         reason: name,
       );
     }
@@ -248,13 +245,20 @@ void main() {
       await pumpBar(tester, scale: 1, size: const Size(412, 915));
       expect(find.byType(NavigationBar), findsNothing);
       expect(find.byType(FloatingActionButton), findsNothing);
-      expect(tester.getSize(bar).height, 56);
+      expect(tester.getSize(bar).height, 58);
       expect(
         (tester.widget<Container>(bar).decoration! as BoxDecoration)
             .borderRadius,
-        BorderRadius.circular(28),
+        BorderRadius.circular(29),
       );
-      expect(tester.getSize(plus), const Size.square(56));
+      expect(tester.getSize(plus), const Size.square(58));
+      expect(
+        tester.widget<Material>(find.descendant(
+          of: plus,
+          matching: find.byType(Material),
+        ).first).color,
+        KapyTheme.darkPalette.accent,
+      );
       expect(tester.getRect(plus).left - tester.getRect(bar).right, 12);
       expect(tester.getCenter(plus).dy, tester.getCenter(bar).dy);
     }, variant: android);
@@ -311,7 +315,7 @@ void main() {
       AppPlatform.debugTargetPlatformOverride = platform;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpBar(tester, scale: 1, size: const Size(393, 852));
-      const palette = KapyTheme.darkPalette;
+      final palette = KapyTheme.darkPalette;
       KapyIcon icon(String tab, KapyIconData data) => tester.widget<KapyIcon>(
         find.descendant(
           of: find.byKey(ValueKey('bar-$tab')),
@@ -320,14 +324,14 @@ void main() {
       );
 
       expect(icon('notes', KapyIcons.noteOutlined).color, palette.textPrimary);
-      expect(icon('notes', KapyIcons.noteOutlined).size, 20);
+      expect(icon('notes', KapyIcons.noteOutlined).size, 18);
       expect(
         icon('folders', KapyIcons.folderOutlined).color,
-        palette.textTertiary,
+        palette.textSecondary,
       );
       expect(
         icon('kapyAi', KapyIcons.sparklesOutlined).color,
-        palette.textTertiary,
+        palette.textSecondary,
       );
     });
 
@@ -380,7 +384,7 @@ void main() {
           hasTapAction: true,
         ),
       );
-      expect(tester.getSize(plus), const Size.square(56));
+      expect(tester.getSize(plus), const Size.square(58));
 
       for (final tab in tabs) {
         await tester.tap(tab);
@@ -519,7 +523,7 @@ void main() {
     final dot = find.byKey(const ValueKey('bar-folders-dot'));
 
     for (final tab in PhoneTab.values) {
-      testWidgets('with ${tab.name} open, a 7 pt clay dot sits on the '
+      testWidgets('with ${tab.name} open, a 6 pt red dot sits on the '
           "Folders icon's top right while something waits in Shared", (
         tester,
       ) async {
@@ -532,10 +536,10 @@ void main() {
           foldersDot: true,
         );
         expect(dot, findsOneWidget);
-        expect(tester.getSize(dot), const Size.square(7));
+        expect(tester.getSize(dot), const Size.square(6));
         expect(
           (tester.widget<Container>(dot).decoration! as BoxDecoration).color,
-          KapyTheme.darkPalette.clay,
+          Theme.of(tester.element(dot)).colorScheme.error,
         );
         final icon = tester.getRect(
           find.descendant(

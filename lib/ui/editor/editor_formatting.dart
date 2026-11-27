@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart'
     show Color, FontStyle, FontWeight, TextLeadingDistribution, TextStyle;
 
 import '../../core/editor_font.dart';
-import '../../core/theme.dart' show AppFonts, EditorMetrics;
+import '../../core/theme.dart' show EditorMetrics;
 import '../../data/note_format.dart';
 
 /// The bullet each nesting level is drawn with, cycling once it runs out.
@@ -106,43 +106,28 @@ TextStyle paragraphTextStyle(
   );
 }
 
-/// The note's first line, its title, at [EditorMetrics.titleFontSize]: in
-/// [AppFonts.title] over the default writing font, falling back to the
-/// writing face for scripts it lacks, and in the person's own face when they
-/// chose another, the handwritten one when it is mixed. Emphasis in it stays.
-TextStyle noteTitleStyle(
-  TextStyle base, {
-  WritingFont? writingFont,
-  bool strong = false,
-}) {
+/// The note's first line, its title, at [EditorMetrics.titleFontSize] and
+/// semibold, in the writing face: the interface face for Clean, and the
+/// handwritten one when the writing font is mixed. Italic in it stays; bold
+/// has nowhere further to go.
+TextStyle noteTitleStyle(TextStyle base, {WritingFont? writingFont}) {
   final size = base.fontSize == null
       ? null
       : _pageScale(base) * EditorMetrics.titleFontSize;
   final height = size == null
       ? null
       : EditorMetrics.titleRow / EditorMetrics.titleFontSize;
-  if (writingFont == WritingFont.clean) {
-    return base.copyWith(
-      fontFamily: AppFonts.title,
-      fontFamilyFallback: [?base.fontFamily, ...?base.fontFamilyFallback],
-      fontVariations: const [],
-      fontSize: size,
-      height: height,
-      leadingDistribution: TextLeadingDistribution.even,
-      fontWeight: strong ? FontWeight.w600 : FontWeight.w400,
-    );
-  }
   final face = writingFont == WritingFont.mixed
       ? WritingFont.handwritten
       : null;
   return base.copyWith(
-    fontFamily: face?.fontFamily,
-    fontFamilyFallback: face?.fontFamilyFallback,
+    fontFamily: face?.fontFamily ?? base.fontFamily,
+    fontFamilyFallback: face?.fontFamilyFallback ?? base.fontFamilyFallback,
     fontVariations: (face ?? writingFont)?.faceVariations ?? const [],
     fontSize: size,
     height: height,
     leadingDistribution: TextLeadingDistribution.even,
-    fontWeight: strong ? FontWeight.w600 : EditorMetrics.titleWeight,
+    fontWeight: EditorMetrics.titleWeight,
   );
 }
 
@@ -201,8 +186,8 @@ TextStyle _headingStyle(
       ? null
       : _pageScale(base) * EditorMetrics.headingRow(level);
   return base.copyWith(
-    fontFamily: face?.fontFamily,
-    fontFamilyFallback: face?.fontFamilyFallback,
+    fontFamily: face?.fontFamily ?? base.fontFamily,
+    fontFamilyFallback: face?.fontFamilyFallback ?? base.fontFamilyFallback,
     fontVariations: (face ?? writingFont)?.faceVariations ?? const [],
     fontSize: size,
     height: row == null || size == null ? null : row / size,

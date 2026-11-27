@@ -33,7 +33,7 @@ class _MemoryStore extends LocalStore {
 
 const _bar = ValueKey('phone-format-bar');
 const _otherField = ValueKey('other-field');
-const _activeFill = Color(0xFF2E3828);
+final _activeFill = KapyTheme.dark().extension<CalcPalette>()!.tonalBackground;
 
 /// The editor as a phone mounts it, with a field of its own under it that
 /// stands in for the title and the tag row, which take focus the note gives

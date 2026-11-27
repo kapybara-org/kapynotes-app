@@ -56,7 +56,7 @@ void main() {
     expect(pie.top - heading.bottom, greaterThanOrEqualTo(6));
   });
 
-  testWidgets('an amount on a card is a result: Figtree 12/16 at 600 in the '
+  testWidgets('an amount on a card is a result: 12/16 at 400 in the '
       'result green, with tabular figures', (tester) async {
     await pumpWindow(tester, ['land\n₹75,60,000']);
 
@@ -66,7 +66,7 @@ void main() {
     expect(style.fontFamily, AppFonts.ui);
     expect(style.fontSize, 12);
     expect(style.height, 16 / 12);
-    expect(style.fontVariations, AppWeight.variations(AppWeight.page));
+    expect(style.fontVariations, AppWeight.variations(AppWeight.regular));
     expect(style.color, KapyTheme.darkPalette.resultPillText);
     expect(style.fontFeatures, const [FontFeature.tabularFigures()]);
   });
@@ -106,21 +106,25 @@ void main() {
     );
   });
 
-  testWidgets('the settings search names its "/" key, and the text size '
+  testWidgets('the settings search carries no key hint, and the text size '
       'steps with icons', (tester) async {
     await pumpWindow(tester, ['Groceries']);
     await tapSettings(tester);
     await tester.pumpAndSettle();
 
-    final slash = find.descendant(
-      of: find.byKey(const ValueKey('settings-search')),
-      matching: find.widgetWithText(Keycap, '/'),
+    final clear = find.byKey(const ValueKey('settings-search-clear'));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('settings-search')),
+        matching: find.byType(Keycap),
+      ),
+      findsNothing,
     );
-    expect(slash, findsOneWidget);
+    expect(clear, findsNothing);
     await tester.enterText(find.byKey(const ValueKey('settings-search')), 'x');
     await tester.pumpAndSettle();
-    expect(slash, findsNothing);
-    await tester.tap(find.byKey(const ValueKey('settings-search-clear')));
+    expect(clear, findsOneWidget);
+    await tester.tap(clear);
     await tester.pumpAndSettle();
 
     for (final row in const ['note-text-size-setting', 'zoom-setting']) {

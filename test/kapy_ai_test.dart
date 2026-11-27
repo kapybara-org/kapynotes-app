@@ -287,7 +287,7 @@ void main() {
       return null;
     }
 
-    testWidgets('docked, the header is D10’s: a Figtree title, the '
+    testWidgets('docked, the header is D10’s: an interface-face title, the '
         'notes-history icon and a hairline', (tester) async {
       final controller = KapyAiPanelController()..open(noteId: 'n1');
       addTearDown(controller.dispose);
@@ -301,10 +301,10 @@ void main() {
           matching: find.text('Kapy AI'),
         ),
       );
-      expect(title.style?.fontFamily, 'Figtree');
+      expect(title.style?.fontFamily, AppFonts.ui);
       expect(title.style?.fontSize, 13);
       expect(title.style?.height, 18 / 13);
-      expect(title.style?.fontWeight, FontWeight.w500);
+      expect(title.style?.fontWeight, FontWeight.w400);
       expect(title.style?.color, palette.textPrimary);
 
       final icon = tester.widget<KapyIcon>(
@@ -353,9 +353,10 @@ void main() {
           matching: find.text('Kapy AI'),
         ),
       );
-      expect(title.style?.fontFamily, 'Shantell Sans');
-      expect(title.style?.fontSize, 17);
-      expect(title.style?.height, 22 / 17);
+      expect(title.style?.fontFamily, AppFonts.ui);
+      expect(title.style?.fontSize, AppTypeScale.title);
+      expect(title.style?.height, 20 / AppTypeScale.title);
+      expect(title.style?.fontWeight, FontWeight.w600);
       expect(
         find.descendant(
           of: chats,
@@ -388,8 +389,9 @@ void main() {
       final title = tester.widget<Text>(
         find.descendant(of: row, matching: find.text('Kapy AI')),
       );
-      expect(title.style?.fontFamily, 'Figtree');
-      expect(title.style?.fontSize, 17);
+      expect(title.style?.fontFamily, AppFonts.ui);
+      expect(title.style?.fontSize, AppTypeScale.title);
+      expect(title.style?.color, tester.element(close).palette.textHeading);
       expect(title.style?.fontWeight, FontWeight.w600);
       expect(
         find.descendant(
@@ -590,7 +592,7 @@ void main() {
         ),
       );
 
-      expect(find.text('ON THIS DEVICE'), findsOneWidget);
+      expect(find.text('On this device'), findsOneWidget);
       expect(find.text('Apple Intelligence'), findsWidgets);
       expect(find.text('On this Mac'), findsNWidgets(2));
       expect(find.text('Codex on this Mac'), findsNothing);
@@ -670,7 +672,7 @@ void main() {
         [
           'On this device',
           'Answers stay on this computer',
-          'KAPY AI',
+          'Kapy AI',
           'Kapy AI Cloud',
           'Part of Pro',
         ],
@@ -1318,11 +1320,11 @@ void main() {
       await open(tester);
 
       for (final label in [
-        'TODAY',
-        'YESTERDAY',
-        'PREVIOUS 7 DAYS',
-        'OCTOBER',
-        'MARCH 2025',
+        'Today',
+        'Yesterday',
+        'Previous 7 days',
+        'October',
+        'March 2025',
       ]) {
         expect(find.text(label), findsOneWidget, reason: label);
       }
@@ -1362,8 +1364,8 @@ void main() {
 
       expect(find.text('Lisbon ideas'), findsOneWidget);
       expect(find.text('Trip budget'), findsNothing);
-      expect(find.text('YESTERDAY'), findsOneWidget);
-      expect(find.text('TODAY'), findsNothing);
+      expect(find.text('Yesterday'), findsOneWidget);
+      expect(find.text('Today'), findsNothing);
     });
 
     testWidgets('opens a chat', (tester) async {

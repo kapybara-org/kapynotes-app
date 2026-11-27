@@ -68,9 +68,9 @@ List<TaskFilterChoice> taskFilterChoices({
       final byCount = counts[b]!.compareTo(counts[a]!);
       return byCount != 0
           ? byCount
-          : labelOf(notes[a]!)
-                .toLowerCase()
-                .compareTo(labelOf(notes[b]!).toLowerCase());
+          : labelOf(
+              notes[a]!,
+            ).toLowerCase().compareTo(labelOf(notes[b]!).toLowerCase());
     });
   return [
     TaskFilterChoice(const TaskFilter.all(), 'Today', today.length),

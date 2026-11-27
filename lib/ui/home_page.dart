@@ -6358,7 +6358,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                             style: chromeStyle(
                               size: AppTypeScale.body,
                               line: 22,
-                              weight: AppWeight.button,
+                              weight: AppWeight.regular,
                               color: palette.textPrimary,
                             ),
                           ),

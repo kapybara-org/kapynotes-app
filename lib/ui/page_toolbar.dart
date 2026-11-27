@@ -71,7 +71,7 @@ class PagePath {
   _ => (icon: KapyIcons.cloudRounded, label: 'Saved', tooltip: null),
 };
 
-TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
+TextStyle _chrome(double size, double line, FontWeight weight, Color color) =>
     chromeStyle(
       size: size,
       line: line,
@@ -139,9 +139,8 @@ class PageToolbar extends StatelessWidget {
   /// and its New are hidden: [label] is what a screen reader hears.
   final ({String label, String tooltip, VoidCallback onPressed})? create;
 
-  /// Whether the list lies open over the page. The band then leaves its
-  /// hairline to the list's bar, so the dimmed page draws no second line
-  /// below it.
+  /// Whether the list lies open over the page. The band keeps its hairline:
+  /// the list's bar draws none, so it is the one line under the bar.
   final bool underList;
 
   /// Whether there is a note on the page for Saved to speak for.
@@ -242,11 +241,9 @@ class PageToolbar extends StatelessWidget {
       key: const ValueKey('page-toolbar'),
       height: AppControlMetrics.scaleBar(context, height),
       color: palette.isGlass ? palette.paperColor : null,
-      foregroundDecoration: !underList
-          ? BoxDecoration(
-              border: Border(bottom: BorderSide(color: palette.railBorder)),
-            )
-          : null,
+      foregroundDecoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: palette.railBorder)),
+      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final width = constraints.maxWidth;
@@ -563,9 +560,9 @@ class _PathState extends State<_Path> {
     final keyName = light ? 'note-path' : 'page-path';
     final cap = form == _PathForm.full || light ? 200.0 : 160.0;
     final above = light
-        ? _figtree(12, 16, FontWeight.w400, palette.textTertiary)
-        : _figtree(13, 16, FontWeight.w400, palette.textTertiary);
-    final here = _figtree(13, 16, FontWeight.w500, palette.textPrimary);
+        ? _chrome(12, 16, FontWeight.w400, palette.textTertiary)
+        : _chrome(13, 16, FontWeight.w400, palette.textTertiary);
+    final here = _chrome(13, 16, FontWeight.w500, palette.textPrimary);
     final last = levels.lastOrNull;
     final base = DefaultTextStyle.of(context).style;
     final painter = TextPainter(
@@ -728,8 +725,8 @@ class _PathState extends State<_Path> {
                 : BorderSide(color: palette.controlBorder),
           ),
           textStyle: light
-              ? _figtree(12, 16, FontWeight.w600, palette.textSecondary)
-              : _figtree(13, 16, FontWeight.w600, palette.textSecondary),
+              ? _chrome(12, 16, FontWeight.w600, palette.textSecondary)
+              : _chrome(13, 16, FontWeight.w600, palette.textSecondary),
         ),
         child: const Text('…', semanticsLabel: 'Folders in between'),
       ),
@@ -773,7 +770,7 @@ class _PathState extends State<_Path> {
                         place.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _figtree(
+                        style: _chrome(
                           13,
                           16,
                           FontWeight.w400,
@@ -862,7 +859,7 @@ class _Saved extends StatelessWidget {
         Text(
           saved.label,
           maxLines: 1,
-          style: _figtree(12, 16, FontWeight.w500, palette.textTertiary),
+          style: _chrome(12, 16, FontWeight.w500, palette.textTertiary),
         ),
       ],
     );
@@ -923,8 +920,8 @@ class PageBackButton extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: AppTypeScale.body,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: palette.textPrimary,
               ),
             ),

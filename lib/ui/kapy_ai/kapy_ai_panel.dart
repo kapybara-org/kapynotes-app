@@ -346,9 +346,9 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: kapyText(
-                      17,
-                      22,
-                      palette.textPrimary,
+                      AppTypeScale.title,
+                      20,
+                      palette.textHeading,
                       weight: FontWeight.w600,
                     ),
                   ),
@@ -517,13 +517,11 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                           palette.textPrimary,
                           weight: FontWeight.w500,
                         )
-                      : TextStyle(
-                          fontFamily: 'Shantell Sans',
-                          fontSize: 17,
-                          height: 22 / 17,
-                          fontWeight: AppWeight.font(AppWeight.section),
-                          fontVariations: AppWeight.wght(AppWeight.section),
-                          color: palette.textPrimary,
+                      : kapyText(
+                          AppTypeScale.title,
+                          20,
+                          palette.textHeading,
+                          weight: FontWeight.w600,
                         ),
                 ),
               ),
@@ -618,7 +616,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
               decoration: BoxDecoration(
                 color: palette.editorBackground,
                 border: Border.all(color: palette.separator, width: 1.5),
-                borderRadius: BorderRadius.circular(AppRadii.dialog),
+                borderRadius: BorderRadius.circular(AppRadii.surface),
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
@@ -729,7 +727,7 @@ class _NoteChip extends StatelessWidget {
       padding: const EdgeInsets.only(left: 7, right: 3),
       decoration: BoxDecoration(
         color: palette.kapyHighlight,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -975,9 +973,7 @@ Future<void> showKapyAiSheet(
     enableDrag: false,
     backgroundColor: Colors.transparent,
     elevation: 0,
-    barrierColor: palette.brightness == Brightness.dark
-        ? const Color(0xA30C0B09)
-        : palette.scrim,
+    barrierColor: palette.scrim,
     builder: (_) =>
         _KapyAiSheet(rest: rest, statusBar: statusBar, panel: panel),
   );

@@ -220,7 +220,7 @@ void main() {
     );
     expect(
       swatchColour(tester, swatchIn('Call with Arjun')),
-      const Color(0xFF3A3530),
+      palette.switchTrackOff,
     );
     expect(tester.getSize(swatchIn('Lisbon trip')), const Size.square(8));
   });
@@ -262,7 +262,7 @@ void main() {
     };
     expect(colours['Lisbon trip'], TagColour.sage.dot(palette));
     expect(colours['Quote for the deck'], TagColour.mustard.dot(palette));
-    expect(colours['Call with Arjun'], const Color(0xFF3A3530));
+    expect(colours['Call with Arjun'], palette.switchTrackOff);
     await tester.pump(const Duration(seconds: 3));
   });
 }

@@ -252,7 +252,7 @@ Future<TableCommand?> _showTableSheet(
     backgroundColor: palette.surfaceBackground,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(
-        top: Radius.circular(AppRadii.dialog),
+        top: Radius.circular(AppRadii.surface),
       ),
     ),
     builder: (sheetContext) => SafeArea(
@@ -338,8 +338,8 @@ class _MenuHeadingState extends State<_MenuHeading> {
       widget.label,
       style: TextStyle(
         fontSize: AppTypeScale.caption,
-        fontWeight: AppWeight.font(AppWeight.body),
-        fontVariations: AppWeight.wght(AppWeight.body),
+        fontWeight: AppWeight.font(AppWeight.regular),
+        fontVariations: AppWeight.wght(AppWeight.regular),
         color: context.palette.textTertiary,
       ),
     ),
@@ -399,8 +399,8 @@ class _AlignRow extends StatelessWidget {
               'Align',
               style: TextStyle(
                 fontSize: touch ? AppTypeScale.body : AppTypeScale.control,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: palette.textPrimary,
               ),
             ),
@@ -417,7 +417,7 @@ class _AlignRow extends StatelessWidget {
               child: InkWell(
                 key: ValueKey('table-menu-${command.name}'),
                 onTap: () => onPick(command),
-                borderRadius: BorderRadius.circular(AppRadii.compact),
+                borderRadius: BorderRadius.circular(AppRadii.control),
                 hoverColor: palette.hover,
                 child: Container(
                   width: side,
@@ -426,7 +426,7 @@ class _AlignRow extends StatelessWidget {
                   decoration: command.align == current
                       ? BoxDecoration(
                           color: palette.selectedBackground,
-                          borderRadius: BorderRadius.circular(AppRadii.compact),
+                          borderRadius: BorderRadius.circular(AppRadii.control),
                         )
                       : null,
                   child: KapyIcon(
@@ -1385,7 +1385,7 @@ class _EdgePlusState extends State<_EdgePlus> {
           child: Container(
             decoration: BoxDecoration(
               color: _hovered ? palette.hover : null,
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             alignment: Alignment.center,
             child: KapyIcon(

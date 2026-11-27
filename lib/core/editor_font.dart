@@ -1,6 +1,7 @@
 import 'dart:ui' show FontVariation;
 
 import 'platform.dart';
+import 'theme.dart';
 
 /// The typeface used on the writing surface.
 ///
@@ -32,21 +33,21 @@ extension WritingFontDetails on WritingFont {
   };
 
   String? get fontFamily => switch (this) {
-    WritingFont.mixed => 'Figtree',
-    WritingFont.handwritten => 'Shantell Sans',
-    WritingFont.clean => AppPlatform.uiFontFamily,
+    WritingFont.mixed => AppFonts.ui,
+    WritingFont.handwritten => AppFonts.hand,
+    WritingFont.clean => AppFonts.ui,
     WritingFont.monospace => AppPlatform.monoFontFallback.first,
   };
 
   List<String>? get fontFamilyFallback => switch (this) {
-    WritingFont.mixed => AppPlatform.uiFontFallback,
+    WritingFont.mixed => AppFonts.uiFallback,
     WritingFont.handwritten => const [
       'Roboto',
       'Noto Sans',
       '.AppleSystemUIFont',
       'sans-serif',
     ],
-    WritingFont.clean => AppPlatform.uiFontFallback,
+    WritingFont.clean => AppFonts.uiFallback,
     WritingFont.monospace => AppPlatform.monoFontFallback,
   };
 

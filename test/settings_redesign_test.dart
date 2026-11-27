@@ -411,9 +411,8 @@ void main() {
     );
   });
 
-  // D13's switch on a computer: 38 × 22 with an 18 pt knob. On a dark side
-  // the knob is light both ways, as D13 draws it, so off never reads as
-  // disabled. Either side's off knob stands at least 3:1 off its track.
+  // A capsule 36 × 16 with a white knob 20.5 × 12.5. The knob stays white
+  // on both sides; it is read by its position, not by its contrast on orange.
   for (final dark in const [true, false]) {
     for (final value in const [false, true]) {
       testWidgets('the switch on a ${dark ? 'dark' : 'light'} side, '
@@ -429,24 +428,26 @@ void main() {
         await tester.pumpAndSettle();
 
         final palette = tester.element(find.byType(SettingsSwitch)).palette;
-        expect(tester.getSize(find.byType(SettingsSwitch)), const Size(38, 22));
+        expect(
+          tester.getSize(find.byKey(const ValueKey('compact-switch-indicator'))),
+          const Size(36, 16),
+        );
         final boxes = find.descendant(
           of: find.byType(SettingsSwitch),
           matching: find.byType(DecoratedBox),
         );
-        expect(tester.getSize(boxes.last), const Size.square(18));
+        expect(tester.getSize(boxes.last), const Size(20.5, 12.5));
         BoxDecoration face(Finder box) =>
             tester.widget<DecoratedBox>(box).decoration as BoxDecoration;
         final knob = face(boxes.last);
         expect(knob.boxShadow, isNull);
-        if (dark) expect(knob.color, palette.switchThumb);
-        if (!value) {
-          final [lighter, darker] = [
-            knob.color!.computeLuminance(),
-            face(boxes.first).color!.computeLuminance(),
-          ]..sort((a, b) => b.compareTo(a));
-          expect((lighter + 0.05) / (darker + 0.05), greaterThanOrEqualTo(3));
-        }
+        expect(knob.color, palette.switchThumb);
+        final track = tester
+            .widget<AnimatedContainer>(
+              find.byKey(const ValueKey('compact-switch-indicator')),
+            )
+            .decoration! as BoxDecoration;
+        expect(track.color, value ? palette.accent : palette.switchTrackOff);
       });
     }
   }

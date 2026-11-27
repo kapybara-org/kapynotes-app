@@ -409,7 +409,7 @@ class TaskDetailPicture extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerLeft,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           child: SizedBox(width: width ?? size, height: size, child: child),
         ),
       ),
@@ -635,7 +635,7 @@ class _PhoneTaskBox extends StatelessWidget {
                     color: done ? sage : palette.checkboxBorder,
                     width: 1.5,
                   ),
-                  borderRadius: BorderRadius.circular(5),
+                  shape: BoxShape.circle,
                 ),
                 child: done
                     ? KapyIcon(

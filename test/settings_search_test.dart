@@ -260,7 +260,7 @@ void main() {
               widget is KapyIcon && widget.icon == KapyIcons.searchRounded,
         ),
       );
-      expect(tester.getSize(icon), const Size.square(14));
+      expect(tester.getSize(icon), const Size.square(13));
     });
 
     testWidgets('is waiting in the field when settings opens, and Return '
@@ -276,7 +276,7 @@ void main() {
         find.descendant(
           of: _result('mode-setting'),
           matching: find.text(
-            'Appearance · follow your computer, or choose one.',
+            'Appearance',
           ),
         ),
         findsOneWidget,

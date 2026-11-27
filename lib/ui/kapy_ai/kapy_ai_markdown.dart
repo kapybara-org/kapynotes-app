@@ -167,7 +167,7 @@ class _KapyAiMarkdownState extends State<KapyAiMarkdown> {
         blocks.add(
           Text.rich(
             TextSpan(
-              children: _spans(heading[1]!, ladder(body, AppWeight.section)!),
+              children: _spans(heading[1]!, ladder(body, AppWeight.regular)!),
             ),
           ),
         );
@@ -264,7 +264,7 @@ class _KapyAiMarkdownState extends State<KapyAiMarkdown> {
           ),
         );
       } else if (match[2] ?? match[3] case final bold?) {
-        spans.addAll(_spans(bold, ladder(style, AppWeight.section)!));
+        spans.addAll(_spans(bold, ladder(style, AppWeight.regular)!));
       } else if (match[4] ?? match[5] case final italic?) {
         spans.addAll(
           _spans(italic, style.copyWith(fontStyle: FontStyle.italic)),
@@ -306,8 +306,8 @@ class _KapyAiMarkdownState extends State<KapyAiMarkdown> {
               style: style.copyWith(
                 color: palette.textTertiary,
                 fontSize: (style.fontSize ?? 13.5) - 1,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 fontStyle: FontStyle.normal,
               ),
             ),

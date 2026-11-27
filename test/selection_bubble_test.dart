@@ -214,10 +214,7 @@ void main() {
         below: const Rect.fromLTWH(160, 230, 100, 22),
       );
       expect(tester.getRect(_bubble).top, 230 + 22 + 8);
-      expect(
-        tester.getRect(_bubble).center.dx,
-        closeTo(210, 0.5),
-      );
+      expect(tester.getRect(_bubble).center.dx, closeTo(210, 0.5));
 
       // With no room under it, over its first line.
       await _show(tester, above: const Rect.fromLTWH(60, 420, 160, 22));
@@ -296,7 +293,7 @@ void main() {
         lessThan(tester.getRect(_bubble).top),
       );
       expect(tester.getSize(menu).width, 236);
-      expect(find.text('TURN INTO'), findsOneWidget);
+      expect(find.text('Turn into'), findsOneWidget);
       expect(
         find.descendant(of: menu, matching: find.text('Markdown')),
         findsNWidgets(4),

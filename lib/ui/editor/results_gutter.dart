@@ -130,18 +130,13 @@ class ResultChip extends StatefulWidget {
   /// line takes a tap, so the lines above and below keep theirs.
   static const double _railTarget = 44;
 
-  static TextStyle _textStyle({
-    required bool pill,
-    bool total = false,
-    Color? color,
-  }) {
-    final step = total ? AppWeight.section : AppWeight.button;
+  static TextStyle _textStyle({required bool pill, Color? color}) {
     return TextStyle(
       fontFamily: AppFonts.mono,
       fontFamilyFallback: AppFonts.monoFallback,
       fontSize: AppTypeScale.result,
-      fontWeight: pill ? AppWeight.font(step) : null,
-      fontVariations: pill ? AppWeight.wght(step) : null,
+      fontWeight: pill ? AppWeight.font(AppWeight.regular) : null,
+      fontVariations: pill ? AppWeight.wght(AppWeight.regular) : null,
       height: pill ? 16 / 13 : 1.2,
       leadingDistribution: TextLeadingDistribution.even,
       color: color,
@@ -210,7 +205,7 @@ class _ResultChipState extends State<ResultChip> {
       softWrap: !pill,
       overflow: pill ? TextOverflow.ellipsis : null,
       textAlign: TextAlign.right,
-      style: ResultChip._textStyle(pill: pill, total: total, color: ink),
+      style: ResultChip._textStyle(pill: pill, color: ink),
     );
     final check = KapyIcon(
       KapyIcons.checkRounded,
