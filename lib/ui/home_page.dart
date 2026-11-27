@@ -890,12 +890,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Future<List<XFile>> _openCamera(BuildContext context, String noteId) async {
     final note = widget.notes.byId(noteId);
     if (note == null) return const [];
-    final override = widget.cameraAcquirer;
-    if (override != null) return override(context);
     // Photos leaves the app for the system library, as the pickers do.
     final protectsHiddenSession = _hiddenMode && note.isHidden;
     if (protectsHiddenSession) _hiddenSystemUiDepth++;
     try {
+      final override = widget.cameraAcquirer;
+      if (override != null) return await override(context);
       return await showNoteCamera(
         context,
         chooseFromLibrary: pickExistingMedia,
