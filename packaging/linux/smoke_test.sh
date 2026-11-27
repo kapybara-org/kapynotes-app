@@ -41,8 +41,8 @@
 # app must hold the logout with an inhibitor until it has saved and go on
 # running, then go on running when it is cancelled, and leave when the session
 # does end.
-# A screenshot of the screen goes to <out-dir>/<kind>.xwd (and .png when
-# ImageMagick is there), the app's output to <out-dir>/<kind>.log.
+# A screenshot of the screen goes to <out-dir>/<kind>.png, through
+# xwd2png.py beside this script, the app's output to <out-dir>/<kind>.log.
 #
 # An AppImage runs with APPIMAGE_EXTRACT_AND_RUN=1, because containers have
 # no /dev/fuse; set SMOKE_FUSE=1 to mount it for real instead, as CI does on
@@ -282,7 +282,8 @@ run_app() {
   echo "  window with WM_CLASS $APP_ID is up"
 
   DISPLAY="$display" xwd -root -silent >"$out/$kind.xwd"
-  if command -v convert >/dev/null; then convert "xwd:$out/$kind.xwd" "$out/$kind.png"; fi
+  python3 "$here/xwd2png.py" "$out/$kind.xwd" "$out/$kind.png"
+  rm "$out/$kind.xwd"
 
   check_libraries "$root"
   check_ffmpeg "$root"

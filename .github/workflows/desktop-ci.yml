@@ -63,11 +63,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: subosito/flutter-action@v2
+      - uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
 
       - run: flutter pub get
 
@@ -134,22 +132,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
-        id: flutter
+      - uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-          pub-cache: false
-
-      # flutter-action keys its own pub cache on hashFiles('**/pubspec.lock'),
-      # a walk of the whole checkout that has run past its 120 s limit on the
-      # macOS runner. The root pubspec.lock is the only one, so this keeps the
-      # same key without the walk.
-      - uses: actions/cache@v5
-        with:
-          path: ${{ steps.flutter.outputs.PUB-CACHE-PATH }}
-          key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ hashFiles('pubspec.lock') }}
 
       - run: flutter pub get
 
@@ -235,14 +220,23 @@ jobs:
       # for x64 Linux only. On arm64 the SDK is a clone of the release tag,
       # which downloads its own arm64 Dart SDK and engine on first run.
       - if: matrix.arch == 'x86_64'
-        uses: subosito/flutter-action@v2
+        uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
 
-      - if: matrix.arch == 'aarch64'
+      # Saved only from main, like .github/actions/flutter (KAP-383).
+      - if: matrix.arch == 'aarch64' && github.ref == 'refs/heads/main'
         uses: actions/cache@v4
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '3'
+        with:
+          path: ~/flutter
+          key: flutter-${{ env.FLUTTER_VERSION }}-linux-arm64
+
+      - if: matrix.arch == 'aarch64' && github.ref != 'refs/heads/main'
+        uses: actions/cache/restore@v4
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: '3'
         with:
           path: ~/flutter
           key: flutter-${{ env.FLUTTER_VERSION }}-linux-arm64
@@ -411,8 +405,7 @@ jobs:
           name: linux-x86_64-unsigned
           path: dist
 
-      # The runner's own apt installs the AppImage entry's baseline and FUSE,
-      # and ImageMagick for the screenshots.
+      # The runner's own apt installs the AppImage entry's baseline and FUSE.
       - name: Give the runner's apt the fallback mirrors
         run: sudo sh .github/apt-mirrors.sh
 
@@ -462,7 +455,8 @@ jobs:
         run: |
           gzip -dc baseline.tar.gz | docker load
           docker run --rm -v "$PWD:/w" -w /w smoke-baseline bash -c \
-            'if command -v apt-get >/dev/null; then apt-get update -q; fi
+            'sh .github/apt-mirrors.sh
+             if command -v apt-get >/dev/null; then apt-get update -q; fi
              packaging/linux/smoke_test.sh all dist smoke-out'
 
       - name: Mount the AppImage through FUSE
@@ -477,16 +471,6 @@ jobs:
           fi
           ! ldconfig -p | grep -q 'libfuse.so.2'
           SMOKE_FUSE=1 packaging/linux/smoke_test.sh appimage dist/KapyNotes-*.AppImage smoke-out
-
-      # The containers have no ImageMagick on purpose; the runner does.
-      - name: Convert screenshots
-        if: always()
-        run: |
-          command -v convert >/dev/null || { sudo apt-get update && sudo apt-get install -y imagemagick; }
-          for xwd in smoke-out/*.xwd; do
-            [ -e "$xwd" ] && convert "xwd:$xwd" "${xwd%.xwd}.png" && rm "$xwd"
-          done
-          true
 
       - uses: actions/upload-artifact@v4
         if: always()

@@ -1985,7 +1985,9 @@ void main() {
       });
 
       testWidgets('phone page with the keyboard up, $name', (tester) async {
-        await pumpPhone(tester);
+        // With the store pictures go in, as in the app, so Attach at the
+        // start of the bar is drawn as people see it rather than dimmed.
+        await pumpPhone(tester, withImageStore: true);
         tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
         addTearDown(tester.view.resetViewInsets);
         await tester.pumpAndSettle();

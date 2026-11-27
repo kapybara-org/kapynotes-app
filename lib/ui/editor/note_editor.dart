@@ -6111,6 +6111,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       onPressed: plain && inCode ? null : press,
     );
     return [
+      action(
+        'format-attach',
+        'Attach',
+        KapyIcons.imageOutlined,
+        widget.images == null ? null : () => unawaited(_attachFromBar()),
+      ),
       if (_showIndentControls) ...[
         action(
           'format-outdent',
@@ -6199,12 +6205,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         KapyIcons.linkRounded,
         () => unawaited(_linkFromBar()),
         active: marked(MarkdownStyle.link),
-      ),
-      action(
-        'format-attach',
-        'Picture or file',
-        KapyIcons.imageOutlined,
-        widget.images == null ? null : () => unawaited(_attachFromBar()),
       ),
       action('format-commands', 'Commands', null, _showInsertMenu, glyph: '/'),
     ];
@@ -6321,15 +6321,23 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
-  /// Picture or file: asks which, then runs the command the "+" menu does.
+  /// Attach: asks what, then runs the command the "+" menu does.
   Future<void> _attachFromBar() async {
-    final choice = await chooseAttachment(context);
+    final choice = await chooseAttachment(
+      context,
+      voice: widget.onRecordVoice != null && !widget.voiceActionBusy,
+    );
     if (choice == null || !mounted) return;
-    await switch (choice) {
-      FormatBarAttachment.photo => pickAndInsertImages(),
-      FormatBarAttachment.video => pickAndInsertVideos(),
-      FormatBarAttachment.file => pickAndInsertFileAttachments(),
-    };
+    switch (choice) {
+      case FormatBarAttachment.photo:
+        await pickAndInsertImages();
+      case FormatBarAttachment.video:
+        await pickAndInsertVideos();
+      case FormatBarAttachment.voice:
+        widget.onRecordVoice?.call();
+      case FormatBarAttachment.file:
+        await pickAndInsertFileAttachments();
+    }
   }
 
   void _evaluate() {

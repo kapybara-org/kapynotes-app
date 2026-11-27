@@ -8693,6 +8693,67 @@ void main() {
       expect(find.byKey(const ValueKey('slash-command-drawing')), findsNothing);
     });
 
+    testWidgets('Voice note from the bar\'s attach sheet records into the '
+        'open note, at the caret', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      // Notices come and go as they do in the app, so Recording started is
+      // not left over Stop.
+      Toast.debugAnimateLifetimeInTests = true;
+      addTearDown(() => Toast.debugAnimateLifetimeInTests = false);
+      final temp = Directory.systemTemp.createTempSync('kapy-attach-voice-');
+      addTearDown(() => temp.deleteSync(recursive: true));
+      notes = NotesStore(store, blobs: BlobStore(directory: temp));
+      final note = notes.create(body: 'Groceries\nOat milk');
+      final recorder = FakeVoiceRecorder(writesFile: false);
+      final recording = VoiceRecordingController(
+        recorder: recorder,
+        tempDirectory: temp,
+      );
+      addTearDown(recording.dispose);
+      await pumpApp(tester, size: const Size(393, 852), recording: recording);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      openNoteField(tester).controller.selection =
+          const TextSelection.collapsed(offset: 9);
+      await tester.pump();
+
+      // Starting and delivering are real file work, so the real clock is let
+      // run, and the test's clock is pumped for what comes back.
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      Future<void> until(bool Function() done) async {
+        for (var wait = 0; wait < 100 && !done(); wait++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+      }
+
+      await tester.tap(find.byKey(const ValueKey('format-attach')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('attach-voice')));
+      await tester.pump();
+      await until(() => recording.isRecording && notice.evaluate().isEmpty);
+      expect(recording.session?.noteId, note.id);
+      File(
+        recorder.startedAt!,
+      ).writeAsBytesSync(File('test/fixtures/tone_5s.m4a').readAsBytesSync());
+
+      await tester.tap(find.byKey(const ValueKey('recording-stop')));
+      Iterable<NoteVoiceRef> voice() =>
+          notes.byId(note.id)!.attachments.whereType<NoteVoiceRef>();
+      await until(() => voice().isNotEmpty && notice.evaluate().isEmpty);
+
+      expect(recording.isRecording, isFalse);
+      final body = notes.byId(note.id)!.body;
+      final at = voice().single.offset;
+      expect(body, startsWith('Groceries\n'));
+      expect(at, greaterThanOrEqualTo('Groceries\n'.length));
+      expect(body.indexOf('Oat milk'), greaterThan(at));
+    });
+
     testWidgets(
       'holds the note above the home indicator and the bar on the keyboard',
       (tester) async {
@@ -13052,6 +13113,55 @@ void main() {
         tester.getCenter(notice).dx,
         tester.getCenter(find.byType(PagePane)).dx,
       );
+    });
+
+    // Parity item 64: the page's menu took the notice to the window's
+    // centre, over the list, until it closed, and so did the tag list that
+    // a note's menu opens.
+    testWidgets('a notice keeps its place beside the list while a menu is '
+        "open, and the tag list from a note's menu", (tester) async {
+      await notes.load();
+      final tags = TagStore(store);
+      await tags.load();
+      notes.create(body: 'Narrow note');
+      final notice = find.byKey(const ValueKey('toast-surface'));
+      final menu = find.byType(KapyContextMenuSurface);
+      final picker = find.byKey(const ValueKey('tag-picker'));
+      await pumpApp(tester, size: const Size(820, 760), tags: tags);
+      await pickPageAction(tester, 'pin');
+      final place = tester.getRect(notice);
+      expect(
+        place.left,
+        greaterThan(tester.getRect(find.byType(Sidebar)).right),
+      );
+
+      await tester.tap(find.byKey(const ValueKey('page-more')));
+      await tester.pumpAndSettle();
+      expect(menu, findsOneWidget);
+      expect(tester.getRect(notice), place);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(tester.getRect(notice), place);
+
+      await tester.tap(
+        find.widgetWithText(NoteRow, 'Narrow note'),
+        buttons: kSecondaryButton,
+      );
+      await tester.pumpAndSettle();
+      expect(menu, findsOneWidget);
+      expect(tester.getRect(notice), place);
+      await tester.tap(find.text('Tags'));
+      await tester.pumpAndSettle();
+      expect(menu, findsNothing);
+      expect(picker, findsOneWidget);
+      expect(tester.getRect(notice), place);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(picker, findsNothing);
+      expect(tester.getRect(notice), place);
     });
   });
 
