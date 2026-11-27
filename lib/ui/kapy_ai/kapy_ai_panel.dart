@@ -511,11 +511,10 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                   _chats ? 'Chats' : 'Kapy AI',
                   maxLines: 1,
                   style: docked
-                      ? kapyText(
-                          13,
-                          18,
-                          palette.textPrimary,
-                          weight: FontWeight.w500,
+                      ? handTitle(
+                          size: 17,
+                          line: 22,
+                          color: palette.textPrimary,
                         )
                       : kapyText(
                           AppTypeScale.title,

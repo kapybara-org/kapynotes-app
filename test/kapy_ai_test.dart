@@ -287,7 +287,7 @@ void main() {
       return null;
     }
 
-    testWidgets('docked, the header is D10’s: an interface-face title, the '
+    testWidgets('docked, the header is D10’s: a handwritten title, the '
         'notes-history icon and a hairline', (tester) async {
       final controller = KapyAiPanelController()..open(noteId: 'n1');
       addTearDown(controller.dispose);
@@ -301,10 +301,13 @@ void main() {
           matching: find.text('Kapy AI'),
         ),
       );
-      expect(title.style?.fontFamily, AppFonts.ui);
-      expect(title.style?.fontSize, 13);
-      expect(title.style?.height, 18 / 13);
-      expect(title.style?.fontWeight, FontWeight.w400);
+      expect(title.style?.fontFamily, AppFonts.hand);
+      expect(title.style?.fontSize, 17);
+      expect(title.style?.height, 22 / 17);
+      expect(
+        title.style?.fontVariations,
+        contains(const FontVariation('wght', 500)),
+      );
       expect(title.style?.color, palette.textPrimary);
 
       final icon = tester.widget<KapyIcon>(

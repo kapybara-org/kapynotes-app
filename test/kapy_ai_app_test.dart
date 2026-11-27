@@ -604,7 +604,9 @@ void main() {
     ]) {
       final name =
           '${platform.name} at ${size.width.toInt()}×${size.height.toInt()}';
-      testWidgets('docked on $name, it is D10’s', (tester) async {
+      testWidgets('docked on $name, it is D10’s, its name handwritten', (
+        tester,
+      ) async {
         notes.create(body: 'Trip budget\n900 flights\n600 hotel');
         await _pump(tester, size: size, platform: platform);
         await tester.tap(_button);
@@ -613,8 +615,13 @@ void main() {
         expect(_panel, findsOneWidget);
         expect(sheet, findsNothing);
         final style = titleStyle(tester);
-        expect(style?.fontFamily, AppFonts.ui);
-        expect(style?.fontSize, 13);
+        expect(style?.fontFamily, AppFonts.hand);
+        expect(style?.fontSize, 17);
+        expect(style?.height, 22 / 17);
+        expect(
+          style?.fontVariations,
+          contains(const FontVariation('wght', 500)),
+        );
         expect(
           icon(tester).paths,
           same(HugeIcons.strokeRoundedTransactionHistory),

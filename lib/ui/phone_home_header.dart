@@ -147,11 +147,10 @@ class _Title extends StatelessWidget {
                 label,
                 maxLines: 1,
                 softWrap: false,
-                style: uiStyle(
-                  AppTypeScale.spaceTitle,
-                  32,
-                  FontWeight.w600,
-                  selected ? palette.textHeading : palette.textQuiet,
+                style: handTitle(
+                  size: 26,
+                  line: 32,
+                  color: selected ? palette.textHeading : palette.textQuiet,
                 ),
               ),
               Visibility.maintain(

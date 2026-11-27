@@ -1361,8 +1361,7 @@ extension on Sidebar {
         thickness: AppHairline.of(context),
         indent: NoteListRowFace.textStart(touch: phone),
         endIndent: phone ? 0 : 10,
-        color:
-            list[index - 1].id == selectedId || list[index].id == selectedId
+        color: list[index - 1].id == selectedId || list[index].id == selectedId
             ? Colors.transparent
             : context.palette.pageBorder,
       );
@@ -2143,10 +2142,9 @@ class SidebarWindowBar extends StatelessWidget {
     final hideShortcut = this.hideShortcut;
     final onAskKapy = this.onAskKapy;
     final askKapyShortcut = this.askKapyShortcut;
-    final titleStyle = chromeStyle(
-      size: AppTypeScale.spaceTitle,
-      line: AppTypeScale.spaceTitle * 1.3,
-      weight: AppWeight.semibold,
+    final titleStyle = handTitle(
+      size: 19,
+      line: 24,
       color: palette.textHeading,
     );
     final countText = [count, ?countLabel].join(' ');

@@ -236,35 +236,36 @@ void main() {
     expect(find.byKey(const ValueKey('sidebar-space-count')), findsOneWidget);
   });
 
-  testWidgets('a hairline runs along the bar\'s bottom, as under the band', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: KapyTheme.light(),
-        home: Material(
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: 320,
-              child: SidebarWindowBar(
-                title: 'My notes',
-                count: 12,
-                onCreate: () {},
-                onHide: () {},
+  testWidgets(
+    "the bar names the list in handwriting, in the heading's colour",
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.light(),
+          home: Material(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 320,
+                child: SidebarWindowBar(
+                  title: 'My notes',
+                  count: 12,
+                  onCreate: () {},
+                  onHide: () {},
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
-    final title = tester.widget<Text>(
-      find.byKey(const ValueKey('sidebar-space-title')),
-    );
-    expect(title.style?.fontSize, AppTypeScale.spaceTitle);
-    expect(title.style?.fontWeight, FontWeight.w600);
-    expect(title.style?.color, KapyTheme.lightPalette.textHeading);
-  });
+      );
+      final title = tester.widget<Text>(
+        find.byKey(const ValueKey('sidebar-space-title')),
+      );
+      expect(title.style?.fontFamily, AppFonts.hand);
+      expect(title.style?.fontSize, 19);
+      expect(title.style?.color, KapyTheme.lightPalette.textHeading);
+    },
+  );
 
   testWidgets("the search field's keycap is T3, which Riverbank dark keeps "
       'apart from T2', (tester) async {
@@ -291,7 +292,9 @@ void main() {
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
     await mouse.addPointer(
-      location: tester.getCenter(find.byKey(const ValueKey('sidebar-search-box'))),
+      location: tester.getCenter(
+        find.byKey(const ValueKey('sidebar-search-box')),
+      ),
     );
     await tester.pump();
     final keycap = tester.widget<Text>(shortcut);

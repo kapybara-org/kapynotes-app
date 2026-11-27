@@ -2205,6 +2205,22 @@ void main() {
     );
   });
 
+  testWidgets("the notes list's name is handwritten, Shantell 19/24 at 500, "
+      'and its count stays in the system face', (tester) async {
+    await pumpApp(tester);
+    final title = tester
+        .widget<Text>(find.byKey(const ValueKey('sidebar-space-title')))
+        .style!;
+    expect(title.fontFamily, AppFonts.hand);
+    expect(title.fontSize, 19);
+    expect(title.height, 24 / 19);
+    expect(title.fontVariations, contains(const FontVariation('wght', 500)));
+    final count = tester
+        .widget<Text>(find.byKey(const ValueKey('sidebar-space-count')))
+        .style!;
+    expect(count.fontFamily, AppFonts.ui);
+  });
+
   testWidgets('opens footer settings and resets desktop panel widths', (
     tester,
   ) async {
@@ -9683,6 +9699,36 @@ void main() {
           ),
           findsOneWidget,
         );
+      });
+
+      testWidgets('Notes and Tasks are handwritten, Shantell 26/32 at 500, '
+          'each a 44 pt target, with the count in the system face', (
+        tester,
+      ) async {
+        await pumpHome(tester);
+        for (final title in [notesTitle, tasksTitle]) {
+          final words = tester
+              .widgetList<Text>(
+                find.descendant(of: title, matching: find.byType(Text)),
+              )
+              .first
+              .style!;
+          expect(words.fontFamily, AppFonts.hand);
+          expect(words.fontSize, 26);
+          expect(words.height, 32 / 26);
+          expect(
+            words.fontVariations,
+            contains(const FontVariation('wght', 500)),
+          );
+          expect(tester.getSize(title).height, greaterThanOrEqualTo(44));
+        }
+        final count = tester
+            .widgetList<Text>(
+              find.descendant(of: notesTitle, matching: find.byType(Text)),
+            )
+            .last
+            .style!;
+        expect(count.fontFamily, AppFonts.ui);
       });
 
       testWidgets('a tap on Tasks shows Tasks under the same header, and a '

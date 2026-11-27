@@ -1303,12 +1303,30 @@ TextStyle chromeStyle({
 /// the secondary grey, the same on a desktop and a phone. Only for the three
 /// friendly moments the design names (handoffs/design-system/tokens.md): an
 /// empty list's line, an empty Kapy AI chat and a cleared Tasks list. Never a
-/// list, tab, heading, button, Settings or a note's title.
+/// list, button, Settings or a note's title; the screen titles take
+/// [handTitle].
 TextStyle handAccent(CalcPalette palette) => chromeStyle(
   size: 17,
   line: 24,
   weight: AppWeight.regular,
   color: palette.textSecondary,
+  family: AppFonts.hand,
+  extra: WritingFont.handwritten.faceVariations,
+);
+
+/// A screen's name in handwriting: Shantell Sans at 500, the only handwritten
+/// word on its screen. Only for the titles tokens.md names: the notes list's
+/// name and the Kapy AI panel's on a desktop, and a phone's Notes, Tasks and
+/// Kapy AI.
+TextStyle handTitle({
+  required double size,
+  required double line,
+  required Color color,
+}) => chromeStyle(
+  size: size,
+  line: line,
+  weight: 500,
+  color: color,
   family: AppFonts.hand,
   extra: WritingFont.handwritten.faceVariations,
 );

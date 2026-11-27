@@ -182,7 +182,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
       'Kapy AI',
       maxLines: 1,
       textScaler: scaler.clamp(maxScaleFactor: 1.3),
-      style: kapyText(26, 32, palette.textHeading, weight: FontWeight.w600),
+      style: handTitle(size: 26, line: 32, color: palette.textHeading),
     );
     final label = kapyText(
       15,
