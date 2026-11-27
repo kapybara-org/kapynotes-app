@@ -862,6 +862,37 @@ void main() {
           expect(openNoteBody(tester), 'First note');
         }, variant: desktop);
 
+        testWidgets('${by.name}: + on the tab row is no tab: a step from the '
+            'new tab goes to the one before, and back again, and no further '
+            '(KAP-433)', (tester) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'First note');
+          notes.create(body: 'Second note');
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+          await tester.pumpAndSettle();
+          final modifier = AppPlatform.isMacOS
+              ? LogicalKeyboardKey.metaLeft
+              : LogicalKeyboardKey.controlLeft;
+          await tester.sendKeyDownEvent(modifier);
+          await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+          await tester.sendKeyUpEvent(modifier);
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('note-tabs-new')));
+          await tester.pumpAndSettle();
+          final row = find.byType(NoteTabRow);
+          expect(tester.widget<NoteTabRow>(row).tabs, hasLength(3));
+          expect(openNoteBody(tester), Note.untitled);
+
+          await stepOver(tester, row, back, by);
+          expect(openNoteBody(tester), 'Second note');
+          await stepOver(tester, row, forward, by);
+          expect(openNoteBody(tester), Note.untitled);
+          await stepOver(tester, row, forward, by);
+          expect(openNoteBody(tester), Note.untitled, reason: 'the last tab');
+        }, variant: desktop);
+
         testWidgets('${by.name}: over Tasks it moves between its views', (
           tester,
         ) async {
@@ -1052,6 +1083,50 @@ void main() {
         variant: desktop,
       );
     },
+  );
+
+  testWidgets(
+    '+ on the tab row makes a new note in a new tab at the end, in front, '
+    'with its title picked to type over, and the other tabs stay (KAP-433)',
+    (tester) async {
+      asDesktop();
+      await pumpApp(tester, size: const Size(1400, 800));
+      notes.create(body: 'First note');
+      notes.create(body: 'Second note');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+      await tester.pumpAndSettle();
+      final modifier = AppPlatform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      await tester.sendKeyDownEvent(modifier);
+      await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+      final row = find.byType(NoteTabRow);
+      final before = tester.widget<NoteTabRow>(row).tabs;
+      expect(before.map((tab) => tab.title), ['First note', 'Second note']);
+      final count = notes.notes.length;
+
+      await tester.tap(find.byKey(const ValueKey('note-tabs-new')));
+      await tester.pumpAndSettle();
+
+      expect(notes.notes, hasLength(count + 1));
+      final after = tester.widget<NoteTabRow>(row);
+      expect(after.tabs, hasLength(3));
+      expect(after.tabs.take(2).map((tab) => tab.id), [
+        for (final tab in before) tab.id,
+      ]);
+      expect(after.activeId, after.tabs.last.id);
+      final field = openNoteField(tester);
+      expect(field.controller.text, Note.blankBody);
+      expect(field.focusNode.hasFocus, isTrue);
+      expect(
+        field.controller.selection,
+        const TextSelection(baseOffset: 0, extentOffset: Note.untitled.length),
+      );
+    },
+    variant: TargetPlatformVariant.desktop(),
   );
 
   group('voice choices survive a relaunch', () {

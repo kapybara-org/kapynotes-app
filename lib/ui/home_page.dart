@@ -2352,6 +2352,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  /// + on the tab row: a new note in a new tab at the end of the row, in
+  /// front, with its title picked to type over, as New note starts one. It
+  /// goes into the folder in front as New note's does, and with a day's notes
+  /// as the tabs it is that day's once it has words, as a page written on the
+  /// day is.
+  void _newNoteInNewTab() {
+    if (!(_noteLimit?.canCreate ?? true)) {
+      unawaited(_explainNoteLimit(creating: true));
+      return;
+    }
+    final folderId = _folderInFront;
+    _changeTabs(_workspace.openNoteIds, () {
+      final note = widget.notes.create(
+        body: Note.blankBody,
+        authored: false,
+        hidden: _hiddenMode,
+      );
+      _freshNoteIds.add(note.id);
+      if (_workspace.dayInTabs case final day?) _dayOfFreshNote[note.id] = day;
+      if (folderId != null) {
+        if (widget.folders?.file([note.id], folderId) case final refusal?) {
+          Toast.show(context, folderRefusalText(refusal), isError: true);
+        }
+      }
+      if (!_workspace.openInNewTab(note.id)) return false;
+      _workspace.activateTab(_workspace.tabs.length - 1);
+      return true;
+    }, focus: false);
+  }
+
   /// Gives the note whose page is open another day, or none at all.
   Future<void> _moveToAnotherDay(Note note) async {
     final days = widget.days;
@@ -5199,6 +5229,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onSelect: _activateTab,
       onClose: _closeTab,
       onCloseOthers: _closeOtherTabs,
+      onNew: _newNoteInNewTab,
       onPin: day == null
           ? null
           : (id, {required pin}) {

@@ -39,12 +39,14 @@ class NoteTab {
   final bool? pinned;
 }
 
-/// The page header's second row: the open notes, one tab each.
+/// The page header's second row: the open notes, one tab each, and + after
+/// them for a new note in a new tab.
 ///
 /// A tab is never squeezed. Its title shows in full up to [maxLabelWidth],
 /// and a tab that does not fit folds into "N more", the least recently used
 /// first and a pinned one of a day's last, so the row never scrolls and never
-/// shrinks a tab to nothing. The active tab never folds.
+/// shrinks a tab to nothing. The active tab never folds, and + always has
+/// room.
 class NoteTabRow extends StatelessWidget {
   const NoteTabRow({
     super.key,
@@ -56,6 +58,7 @@ class NoteTabRow extends StatelessWidget {
     required this.onCloseOthers,
     this.onPin,
     this.closeShortcut,
+    this.onNew,
   });
 
   static const double height = 36;
@@ -65,6 +68,9 @@ class NoteTabRow extends StatelessWidget {
 
   static const double _inset = 16;
   static const double _gap = 16;
+
+  /// Between the last tab, or "N more", and +.
+  static const double _newGap = 8;
 
   final List<NoteTab> tabs;
   final String? activeId;
@@ -81,6 +87,9 @@ class NoteTabRow extends StatelessWidget {
 
   /// The keys that close the active tab, as a keycap prints them.
   final String? closeShortcut;
+
+  /// + : a new note in a new tab at the end of the row. Null shows no +.
+  final VoidCallback? onNew;
 
   static TextStyle _labelStyle(Color color, {bool active = false}) =>
       chromeStyle(
@@ -124,7 +133,10 @@ class NoteTabRow extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final room = constraints.maxWidth - 2 * _inset;
+        final room =
+            constraints.maxWidth -
+            2 * _inset -
+            (onNew == null ? 0 : _newGap + _NewTabButton.extent);
         double used(List<NoteTab> shown) =>
             shown.fold(
               0.0,
@@ -163,9 +175,10 @@ class NoteTabRow extends StatelessWidget {
           container: true,
           explicitChildNodes: true,
           label: 'Open notes',
-          child: Container(
-            height: AppControlMetrics.scaleBar(context, height),
-            padding: const EdgeInsets.symmetric(horizontal: _inset),
+          // A DecoratedBox rather than a Container's decoration, which would
+          // pad the tabs off the hairline: the active tab's underline lies on
+          // it.
+          child: DecoratedBox(
             decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(
@@ -174,45 +187,53 @@ class NoteTabRow extends StatelessWidget {
                 ),
               ),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                for (final (index, tab) in shown.indexed) ...[
-                  if (index > 0) const SizedBox(width: _gap),
-                  _TabChip(
-                    key: ValueKey('note-tab-${tab.id}'),
-                    tab: tab,
-                    labelWidth: labelOf(tab),
-                    cut: titles[tab.id]! > maxLabelWidth,
-                    active: tab.id == activeId,
-                    onSelect: () => onSelect(tab.id),
-                    onClose: () => onClose(tab.id),
-                    onCloseOthers: () => onCloseOthers(tab.id),
-                    closeShortcut: tab.id == activeId ? closeShortcut : null,
-                    onPin: switch ((tab.pinned, onPin)) {
-                      (final pinned?, final onPin?) => () => onPin(
-                        tab.id,
-                        pin: !pinned,
-                      ),
-                      _ => null,
-                    },
-                  ),
-                ],
-                if (folded.isNotEmpty) ...[
-                  const SizedBox(width: _gap),
-                  Center(
-                    child: _MoreButton(
-                      folded: folded,
-                      onSelect: onSelect,
-                      onClose: onClose,
-                      onCloseOthers: switch (activeId) {
-                        final id? => () => onCloseOthers(id),
-                        null => null,
+            child: Container(
+              height: AppControlMetrics.scaleBar(context, height),
+              padding: const EdgeInsets.symmetric(horizontal: _inset),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (index, tab) in shown.indexed) ...[
+                    if (index > 0) const SizedBox(width: _gap),
+                    _TabChip(
+                      key: ValueKey('note-tab-${tab.id}'),
+                      tab: tab,
+                      labelWidth: labelOf(tab),
+                      cut: titles[tab.id]! > maxLabelWidth,
+                      active: tab.id == activeId,
+                      onSelect: () => onSelect(tab.id),
+                      onClose: () => onClose(tab.id),
+                      onCloseOthers: () => onCloseOthers(tab.id),
+                      closeShortcut: tab.id == activeId ? closeShortcut : null,
+                      onPin: switch ((tab.pinned, onPin)) {
+                        (final pinned?, final onPin?) => () => onPin(
+                          tab.id,
+                          pin: !pinned,
+                        ),
+                        _ => null,
                       },
                     ),
-                  ),
+                  ],
+                  if (folded.isNotEmpty) ...[
+                    const SizedBox(width: _gap),
+                    Center(
+                      child: _MoreButton(
+                        folded: folded,
+                        onSelect: onSelect,
+                        onClose: onClose,
+                        onCloseOthers: switch (activeId) {
+                          final id? => () => onCloseOthers(id),
+                          null => null,
+                        },
+                      ),
+                    ),
+                  ],
+                  if (onNew case final onNew?) ...[
+                    const SizedBox(width: _newGap),
+                    Center(child: _NewTabButton(onNew: onNew)),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         );
@@ -310,7 +331,7 @@ class _TabChip extends StatefulWidget {
   /// Pins the tab, or unpins a pinned one. Null where it has no pin.
   final VoidCallback? onPin;
 
-  /// 2 · icon 16 · 8 · the label · 4 · the × in its 20 · 2.
+  /// 2 · icon 16 · 8 · the label · 2 · the × in its 24.
   static double widthFor(double labelWidth) => labelWidth + 52;
 
   /// From the tab's left edge to the end of its label: the underline stops
@@ -413,9 +434,10 @@ class _TabChipState extends State<_TabChip> {
               child: SizedBox(
                 width: _TabChip.widthFor(widget.labelWidth),
                 child: Stack(
+                  fit: StackFit.expand,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.only(left: 2),
                       child: Row(
                         children: [
                           KapyIcon(
@@ -434,7 +456,7 @@ class _TabChipState extends State<_TabChip> {
                                 ? Tooltip(message: widget.tab.title, child: title)
                                 : title,
                           ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 2),
                           Tooltip(
                             message: [
                               'Close tab',
@@ -449,22 +471,27 @@ class _TabChipState extends State<_TabChip> {
                                 key: ValueKey('close-tab-${widget.tab.id}'),
                                 behavior: HitTestBehavior.opaque,
                                 onTap: widget.onClose,
-                                child: Container(
-                                  width: 20,
-                                  height: 20,
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: _closeHovered
-                                        ? palette.controlBackground
-                                        : null,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: KapyIcon(
-                                    KapyIcons.closeRounded,
-                                    size: 12,
-                                    color: active
-                                        ? palette.textSecondary
-                                        : palette.textTertiary,
+                                child: SizedBox.square(
+                                  dimension: 24,
+                                  child: Center(
+                                    child: Container(
+                                      width: 20,
+                                      height: 20,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: _closeHovered
+                                            ? palette.controlBackground
+                                            : null,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: KapyIcon(
+                                        KapyIcons.closeRounded,
+                                        size: 12,
+                                        color: active
+                                            ? palette.textSecondary
+                                            : palette.textTertiary,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -487,6 +514,73 @@ class _TabChipState extends State<_TabChip> {
                         ),
                       ),
                   ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// + after the tabs: a new note in a new tab. A 24 target, its fill 20 on
+/// hover as an × has.
+class _NewTabButton extends StatefulWidget {
+  const _NewTabButton({required this.onNew});
+
+  final VoidCallback onNew;
+
+  static const double extent = 24;
+  static const String label = 'New note in a new tab';
+
+  @override
+  State<_NewTabButton> createState() => _NewTabButtonState();
+}
+
+class _NewTabButtonState extends State<_NewTabButton> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Semantics(
+      button: true,
+      label: _NewTabButton.label,
+      excludeSemantics: true,
+      onTap: widget.onNew,
+      child: FocusableActionDetector(
+        mouseCursor: SystemMouseCursors.click,
+        onShowHoverHighlight: (hovered) => setState(() => _hovered = hovered),
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) => widget.onNew(),
+          ),
+        },
+        child: Tooltip(
+          message: _NewTabButton.label,
+          child: GestureDetector(
+            key: const ValueKey('note-tabs-new'),
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onNew,
+            child: SizedBox.square(
+              dimension: _NewTabButton.extent,
+              child: Center(
+                child: Container(
+                  width: 20,
+                  height: 20,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _hovered ? palette.controlBackground : null,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: KapyIcon(
+                    KapyIcons.addRounded,
+                    size: 14,
+                    color: _hovered
+                        ? palette.textSecondary
+                        : palette.textTertiary,
+                  ),
                 ),
               ),
             ),
