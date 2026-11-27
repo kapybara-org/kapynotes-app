@@ -1921,6 +1921,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
+  /// Next tab and Previous tab: the open tab beside the one in front, in the
+  /// row's order, and from either end round to the other. Only the open tabs:
+  /// no other note is reached, and with one tab nothing moves.
+  void _cycleTab(int delta) {
+    final tabs = _workspace.tabs;
+    if (_specialMode || _usesCompactLayout || tabs.length < 2) return;
+    _activateTab(
+      '${tabs[(_workspace.frontTabIndex + delta) % tabs.length].id}',
+    );
+  }
+
   /// Closes a tab, and offers it back for a moment. Its notes stay exactly
   /// where they are in the list.
   void _closeTab(String tabId) {
@@ -2120,64 +2131,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _workspace.open(start);
       return _workspace.openInNewTab(id);
     }, focus: false);
-  }
-
-  /// Previews another note in MRU order while the switching modifier is held.
-  /// The final preview is committed and focused by [_handleHardwareKey] when
-  /// that modifier is released.
-  void _cycleNote(int delta) {
-    // Walk the notes most recently opened first, grouped as the sidebar
-    // groups them, so pins and shared spaces still lead and one Ctrl+Tab
-    // toggles between the last two notes. The list itself keeps its
-    // last-edited order.
-    final visible = _visibleNotes;
-    final opened = widget.prefs.recentlyOpenedNoteIds;
-    final byId = {for (final note in visible) note.id: note};
-    final openedIds = opened.toSet();
-    final switchOrder = SidebarNoteGroups(
-      notes: [
-        for (final id in opened) ?byId[id],
-        for (final note in visible)
-          if (!openedIds.contains(note.id)) note,
-      ],
-      pinnedNoteIds: widget.notes.pinnedNoteIds,
-      sharing: widget.account?.sharing,
-      specialMode: _specialMode,
-      tab: widget.account?.sharing == null || _specialMode ? null : _sidebarTab,
-    ).displayOrder;
-    final starting = !_noteSwitcher.isActive;
-    final next = _noteSwitcher.advance(
-      currentId: _selectedId,
-      // A note already visible in another pane is still a note the user can
-      // switch to. Selecting it activates that pane instead of duplicating it.
-      eligibleIds: switchOrder.map((note) => note.id),
-      delta: delta,
-    );
-    if (next == null) return;
-
-    if (starting &&
-        !_specialMode &&
-        !_usesCompactLayout &&
-        _workspace.frontTab != null) {
-      _noteSwitchWorkspace = _workspace.beginPreviewSession();
-    }
-
-    final action = delta < 0
-        ? ShortcutAction.previousNote
-        : ShortcutAction.nextNote;
-    _noteSwitchModifier ??= _NoteSwitchModifier.forBinding(
-      widget.shortcuts.bindingFor(action),
-    );
-    _select(
-      next,
-      focusEditor: false,
-      selectionPreview: true,
-      workspacePreview: _noteSwitchWorkspace,
-    );
-
-    // Settings requires a modifier today, but keeping this fallback makes the
-    // controller safe if that policy ever changes or a binding is migrated.
-    if (_noteSwitchModifier == null) _commitNoteSwitch();
   }
 
   /// Observes the modifier independently of whichever editor is mounted. A
@@ -4436,8 +4389,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onShowArchive: () => _showNotes(NotesShow.archive),
             showsTasks: _taskController != null,
             showsShared: widget.account?.sharing != null,
-            onNextNote: () => _cycleNote(1),
-            onPreviousNote: () => _cycleNote(-1),
+            onNewNoteInNewTab: _specialMode || _usesCompactLayout
+                ? null
+                : _newNoteInNewTab,
+            onNextTab: () => _cycleTab(1),
+            onPreviousTab: () => _cycleTab(-1),
             onSplitEditor: _specialMode || !_workspace.canSplit
                 ? null
                 : _splitEditor,
@@ -5230,6 +5186,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onClose: _closeTab,
       onCloseOthers: _closeOtherTabs,
       onNew: _newNoteInNewTab,
+      newShortcut: widget.shortcuts
+          .hintFor(ShortcutAction.newNoteInNewTab)
+          ?.keycapLabel,
       onPin: day == null
           ? null
           : (id, {required pin}) {
@@ -6906,8 +6865,9 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onShowArchive,
     required this.showsTasks,
     required this.showsShared,
-    required this.onNextNote,
-    required this.onPreviousNote,
+    required this.onNewNoteInNewTab,
+    required this.onNextTab,
+    required this.onPreviousTab,
     required this.onSplitEditor,
     required this.onCloseTab,
     required this.onReopenTab,
@@ -6979,8 +6939,11 @@ class _DesktopShortcuts extends StatelessWidget {
   final VoidCallback onShowArchive;
   final bool showsTasks;
   final bool showsShared;
-  final VoidCallback onNextNote;
-  final VoidCallback onPreviousNote;
+
+  /// Null where there are no tabs, such as in Archive.
+  final VoidCallback? onNewNoteInNewTab;
+  final VoidCallback onNextTab;
+  final VoidCallback onPreviousTab;
   final VoidCallback? onSplitEditor;
 
   /// Null where the chord would close nothing the reader could see go.
@@ -7037,9 +7000,11 @@ class _DesktopShortcuts extends StatelessWidget {
               onShowSpace(LibrarySpace.shared),
         ?shortcuts.bindingFor(ShortcutAction.showArchive)?.activator:
             onShowArchive,
-        ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
-        ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:
-            onPreviousNote,
+        ?shortcuts.bindingFor(ShortcutAction.newNoteInNewTab)?.activator:
+            ?onNewNoteInNewTab,
+        ?shortcuts.bindingFor(ShortcutAction.nextTab)?.activator: onNextTab,
+        ?shortcuts.bindingFor(ShortcutAction.previousTab)?.activator:
+            onPreviousTab,
         ?shortcuts.bindingFor(ShortcutAction.splitEditor)?.activator:
             ?onSplitEditor,
         ?shortcuts.bindingFor(ShortcutAction.closeTab)?.activator: ?onCloseTab,
@@ -7075,6 +7040,25 @@ class _DesktopShortcuts extends StatelessWidget {
             ?onDeleteNote,
         ?shortcuts.bindingFor(ShortcutAction.toggleKapyAi)?.activator:
             ?onToggleKapyAi,
+        // A Mac's other next and previous tab, as Safari and Xcode have it:
+        // Cmd+Shift+] and Cmd+Shift+[, which arrive as the braces they type.
+        // Not when the person gave the chord to an action, since every match
+        // runs.
+        for (final (brace, step) in [
+          (LogicalKeyboardKey.braceRight, onNextTab),
+          (LogicalKeyboardKey.braceLeft, onPreviousTab),
+        ])
+          if (AppPlatform.isMacOS &&
+              !ShortcutAction.values.any((action) {
+                final binding = shortcuts.bindingFor(action);
+                return binding != null &&
+                    binding.logicalKey == brace &&
+                    binding.meta &&
+                    binding.shift &&
+                    !binding.control &&
+                    !binding.alt;
+              }))
+            SingleActivator(brace, meta: true, shift: true): step,
       },
       child: FocusScope(
         node: focusNode,

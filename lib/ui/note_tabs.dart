@@ -59,6 +59,7 @@ class NoteTabRow extends StatelessWidget {
     this.onPin,
     this.closeShortcut,
     this.onNew,
+    this.newShortcut,
   });
 
   static const double height = 36;
@@ -90,6 +91,9 @@ class NoteTabRow extends StatelessWidget {
 
   /// + : a new note in a new tab at the end of the row. Null shows no +.
   final VoidCallback? onNew;
+
+  /// The keys that do what + does, as a keycap prints them.
+  final String? newShortcut;
 
   static TextStyle _labelStyle(Color color, {bool active = false}) =>
       chromeStyle(
@@ -230,7 +234,9 @@ class NoteTabRow extends StatelessWidget {
                   ],
                   if (onNew case final onNew?) ...[
                     const SizedBox(width: _newGap),
-                    Center(child: _NewTabButton(onNew: onNew)),
+                    Center(
+                      child: _NewTabButton(onNew: onNew, shortcut: newShortcut),
+                    ),
                   ],
                 ],
               ),
@@ -527,9 +533,10 @@ class _TabChipState extends State<_TabChip> {
 /// + after the tabs: a new note in a new tab. A 24 target, its fill 20 on
 /// hover as an × has.
 class _NewTabButton extends StatefulWidget {
-  const _NewTabButton({required this.onNew});
+  const _NewTabButton({required this.onNew, required this.shortcut});
 
   final VoidCallback onNew;
+  final String? shortcut;
 
   static const double extent = 24;
   static const String label = 'New note in a new tab';
@@ -558,7 +565,7 @@ class _NewTabButtonState extends State<_NewTabButton> {
           ),
         },
         child: Tooltip(
-          message: _NewTabButton.label,
+          message: [_NewTabButton.label, ?widget.shortcut].join('  '),
           child: GestureDetector(
             key: const ValueKey('note-tabs-new'),
             behavior: HitTestBehavior.opaque,
