@@ -18,8 +18,8 @@ import 'package:flutter/services.dart';
 /// height, so their step comes within a few percent of GTK's.
 ///
 /// Only the wheel's up and down. A sideways notch, from a tilting or a thumb
-/// wheel, keeps its step: sideways is the swipe that opens the notes list
-/// (`SidebarSwipe.threshold`), and one notch shouldn't be enough for it. A
+/// wheel, keeps its step: sideways is the swipe that goes Back or Forward
+/// (`BackForwardArea.threshold`), and one notch shouldn't be enough for it. A
 /// touchpad's scrolling isn't a wheel's (it is a pan that follows the
 /// fingers), and with Ctrl or Meta held the wheel zooms, in steps of its own.
 mixin GtkWheelSteps on GestureBinding {

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/linux_wheel.dart';
-import 'package:kapy_notes/ui/sidebar_swipe.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
+
+import 'support/back_forward.dart';
 
 /// The test binding with the wheel the app's Linux binding has.
 class _GtkWheelBinding extends AutomatedTestWidgetsFlutterBinding
@@ -64,11 +66,35 @@ void main() {
     });
   }
 
-  testWidgets('a sideways notch keeps its step, short of opening the notes '
-      'list', (tester) async {
+  testWidgets('a sideways notch keeps its step, short of a Back or Forward '
+      'step', (tester) async {
     final moved = await notch(tester, height: 848, axis: Axis.horizontal);
     expect(moved, GtkWheelSteps.engineNotch);
-    expect(moved, lessThan(SidebarSwipe.threshold));
+    expect(moved, lessThan(BackForwardArea.threshold));
+
+    asDesktop();
+    final steps = <BackForwardStep>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: BackForwardArea(
+          onStep: (step) {
+            steps.add(step);
+            return true;
+          },
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+    for (final dx in [GtkWheelSteps.engineNotch, -GtkWheelSteps.engineNotch]) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: const Offset(400, 200),
+          scrollDelta: Offset(dx, 0),
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+    expect(steps, isEmpty);
   });
 
   testWidgets('a touchpad is left alone', (tester) async {
