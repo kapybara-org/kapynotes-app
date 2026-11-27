@@ -9,13 +9,12 @@ import '../core/theme.dart';
 import '../data/update_checker.dart';
 import '../sync/presence.dart';
 import '../sync/spaces.dart';
-import '../sync/sync_service.dart' show SyncStatus;
 import 'compact_icon_button.dart';
 import 'context_menu.dart';
 import 'day_strip.dart' show PlaceDays;
 import 'member_avatars.dart';
 import 'note_tabs.dart' show clickOpensTabBehind;
-import 'tonal_button.dart';
+import 'save_status.dart';
 import 'toolbar.dart' show UpdateRestartButton;
 import 'unloaded_pictures_status.dart';
 import 'window_drag_area.dart';
@@ -44,33 +43,6 @@ class PagePath {
       [root, for (final level in levels) level.name].join(' › ');
 }
 
-/// What Saved says for [status], with its icon and what hovering it adds.
-///
-/// Every keystroke is written to this device as it is typed, so a note on
-/// the page is always saved here; with an account it says whether the other
-/// devices have it too.
-({KapyIconData icon, String label, String? tooltip}) savedState(
-  SyncStatus? status,
-) => switch (status) {
-  SyncStatus.syncing => (
-    icon: KapyIcons.cloudRounded,
-    label: 'Syncing',
-    tooltip: null,
-  ),
-  SyncStatus.offline => (
-    icon: KapyIcons.cloudOffRounded,
-    label: 'Offline',
-    tooltip: 'Saved on this device. It syncs once you are back online.',
-  ),
-  SyncStatus.keysChanged => (
-    icon: KapyIcons.cloudRounded,
-    label: 'Saved',
-    tooltip:
-        'Saved on this device. It syncs once you enter your new passphrase.',
-  ),
-  _ => (icon: KapyIcons.cloudRounded, label: 'Saved', tooltip: null),
-};
-
 TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
     chromeStyle(
       size: size,
@@ -81,7 +53,7 @@ TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
 
 /// The band across the top of the page, on one line: the month at the top
 /// left of a page with days, its week centred on the page, and what can be
-/// done there on the right, ending with Kapy AI and More. A page with no
+/// done there on the right, ending with Kapy AI and More, Share first in it. A page with no
 /// days has its path at the top left instead.
 ///
 /// While the notes list is hidden it leads with the way back to the list.
@@ -99,13 +71,12 @@ class PageToolbar extends StatelessWidget {
     this.underList = false,
     this.onOpenFolder,
     this.noteOpen = false,
-    this.syncStatus,
+    this.save,
     this.unloadedPictures = 0,
     this.onShowUnloadedPicture,
     this.members = const [],
     this.present = const [],
     this.currentUserId = '',
-    this.noteShared = false,
     this.onShare,
     this.assistant,
     this.moreActions = const [],
@@ -144,14 +115,15 @@ class PageToolbar extends StatelessWidget {
   /// below it.
   final bool underList;
 
-  /// Whether there is a note on the page for Saved to speak for.
+  /// Whether there is a note on the page for the save status to speak for.
   final bool noteOpen;
 
-  /// Null without an account, where every note is saved on this device alone.
-  final SyncStatus? syncStatus;
+  /// "Saving…" and "Saved" as the person writes, and whatever keeps the note
+  /// from syncing for as long as it does. Says nothing at rest.
+  final SaveState? save;
 
   /// How many of the open note's pictures didn't load. While there are any,
-  /// the bar counts them in place of Saved, and pressing the count calls
+  /// the bar counts them in place of the save status, and pressing the count calls
   /// [onShowUnloadedPicture].
   final int unloadedPictures;
   final VoidCallback? onShowUnloadedPicture;
@@ -159,14 +131,12 @@ class PageToolbar extends StatelessWidget {
   final List<SpaceMember> members;
   final List<Collaborator> present;
   final String currentUserId;
-  final bool noteShared;
 
-  /// Null greys Share rather than removing it, so the buttons beside it stay
-  /// put as the selection comes and goes.
+  /// Opens the note's sharing from the avatars of the people it is shared
+  /// with. Share itself is the first of More's actions.
   final VoidCallback? onShare;
 
-  /// Kapy AI's button, behind a hairline before More. It hides with its
-  /// hairline while Kapy AI is off.
+  /// Kapy AI's button, before More. It hides while Kapy AI is off.
   final Widget? assistant;
 
   /// Everything else the page offers, under More at the bar's far end. A
@@ -178,8 +148,8 @@ class PageToolbar extends StatelessWidget {
   /// the app does not update itself.
   final UpdateChecker? updates;
 
-  /// A page that is not a note puts its own actions where a note's Saved
-  /// and Share go.
+  /// A page that is not a note puts its own actions where a note's save
+  /// status goes.
   final List<Widget>? actions;
 
   /// The band is 52 tall, so it lines up with the list's bar beside it.
@@ -199,17 +169,17 @@ class PageToolbar extends StatelessWidget {
   /// so it stays whole down to [_savedWidth].
   static const double _fullWidth = 720;
 
-  /// Narrower than this, Saved moves to the note's date line and the path
+  /// Narrower than this, the save status moves to the note's date line and the path
   /// keeps only its last level.
   static const double _savedWidth = 560;
 
-  /// The count of pictures that didn't load stands in for Saved and is up to
+  /// The count of pictures that didn't load stands in for the save status and is up to
   /// 125 wider, so it gives way that much sooner.
   static const double _unloadedPicturesWidth = _savedWidth + 125;
 
-  /// Whether a page [width] wide has room in the bar for Saved, or for the
-  /// count of [unloadedPictures] that stands in for it. Where it hasn't,
-  /// Saved goes on the note's date line instead.
+  /// Whether a page [width] wide has room in the bar for the save status, or
+  /// for the count of [unloadedPictures] that stands in for it. Where it
+  /// hasn't, the status goes on the note's date line instead.
   ///
   /// With [withNew], the + beside the way back to the list takes its room
   /// first.
@@ -340,13 +310,14 @@ class PageToolbar extends StatelessWidget {
     );
   }
 
-  /// The collaborators, giving way first, then Saved and Share 8 apart,
-  /// Kapy AI behind its hairline, and More last.
+  /// The collaborators, giving way first, then the save status, Kapy AI
+  /// behind its hairline, and More last.
   List<Widget> _actions(double width, double extent) {
     final updates = this.updates;
     final actions = this.actions;
     final onMore = this.onMore;
     final assistant = this.assistant;
+    final save = this.save;
     return [
       if (actions == null && members.isNotEmpty)
         Flexible(
@@ -379,24 +350,15 @@ class PageToolbar extends StatelessWidget {
               count: unloadedPictures,
               onPressed: onShowUnloadedPicture,
             )
-          else
-            _Saved(syncStatus),
-          const SizedBox(width: 8),
+          else if (save != null)
+            _Saved(save),
         ],
-        TonalButton(
-          key: const ValueKey('page-share'),
-          tall: true,
-          quiet: true,
-          label: 'Share',
-          tooltip: noteShared ? 'Manage sharing' : null,
-          onPressed: onShare,
-        ),
       ],
       ?assistant,
       if (onMore != null) ...[
         if (assistant != null)
           const SizedBox(width: 4)
-        else if (actions == null || actions.isNotEmpty)
+        else if (actions?.isNotEmpty ?? false)
           const SizedBox(width: 8),
         Builder(
           builder: (buttonContext) => CompactIconButton(
@@ -843,33 +805,46 @@ class _Level extends StatelessWidget {
   }
 }
 
-/// Saved, or what is keeping the note from being saved everywhere yet.
+/// The save status in the bar, 8 before Kapy AI or More. The slot is always
+/// the widest notice, so Saving and Saved coming and going never move the
+/// week or the avatars. The words sit on the right of that slot, which keeps
+/// them 8 before what follows.
 class _Saved extends StatelessWidget {
-  const _Saved(this.status);
+  const _Saved(this.save);
 
-  final SyncStatus? status;
+  final SaveState save;
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
-    final saved = savedState(status);
-    final row = Row(
-      key: const ValueKey('page-saved'),
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        KapyIcon(saved.icon, size: 16, color: palette.textTertiary),
-        const SizedBox(width: 4),
-        Text(
-          saved.label,
-          maxLines: 1,
-          style: _figtree(12, 16, FontWeight.w500, palette.textTertiary),
-        ),
-      ],
+    final style = _figtree(
+      12,
+      16,
+      FontWeight.w500,
+      context.palette.textTertiary,
     );
-    return switch (saved.tooltip) {
-      final tooltip? => Tooltip(message: tooltip, child: row),
-      null => row,
-    };
+    final slot = SaveStatusLabel.slotWidth(
+      style,
+      MediaQuery.textScalerOf(context),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ListenableBuilder(
+        listenable: save.status,
+        builder: (context, _) {
+          final notice = SaveStatusLabel.noticeOf(save);
+          return SizedBox(
+            key: notice == null ? null : const ValueKey('page-saved'),
+            width: slot,
+            child: notice == null
+                ? null
+                : Align(
+                    alignment: Alignment.centerRight,
+                    child: SaveStatusLabel(save, style: style),
+                  ),
+          );
+        },
+      ),
+    );
   }
 }
 

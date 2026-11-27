@@ -895,7 +895,6 @@ class KapyAiToolbarButton extends StatelessWidget {
     this.radius = 10,
     this.iconSize = 17,
     this.trailingGap = 6,
-    this.divided = false,
     this.showsOpen = true,
   });
 
@@ -910,10 +909,6 @@ class KapyAiToolbarButton extends StatelessWidget {
   /// The space before the next action, kept inside so a hidden button takes
   /// its gap with it.
   final double trailingGap;
-
-  /// Whether a hairline sets it apart from the actions before it, as at the
-  /// end of the page's bar. The hairline hides with the button.
-  final bool divided;
 
   /// Whether it turns tonal while the panel is open. A phone's sheet covers
   /// the note instead, and its button stays a bare icon (M10).
@@ -940,21 +935,7 @@ class KapyAiToolbarButton extends StatelessWidget {
       );
       return Padding(
         padding: EdgeInsets.only(right: trailingGap),
-        child: divided
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 1,
-                    height: 16,
-                    child: ColoredBox(color: palette.controlBorder),
-                  ),
-                  const SizedBox(width: 8),
-                  button,
-                ],
-              )
-            : button,
+        child: button,
       );
     },
   );
