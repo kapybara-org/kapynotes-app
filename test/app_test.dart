@@ -13319,7 +13319,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(menu, findsOneWidget);
       expect(tester.getRect(notice), place);
-      await tester.tap(find.text('Tags'));
+      await tester.tap(find.text('Tags…'));
       await tester.pumpAndSettle();
       expect(menu, findsNothing);
       expect(picker, findsOneWidget);
