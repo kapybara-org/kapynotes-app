@@ -123,14 +123,20 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('settings-search-clear')));
     await tester.pumpAndSettle();
 
-    for (final key in const ['stepper-down', 'stepper-up']) {
-      expect(
-        find.descendant(
-          of: find.byKey(ValueKey(key)),
-          matching: find.byType(KapyIcon),
-        ),
-        findsOneWidget,
-      );
+    for (final row in const ['note-text-size-setting', 'zoom-setting']) {
+      for (final key in const ['stepper-down', 'stepper-up']) {
+        expect(
+          find.descendant(
+            of: find.descendant(
+              of: find.byKey(ValueKey(row)),
+              matching: find.byKey(ValueKey(key)),
+            ),
+            matching: find.byType(KapyIcon),
+          ),
+          findsOneWidget,
+          reason: '$row $key',
+        );
+      }
     }
   });
 

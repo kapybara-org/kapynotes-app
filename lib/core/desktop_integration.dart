@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:ui' show Rect, Size;
+import 'dart:math' as math;
+import 'dart:ui' show Offset, Rect, Size;
 
 import 'package:flutter/foundation.dart';
 import 'package:hotkey_manager/hotkey_manager.dart';
@@ -40,6 +41,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     // else later — the OS follows from here, rather than every caller having
     // to remember to tell us.
     layoutPrefs.addListener(_onPrefsChanged);
+    layoutPrefs.zoomListenable.addListener(_onZoomChanged);
   }
 
   final LayoutPrefs layoutPrefs;
@@ -61,6 +63,8 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   Timer? _windowGeometryDebounce;
   String? _registrationError;
   int _temporaryWindowResizeDepth = 0;
+  double _appliedZoom = 1;
+  Size _minimumWindowSize = LayoutPrefs.minimumWindowSize;
 
   /// Called when the new-note shortcut or the tray's New Note fires, once the
   /// window is up. Set by the notes UI when it mounts, which is a frame later
@@ -146,6 +150,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
       );
     }
     await _applyBackgroundBehavior();
+    await _applyZoom();
     // A pin survives a restart, so it has to be re-asserted on the new
     // window rather than waiting for the preference to change again.
     await _applyAlwaysOnTop();
@@ -223,6 +228,52 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   void _onPrefsChanged() {
     unawaited(_applyBackgroundBehavior());
     unawaited(_applyAlwaysOnTop());
+  }
+
+  void _onZoomChanged() => unawaited(_applyZoom());
+
+  /// Keeps the narrowest window as roomy inside as it is at 100%: the
+  /// smallest window grows with the zoom, never past the display, and a
+  /// window already smaller than that grows to it, staying on its display.
+  Future<void> _applyZoom() async {
+    final zoom = layoutPrefs.zoom;
+    if (zoom == _appliedZoom) return;
+    _appliedZoom = zoom;
+    try {
+      final bounds = await windowManager.getBounds();
+      final area = await workAreaHolding(bounds);
+      final wanted = LayoutPrefs.minimumWindowSize * zoom;
+      final minimum = area == null
+          ? wanted
+          : Size(
+              math.min(wanted.width, area.width),
+              math.min(wanted.height, area.height),
+            );
+      if (zoom != _appliedZoom) return;
+      _minimumWindowSize = minimum;
+      await windowManager.setMinimumSize(minimum);
+      if (bounds.width >= minimum.width && bounds.height >= minimum.height) {
+        return;
+      }
+      final grown =
+          bounds.topLeft &
+          Size(
+            math.max(bounds.width, minimum.width),
+            math.max(bounds.height, minimum.height),
+          );
+      await windowManager.setBounds(
+        area == null
+            ? grown
+            : grown.shift(
+                Offset(
+                  math.min(0, area.right - grown.right),
+                  math.min(0, area.bottom - grown.bottom),
+                ),
+              ),
+      );
+    } catch (error) {
+      debugPrint('KapyNotes: could not fit the window to the zoom: $error');
+    }
   }
 
   /// Floats the window above other applications, or stops.
@@ -470,6 +521,8 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
   /// can keep the notes window narrow, so a modal which needs two panes has
   /// to borrow width from that window while it is on screen. The temporary
   /// minimum also stops a resize from collapsing the modal midway through.
+  /// [minimumWidth] is the room the modal lays out in, so the window borrows
+  /// it at the zoom the window is drawn at.
   Future<T> withMinimumWindowWidth<T>(
     double minimumWidth,
     Future<T> Function() action,
@@ -483,25 +536,26 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
       debugPrint('KapyNotes: could not read the window before a modal: $error');
       return action();
     }
-    if (originalBounds.width >= minimumWidth) return action();
+    final width = minimumWidth * layoutPrefs.zoom;
+    if (originalBounds.width >= width) return action();
 
     final expandedBounds = Rect.fromCenter(
       center: originalBounds.center,
-      width: minimumWidth,
+      width: width,
       height: originalBounds.height,
     );
     _temporaryWindowResizeDepth++;
     var minimumWasRaised = false;
     try {
       await windowManager.setMinimumSize(
-        Size(minimumWidth, LayoutPrefs.minimumWindowSize.height),
+        Size(width, _minimumWindowSize.height),
       );
       minimumWasRaised = true;
       await windowManager.setBounds(expandedBounds);
     } catch (error) {
       if (minimumWasRaised) {
         try {
-          await windowManager.setMinimumSize(LayoutPrefs.minimumWindowSize);
+          await windowManager.setMinimumSize(_minimumWindowSize);
         } catch (_) {}
       }
       _temporaryWindowResizeDepth--;
@@ -515,7 +569,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
       // Drop the borrowed minimum first, otherwise Windows quite correctly
       // refuses to put the narrow bounds back.
       try {
-        await windowManager.setMinimumSize(LayoutPrefs.minimumWindowSize);
+        await windowManager.setMinimumSize(_minimumWindowSize);
         await windowManager.setBounds(originalBounds);
       } catch (error) {
         debugPrint(
@@ -633,6 +687,7 @@ class DesktopIntegration extends ChangeNotifier with WindowListener {
     WindowPin.stopListening();
     LinuxDesktop.stopListening();
     layoutPrefs.removeListener(_onPrefsChanged);
+    layoutPrefs.zoomListenable.removeListener(_onZoomChanged);
     unawaited(_tray.dispose());
     panel.dispose();
     window = null;

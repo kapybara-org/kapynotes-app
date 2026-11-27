@@ -321,6 +321,47 @@ void main() {
     expect(prefs.writingFont, WritingFont.clean);
   });
 
+  test('the zoom steps through its levels, stays within them, and persists', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.zoom, 1);
+
+    final seen = <double>[];
+    for (var i = 0; i < 8; i++) {
+      prefs.zoomIn();
+      seen.add(prefs.zoom);
+    }
+    expect(seen, [1.1, 1.25, 1.5, 1.75, 2, 2, 2, 2]);
+    expect(store.data['zoom.v1'], 2);
+
+    prefs.zoomOut();
+    expect((LayoutPrefs(store)..load()).zoom, 1.75);
+
+    for (var i = 0; i < 10; i++) {
+      prefs.zoomOut();
+    }
+    expect(prefs.zoom, 0.8);
+
+    prefs.resetZoom();
+    expect(prefs.zoom, 1);
+    expect((LayoutPrefs(store)..load()).zoom, 1);
+    expect(prefs.editorTextScale, LayoutPrefs.defaultEditorTextScale);
+  });
+
+  test('a stored zoom off the steps lands on the nearest one', () {
+    for (final (stored, zoom) in [
+      (1.3, 1.25),
+      (7.0, 2.0),
+      (0.1, 0.8),
+      (double.nan, 1.0),
+      (double.infinity, 1.0),
+      ('large', 1.0),
+    ]) {
+      final store = _MemoryStore()..put('zoom.v1', stored);
+      expect((LayoutPrefs(store)..load()).zoom, zoom, reason: '$stored');
+    }
+  });
+
   test('text sizes fall back safely and editor steps stay bounded', () {
     final store = _MemoryStore()
       ..put('appTextSize.v1', 'enormous')
@@ -1166,15 +1207,15 @@ void main() {
     );
     expect(prefs.bindingFor(ShortcutAction.formatChecklist)!.shift, isTrue);
     expect(
-      prefs.bindingFor(ShortcutAction.increaseEditorTextSize)!.logicalKey,
+      prefs.bindingFor(ShortcutAction.zoomIn)!.logicalKey,
       LogicalKeyboardKey.equal,
     );
     expect(
-      prefs.bindingFor(ShortcutAction.decreaseEditorTextSize)!.logicalKey,
+      prefs.bindingFor(ShortcutAction.zoomOut)!.logicalKey,
       LogicalKeyboardKey.minus,
     );
     expect(
-      prefs.bindingFor(ShortcutAction.resetEditorTextSize)!.logicalKey,
+      prefs.bindingFor(ShortcutAction.resetZoom)!.logicalKey,
       LogicalKeyboardKey.digit0,
     );
 
