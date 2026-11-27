@@ -2323,6 +2323,28 @@ void main() {
     }
   }
 
+  // The narrowest phone at twice the text size: a calculation that can't sit
+  // on one row beside its pill runs the full width with the pill under it.
+  for (final brightness in Brightness.values) {
+    testWidgets('phone calculations at 320 pt and 2x text, '
+        '${brightness.name}', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await pumpForGolden(
+        tester,
+        size: const Size(320, 1500),
+        brightness: brightness,
+        platform: TargetPlatform.iOS,
+      );
+      await expectLater(
+        find.byType(KapyNotesApp),
+        matchesGoldenFile(
+          'goldens/phone_calculations_320_2x_${brightness.name}.png',
+        ),
+      );
+    });
+  }
+
   // From 720 pt a tablet keeps the desktop layout: the list beside the page
   // and no phone bar.
   for (final brightness in Brightness.values) {

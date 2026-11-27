@@ -15484,9 +15484,13 @@ void main() {
       (tester) async {
         AppPlatform.debugTargetPlatformOverride = platform;
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        // At 1x no result is longer than the column, so a larger text size
+        // makes one wrap even on a row of its own, under its writing.
+        tester.platformDispatcher.textScaleFactorTestValue = 1.75;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
         final semantics = tester.ensureSemantics();
         await notes.load();
-        notes.create(body: 'Trip\ny = 123456789012 km in mi\ny');
+        notes.create(body: 'Trip\nweek 44 2026');
         await pumpApp(tester, size: const Size(320, 800));
         final chip = find.byType(ResultChip).last;
         final result = tester.widget<ResultChip>(chip).result.text;
