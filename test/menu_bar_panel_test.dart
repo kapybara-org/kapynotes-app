@@ -415,6 +415,31 @@ void main() {
       expect(notes.notes, isEmpty);
     });
 
+    testWidgets('a silent Stop keeps the note when someone wrote in it '
+        'meanwhile (KAP-424)', (tester) async {
+      await pumpPanel(tester);
+      await tester.tap(find.byKey(const ValueKey('menu-bar-mic')));
+      await tester.pump();
+      for (var tenth = 0; tenth < 35; tenth++) {
+        recorder._amplitude.add(-160);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final id = notes.notes.single.id;
+      notes.updateBody(id, 'Typed in the main window');
+
+      await tester.tap(find.byKey(const ValueKey('menu-bar-stop')));
+      final told = find.text('Nothing saved: the microphone was silent');
+      for (var wait = 0; wait < 100 && told.evaluate().isEmpty; wait++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+
+      expect(told, findsOneWidget);
+      expect(notes.byId(id)?.body, 'Typed in the main window');
+    });
+
     testWidgets('on the Free plan at its limit, no note is made', (
       tester,
     ) async {

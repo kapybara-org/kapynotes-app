@@ -416,12 +416,13 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
   }
 
   /// A microphone that never gave a sound leaves nothing to save, so the note
-  /// made for the recording goes with it.
+  /// made for the recording goes with it, unless someone has written in it
+  /// meanwhile from the main window.
   Future<void> _stopRecording() async {
     final id = _recordingNoteId;
     final silent = await widget.recording?.finishRecordingAndFlush(discardSilent: true) ?? false;
     if (id == null) return;
-    if (silent) widget.notes.delete(id);
+    if (silent && widget.notes.byId(id)?.body == Note.blankBody) widget.notes.delete(id);
     if (mounted) _say(silent ? const _SilentMicrophone() : _Saved(id));
   }
 
