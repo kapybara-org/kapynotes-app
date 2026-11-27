@@ -458,7 +458,11 @@ class KapyAiController extends KapyAi {
   // -------------------------------------------------------------------------
   // Chats
 
-  List<KapyChat> get _all => _book.chats;
+  /// The chats, without the recaps the book holds beside them.
+  List<KapyChat> get _all => [
+    for (final chat in _book.chats)
+      if (chat.recap == null) chat,
+  ];
 
   @override
   List<KapyChat> get chats => _all;
@@ -540,6 +544,7 @@ class KapyAiController extends KapyAi {
       titleAt: title == null ? chat.titleAt : at,
       modelAt: model == null ? chat.modelAt : at,
       recording: chat.recording,
+      recap: chat.recap,
     );
   }
 

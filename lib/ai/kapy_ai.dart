@@ -276,6 +276,7 @@ class KapyChat {
     DateTime? titleAt,
     DateTime? modelAt,
     this.recording,
+    this.recap,
   }) : titleAt = titleAt ?? createdAt,
        modelAt = modelAt ?? createdAt;
 
@@ -297,6 +298,11 @@ class KapyChat {
   /// The recording this chat asks about, which it reads instead of the
   /// notes. Null for a chat about the notes.
   final KapyRecordingRef? recording;
+
+  /// A recap's record (lib/recaps/recap_record.dart), as the chat record
+  /// carries it. A chat with one is a recap, opened as a story and kept out
+  /// of the chat list.
+  final Map<String, Object?>? recap;
 }
 
 /// What holds up the last question, drawn inline under it (kapy-ai-7/8).

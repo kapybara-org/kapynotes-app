@@ -153,6 +153,36 @@ void main() {
     expect(cloud.usage!.remaining, 0);
   });
 
+  test('429 going too fast says how long to wait, and is no limit', () async {
+    for (final (headers, body, wait) in [
+      (
+        {'retry-after': '7'},
+        {'error': 'too many requests', 'retryAfter': 7},
+        7,
+      ),
+      (<String, String>{}, {'error': 'too many requests', 'retryAfter': 3}, 3),
+    ]) {
+      final cloud = client(
+        (_) => http.Response(jsonEncode(body), 429, headers: headers),
+      );
+      await expectLater(
+        cloud.answer(KapyModel.cloud, request),
+        throwsA(
+          isA<AnswerTooFast>()
+              .having((e) => e.wait, 'wait', Duration(seconds: wait))
+              .having((e) => e.retry, 'retry', isTrue),
+        ),
+      );
+      expect(cloud.usage, isNull);
+    }
+    await expectLater(
+      client(
+        (_) => http.Response('{"error":"too many requests"}', 429),
+      ).answer(KapyModel.cloud, request),
+      throwsA(isNot(isA<AnswerTooFast>())),
+    );
+  });
+
   test('503 and 502 fail with a sentence', () async {
     for (final status in [503, 502, 500]) {
       final cloud = client((_) => http.Response('{"error":"x"}', status));
