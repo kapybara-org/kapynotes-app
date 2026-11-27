@@ -671,4 +671,10 @@ class KapyIcons {
     0xE0F4,
     HugeIcons.strokeRoundedTranslate,
   );
+
+  /// A recap: three stacked cards.
+  static const recapOutlined = KapyIconData(
+    0xE0F5,
+    HugeIcons.strokeRoundedLayersLogo,
+  );
 }
