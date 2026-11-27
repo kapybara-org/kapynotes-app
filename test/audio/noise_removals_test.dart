@@ -44,6 +44,7 @@ class _Decoder extends AudioDecoder {
   _Decoder(this.dir);
 
   final Directory dir;
+  int _decodes = 0;
 
   @override
   Future<DecodedAudio> decode(File source, {int sampleRate = 16000}) async {
@@ -53,7 +54,7 @@ class _Decoder extends AudioDecoder {
         (4000 * (random.nextDouble() - 0.5)).round(),
     ]);
     final file = await File(
-      '${dir.path}/decoded-${source.uri.pathSegments.last}.pcm',
+      '${dir.path}/decoded-${_decodes++}.pcm',
     ).writeAsBytes(samples.buffer.asUint8List());
     return DecodedAudio(file: file, sampleRate: sampleRate, frames: 16000);
   }
