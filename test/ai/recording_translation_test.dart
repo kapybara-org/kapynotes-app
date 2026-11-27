@@ -286,6 +286,26 @@ void main() {
       expect(translatedPart('Pricing call', 'Llamada'), 'Llamada');
     });
 
+    test('a summary counts only when it keeps every point', () {
+      const part = 'Pricing call\n- Annual plan first\n- Ship on Friday';
+      expect(
+        translatedPart(
+          part,
+          'Llamada\n- Plan anual primero\n- Enviar el viernes',
+        ),
+        'Llamada\n- Plan anual primero\n- Enviar el viernes',
+      );
+      expect(
+        translatedPart(
+          part,
+          'Llamada\n- Plan anual primero, enviar el viernes',
+        ),
+        isNull,
+        reason: 'two points made one',
+      );
+      expect(translatedPart(part, 'Llamada sobre precios.'), isNull);
+    });
+
     test('are stitched in order', () {
       expect(stitchTranslation(['[0:00] a', '[0:10] b']), '[0:00] a\n[0:10] b');
     });

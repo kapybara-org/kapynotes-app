@@ -879,7 +879,7 @@ void main() {
     );
 
     testWidgets(
-      'in another language it offers theirs first, and a tap translates the page in view',
+      'in another language it offers theirs after the first question, and a tap translates the page in view',
       (tester) async {
         final ai = FakeKapyAi(
           pro: true,
@@ -890,13 +890,13 @@ void main() {
         expect(find.text('Translate to…'), findsNothing);
         expect(
           left(tester, chip),
-          greaterThan(tester.getTopRight(_earlier).dx),
-          reason: 'after Earlier',
+          greaterThan(left(tester, find.text('What did we decide?'))),
+          reason: 'after the first question',
         );
         expect(
-          left(tester, find.text('What did we decide?')),
+          left(tester, find.text('What are the next steps?')),
           greaterThan(left(tester, more)),
-          reason: 'first of the starters',
+          reason: 'before the second question',
         );
 
         await tester.tap(chip);
@@ -934,7 +934,7 @@ void main() {
     );
 
     testWidgets(
-      'on a phone the chip is in view, and its chevron has a 44 pt target',
+      'on a phone a question stays in view before the chip, and its chevron has a 44 pt target',
       (tester) async {
         tester.view
           ..physicalSize = const Size(360, 780)
@@ -950,16 +950,19 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Earlier'), findsNothing, reason: 'clock only');
         expect(tester.getSize(_earlier), const Size(44, 44));
+        expect(
+          tester.getRect(find.text('What did we decide?')).right,
+          lessThanOrEqualTo(360),
+          reason: 'the first question is in view',
+        );
+
+        await tester.dragUntilVisible(more, starters, const Offset(-120, 0));
+        await tester.pumpAndSettle();
         expect(tester.getRect(more).right, lessThanOrEqualTo(360));
         expect(tester.getSize(more).width, greaterThanOrEqualTo(44));
         expect(
           tester.getSize(find.byTooltip('Other languages')).height,
           greaterThanOrEqualTo(44),
-        );
-        expect(
-          left(tester, find.text('What did we decide?')),
-          lessThan(360),
-          reason: 'a question starts in view beside it',
         );
 
         await tester.tap(more);

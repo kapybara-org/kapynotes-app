@@ -79,6 +79,7 @@ NoteVoiceRef _voice({int minutes = 1, bool transcribed = true}) => NoteVoiceRef(
 String _inSpanish(String text) => [
   for (final line in text.split('\n'))
     switch (timeMarkPattern.matchAsPrefix(line)) {
+      null when line.startsWith('- ') => '- ES ${line.substring(2)}',
       null => 'ES $line',
       final mark =>
         '${line.substring(0, mark.end)} ES${line.substring(mark.end)}',
@@ -1414,7 +1415,7 @@ void main() {
         expect(ai.current!.title, 'Summary in Spanish');
         expect(
           ai.current!.messages.last.text,
-          'ES Pricing call\nES - Annual plan first',
+          'ES Pricing call\n- ES Annual plan first',
         );
       });
 
