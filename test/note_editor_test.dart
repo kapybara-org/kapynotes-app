@@ -454,32 +454,20 @@ void main() {
   });
 
   group('clicking the blank page below a note', () {
-    /// The middle of ruled row [row], counting the title as row 0 and the
-    /// first row under it as row 1 — the point a reader aims at when they
-    /// click an empty line.
-    Offset rowCenter(WidgetTester tester, int row) {
+    /// A point on the empty page [rows] ruled rows under the note's last
+    /// line, [x] in from the field's left edge.
+    Offset underNote(WidgetTester tester, int rows, {double x = 40}) {
       final editable = NoteDriver(tester);
       final origin = editable.toGlobal(Offset.zero);
-      final body = editable.state.layout.heights!.topOf(1);
+      final end = editable.state.layout.heights!.total;
       return Offset(
-        origin.dx + 40,
-        origin.dy + body + (row - 0.5) * editable.rowHeight,
+        origin.dx + x,
+        origin.dy + end + (rows - 0.5) * editable.rowHeight,
       );
     }
 
-    /// Which ruled row the caret is drawn on.
-    int caretRow(WidgetTester tester) {
-      final state = tester.state<NoteFieldState>(noteField);
-      final editable = NoteDriver(tester);
-      final rect = editable.caretRect(
-        TextPosition(
-          offset: state.widget.controller.value.selection.baseOffset,
-        ),
-      );
-      final body = editable.state.layout.heights!.topOf(1);
-      if (rect.center.dy < body) return 0;
-      return ((rect.center.dy - body) / editable.rowHeight).floor() + 1;
-    }
+    TextSelection selectionOf(WidgetTester tester) =>
+        tester.state<NoteFieldState>(noteField).widget.controller.selection;
 
     Future<void> pumpEditor(
       WidgetTester tester,
@@ -496,51 +484,57 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('the caret lands on the line that was clicked', (tester) async {
+    testWidgets('the caret goes to the end of the note, and nothing is '
+        'written', (tester) async {
       const body = 'one\ntwo\nthree';
       var saved = body;
       await pumpEditor(tester, body, onBodyChanged: (text) => saved = text);
 
-      await tester.tapAt(rowCenter(tester, 8));
-      await tester.pumpAndSettle();
-
-      // Not the end of "three", which is where the field would have put it.
-      expect(caretRow(tester), 8);
-      expect(saved, 'one\ntwo\nthree\n\n\n\n\n\n');
+      // Under the start of the lines as well as across the page: below the
+      // writing is after it, whichever column the click was in.
+      for (final x in [4.0, 40.0, 400.0]) {
+        await tester.tapAt(underNote(tester, 6, x: x));
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+        expect(
+          selectionOf(tester),
+          const TextSelection.collapsed(offset: body.length),
+          reason: 'x = $x',
+        );
+      }
+      expect(saved, body);
       expect(
         tester.state<NoteFieldState>(noteField).widget.focusNode.hasFocus,
         isTrue,
       );
     });
 
-    testWidgets('an empty note can be started part way down the page', (
-      tester,
-    ) async {
+    testWidgets('an empty note stays empty', (tester) async {
       var saved = '';
       await pumpEditor(tester, '', onBodyChanged: (text) => saved = text);
 
-      await tester.tapAt(rowCenter(tester, 3));
+      await tester.tapAt(underNote(tester, 3));
       await tester.pumpAndSettle();
 
-      expect(caretRow(tester), 3);
-      expect(saved, '\n\n\n');
+      expect(selectionOf(tester), const TextSelection.collapsed(offset: 0));
+      expect(saved, '');
     });
 
-    testWidgets('clicking the same line again writes nothing more', (
+    testWidgets('a note that ends in an empty line gains no more', (
       tester,
     ) async {
-      const body = 'one';
+      const body = 'one\n';
       var saved = body;
       await pumpEditor(tester, body, onBodyChanged: (text) => saved = text);
 
-      await tester.tapAt(rowCenter(tester, 5));
+      await tester.tapAt(underNote(tester, 4));
       await tester.pumpAndSettle();
-      expect(saved, 'one\n\n\n\n\n');
 
-      await tester.tapAt(rowCenter(tester, 5));
-      await tester.pumpAndSettle();
-      expect(saved, 'one\n\n\n\n\n');
-      expect(caretRow(tester), 5);
+      expect(saved, body);
+      expect(
+        selectionOf(tester),
+        const TextSelection.collapsed(offset: body.length),
+      );
     });
 
     testWidgets('a click on a line the note reaches leaves it alone', (
@@ -551,11 +545,14 @@ void main() {
       await pumpEditor(tester, body, onBodyChanged: (text) => saved = text);
 
       // Past the end of the second line, which is still that line.
-      await tester.tapAt(rowCenter(tester, 1));
+      final editable = NoteDriver(tester);
+      final two = editable.caretRect(TextPosition(offset: body.indexOf('two')));
+      await tester.tapAt(editable.toGlobal(Offset(400, two.center.dy)));
       await tester.pumpAndSettle();
 
       expect(saved, body);
-      expect(caretRow(tester), 1);
+      expect(selectionOf(tester).isCollapsed, isTrue);
+      expect(selectionOf(tester).baseOffset, body.indexOf('two') + 3);
     });
 
     testWidgets('a view-only note gains no lines', (tester) async {
@@ -568,7 +565,7 @@ void main() {
         onBodyChanged: (text) => saved = text,
       );
 
-      await tester.tapAt(rowCenter(tester, 7));
+      await tester.tapAt(underNote(tester, 7));
       await tester.pumpAndSettle();
 
       expect(saved, body);
