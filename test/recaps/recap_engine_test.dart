@@ -239,20 +239,22 @@ void main() {
       expect(recapAnswer(book.chats.single), isNot(contains('Secret')));
     }
 
-    test('drops what the digest says about it, at no extra cost', () async {
+    test('asks for the part again where the digest names it', () async {
       final ai = ScriptedEngine();
       ai.reply = (request) {
-        if (request.question.startsWith('These are my notes')) {
-          if (ai.asked.length == 1) {
-            world.store.hide('secret');
-            return 'Monday plans said to ship it. Secret plan: quit in '
-                'June.\nShip on Friday.';
-          }
+        if (ai.asked.length == 1) {
+          world.store.hide('secret');
+          return 'Monday plans said to ship it. Secret plan: quit in '
+              'June.\nShip on Friday.';
+        }
+        if (ai.asked.length == 2) {
+          return 'Monday plans said to ship it.\nShip on Friday.';
         }
         return recap;
       };
       final made = await make(week, ai) as RecapMade;
-      expect(ai.asked, hasLength(2));
+      expect(ai.asked, hasLength(3));
+      expect(ai.asked[1].notes.map((n) => n.title), ['Monday plans']);
       expect(
         ai.asked.last.notes.first.text,
         'Monday plans said to ship it.\n'
@@ -293,6 +295,73 @@ void main() {
         expect(made.lines.text, isNot(contains('Monday plans')));
       },
     );
+  });
+
+  group('a note hidden while the recap is made, more ways', () {
+    final week = periodOf(DateTime(2026, 11, 19), RecapKind.week);
+    setUp(() async {
+      world.note('mon', '2026-11-16T10:00:00Z', body: 'Monday plans\nShip it');
+      world.note('secret', '2026-11-17T10:00:00Z', body: 'Secret plan\nQuit');
+      world.note('fri', '2026-11-20T10:00:00Z', body: 'Friday review\nShipped');
+      world.note(
+        'old',
+        '2026-11-10T10:00:00Z',
+        body: 'Clinic\n☐ Book the biopsy',
+      );
+      world.tick('2026-11-17T09:00:00Z', () {
+        world.note(
+          'old',
+          '2026-11-10T10:00:00Z',
+          body: 'Clinic\n☑ Book the biopsy',
+        );
+      });
+      await notesOn(2025, const []);
+    });
+
+    String last(ScriptedEngine ai) =>
+        ai.asked.last.notes.map((n) => '${n.title}\n${n.text}').join('\n');
+
+    test('drops the sentence after the one naming it, too', () async {
+      final ai = ScriptedEngine();
+      ai.reply = (request) {
+        if (ai.asked.length == 1) {
+          world.store.hide('secret');
+          return 'Monday plans said to ship it. Secret plan: quit in June. '
+              'It means telling Bob first.';
+        }
+        if (ai.asked.length == 2) return 'Monday plans said to ship it.';
+        return 'TITLE: Shipped';
+      };
+      await make(week, ai);
+      expect(
+        last(ai),
+        isNot(contains(RegExp('june|bob', caseSensitive: false))),
+      );
+    });
+
+    for (final (how, gone) in <(String, void Function(String id))>[
+      ('hidden', (id) => world.store.hide(id)),
+      ('held for deleting', (id) => world.store.holdDelete([id])),
+    ]) {
+      test('leaves out the tasks of a note $how meanwhile', () async {
+        final ai = ScriptedEngine();
+        ai.reply = (request) {
+          if (ai.asked.length == 1) {
+            gone('old');
+            return 'Monday plans said to ship it. Booked the biopsy.';
+          }
+          if (ai.asked.length == 2) return 'Monday plans said to ship it.';
+          return 'TITLE: Shipped';
+        };
+        await make(week, ai);
+        for (final request in ai.asked.skip(1)) {
+          expect(
+            request.notes.map((n) => '${n.title}\n${n.text}').join('\n'),
+            isNot(contains('biopsy')),
+          );
+        }
+      });
+    }
   });
 
   group('a part that fails', () {

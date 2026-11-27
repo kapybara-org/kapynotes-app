@@ -169,15 +169,10 @@ class RecapEngine {
           if (!readable.contains(item.note.id)) item.note.id,
       };
       if (hidden.isNotEmpty) {
-        final without = _without(piece, hidden);
-        if (without == null) {
-          try {
-            piece = await ask(slice);
-          } on AnswerFailure catch (failure) {
-            return RecapStopped(failure, index + 1, plan.parts);
-          }
-        } else {
-          piece = without;
+        try {
+          piece = await ask(slice);
+        } on AnswerFailure catch (failure) {
+          return RecapStopped(failure, index + 1, plan.parts);
         }
       }
       for (final MapEntry(key: title, value: id)
@@ -269,32 +264,6 @@ class RecapEngine {
   /// deleted, now.
   Set<String> _readable() => {for (final note in _notes.notes) note.id};
 
-  /// [piece] without every sentence that names one of [hidden]'s notes, or
-  /// null where a note it was sent is named nowhere in it, so its words about
-  /// that note can't be found and the slice is asked again.
-  RecapPiece? _without(RecapPiece piece, Set<String> hidden) {
-    final titles = {
-      for (final MapEntry(key: title, value: id) in piece.sent.entries)
-        if (hidden.contains(id) && title.isNotEmpty) title,
-    };
-    if (titles.isEmpty) return piece.sent.isEmpty ? null : piece;
-    final lower = piece.text.toLowerCase();
-    if (!titles.every(lower.contains)) return null;
-    return RecapPiece(
-      [
-        for (final line in piece.text.split('\n'))
-          [
-            for (final sentence in line.split(_sentenceEnd))
-              if (!_names(sentence, titles)) sentence,
-          ].join(' '),
-      ].join('\n').trim(),
-      {
-        for (final MapEntry(key: title, value: id) in piece.sent.entries)
-          if (!hidden.contains(id)) title: id,
-      },
-    );
-  }
-
   void _keep(String key, RecapPiece piece) {
     _kept.remove(key);
     _kept[key] = piece;
@@ -304,15 +273,13 @@ class RecapEngine {
   }
 }
 
-/// What came back, within [max] characters: a model asked for a digest of
-/// some length can still write more.
-final RegExp _sentenceEnd = RegExp(r'(?<=[.!?])\s+');
-
 /// Whether [text] names any of [titles], which are in lower case.
 bool _names(String text, Set<String> titles) {
   final lower = text.toLowerCase();
   return titles.any((title) => title.isNotEmpty && lower.contains(title));
 }
 
+/// What came back, within [max] characters: a model asked for a digest of
+/// some length can still write more.
 String _cut(String text, int max) =>
     text.length <= max ? text : text.substring(0, max);

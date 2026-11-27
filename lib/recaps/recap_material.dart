@@ -195,7 +195,7 @@ List<ReadNote> recapNotesFor(
 }) {
   final archived = {
     for (final note in store.allNotes)
-      if (note.isArchived) note.id,
+      if (note.isArchived || store.isDeleting(note.id)) note.id,
   };
   final readable = readableNotes(store, [
     for (final item in items)
