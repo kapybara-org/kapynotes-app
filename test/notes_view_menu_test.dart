@@ -353,11 +353,27 @@ void main() {
     );
     await tester.tap(view);
     await tester.pump();
+    await tester.pump();
     expect(tester.takeException(), isNull);
+    final bottom = tester.getRect(menu).bottom;
     expect(
-      tester.getRect(menu).bottom,
+      bottom,
       lessThanOrEqualTo(360 - 12),
       reason: 'the menu ends inside the window',
+    );
+    final cut = [
+      for (final element
+          in find
+              .descendant(of: menu, matching: find.byType(GestureDetector))
+              .evaluate())
+        tester.getRect(find.byWidget(element.widget)),
+    ].where((row) => row.top < bottom - 6 && row.bottom > bottom - 6);
+    expect(cut, isNotEmpty, reason: 'half a row shows at the foot');
+    final row = cut.first;
+    expect(
+      (bottom - 6 - row.top) / row.height,
+      closeTo(0.5, 0.1),
+      reason: 'the menu ends halfway down a row',
     );
     final grid = find.byKey(const ValueKey('notes-layout-grid'));
     await tester.ensureVisible(grid);

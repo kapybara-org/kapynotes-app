@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart' show FlexParentData, RenderFlex;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -2038,8 +2039,39 @@ class _NotesFilterState extends State<_NotesFilter> {
     });
     if (!_menu.isShowing) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _menu.isShowing) _menuScope.requestFocus();
+      if (!mounted || !_menu.isShowing) return;
+      _menuScope.requestFocus();
+      _peek();
     });
+  }
+
+  /// Where the room under the icon cuts the menu short, ends it halfway
+  /// down a row, so the half row shows there is more to scroll to.
+  void _peek() {
+    RenderFlex? rows;
+    void find(RenderObject child) {
+      if (rows != null) return;
+      if (child is RenderFlex) {
+        rows = child;
+      } else {
+        child.visitChildren(find);
+      }
+    }
+
+    _menuKey.currentContext?.findRenderObject()?.visitChildren(find);
+    final column = rows;
+    const inset = 12.0;
+    final view = _room - inset;
+    if (column == null || column.size.height <= view) return;
+    double? end;
+    var child = column.firstChild;
+    while (child != null) {
+      final data = child.parentData! as FlexParentData;
+      final middle = data.offset.dy + child.size.height / 2;
+      if (child.size.height >= 20 && middle <= view) end = middle;
+      child = data.nextSibling;
+    }
+    if (end != null) setState(() => _room = end! + inset);
   }
 
   /// Nested menus don't work with touch, so on a touch screen the same
