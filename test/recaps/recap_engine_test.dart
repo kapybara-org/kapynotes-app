@@ -5,7 +5,6 @@ import 'package:kapy_notes/ai/kapy_chat_book.dart';
 import 'package:kapy_notes/ai/retrieval.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/recaps/recap_engine.dart';
-import 'package:kapy_notes/recaps/recap_filter.dart';
 import 'package:kapy_notes/recaps/recap_period.dart';
 import 'package:kapy_notes/recaps/recap_plan.dart';
 import 'package:kapy_notes/recaps/recap_record.dart';
@@ -345,7 +344,7 @@ void main() {
     });
 
     test(
-      "a year's month from its own recap takes what that recap read",
+      "a year's month from its own recap takes that month's notes",
       () async {
         await notesOn(2026, [1, 15]);
         for (var month = 1; month <= 12; month++) {
@@ -359,35 +358,15 @@ void main() {
                   : 'Digest.',
           );
         }
-        final march = engine.recaps.firstWhere(
-          (chat) => recapOf(chat)!.period.first.month == 3,
-        );
-        final record = recapOf(march)!;
-        expect(record.read!.map((part) => (part.first, part.last)), [
+        final march = recapOf(
+          engine.recaps.firstWhere(
+            (chat) => recapOf(chat)!.period.first.month == 3,
+          ),
+        )!;
+        expect(march.read!.map((part) => (part.first, part.last)), [
           (0, 6),
           (14, 20),
         ]);
-        book.put(
-          recapChat(
-            march,
-            record: RecapRecord(
-              period: record.period,
-              timeZone: record.timeZone,
-              firstWeekday: record.firstWeekday,
-              madeAt: record.madeAt,
-              numbers: record.numbers,
-              fingerprint: record.fingerprint,
-              digest: record.digest,
-              read: [
-                ...record.read!,
-                (first: 30, last: 30, notes: RecapFilter.of(['from-march'])),
-              ],
-            ),
-            answer: recapAnswer(march)!,
-            model: KapyModel.cloud,
-            now: record.madeAt,
-          ),
-        );
         final year = periodOf(DateTime(2026, 1, 1), RecapKind.year);
         expect(plan(year).calls, 1);
         now = DateTime(2027, 1, 5);
@@ -396,9 +375,9 @@ void main() {
         expect(made, hasLength(12));
         expect(made[2].first, year.indexOf(DateTime(2026, 3, 1)));
         expect(made[2].last, year.indexOf(DateTime(2026, 3, 31)));
-        expect(made[2].notes.mayHold('from-march'), isTrue);
+        expect(made[2].notes.mayHold('n-2026-3-1'), isTrue);
         expect(made[2].notes.mayHold('n-2026-3-15'), isTrue);
-        expect(made[3].notes.mayHold('from-march'), isFalse);
+        expect(made[3].notes.mayHold('n-2026-3-15'), isFalse);
       },
     );
   });

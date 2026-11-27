@@ -530,20 +530,25 @@ class _Header extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 9),
-        Flexible(
-          child: Semantics(
-            header: true,
-            child: Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: recapText(14, 18, 600, tones.text, tabular: true),
-            ),
+        Expanded(
+          child: Row(
+            spacing: 9,
+            children: [
+              Flexible(
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: recapText(14, 18, 600, tones.text, tabular: true),
+                  ),
+                ),
+              ),
+              Text('Kapy AI', style: recapText(13, 18, 400, tones.secondary)),
+            ],
           ),
         ),
-        const SizedBox(width: 9),
-        Text('Kapy AI', style: recapText(13, 18, 400, tones.secondary)),
-        const Spacer(),
         RecapPress(
           label: 'Close recap',
           onTap: close,

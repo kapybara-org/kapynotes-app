@@ -178,6 +178,24 @@ void main() {
       },
     );
 
+    test('reads a recap chat with no answer yet as one with no words', () {
+      final asked = recap();
+      final chat = KapyChat(
+        id: asked.id,
+        title: asked.title,
+        createdAt: asked.createdAt,
+        updatedAt: asked.updatedAt,
+        model: asked.model,
+        messages: [asked.messages.first],
+        recap: asked.recap,
+      );
+      final story = RecapStory.read(chat, world.material(thursday))!;
+      expect(story.title, 'Your day');
+      expect(story.lines.text, isEmpty);
+      expect(story.wordsGone, isFalse);
+      expect(story.dropped, isFalse);
+    });
+
     test('reads nothing from a chat that is not a recap of the period', () {
       final chat = recap();
       final friday = dayOf(DateTime(2026, 11, 20));
@@ -434,9 +452,33 @@ void main() {
       expect(again.dropped, isFalse);
     });
 
-    group('in a week, a hide takes out only the parts it could be in', () {
+    group('in a week, a hide takes out only the parts that read it', () {
       final week = periodOf(DateTime(2026, 11, 19), RecapKind.week);
+      late RecapMaterial material;
       late KapyChat chat;
+
+      KapyChat recapReading(List<RecapRead> read, {RecapFilter? allRead}) =>
+          recapChat(
+            null,
+            record: RecapRecord(
+              period: week,
+              timeZone: 'UTC',
+              firstWeekday: DateTime.monday,
+              madeAt: made,
+              numbers: RecapNumbers.of(world.digest(week), material),
+              fingerprint: material.fingerprint,
+              read: read,
+              allRead: allRead,
+            ),
+            answer: [
+              'TITLE: Drafts and a walk',
+              'HIGHLIGHT: Deck | Drafted on Monday',
+              'HIGHLIGHT: Saturday | A long walk',
+              'NEXT: Take it easy again',
+            ].join('\n'),
+            model: KapyModel.cloud,
+            now: made,
+          );
 
       setUp(() async {
         world = RecapWorld();
@@ -445,41 +487,16 @@ void main() {
         world.note('fri', '2026-11-20T10:00:00Z', body: 'Friday\nOff early');
         world.note('sat', '2026-11-21T10:00:00Z', body: 'Saturday\nA walk');
         await world.load();
-        final material = world.material(week);
-        chat = recapChat(
-          null,
-          record: RecapRecord(
-            period: week,
-            timeZone: 'UTC',
-            firstWeekday: DateTime.monday,
-            madeAt: made,
-            numbers: RecapNumbers.of(world.digest(week), material),
-            fingerprint: material.fingerprint,
-            read: [
-              (
-                first: 0,
-                last: 3,
-                notes: RecapFilter.of(['deck', 'old', 'fri']),
-              ),
-              (first: 4, last: 6, notes: RecapFilter.of(['old', 'fri', 'sat'])),
-            ],
-          ),
-          answer: [
-            'TITLE: Drafts and a walk',
-            'HIGHLIGHT: Deck | Drafted on Monday',
-            'HIGHLIGHT: Saturday | A long walk',
-            'NEXT: Take it easy again',
-          ].join('\n'),
-          model: KapyModel.cloud,
-          now: made,
-        );
+        material = world.material(week);
+        chat = recapReading([
+          (first: 0, last: 3, notes: RecapFilter.of(['deck', 'old'])),
+          (first: 4, last: 6, notes: RecapFilter.of(['fri', 'sat'])),
+        ]);
       });
 
       Future<RecapStory> hide(
         String id, {
-        Map<String, DateTime> hiddenDays = const {},
         Set<String> handled = const {},
-        DateTime? Function(Note note)? ownDay,
       }) async {
         final note = world.notes.firstWhere((note) => note.id == id);
         world.note(
@@ -495,39 +512,15 @@ void main() {
             week,
             store: world.store,
             tasks: world.board,
+            tags: world.tags,
             displayTime: world.displayTime,
-            ownDay: ownDay,
           ),
-          hiddenDays: hiddenDays,
           handled: handled,
         )!;
       }
 
       List<String> highlights(RecapStory story) =>
           story.lines.highlights.map((it) => it.noteId).toList();
-
-      test('its day before the hide outside the week: nothing', () async {
-        final story = await hide(
-          'fri',
-          hiddenDays: {'fri': DateTime(2026, 11, 30)},
-        );
-        expect(story.lines.title, 'Drafts and a walk');
-        expect(story.lines.next, 'Take it easy again');
-        expect(highlights(story), ['deck', 'sat']);
-      });
-
-      test('its day before the hide in one part: that part only', () async {
-        var story = await hide(
-          'fri',
-          hiddenDays: {'fri': DateTime(2026, 11, 17)},
-        );
-        expect(story.lines.title, isNull);
-        expect(story.lines.next, isNull);
-        expect(highlights(story), ['sat']);
-
-        story = await hide('fri', hiddenDays: {'fri': DateTime(2026, 11, 21)});
-        expect(highlights(story), ['deck']);
-      });
 
       test('a hide already dealt with: nothing', () async {
         final story = await hide('fri', handled: {'fri'});
@@ -536,28 +529,104 @@ void main() {
         expect(story.dropped, isFalse);
       });
 
-      test(
-        'no day known: not a part that ended before the note was made',
-        () async {
-          final story = await hide('fri');
-          expect(story.lines.title, isNull);
-          expect(highlights(story), ['deck'], reason: 'made on Friday');
-        },
-      );
-
-      test('no day known: any part from the day it was made', () async {
-        final story = await hide('old');
+      test('the part that read it, whatever day it shows on now', () async {
+        final story = await hide('fri');
         expect(story.lines.title, isNull);
-        expect(highlights(story), isEmpty, reason: 'made on Monday');
+        expect(story.lines.next, isNull);
+        expect(highlights(story), ['deck']);
       });
 
-      test('the day it was given', () async {
-        final story = await hide(
-          'fri',
-          ownDay: (note) => note.id == 'fri' ? DateTime(2026, 11, 17) : null,
-        );
+      test('nothing, where the whole recap\'s filter says no part read it, '
+          'whatever the parts say', () async {
+        chat = recapReading([
+          (first: 0, last: 3, notes: RecapFilter.of(['deck', 'old', 'fri'])),
+          (first: 4, last: 6, notes: RecapFilter.of(['fri', 'sat'])),
+        ], allRead: RecapFilter.of(['deck', 'old', 'sat']));
+        final story = await hide('fri');
+        expect(story.lines.title, 'Drafts and a walk');
+        expect(highlights(story), ['deck', 'sat']);
+      });
+
+      test('a note the first part read: that part only', () async {
+        final story = await hide('old');
         expect(story.lines.title, isNull);
         expect(highlights(story), ['sat']);
+      });
+
+      // Friday's note was made on the 20th, so the second part read it. A
+      // day a note shows on can move after the recap was made, and then
+      // the day it had before its hide is not the day that part read it on.
+      Future<RecapStory> movedThenHidden({
+        DateTime? Function(Note note)? ownDay,
+      }) async {
+        world.note(
+          'fri',
+          '2026-12-01T10:00:00Z',
+          created: '2026-11-20T09:00:00Z',
+          body: 'Friday\nOff early, and the plan for Monday',
+          hiddenAt: '2026-12-01T10:00:00Z',
+        );
+        await world.load();
+        return RecapStory.read(
+          chat,
+          RecapMaterial.gather(
+            week,
+            store: world.store,
+            tasks: world.board,
+            tags: world.tags,
+            displayTime: world.displayTime,
+            ownDay: ownDay,
+          ),
+        )!;
+      }
+
+      test('a note written in again after the recap, then hidden, still '
+          'takes out the part that read it', () async {
+        final story = await movedThenHidden();
+        expect(story.lines.title, isNull);
+        expect(story.lines.next, isNull);
+        expect(highlights(story), ['deck']);
+      });
+
+      test('a note given another day after the recap, then hidden, still '
+          'takes out the part that read it', () async {
+        final story = await movedThenHidden(
+          ownDay: (note) => note.id == 'fri' ? DateTime(2026, 11, 30) : null,
+        );
+        expect(story.lines.title, isNull);
+        expect(story.lines.next, isNull);
+        expect(highlights(story), ['deck']);
+      });
+
+      test('a note written on an earlier day\'s page takes out the part '
+          'that covers that day', () async {
+        // Made on the 20th on the page of the 17th, which a past day's page
+        // or Move to another day allows, so the first part read it.
+        chat = recapReading([
+          (first: 0, last: 3, notes: RecapFilter.of(['deck', 'old', 'fri'])),
+          (first: 4, last: 6, notes: RecapFilter.of(['sat'])),
+        ]);
+        world.note(
+          'fri',
+          '2026-12-01T10:00:00Z',
+          created: '2026-11-20T09:00:00Z',
+          body: 'Friday\nOff early',
+          hiddenAt: '2026-12-01T10:00:00Z',
+        );
+        await world.load();
+        final story = RecapStory.read(
+          chat,
+          RecapMaterial.gather(
+            week,
+            store: world.store,
+            tasks: world.board,
+            tags: world.tags,
+            displayTime: world.displayTime,
+            ownDay: (note) => note.id == 'fri' ? DateTime(2026, 11, 17) : null,
+          ),
+        )!;
+        expect(story.lines.title, isNull);
+        expect(highlights(story), isNot(contains('deck')));
       });
     });
 
@@ -654,13 +723,14 @@ void main() {
   test('topics: the counted ones first, each with Kapy AI’s line', () {
     final story = sampleMonth();
     expect(story.topics, [
-      (name: 'Work', notes: 38, line: null),
+      (name: 'Work', notes: 38, line: null, colour: 'mustard'),
       (
         name: 'Acme',
         notes: 21,
         line: 'The pricing deck went from draft to signed.',
+        colour: 'rust',
       ),
-      (name: 'Lisbon', notes: 12, line: null),
+      (name: 'Lisbon', notes: 12, line: null, colour: 'slate'),
     ]);
     final year = sampleYear();
     expect(year.topics.last.line, 'A week in June, planned since March.');
@@ -671,7 +741,46 @@ void main() {
       record: sampleWeek().record,
       lines: const RecapLines(topics: [(name: 'Garden', line: 'Seeds in')]),
     );
-    expect(story.topics.last, (name: 'Garden', notes: null, line: 'Seeds in'));
+    expect(story.topics.last, (
+      name: 'Garden',
+      notes: null,
+      line: 'Seeds in',
+      colour: null,
+    ));
+  });
+
+  test('a tag topic takes its colour as the tag has it now', () async {
+    world.tags.setTags('plan', [world.tags.create('Work')!.id]);
+    world.folders.file(['trip'], world.folders.create('Travel')!.id);
+    final work = world.tags.tags.single;
+    world.tags.recolour(work.id, 'teal');
+    final chat = recapChat(
+      null,
+      record: RecapRecord(
+        period: thursday,
+        timeZone: 'UTC',
+        firstWeekday: DateTime.monday,
+        madeAt: made,
+        numbers: RecapNumbers.of(
+          world.digest(thursday),
+          world.material(thursday),
+        ),
+        fingerprint: world.material(thursday).fingerprint,
+      ),
+      answer: 'TOPIC: Garden | Seeds in',
+      model: KapyModel.cloud,
+      now: made,
+    );
+    expect(
+      RecapStory.read(chat, world.material(thursday))!.topics,
+      contains((name: 'Work', notes: 1, line: null, colour: 'teal')),
+    );
+    world.tags.recolour(work.id, 'plum');
+    final story = RecapStory.read(chat, world.material(thursday))!;
+    expect(
+      story.topics.map((topic) => (topic.name, topic.colour)),
+      unorderedEquals([('Work', 'plum'), ('Travel', null)]),
+    );
   });
 
   test('the busiest day and the longest run come from the numbers', () {

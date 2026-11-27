@@ -25,8 +25,15 @@ enum RecapCard {
 
 /// A topic a recap names: a tag or folder the period's notes carry, with how
 /// many do, and the line Kapy AI wrote about it when it named it too. A topic
-/// only Kapy AI named has no count.
-typedef RecapTopicRow = ({String name, int? notes, String? line});
+/// only Kapy AI named has no count. [colour] is the tag's colour, one of
+/// [tagColours] or [noTagColour], as it is now; null for a folder and for a
+/// topic only Kapy AI named.
+typedef RecapTopicRow = ({
+  String name,
+  int? notes,
+  String? line,
+  String? colour,
+});
 
 /// What a recap shows when it opens: the numbers worked out on the device
 /// when it was made, and the words Kapy AI wrote, checked again against what
@@ -41,6 +48,7 @@ class RecapStory {
     this.wordsGone = false,
     this.chat,
     this.dropped = false,
+    this.colours = const {},
   });
 
   /// The recap [chat] holds, its newest answer read again against [now], the
@@ -58,17 +66,15 @@ class RecapStory {
   /// part's months, and the highlights and the quote of any note that part
   /// may have read. Deleting or archiving a note takes nothing out this way.
   ///
-  /// A part may have read a hidden note only on a day it covers: the day
-  /// [hiddenDays] gives for it, the day it was before it was hidden, where
-  /// whoever saw the hide knew it; else the day it was given; else any day
-  /// from the day it was made. [handled] holds the notes whose hide was
-  /// dealt with already, and they are left alone. Null when [chat] is not a
-  /// recap of [now]'s period.
+  /// Which parts may have read a hidden note, the record's filters alone
+  /// say, whatever day the note shows on now: first the one of every note
+  /// the recap read, then each part's own. [handled] holds the notes whose
+  /// hide was dealt with already, and they are left alone. Null when [chat]
+  /// is not a recap of [now]'s period.
   static RecapStory? read(
     KapyChat chat,
     RecapMaterial now, {
     Set<String> gone = const {},
-    Map<String, DateTime> hiddenDays = const {},
     Set<String> handled = const {},
   }) {
     final record = recapOf(chat);
@@ -110,31 +116,19 @@ class RecapStory {
       period.first.month,
       period.first.day + index,
     );
-    bool covers(int first, int last, RecapHidden note) {
-      if (hiddenDays[note.id] ?? note.day case final day?) {
-        final index = period.indexOf(day);
-        return index != null && index >= first && index <= last;
-      }
-      return !dayAt(last).isBefore(note.made);
-    }
-
     final changed = [
       for (final note in now.hidden)
-        if (note.at.isAfter(record.madeAt) && !handled.contains(note.id)) note,
+        if (note.at.isAfter(record.madeAt) &&
+            !handled.contains(note.id) &&
+            (record.allRead?.mayHold(note.id) ?? true))
+          note.id,
     ];
     final parts = record.read;
     final affected = parts == null
-        ? (changed.any((note) => covers(0, period.days - 1, note))
-              ? null
-              : const <RecapRead>[])
+        ? (changed.isEmpty ? const <RecapRead>[] : null)
         : [
             for (final part in parts)
-              if (changed.any(
-                (note) =>
-                    covers(part.first, part.last, note) &&
-                    part.notes.mayHold(note.id),
-              ))
-                part,
+              if (changed.any(part.notes.mayHold)) part,
           ];
     bool drops(String noteId) =>
         affected == null || affected.any((part) => part.notes.mayHold(noteId));
@@ -169,14 +163,16 @@ class RecapStory {
         .length;
     final said = worded(answer);
     final left = kept.text.isEmpty ? 0 : kept.text.split('\n').length;
-    final before = [
+    final answers = [
       for (final message in chat.messages)
         if (message.role == KapyRole.assistant) message.text,
-    ]..removeLast();
+    ];
+    final before = answers.reversed.skip(1);
     return RecapStory(
       record: record,
       lines: kept,
       chat: chat,
+      colours: now.tagColours,
       dropped: left < said,
       wordsGone:
           left == 0 &&
@@ -216,6 +212,10 @@ class RecapStory {
 
   /// Whether any of the words in [chat]'s answer were left out.
   final bool dropped;
+
+  /// Each tag's colour key by its name in lower case, as the tags are now:
+  /// [RecapMaterial.tagColours].
+  final Map<String, String> colours;
 
   RecapPeriod get period => record.period;
   RecapNumbers get numbers => record.numbers;
@@ -278,10 +278,11 @@ class RecapStory {
           name: topic.name,
           notes: topic.notes,
           line: written[topic.name.toLowerCase()],
+          colour: colours[topic.name.toLowerCase()],
         ),
       for (final topic in lines.topics)
         if (!counted.contains(topic.name.toLowerCase()))
-          (name: topic.name, notes: null, line: topic.line),
+          (name: topic.name, notes: null, line: topic.line, colour: null),
     ];
   }
 

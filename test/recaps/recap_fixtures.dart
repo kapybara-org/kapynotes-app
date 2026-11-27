@@ -76,13 +76,16 @@ class RecapWorld {
     bool hidden = false,
     String? hiddenAt,
     String? archivedAt,
+    String? created,
   }) {
     final at = DateTime.parse(edited);
     final made = Note(
       id: id,
       body: body,
       attachments: attachments,
-      createdAt: at.subtract(const Duration(hours: 1)),
+      createdAt: created == null
+          ? at.subtract(const Duration(hours: 1))
+          : DateTime.parse(created),
       updatedAt: at,
       hiddenAt: hiddenAt != null
           ? DateTime.parse(hiddenAt)
@@ -126,6 +129,7 @@ class RecapWorld {
     period,
     store: store,
     tasks: board,
+    tags: tags,
     displayTime: displayTime,
   );
 

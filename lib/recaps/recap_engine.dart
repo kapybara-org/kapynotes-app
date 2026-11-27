@@ -97,12 +97,8 @@ class RecapEngine {
     }
     return RecapPlan.of(
       material,
-      ready: (slice) => switch (months[slice.first.month]) {
-        final month? when slice.kind == RecapKind.year => RecapPiece(
-          month.digest!,
-          const {},
-          month.notesRead,
-        ),
+      ready: (slice) => switch (months[slice.first.month]?.digest) {
+        final digest? when slice.kind == RecapKind.year => RecapPiece(digest),
         _ => _kept[slice.key],
       },
     );
@@ -172,19 +168,11 @@ class RecapEngine {
     final gone = <String>{};
     final digests = <ReadNote>[];
     final read = <RecapRead>[];
-    RecapRead part(
-      DateTime first,
-      DateTime last,
-      List<RecapItem> items, [
-      RecapFilter? more,
-    ]) {
-      final notes = RecapFilter.of([for (final item in items) item.note.id]);
-      return (
-        first: period.indexOf(first)!,
-        last: period.indexOf(last)!,
-        notes: more == null ? notes : notes | more,
-      );
-    }
+    RecapRead part(DateTime first, DateTime last, List<RecapItem> items) => (
+      first: period.indexOf(first)!,
+      last: period.indexOf(last)!,
+      notes: RecapFilter.of([for (final item in items) item.note.id]),
+    );
 
     for (final (index, slice) in plan.slices.indexed) {
       final piece = pieces[index];
@@ -200,7 +188,7 @@ class RecapEngine {
         continue;
       }
       sent.notes.addAll(piece.sent);
-      read.add(part(slice.first, slice.last, within, piece.read));
+      read.add(part(slice.first, slice.last, within));
       if (period.kind == RecapKind.year) sent.months.add(slice.first.month);
       digests.add(recapNote('', slice.label, piece.text, slice.last));
     }

@@ -146,6 +146,11 @@ RecapStory sampleWeek() => RecapStory(
     next: 'Ship the deck, then plan Lisbon.',
   ),
   open: const ['Send the deck', 'Book the Lisbon flat', 'Finish The Overstory'],
+  colours: const {
+    'acme pricing': 'mustard',
+    'lisbon trip': 'slate',
+    'reading': 'sage',
+  },
 );
 
 /// November 2026: four cards.
@@ -179,6 +184,7 @@ RecapStory sampleMonth() => RecapStory(
     next: 'Finish Acme, then a slower month.',
   ),
   open: const ['Send the deck', 'Plan the Lisbon week'],
+  colours: const {'work': 'mustard', 'acme': 'rust', 'lisbon': 'slate'},
 );
 
 /// 2026: seven cards.
@@ -214,4 +220,11 @@ RecapStory sampleYear() => RecapStory(
     next: 'Keep the mornings. Ship more.',
   ),
   open: const ['Plan the 2027 Lisbon trip', 'Read 12 books'],
+  colours: const {
+    'work': 'mustard',
+    'acme': 'rust',
+    'lisbon': 'slate',
+    'reading': 'sage',
+    'health': 'plum',
+  },
 );

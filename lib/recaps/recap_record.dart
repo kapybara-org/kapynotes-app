@@ -84,7 +84,8 @@ class RecapRecord {
     required this.fingerprint,
     this.digest,
     this.read,
-  });
+    RecapFilter? allRead,
+  }) : _allRead = allRead;
 
   final RecapPeriod period;
   final String timeZone;
@@ -100,11 +101,15 @@ class RecapRecord {
   /// then any part may have read any note.
   final List<RecapRead>? read;
 
-  /// Every note any part may have read, where the record says.
-  RecapFilter? get notesRead => read?.fold<RecapFilter>(
-    RecapFilter.of(const []),
-    (all, part) => all | part.notes,
-  );
+  /// Every note any of [read]'s parts could read, in one filter sized by
+  /// how many: a hidden note it does not hold was read by no part. Null
+  /// where a record has none, and then each part says for itself.
+  RecapFilter? get allRead => switch (read) {
+    final parts? =>
+      _allRead ?? RecapFilter.union([for (final part in parts) part.notes]),
+    null => _allRead,
+  };
+  final RecapFilter? _allRead;
 
   /// How many of the period's notes changed since it was made: "2 notes
   /// changed since then". [now] is what the period holds now.
@@ -115,13 +120,20 @@ class RecapRecord {
     return max(1, edited + gone);
   }
 
-  /// Within [recapRecordMax]: the digest is cut first, then the task lists.
-  /// [read] is never cut.
+  /// Within [recapRecordMax]: the digest is cut first, then the task lists,
+  /// never [read] or [allRead]. Their filters are sized first, each to how
+  /// many notes it holds, in the room the rest leaves without the task
+  /// lists and the digest: which notes a recap read keeps its words honest,
+  /// and outweighs the lists. Where that room is too little, [allRead] is
+  /// served first, since it alone says whether a hidden note takes anything
+  /// out, and the parts share what it leaves in proportion.
   /// `at` goes first, so where two devices each made one, the later is the
   /// greater JSON and every device keeps it (mergeExtra).
   Map<String, Object?> toJson() {
     final counts = numbers.counts;
     final previous = numbers.previous;
+    Object? shell;
+    Object? whole;
     Map<String, Object?> json({String? digest, int tasks = recapTasksMax}) => {
       'at': madeAt.millisecondsSinceEpoch,
       'kind': period.kind.name,
@@ -148,13 +160,44 @@ class RecapRecord {
       'doneTasks': numbers.done.take(tasks).toList(),
       'openTasks': numbers.open.take(tasks).toList(),
       'material': fingerprint,
-      'read': ?read
-          ?.map((part) => [part.first, part.last, part.notes.toBase64()])
-          .toList(),
+      'read': ?shell,
+      'readAll': ?whole,
       'digest': ?digest,
     };
     int size(Map<String, Object?> value) =>
         utf8.encode(jsonEncode(value)).length;
+    if (read case final parts?) {
+      final all = allRead;
+      shell = [
+        for (final part in parts)
+          [part.first, part.last, RecapFilter.maxHashes, ''],
+      ];
+      whole = all == null ? null : [RecapFilter.maxHashes, ''];
+      final room = max(0, (recapRecordMax - size(json(tasks: 0))) * 3 ~/ 4);
+      final wanted = parts.fold(0, (sum, part) => sum + part.notes.bytes);
+      final left = max(
+        parts.length * RecapFilter.minBytes,
+        room - (all?.bytes ?? 0),
+      );
+      final sized = [
+        for (final part in parts)
+          part.notes.sized(
+            wanted <= left
+                ? part.notes.bytes
+                : part.notes.bytes * left ~/ wanted,
+          ),
+      ];
+      shell = [
+        for (final (index, part) in parts.indexed)
+          [part.first, part.last, sized[index].hashes, sized[index].toBase64()],
+      ];
+      if (all != null) {
+        final notes = all.sized(
+          min(all.bytes, room - sized.fold(0, (sum, it) => sum + it.bytes)),
+        );
+        whole = [notes.hashes, notes.toBase64()];
+      }
+    }
     var tasks = recapTasksMax;
     while (tasks > 0 && size(json(tasks: tasks)) > recapRecordMax) {
       tasks--;
@@ -244,6 +287,14 @@ class RecapRecord {
       fingerprint: fingerprint,
       digest: digest is String && digest.isNotEmpty ? digest : null,
       read: _reads(raw['read'], period.days),
+      allRead: switch (raw['readAll']) {
+        [final hashes, final bits] => RecapFilter.fromJson(
+          hashes,
+          bits,
+          whole: true,
+        ),
+        _ => null,
+      },
     );
   }
 
@@ -256,9 +307,10 @@ class RecapRecord {
       if (part case [
         final int first,
         final int last,
+        final hashes,
         final bits,
       ] when first >= 0 && first <= last && last < days) {
-        final notes = RecapFilter.fromBase64(bits);
+        final notes = RecapFilter.fromJson(hashes, bits);
         if (notes == null) return null;
         parts.add((first: first, last: last, notes: notes));
       } else {

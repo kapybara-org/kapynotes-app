@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
@@ -191,6 +192,35 @@ void main() {
       await settle(tester);
       expect(find.byType(RecapStoryView), findsOneWidget);
     });
+
+    for (final desktop in [false, true]) {
+      testWidgets('a title cut short has had all of the row\'s room '
+          '(${desktop ? 'desktop' : 'phone'})', (tester) async {
+        final story = sampleWeek();
+        await open(tester, story, desktop: desktop);
+        final title = find.text(story.name);
+        expect(
+          tester.renderObject<RenderParagraph>(title).didExceedMaxLines,
+          isTrue,
+          reason: 'the test font is wide enough to cut it',
+        );
+        expect(
+          tester.getTopRight(find.text('Kapy AI')).dx,
+          tester
+              .getTopLeft(
+                find.descendant(
+                  of: find.byType(RecapStoryView),
+                  matching: find.bySemanticsLabel('Close recap'),
+                ),
+              )
+              .dx,
+        );
+        expect(
+          tester.getTopRight(title).dx + 9,
+          tester.getTopLeft(find.text('Kapy AI')).dx,
+        );
+      });
+    }
 
     testWidgets('✕ closes it', (tester) async {
       await open(tester, sampleDay());
@@ -450,8 +480,8 @@ void main() {
         expect(tester.takeException(), isNull, reason: 'nothing clips');
         expect(
           showing(
-            'Some notes in this recap are hidden or gone now, so its words '
-            'were left out.',
+            'Some notes this recap read are hidden now, so what Kapy AI wrote '
+            'was taken out. Remake it from your notes as they are now.',
           ),
           isTrue,
         );

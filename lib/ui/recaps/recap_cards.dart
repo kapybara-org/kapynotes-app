@@ -9,6 +9,7 @@ import '../../recaps/recap_story.dart';
 import '../../speech/moments.dart';
 import '../editor/voice_chip.dart';
 import '../sidebar_timestamp.dart';
+import '../tag_ui.dart' show TagDot, tagColourOf;
 
 /// The colours a recap is drawn in: the page, the card and the orange tint,
 /// with the text and marks that sit on them, from the design system's Modern
@@ -971,11 +972,21 @@ class _TopicRow extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.end,
               spacing: 10,
               children: [
-                Text(
-                  recapShown(topic.name),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: recapText(17, 22, 500, t.text),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: 8,
+                  children: [
+                    if (topic.colour case final colour?)
+                      TagDot(tagColourOf(colour)),
+                    Flexible(
+                      child: Text(
+                        recapShown(topic.name),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: recapText(17, 22, 500, t.text),
+                      ),
+                    ),
+                  ],
                 ),
                 if (notes != null)
                   Text(
@@ -1290,17 +1301,21 @@ class _Voice extends StatelessWidget {
           ExcludeSemantics(
             child: SizedBox(
               height: 44,
-              child: CustomPaint(
-                painter: VoiceWaveformPainter(
-                  peaks: voice.peaks,
-                  progress: voice.durationMs == 0
-                      ? null
-                      : (quote.at.inMilliseconds / voice.durationMs)
-                            .clamp(0, 1)
-                            .toDouble(),
-                  played: t.text,
-                  unplayed: t.bar,
-                  bars: 44,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: CustomPaint(
+                  size: const Size(44 * 5, 30),
+                  painter: VoiceWaveformPainter(
+                    peaks: voice.peaks,
+                    progress: voice.durationMs == 0
+                        ? null
+                        : (quote.at.inMilliseconds / voice.durationMs)
+                              .clamp(0, 1)
+                              .toDouble(),
+                    played: t.text,
+                    unplayed: t.bar,
+                    bars: 44,
+                  ),
                 ),
               ),
             ),
@@ -1504,8 +1519,9 @@ class _Closing extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 14),
                 child: Text(
-                  'Some notes in this recap are hidden or gone now, so its '
-                  'words were left out.',
+                  'Some notes this recap read are hidden now, so what Kapy AI '
+                  'wrote was taken out. Remake it from your notes as they are '
+                  'now.',
                   style: recapText(22, 30, 500, t.text),
                 ),
               )

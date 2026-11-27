@@ -55,10 +55,8 @@ void main() {
     (first: 4, last: 6, notes: RecapFilter.of(['fri'])),
   ];
 
-  List<Object> partsOf(RecapRecord record) => [
-    for (final part in record.read!)
-      [part.first, part.last, part.notes.toBase64()],
-  ];
+  Object? partsOf(RecapRecord record) =>
+      jsonDecode(jsonEncode(record.toJson()))['read'];
 
   KapyChat chat(RecapRecord record) => recapChat(
     null,
@@ -70,6 +68,63 @@ void main() {
 
   int chatRecordBytes(KapyChat chat) =>
       utf8.encode(jsonEncode(ChatMeta.of(chat).toPayload())).length;
+
+  RecapRecord back(RecapRecord record) =>
+      RecapRecord.fromJson(jsonDecode(jsonEncode(record.toJson())))!;
+
+  /// How often a note the recap never read would take its words out.
+  double drops(RecapRecord record) {
+    var wrong = 0;
+    for (var i = 0; i < 20000; i++) {
+      final id = 'never-read-$i';
+      if (record.allRead!.mayHold(id) &&
+          record.read!.any((part) => part.notes.mayHold(id))) {
+        wrong++;
+      }
+    }
+    return wrong / 20000;
+  }
+
+  /// A recap of [period] as long as one gets, of [notes] notes shared out
+  /// over its parts as a recap plans them.
+  RecapRecord fullest(RecapPeriod period, int notes) {
+    final days = period.kind == RecapKind.week
+        ? [(0, 3), (4, 6)]
+        : [(0, 6), (7, 13), (14, 20), (21, 27), (28, period.days - 1)];
+    return RecapRecord(
+      period: period,
+      timeZone: 'Z' * 500,
+      firstWeekday: DateTime.monday,
+      madeAt: made,
+      numbers: RecapNumbers(
+        counts: RecapCounts(
+          notes: notes,
+          tasksDone: 412,
+          voiceNotes: 96,
+          voiceMinutes: 1890,
+        ),
+        tasksOpen: 37,
+        chart: List.filled(period.days, 120),
+        longestRun: period.days,
+        topics: [for (var i = 0; i < 3; i++) (name: '話' * 200, notes: i)],
+        previous: const RecapCounts(notes: 900, tasksDone: 300),
+        done: [for (var i = 0; i < 40; i++) 'task-${'x' * 30}-$i'],
+        open: [for (var i = 0; i < 40; i++) 'task-${'y' * 30}-$i'],
+      ),
+      fingerprint: '0123456789abcdef',
+      digest: 'A busy month. ' * 200,
+      read: [
+        for (final (index, (first, last)) in days.indexed)
+          (
+            first: first,
+            last: last,
+            notes: RecapFilter.of([
+              for (var i = index; i < notes; i += days.length) 'note-$i',
+            ]),
+          ),
+      ],
+    );
+  }
 
   test('reads back as it was written', () {
     final back = RecapRecord.fromJson(
@@ -107,9 +162,29 @@ void main() {
     expect(back.read![0].notes.mayHold('tue'), isTrue);
     expect(back.read![1].notes.mayHold('fri'), isTrue);
     expect(back.read![1].notes.mayHold('mon'), isFalse);
-    expect(back.notesRead!.mayHold('mon'), isTrue);
+    expect(['mon', 'tue', 'fri'].every(back.allRead!.mayHold), isTrue);
+    expect(back.allRead!.mayHold('sat'), isFalse);
     expect(record().toJson(), isNot(contains('read')));
+    expect(record().toJson(), isNot(contains('readAll')));
     expect(RecapRecord.fromJson(record().toJson())!.read, isNull);
+    expect(RecapRecord.fromJson(record().toJson())!.allRead, isNull);
+  });
+
+  test('a whole recap\'s filter that does not hold together leaves each '
+      'part to say', () {
+    final json = record(read: parts).toJson();
+    for (final broken in [
+      'bits',
+      [16],
+      [0, (json['readAll']! as List).last],
+      [17, (json['readAll']! as List).last],
+      [16, ''],
+      [16, 'not base64!'],
+    ]) {
+      final back = RecapRecord.fromJson({...json, 'readAll': broken})!;
+      expect(back.allRead, isNull, reason: '$broken');
+      expect(partsOf(back), json['read'], reason: '$broken');
+    }
   });
 
   test('parts that do not hold together are read as none at all', () {
@@ -120,19 +195,31 @@ void main() {
       [good, 'part'],
       [
         good,
-        [0, 7, (good as List).last],
+        [0, 7, (good as List)[2], good.last],
       ],
       [
         good,
-        [3, 1, good.last],
+        [3, 1, good[2], good.last],
       ],
       [
         good,
-        [0, 3, 'AAAA'],
+        [0, 3, good.last],
       ],
       [
         good,
-        [0, 3, 'not base64!'],
+        [0, 3, 0, good.last],
+      ],
+      [
+        good,
+        [0, 3, 17, good.last],
+      ],
+      [
+        good,
+        [0, 3, good[2], ''],
+      ],
+      [
+        good,
+        [0, 3, good[2], 'not base64!'],
       ],
     ]) {
       final back = RecapRecord.fromJson({...json, 'read': broken});
@@ -175,14 +262,14 @@ void main() {
     expect(RecapRecord.fromJson(jsonDecode(jsonEncode(json))), isNotNull);
   });
 
-  test('a year of 13 parts fits, its parts never cut', () {
+  test('a busy year of 13 parts fits, and its filters still mostly tell', () {
     final year = periodOf(DateTime(2026, 11, 19), RecapKind.year);
     final read = <RecapRead>[
       for (var month = 1; month <= 12; month++)
         (
           first: year.indexOf(DateTime(2026, month))!,
           last: year.indexOf(DateTime(2026, month + 1, 0))!,
-          notes: RecapFilter.of([for (var i = 0; i < 200; i++) '$month-$i']),
+          notes: RecapFilter.of([for (var i = 0; i < 90; i++) '$month-$i']),
         ),
       (first: 0, last: 364, notes: RecapFilter.of(['rest'])),
     ];
@@ -203,8 +290,8 @@ void main() {
         longestRun: 41,
         topics: [for (var i = 0; i < 3; i++) (name: '話' * 200, notes: i)],
         previous: const RecapCounts(notes: 900, tasksDone: 300),
-        done: [for (var i = 0; i < 40; i++) 'task-NaN-$i'],
-        open: [for (var i = 0; i < 40; i++) 'task-NaN-$i'],
+        done: [for (var i = 0; i < 40; i++) 'task-${'x' * 30}-$i'],
+        open: [for (var i = 0; i < 40; i++) 'task-${'y' * 30}-$i'],
       ),
       fingerprint: '0123456789abcdef',
       digest: 'A busy year. ' * 200,
@@ -216,9 +303,69 @@ void main() {
       lessThanOrEqualTo(recapRecordMax),
     );
     final back = RecapRecord.fromJson(jsonDecode(jsonEncode(json)))!;
-    expect(partsOf(back), partsOf(long));
+    expect(partsOf(back), json['read']);
     expect(chatRecordBytes(chat(long)), lessThanOrEqualTo(chatPayloadMax));
+    for (final (index, part) in back.read!.indexed) {
+      final ids = index == 12
+          ? ['rest']
+          : [for (var i = 0; i < 90; i++) '${index + 1}-$i'];
+      expect(ids.every(part.notes.mayHold), isTrue, reason: 'part $index');
+      expect(ids.every(back.allRead!.mayHold), isTrue, reason: 'part $index');
+    }
+    expect(drops(back), lessThan(0.15), reason: '1,081 notes');
   });
+
+  test('at its fullest, a week or a month never misses a note it read, and '
+      'all but never takes words out for one it did not', () {
+    final month = periodOf(DateTime(2026, 10, 19), RecapKind.month);
+    for (final (period, notes, most) in [
+      (week, 50, 0.002),
+      (week, 400, 0.002),
+      (month, 150, 0.002),
+      (month, 450, 0.006),
+      (month, 1000, null),
+    ]) {
+      final record = fullest(period, notes);
+      expect(
+        utf8.encode(jsonEncode(record.toJson())).length,
+        lessThanOrEqualTo(recapRecordMax),
+      );
+      final read = back(record);
+      for (final (index, part) in read.read!.indexed) {
+        for (var i = index; i < notes; i += read.read!.length) {
+          final id = 'note-$i';
+          expect(part.notes.mayHold(id), isTrue, reason: '$notes: $id');
+          expect(read.allRead!.mayHold(id), isTrue, reason: '$notes: $id');
+        }
+      }
+      if (most != null) {
+        expect(drops(read), lessThan(most), reason: '$notes notes');
+      }
+    }
+  });
+
+  test(
+    'a part is sized to its notes, a few bits each, where there is room',
+    () {
+      for (final count in [1, 30, 200]) {
+        final ids = [for (var i = 0; i < count; i++) 'note-$i'];
+        final json = record(
+          read: [(first: 0, last: 6, notes: RecapFilter.of(ids))],
+        ).toJson();
+        final part = (json['read']! as List).single as List;
+        final bytes = base64Decode(part[3] as String).length;
+        expect(bytes, RecapFilter.of(ids).bytes, reason: '$count notes');
+        final back = RecapRecord.fromJson(jsonDecode(jsonEncode(json)))!;
+        final notes = back.read!.single.notes;
+        expect(ids.every(notes.mayHold), isTrue, reason: 'never a miss');
+        var wrong = 0;
+        for (var i = 0; i < 20000; i++) {
+          if (notes.mayHold('other-$i')) wrong++;
+        }
+        expect(wrong / 20000, lessThan(0.02), reason: '$count notes: $wrong');
+      }
+    },
+  );
 
   test('a recap chat is a question and its answer, readable anywhere', () {
     final made = chat(record());

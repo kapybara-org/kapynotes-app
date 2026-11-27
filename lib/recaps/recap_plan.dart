@@ -1,18 +1,15 @@
 import '../ai/kapy_ai.dart';
 import '../ui/sidebar_timestamp.dart';
-import 'recap_filter.dart';
 import 'recap_material.dart';
 import 'recap_period.dart';
 
-/// A digest one part of a recap made: its text, the titles it was sent, in
-/// lower case, each to the note it names, and for a month's own recap the
-/// notes its parts read.
+/// A digest one part of a recap made: its text, and the titles it was sent,
+/// in lower case, each to the note it names.
 class RecapPiece {
-  const RecapPiece(this.text, [this.sent = const {}, this.read]);
+  const RecapPiece(this.text, [this.sent = const {}]);
 
   final String text;
   final Map<String, String> sent;
-  final RecapFilter? read;
 }
 
 /// One digest call in a recap's plan, over [first] to [last].
