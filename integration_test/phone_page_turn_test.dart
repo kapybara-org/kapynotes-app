@@ -130,7 +130,9 @@ void main() {
       addTearDown(() => deviceAction('record-stop'));
 
       final width = tester.getSize(find.byType(MaterialApp)).width;
-      Offset header() => tester.getCenter(_day) + const Offset(60, 0);
+      // Off the day's chip, and clear of Android's back gesture edges, where
+      // no turn starts: its chip stands at the right.
+      Offset header() => Offset(width / 2 + 60, tester.getCenter(_day).dy);
       Future<void> drag(Offset from, double share, int ms) async {
         await tester.timedDragFrom(
           from,

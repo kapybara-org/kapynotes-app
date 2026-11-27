@@ -83,7 +83,8 @@ class PageTurn extends StatefulWidget {
 
   /// How far in from the left iOS's own back swipe starts, which a turn
   /// leaves to it on a page that can go back, and how far in a drag on
-  /// Android goes back ahead of a row's own swipe, from [slop] across.
+  /// Android goes back ahead of a row's own swipe, from the phone's own
+  /// touch slop across, at most [slop], as soon as the row's would take it.
   static const double backEdge = 20;
 
   /// How far a drag with no page beyond can pull the page, as a share of
@@ -288,7 +289,8 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
             GestureRecognizerFactoryWithHandlers<_SidewaysDragRecognizer>(
               () => _SidewaysDragRecognizer(debugOwner: this),
               (drag) => drag
-                ..start = edge ? PageTurn.slop : PageTurn.start
+                ..edge = edge
+                ..gestureSettings = MediaQuery.maybeGestureSettingsOf(context)
                 ..allowed = ((event) => _allowed(event, edge: edge))
                 ..dragStartBehavior = DragStartBehavior.down
                 ..onStart = _begin
@@ -383,8 +385,9 @@ class _SidewaysDragRecognizer extends HorizontalDragGestureRecognizer {
     onlyAcceptDragOnThreshold = true;
   }
 
-  /// How far across a drag goes before it is a turn.
-  double start = PageTurn.start;
+  /// Whether this is Android's left edge strip, whose drag goes back from
+  /// the phone's own touch slop across, so ahead of a row's swipe.
+  bool edge = false;
 
   bool Function(PointerDownEvent event) allowed = _always;
   static bool _always(PointerDownEvent _) => true;
@@ -426,10 +429,15 @@ class _SidewaysDragRecognizer extends HorizontalDragGestureRecognizer {
   bool hasSufficientGlobalDistanceToAccept(
     PointerDeviceKind pointerDeviceKind,
     double? deviceTouchSlop,
-  ) => _sideways =
-      _sideways ||
-      (_moved.dx.abs() >= start &&
-          _moved.dy.abs() <= _moved.dx.abs() * PageTurn.steepest);
+  ) {
+    final start = edge
+        ? math.min(PageTurn.slop, deviceTouchSlop ?? PageTurn.slop)
+        : PageTurn.start;
+    return _sideways =
+        _sideways ||
+        (_moved.dx.abs() >= start &&
+            _moved.dy.abs() <= _moved.dx.abs() * PageTurn.steepest);
+  }
 
   @override
   void didStopTrackingLastPointer(int pointer) {

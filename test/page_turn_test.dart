@@ -79,6 +79,7 @@ Future<void> _pump(
   TargetPlatform platform = TargetPlatform.iOS,
   EdgeInsets gestureInsets = EdgeInsets.zero,
   bool reduceMotion = false,
+  DeviceGestureSettings? gestureSettings,
 }) async {
   tester.view.physicalSize = const Size(_width, 800);
   tester.view.devicePixelRatio = 1;
@@ -90,6 +91,7 @@ Future<void> _pump(
         data: MediaQuery.of(context).copyWith(
           systemGestureInsets: gestureInsets,
           disableAnimations: reduceMotion,
+          gestureSettings: gestureSettings,
         ),
         child: child!,
       ),
@@ -523,6 +525,42 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(_state(tester).turns, isEmpty);
+    });
+
+    testWidgets("on Android, Back's left edge goes back ahead of a row's own "
+        "swipe, at the phone's own touch slop", (tester) async {
+      var backs = 0;
+      var swipes = 0;
+      await _pump(
+        tester,
+        _Pages(
+          start: 0,
+          onBack: () => backs++,
+          page: (i) => GestureDetector(
+            onHorizontalDragStart: (_) => swipes++,
+            child: _Counter('page $i'),
+          ),
+        ),
+        platform: TargetPlatform.android,
+        gestureInsets: const EdgeInsets.symmetric(horizontal: 30),
+        gestureSettings: const DeviceGestureSettings(touchSlop: 8),
+      );
+      await tester.timedDragFrom(
+        const Offset(2, 400),
+        const Offset(200, 0),
+        const Duration(milliseconds: 300),
+      );
+      await tester.pumpAndSettle();
+      expect(backs, 1);
+      expect(swipes, 0);
+      await tester.timedDragFrom(
+        const Offset(_width / 2, 400),
+        const Offset(200, 0),
+        const Duration(milliseconds: 300),
+      );
+      await tester.pumpAndSettle();
+      expect(swipes, 1, reason: 'away from the edge, the row keeps its swipe');
+      expect(backs, 1);
     });
 
     testWidgets('on an iPhone, a drag from the left edge of a page that can '
