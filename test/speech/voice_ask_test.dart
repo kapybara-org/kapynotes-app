@@ -530,6 +530,23 @@ void main() {
         findsNothing,
         reason: 'no point shows above the drawer',
       );
+      final fade = find.byWidgetPredicate(
+        (widget) => widget is OverflowBox && widget.maxHeight == 24,
+      );
+      final shown = tester.getRect(
+        find.ancestor(of: fade, matching: find.byType(ClipRect)).first,
+      );
+      final band = find.descendant(
+        of: fade,
+        matching: find.byType(DecoratedBox),
+      );
+      expect(shown.height, 8);
+      expect(tester.getRect(band).bottom, shown.bottom);
+      final gradient =
+          (tester.widget<DecoratedBox>(band).decoration as BoxDecoration)
+                  .gradient!
+              as LinearGradient;
+      expect(gradient.stops!.last, lessThanOrEqualTo(2 / 3), reason: 'solid');
     });
   });
 
