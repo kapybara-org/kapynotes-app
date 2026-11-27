@@ -154,23 +154,31 @@ class NotesFoldersSwitch extends StatelessWidget {
         selected: on,
         child: MouseRegion(
           cursor: on ? MouseCursor.defer : SystemMouseCursors.click,
-          child: GestureDetector(
-            key: ValueKey(
-              forFolders ? 'notes-switch-folders' : 'notes-switch-notes',
-            ),
-            behavior: HitTestBehavior.opaque,
-            onTap: on ? null : () => onChanged(forFolders),
-            child: Container(
-              decoration: on
-                  ? BoxDecoration(
-                      color: palette.tonalBackground,
-                      borderRadius: BorderRadius.circular(8),
-                    )
-                  : null,
-              alignment: Alignment.center,
-              child: Text(
-                forFolders ? 'Folders' : 'Notes',
-                style: _figtree(13, 16, FontWeight.w500, colour),
+          child: FocusableActionDetector(
+            enabled: !on,
+            actions: {
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (_) => onChanged(forFolders),
+              ),
+            },
+            child: GestureDetector(
+              key: ValueKey(
+                forFolders ? 'notes-switch-folders' : 'notes-switch-notes',
+              ),
+              behavior: HitTestBehavior.opaque,
+              onTap: on ? null : () => onChanged(forFolders),
+              child: Container(
+                decoration: on
+                    ? BoxDecoration(
+                        color: palette.tonalBackground,
+                        borderRadius: BorderRadius.circular(8),
+                      )
+                    : null,
+                alignment: Alignment.center,
+                child: Text(
+                  forFolders ? 'Folders' : 'Notes',
+                  style: _figtree(13, 16, FontWeight.w500, colour),
+                ),
               ),
             ),
           ),

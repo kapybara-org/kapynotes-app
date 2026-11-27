@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -2024,6 +2025,28 @@ class _NotesFilterState extends State<_NotesFilter> {
     };
   }
 
+  /// The submenu Back closed last, for Forward to open again.
+  _FilterSubmenu? _closedSubmenu;
+
+  /// A swipe or the mouse's Back and Forward over the menu: Back closes the
+  /// open submenu, and Forward opens it again.
+  bool _stepSubmenu(BackForwardStep step) {
+    if (step == BackForwardStep.back) {
+      final open = _submenu;
+      if (open == null) return false;
+      setState(() {
+        _closedSubmenu = open;
+        _submenu = null;
+      });
+      return true;
+    }
+    final closed = _closedSubmenu;
+    if (closed == null || _submenu != null) return false;
+    _closedSubmenu = null;
+    _toggleSubmenu(closed, closed == _FilterSubmenu.when ? _whenRow : _tagsRow);
+    return true;
+  }
+
   void _toggle() {
     if (AppPlatform.isMobile) return unawaited(_openPopover());
     final button = context.findRenderObject()! as RenderBox;
@@ -2036,6 +2059,7 @@ class _NotesFilterState extends State<_NotesFilter> {
     );
     setState(() {
       _submenu = null;
+      _closedSubmenu = null;
       _menu.isShowing ? _menu.hide() : _menu.show();
     });
     if (!_menu.isShowing) return;
@@ -2334,21 +2358,29 @@ class _NotesFilterState extends State<_NotesFilter> {
                         targetAnchor: Alignment.bottomRight,
                         followerAnchor: Alignment.topRight,
                         offset: const Offset(0, 6),
-                        child: TapRegion(
-                          groupId: _menu,
-                          child: submenu != null && _inPlace
-                              ? menu
-                              : ConstrainedBox(
-                                  constraints: BoxConstraints(maxHeight: _room),
-                                  child: menu,
-                                ),
+                        child: BackForwardArea(
+                          onStep: _stepSubmenu,
+                          child: TapRegion(
+                            groupId: _menu,
+                            child: submenu != null && _inPlace
+                                ? menu
+                                : ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxHeight: _room,
+                                    ),
+                                    child: menu,
+                                  ),
+                          ),
                         ),
                       ),
                     ),
                     if (submenu != null && !_inPlace)
                       CustomSingleChildLayout(
                         delegate: PopoverAtPoint(_submenuAt),
-                        child: TapRegion(groupId: _menu, child: submenu),
+                        child: BackForwardArea(
+                          onStep: _stepSubmenu,
+                          child: TapRegion(groupId: _menu, child: submenu),
+                        ),
                       ),
                   ],
                 ),

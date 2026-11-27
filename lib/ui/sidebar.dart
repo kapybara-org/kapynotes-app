@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -557,11 +558,13 @@ class Sidebar extends StatelessWidget {
                           ),
                     onStopPicking: _picking ? picks!.clear : null,
                     archiveShortcut: archiveShortcut,
-                    child: _foldersTab
-                        ? _buildFolders(context)
-                        : notes.isEmpty
-                        ? _buildEmpty(context)
-                        : _sweeps(_buildBesideRail(context)),
+                    child: BackForwardSlide(
+                      child: _foldersTab
+                          ? _buildFolders(context)
+                          : notes.isEmpty
+                          ? _buildEmpty(context)
+                          : _sweeps(_buildBesideRail(context)),
+                    ),
                   ),
                 ),
               ),

@@ -211,6 +211,15 @@ class _RenderRing extends RenderBox {
   (RRect, Rect)? _ring() {
     final context = _target.value?.context;
     if (context == null || !context.mounted) return null;
+    // mounted stays true while an element is deactivated, and looking up an
+    // ancestor of one throws. A control that rebuilds as it is activated,
+    // such as a tab, is gone for this frame: paint nothing.
+    var deactivated = false;
+    assert(() {
+      deactivated = context is Element && !context.debugIsActive;
+      return true;
+    }());
+    if (deactivated) return null;
     // A control with a [FocusRingTarget] in it is marked there, and a text
     // field whole, its box and border, not just the line of text that holds
     // the focus.
