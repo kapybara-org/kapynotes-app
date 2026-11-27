@@ -1969,6 +1969,10 @@ class _NotesFilterState extends State<_NotesFilter> {
   /// moves up until it fits.
   Offset _submenuAt = Offset.zero;
 
+  /// How tall the menu may be: the room under the icon, measured as it
+  /// opens. A short window scrolls the menu rather than cutting it off.
+  double _room = double.infinity;
+
   void _toggleSubmenu(_FilterSubmenu submenu, GlobalKey row) {
     final opener = row.currentContext?.findRenderObject() as RenderBox?;
     final menu = _menuKey.currentContext?.findRenderObject() as RenderBox?;
@@ -2020,6 +2024,14 @@ class _NotesFilterState extends State<_NotesFilter> {
 
   void _toggle() {
     if (AppPlatform.isMobile) return unawaited(_openPopover());
+    final button = context.findRenderObject()! as RenderBox;
+    _room = math.max(
+      160,
+      MediaQuery.sizeOf(context).height -
+          button.localToGlobal(Offset(0, button.size.height + 6)).dy -
+          MediaQuery.paddingOf(context).bottom -
+          12,
+    );
     setState(() {
       _submenu = null;
       _menu.isShowing ? _menu.hide() : _menu.show();
@@ -2291,7 +2303,15 @@ class _NotesFilterState extends State<_NotesFilter> {
                         targetAnchor: Alignment.bottomRight,
                         followerAnchor: Alignment.topRight,
                         offset: const Offset(0, 6),
-                        child: TapRegion(groupId: _menu, child: menu),
+                        child: TapRegion(
+                          groupId: _menu,
+                          child: submenu != null && _inPlace
+                              ? menu
+                              : ConstrainedBox(
+                                  constraints: BoxConstraints(maxHeight: _room),
+                                  child: menu,
+                                ),
+                        ),
                       ),
                     ),
                     if (submenu != null && !_inPlace)
@@ -2653,15 +2673,17 @@ class _FilterMenu extends StatelessWidget {
       width: 232,
       padding: const EdgeInsets.all(6),
       decoration: _menuSurface(palette),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final (index, group) in groups.indexed) ...[
-            if (index > 0) rule(),
-            ...group,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (index, group) in groups.indexed) ...[
+              if (index > 0) rule(),
+              ...group,
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

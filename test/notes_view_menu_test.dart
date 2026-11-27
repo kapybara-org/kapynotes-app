@@ -342,6 +342,31 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  testWidgets('in a short window the menu scrolls, and its last row is still '
+      'reached', (tester) async {
+    desktop(TargetPlatform.macOS);
+    bool? cards;
+    await pumpView(
+      tester,
+      window: const Size(1200, 360),
+      onCardsChanged: (value) => cards = value,
+    );
+    await tester.tap(view);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(
+      tester.getRect(menu).bottom,
+      lessThanOrEqualTo(360 - 12),
+      reason: 'the menu ends inside the window',
+    );
+    final grid = find.byKey(const ValueKey('notes-layout-grid'));
+    await tester.ensureVisible(grid);
+    await tester.pump();
+    await tester.tap(grid);
+    expect(cards, isTrue);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets("an iPad's View icon opens the touch popover, which adds "
       'Group by and Layout', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
