@@ -174,6 +174,44 @@ Auto-detected sources for pulse:
       expect(_capturing(), isEmpty);
     }, skip: skip);
 
+    test('a tone is never called silence', () async {
+      expect(await controller.start(noteId: 'n1'), isTrue);
+      await Future<void>.delayed(
+        VoiceRecordingController.silentAfter + const Duration(seconds: 1),
+      );
+
+      expect(controller.session!.silent, isFalse);
+      expect(
+        await controller.finishRecordingAndFlush(discardSilent: true),
+        isFalse,
+      );
+    }, skip: skip);
+
+    test(
+      'a microphone that hears nothing is told, and saves nothing (KAP-424)',
+      () async {
+        final before = _defaultSource();
+        _useSource('kapy_silent_mic');
+        addTearDown(() => _useSource(before));
+
+        expect(await controller.hasMicrophone(), isTrue);
+        expect(await controller.start(noteId: 'n1'), isTrue);
+        await Future<void>.delayed(
+          VoiceRecordingController.silentAfter + const Duration(seconds: 1),
+        );
+        expect(controller.session!.elapsed.inSeconds, greaterThanOrEqualTo(3));
+        expect(controller.session!.silent, isTrue);
+
+        expect(
+          await controller.finishRecordingAndFlush(discardSilent: true),
+          isTrue,
+        );
+        expect(await temp.list().toList(), isEmpty);
+        expect(_capturing(), isEmpty);
+      },
+      skip: skip,
+    );
+
     test(
       'the speech model gets 16 kHz mono samples of the whole recording',
       () async {
@@ -320,6 +358,18 @@ bool _canCapture() {
     return probe.exitCode == 0 && (probe.stdout as List<int>).isNotEmpty;
   } on ProcessException {
     return false;
+  }
+}
+
+/// The source a recording captures from when it asks for the default.
+String _defaultSource() =>
+    (Process.runSync('pactl', ['get-default-source']).stdout as String).trim();
+
+/// Makes [name] the default source, which is what the recorder captures.
+void _useSource(String name) {
+  final result = Process.runSync('pactl', ['set-default-source', name]);
+  if (result.exitCode != 0) {
+    throw StateError('pactl could not choose $name: ${result.stderr}');
   }
 }
 

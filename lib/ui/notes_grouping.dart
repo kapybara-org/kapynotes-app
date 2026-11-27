@@ -14,7 +14,7 @@ enum NotesWhen {
 
   const NotesWhen(this.label, this.phrase);
 
-  /// What the chip beside the filter says: "This week".
+  /// What the View menu's When row and the list's chip say: "This week".
   final String label;
 
   /// How a sentence says it: "No notes this week".
