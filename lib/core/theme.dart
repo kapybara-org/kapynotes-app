@@ -1187,6 +1187,23 @@ class AppTypeScale {
   static double get display => _touch ? 34 : 32;
 }
 
+/// Geist's tracking by size: tighter as text grows, a little open at 13 and
+/// below so small text keeps its air. Text past 17, the screen titles,
+/// keeps its own.
+class AppTracking {
+  const AppTracking._();
+
+  static double of(double size) => switch (size.round()) {
+    > 17 => 0,
+    17 => -0.2,
+    16 => -0.1,
+    15 => -0.05,
+    14 => 0,
+    13 => 0.1,
+    _ => 0.15,
+  };
+}
+
 /// The faces the interface is set in. The writing surface has its own: see
 /// [WritingFont].
 class AppFonts {
@@ -1287,10 +1304,10 @@ class AppWeight {
 
 /// Interface text on the ladder.
 ///
-/// Letter spacing stays 0: small text with tracking looks soft, and macOS
-/// already draws Flutter's glyphs with grayscale antialiasing, which is the
-/// smoothing this face wants. Times and counts pass [tabular] so the figures
-/// don't shuffle as they change.
+/// Geist takes [AppTracking] for its size unless [letterSpacing] is given;
+/// other faces take none. Times, dates, counts and amounts pass [tabular]
+/// for tabular lining figures, so they line up and don't shuffle as they
+/// change.
 TextStyle chromeStyle({
   required double size,
 
@@ -1302,10 +1319,11 @@ TextStyle chromeStyle({
   List<String>? fallback,
   List<FontVariation> extra = const [],
   bool tabular = false,
-  double letterSpacing = 0,
+  double? letterSpacing,
   FontStyle? fontStyle,
 }) {
   final axis = AppWeight.bold(weight);
+  final geist = family == null || family == AppFonts.ui;
   return TextStyle(
     fontFamily: family ?? AppFonts.ui,
     fontFamilyFallback: fallback ?? AppFonts.uiFallback,
@@ -1315,9 +1333,11 @@ TextStyle chromeStyle({
     fontWeight: AppWeight.named(axis),
     fontVariations: AppWeight.variations(axis, extra: extra),
     color: color,
-    letterSpacing: letterSpacing,
+    letterSpacing: letterSpacing ?? (geist ? AppTracking.of(size) : 0),
     fontStyle: fontStyle,
-    fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
+    fontFeatures: tabular
+        ? const [FontFeature.tabularFigures(), FontFeature.liningFigures()]
+        : null,
   );
 }
 

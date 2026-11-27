@@ -125,10 +125,10 @@ void main() {
     }
   });
 
-  testWidgets('a full phone row is 90 tall inside its hairlines: 12, the '
-      '22 title, 3, the 20 preview, 5, the 16 holds, 12', (tester) async {
+  testWidgets('a full phone row is 91 tall inside its hairlines: 12, the '
+      '22 title, 4, the 20 preview, 5, the 16 holds, 12', (tester) async {
     await pumpRow(tester, morningPages());
-    expect(tester.getSize(find.byType(NoteListRowFace)).height, 90);
+    expect(tester.getSize(find.byType(NoteListRowFace)).height, 91);
   });
 
   testWidgets('a row that holds only words keeps two lines', (tester) async {
@@ -145,7 +145,7 @@ void main() {
     expect(find.text('For the call with Acme on Friday.'), findsOneWidget);
     expect(
       tester.getSize(find.byType(NoteListRowFace)).height,
-      12 + 22 + 3 + 20 + 12,
+      12 + 22 + 4 + 20 + 12,
     );
   });
 

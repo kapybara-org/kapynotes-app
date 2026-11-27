@@ -254,6 +254,9 @@ class NoteCardFace extends StatelessWidget {
 
   static const double height = 84;
 
+  /// Where the card's words start, which a heading over cards lines up with.
+  static const double textStart = 12;
+
   final Note note;
   final NoteGlance glance;
 
@@ -303,7 +306,7 @@ class NoteCardFace extends StatelessWidget {
     ].take(2).toList();
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+      padding: const EdgeInsets.fromLTRB(textStart, 11, 12, 10),
       decoration: BoxDecoration(
         color: fill,
         borderRadius: _cardRadius,
@@ -358,6 +361,7 @@ class NoteCardFace extends StatelessWidget {
                                   16,
                                   FontWeight.w400,
                                   palette.textSecondary,
+                                  tabular: true,
                                 ).copyWith(
                                   fontStyle: text == null
                                       ? FontStyle.italic
@@ -473,7 +477,13 @@ class PhoneCardFace extends StatelessWidget {
                     color: palette.resultPillText,
                     tabular: true,
                   )
-                : uiStyle(13, 18, FontWeight.w400, palette.textSecondary),
+                : uiStyle(
+                    13,
+                    18,
+                    FontWeight.w400,
+                    palette.textSecondary,
+                    tabular: true,
+                  ),
           ),
           const SizedBox(height: 12),
           _MetaRow(
@@ -545,7 +555,7 @@ class _MetaRow extends StatelessWidget {
     final ink = selected ? palette.textSecondary : palette.textTertiary;
     final style = DefaultTextStyle.of(
       context,
-    ).style.merge(uiStyle(12, 16, FontWeight.w400, ink));
+    ).style.merge(uiStyle(12, 16, FontWeight.w400, ink, tabular: true));
     final direction = Directionality.of(context);
     final scaler = MediaQuery.textScalerOf(context);
     final first = tags.firstOrNull;
@@ -689,10 +699,10 @@ class NoteListRowFace extends StatelessWidget {
   /// A phone's row: full width between hairlines, with a larger title.
   final bool touch;
 
-  /// Where the row's title starts, which is where the hairline between two
-  /// rows starts too.
+  /// Where the row's title starts from the row's edge, which is where the
+  /// hairline between two rows and a desktop heading start too.
   static double textStart({required bool touch}) =>
-      touch ? 18 : 6.5 + TagDots.size + 8;
+      touch ? 16 : 1.5 + 6.5 + TagDots.size + 8;
 
   @override
   Widget build(BuildContext context) {
@@ -722,8 +732,8 @@ class NoteListRowFace extends StatelessWidget {
     // does not nudge its text. Open, a row takes a fill, never an outline.
     return Container(
       padding: touch
-          ? const EdgeInsets.fromLTRB(18, 12, 16, 12)
-          : const EdgeInsets.symmetric(horizontal: 6.5, vertical: 7),
+          ? const EdgeInsets.fromLTRB(16, 12, 16, 12)
+          : const EdgeInsets.fromLTRB(6.5, 8.5, 12.5, 8.5),
       decoration: BoxDecoration(
         color: marked
             ? palette.selectedBackground
@@ -769,7 +779,7 @@ class NoteListRowFace extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: uiStyle(
                           AppTypeScale.row,
-                          touch ? 22 : 18,
+                          touch ? 22 : 16,
                           FontWeight.w500,
                           palette.textPrimary,
                         ),
@@ -814,7 +824,7 @@ class NoteListRowFace extends StatelessWidget {
                   ],
                 ),
                 if (previewed) ...[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       if (!touch) SizedBox(width: TagDots.size + 8),
@@ -838,10 +848,11 @@ class NoteListRowFace extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: metaStyle(
                             touch ? 14 : AppTypeScale.caption,
-                            touch ? 20 : 16,
+                            touch ? 20 : 14,
                             note.isEmpty
                                 ? palette.textTertiary
                                 : palette.textSecondary,
+                            tabular: true,
                           ),
                         ),
                       ),
@@ -1151,7 +1162,7 @@ class PhoneDrawingRowFace extends StatelessWidget {
     final palette = context.palette;
     final picking = this.picking;
     return Container(
-      padding: const EdgeInsets.fromLTRB(18, 10, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       color: selected || picking == true
           ? palette.selectedBackground
           : hovering
@@ -1473,6 +1484,7 @@ TextStyle _sectionLabel(CalcPalette palette) => chromeStyle(
   line: 16,
   weight: AppWeight.semibold,
   color: palette.textPrimary,
+  tabular: true,
 );
 
 /// A count or a date after a section label: the label's size, a grey

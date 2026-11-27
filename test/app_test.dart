@@ -12412,7 +12412,7 @@ void main() {
       final rects = [for (var i = 0; i < 2; i++) tester.getRect(lines.at(i))];
       for (var i = 0; i < 2; i++) {
         final line = tester.widget<Divider>(lines.at(i));
-        expect(rects[i].left + line.indent!, 38);
+        expect(rects[i].left + line.indent!, 36);
         expect(rects[i].right - line.endIndent!, 393 - 20);
       }
       expect(rects[0].top, tester.getRect(row('Morning pages')).bottom);
@@ -12423,7 +12423,7 @@ void main() {
       );
     });
 
-    testWidgets('a row with a preview and what it holds is 91 from hairline '
+    testWidgets('a row with a preview and what it holds is 92 from hairline '
         'to hairline, and one with words alone keeps two lines', (
       tester,
     ) async {
@@ -12456,7 +12456,7 @@ void main() {
       expect(lines, findsNWidgets(2));
       expect(
         tester.getTopLeft(lines.at(1)).dy - tester.getTopLeft(lines.at(0)).dy,
-        91,
+        92,
       );
       Finder holdsOf(String title) => find.descendant(
         of: find.widgetWithText(NoteRow, title),

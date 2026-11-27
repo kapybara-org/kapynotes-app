@@ -37,6 +37,7 @@ TextStyle kapyText(
   height: line / size,
   fontWeight: AppWeight.font(AppWeight.axisOf(weight)),
   fontVariations: AppWeight.wght(AppWeight.axisOf(weight)),
+  letterSpacing: AppTracking.of(size),
   color: color,
 );
 

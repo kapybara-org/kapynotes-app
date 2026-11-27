@@ -1319,7 +1319,15 @@ extension on Sidebar {
 
     void gap(double height) => rows.add((_) => SizedBox(height: height));
 
-    void heading(Widget heading) {
+    // A desktop heading starts where the words under it do. A phone's
+    // heading insets itself inside the margin.
+    final axis = phone || drawings
+        ? margin
+        : cards
+        ? margin + NoteCardFace.textStart
+        : 10 + NoteListRowFace.textStart(touch: false);
+
+    void heading(Widget heading, {bool onAxis = true}) {
       if (rows.isNotEmpty) {
         gap(phone ? 22 : 24);
       } else if (phone) {
@@ -1328,7 +1336,7 @@ extension on Sidebar {
       }
       rows.add(
         (_) => Padding(
-          padding: EdgeInsets.symmetric(horizontal: margin),
+          padding: EdgeInsets.only(left: onAxis ? axis : margin, right: margin),
           child: heading,
         ),
       );
@@ -1498,6 +1506,7 @@ extension on Sidebar {
             icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
           ),
         ),
+        onAxis: false,
       );
       section(groups.pinned);
     } else if (phone) {
@@ -4431,6 +4440,7 @@ TextStyle _phoneHeadingStyle(CalcPalette palette) => chromeStyle(
   line: 22,
   weight: AppWeight.semibold,
   color: palette.textPrimary,
+  tabular: true,
 );
 
 /// A phone list's title: the space's name large, its count small and quiet
