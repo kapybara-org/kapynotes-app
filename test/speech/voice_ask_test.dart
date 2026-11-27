@@ -444,6 +444,112 @@ void main() {
     });
   });
 
+  group('the drawer at its tallest', () {
+    // Nothing the call said, so the answer cites no moment and the window
+    // stays on the tab it was on.
+    final long = List.filled(
+      150,
+      'Nothing in this answer was said in the call.',
+    ).join(' ');
+    Finder private(String type) => find.byWidgetPredicate(
+      (widget) => widget.runtimeType.toString() == type,
+    );
+    final speakerBar = private('_SpeakerBar');
+    final switchRow = private('_SwitchRow');
+
+    /// Opens a long answer from Earlier, so the drawer is as tall as it goes.
+    Future<void> openLong(WidgetTester tester) async {
+      await tester.tap(_earlier);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('voice-ask-earlier-c1')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: _drawer, matching: find.text(long)),
+        findsOneWidget,
+      );
+    }
+
+    for (final asSheet in [false, true]) {
+      testWidgets(
+        'leaves the speakers row whole and tappable on the transcript${asSheet ? ', on a phone' : ''}',
+        (tester) async {
+          if (asSheet) {
+            tester.view
+              ..physicalSize = const Size(390, 844)
+              ..devicePixelRatio = 1;
+            addTearDown(tester.view.reset);
+          }
+          final ai = FakeKapyAi(
+            chatList: [_chat('c1', 'What did we decide?', answer: long)],
+          );
+          final window = _window(ai, asSheet: asSheet, onChanged: (_) {});
+          if (asSheet) {
+            await tester.pumpWidget(window);
+          } else {
+            await _show(tester, window);
+          }
+          await tester.tap(find.text('Transcript'));
+          await tester.pumpAndSettle();
+          final before = tester.getRect(speakerBar);
+
+          await openLong(tester);
+          expect(tester.getRect(speakerBar), before, reason: 'nothing moves');
+          expect(
+            tester.getRect(_drawer).top,
+            before.bottom + 8,
+            reason: 'a solid band below the row, then the drawer',
+          );
+          expect(
+            find
+                .descendant(of: speakerBar, matching: find.text('Arjun'))
+                .hitTestable(),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.descendant(of: speakerBar, matching: find.text('Arjun')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(TextField), findsWidgets, reason: 'rename opens');
+        },
+      );
+    }
+
+    testWidgets('stops a solid band below the tabs on the summary', (
+      tester,
+    ) async {
+      final ai = FakeKapyAi(
+        chatList: [_chat('c1', 'What did we decide?', answer: long)],
+      );
+      await _show(tester, _window(ai));
+      final tabs = tester.getRect(switchRow);
+      await openLong(tester);
+      expect(tester.getRect(switchRow), tabs, reason: 'nothing moves');
+      expect(tester.getRect(_drawer).top, tabs.bottom + 8);
+      expect(
+        find.text('Show the annual plan first.').hitTestable(),
+        findsNothing,
+        reason: 'no point shows above the drawer',
+      );
+      final fade = find.byWidgetPredicate(
+        (widget) => widget is OverflowBox && widget.maxHeight == 24,
+      );
+      final shown = tester.getRect(
+        find.ancestor(of: fade, matching: find.byType(ClipRect)).first,
+      );
+      final band = find.descendant(
+        of: fade,
+        matching: find.byType(DecoratedBox),
+      );
+      expect(shown.height, 8);
+      expect(tester.getRect(band).bottom, shown.bottom);
+      final gradient =
+          (tester.widget<DecoratedBox>(band).decoration as BoxDecoration)
+                  .gradient!
+              as LinearGradient;
+      expect(gradient.stops!.last, lessThanOrEqualTo(2 / 3), reason: 'solid');
+    });
+  });
+
   group('Earlier', () {
     final past = [
       _chat('c2', 'When is the page due?', answer: 'Friday.', minute: 29),
