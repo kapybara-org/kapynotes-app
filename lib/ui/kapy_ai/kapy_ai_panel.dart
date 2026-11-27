@@ -1,3 +1,4 @@
+import '../back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -262,64 +263,82 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
     child: Focus(
       focusNode: _panelFocus,
       onKeyEvent: _onKey,
-      child: Material(
-        key: const ValueKey('kapy-ai-panel'),
-        type: MaterialType.transparency,
-        child: ListenableBuilder(
-          listenable: Listenable.merge([_ai, widget.controller]),
-          builder: (context, _) {
-            final noteId = _noteId;
-            if (widget.compact && noteId != null) return _compact(noteId);
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _header(),
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _chats
-                          ? KapyAiChats(
-                              kapyAi: _ai,
-                              now: widget.now(),
-                              onOpened: () => setState(() => _chats = false),
-                            )
-                          : _body(),
-                      if (_picking) ...[
-                        // Closes the picker and leaves the keyboard up.
-                        KeepsKeyboard(
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => setState(() => _picking = false),
-                          ),
+      child: BackForwardArea(
+        onStep: _stepChats,
+        child: Material(
+          key: const ValueKey('kapy-ai-panel'),
+          type: MaterialType.transparency,
+          child: ListenableBuilder(
+            listenable: Listenable.merge([_ai, widget.controller]),
+            builder: (context, _) {
+              final noteId = _noteId;
+              if (widget.compact && noteId != null) return _compact(noteId);
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _header(),
+                  Expanded(
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        BackForwardSlide(
+                          child: _chats
+                              ? KapyAiChats(
+                                  kapyAi: _ai,
+                                  now: widget.now(),
+                                  onOpened: () =>
+                                      setState(() => _chats = false),
+                                )
+                              : _body(),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-                          child: Align(
-                            alignment: Alignment.bottomCenter,
-                            child: KapyAiPicker(
-                              key: _menu,
-                              kapyAi: _ai,
-                              onPick: _pick,
-                              onManageAccounts: () {
-                                setState(() => _picking = false);
-                                widget.onManageAccounts();
-                              },
+                        if (_picking) ...[
+                          // Closes the picker and leaves the keyboard up.
+                          KeepsKeyboard(
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => setState(() => _picking = false),
                             ),
                           ),
-                        ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                            child: Align(
+                              alignment: Alignment.bottomCenter,
+                              child: KapyAiPicker(
+                                key: _menu,
+                                kapyAi: _ai,
+                                onPick: _pick,
+                                onManageAccounts: () {
+                                  setState(() => _picking = false);
+                                  widget.onManageAccounts();
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                if (!_chats) _composer(),
-              ],
-            );
-          },
+                  if (!_chats) _composer(),
+                ],
+              );
+            },
+          ),
         ),
       ),
     ),
   );
+
+  /// A swipe or the mouse's Back and Forward over the panel: back from the
+  /// chat to the chats, and forward to the chat again.
+  bool _stepChats(BackForwardStep step) {
+    final chats = step == BackForwardStep.back;
+    if (chats == _chats) return false;
+    setState(() {
+      _chats = chats;
+      _picking = false;
+    });
+    return true;
+  }
 
   /// The sheet resting over the note (M10).
   Widget _compact(String noteId) {
