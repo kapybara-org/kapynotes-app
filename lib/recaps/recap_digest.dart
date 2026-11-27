@@ -214,6 +214,27 @@ class RecapDigest {
       DateTime(period.first.year, period.first.month, period.first.day + index);
 }
 
+/// The visible notes in [period], as [RecapDigest.compute] counts them,
+/// each with its day: what a recap made with Kapy AI reads.
+Map<Note, DateTime> recapNotes(
+  RecapPeriod period, {
+  required List<Note> notes,
+  required DateTime Function(DateTime) displayTime,
+  DateTime? Function(Note note)? ownDay,
+}) => {
+  for (final MapEntry(key: note, value: index) in _held(
+    period,
+    notes,
+    displayTime,
+    ownDay,
+  ).entries)
+    note: DateTime(
+      period.first.year,
+      period.first.month,
+      period.first.day + index,
+    ),
+};
+
 /// The ids of [notes] a recap may read: not hidden, not archived.
 Set<String> _visible(List<Note> notes) => {
   for (final note in notes)

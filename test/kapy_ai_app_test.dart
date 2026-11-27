@@ -1778,9 +1778,32 @@ void main() {
       await tester.pumpAndSettle();
       expect(ai.calls, isNot(contains('clearHistory')));
 
+      expect(
+        find.text(
+          'Every Kapy AI chat is deleted on all your devices. This can’t be '
+          'undone.',
+        ),
+        findsOneWidget,
+      );
+
       await tester.tap(find.text('Clear').last);
       await tester.pumpAndSettle();
       expect(ai.calls, contains('clearHistory'));
+    });
+
+    testWidgets('Clear… says it deletes the recaps too', (tester) async {
+      ai = FakeKapyAi(pro: true)..recaps = true;
+      await _openSettings(tester, kapyAi: ai, reveal: 'kapy-ai-clear-history');
+
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-clear')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Every Kapy AI chat is deleted on all your devices. This also '
+          'deletes your recaps. This can’t be undone.',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('the shortcut has a row, and search finds the groups', (
