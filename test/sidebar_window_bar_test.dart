@@ -186,6 +186,19 @@ void main() {
         isNull,
         reason: "D's 22 pt name leaves the chord no room at the default width",
       );
+      // Hidden from the button, the chord still shows on hover.
+      expect(
+        tester.widget<TonalButton>(newNote).tooltip,
+        SidebarWindowBar.newTooltip(
+          'note',
+          ShortcutBinding(
+            logicalKey: LogicalKeyboardKey.keyN,
+            physicalKey: PhysicalKeyboardKey.keyN,
+            meta: platform == TargetPlatform.macOS,
+            control: platform != TargetPlatform.macOS,
+          ),
+        ),
+      );
       expect(tester.getRect(ask).right, tester.getRect(newNote).left);
       expect(tester.getRect(newNote).right, tester.getRect(hide).left);
       expect(SidebarWindowBar.fullWidth - tester.getRect(hide).right, 16);
