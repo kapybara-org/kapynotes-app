@@ -160,6 +160,11 @@ void main() {
       await tester.pumpAndSettle(const Duration(seconds: 1));
       expect(ai.calls, ['newChat']);
       expect(find.byKey(const ValueKey('kapy-ai-sheet')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('kapy-ai-chip')),
+        findsNothing,
+        reason: 'a new chat from the page is about no note',
+      );
       // A device with a hardware keyboard attached raises no software one,
       // so this reads the field's focus rather than viewInsets.
       expect(

@@ -26,6 +26,7 @@ import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_parts.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_settings.dart';
 import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
@@ -2165,7 +2166,8 @@ void main() {
     });
 
     testWidgets('its + is New chat: a new chat in the sheet, ready to type '
-        'in; held, it still makes the rest', (tester) async {
+        'in, about no note; held, it still makes the rest', (tester) async {
+      notes.create(body: 'Trip budget');
       ai.chatList = [
         KapyChat(
           id: 'a',
@@ -2207,6 +2209,15 @@ void main() {
         find.byKey(const ValueKey('kapy-ai-field')),
       );
       expect(field.focusNode!.hasFocus, isTrue);
+      expect(find.byKey(const ValueKey('kapy-ai-chip')), findsNothing);
+      expect(find.text('Summarise this note'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('kapy-ai-sheet')),
+          matching: find.text(kapyAiExamples.first),
+        ),
+        findsOneWidget,
+      );
 
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();

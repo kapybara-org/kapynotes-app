@@ -13,6 +13,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_parts.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -164,8 +165,14 @@ void main() {
 
         ai.set(answering: false);
         await tester.pumpAndSettle();
-        await _tap(tester, find.text('Summarise this note'));
-        expect(ai.calls.last, startsWith('ask:Summarise this note:'));
+        await _tap(
+          tester,
+          find.descendant(
+            of: find.byKey(const ValueKey('kapy-ai-sheet')),
+            matching: find.text(kapyAiExamples.first),
+          ),
+        );
+        expect(ai.calls.last, startsWith('ask:${kapyAiExamples.first}:'));
         expect(_typing(tester, field), isTrue);
 
         await _tap(tester, find.byKey(const ValueKey('kapy-ai-new-chat')));
