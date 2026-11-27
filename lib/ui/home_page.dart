@@ -121,6 +121,7 @@ import 'tasks/tasks_sidebar.dart';
 import 'sidebar.dart';
 import 'sidebar_timestamp.dart';
 import 'settings_dialog.dart';
+import 'storage_full_sheet.dart';
 import 'settings/sharing_section.dart' show SharingStart;
 import 'tag_colours.dart';
 import 'tag_ui.dart';
@@ -579,6 +580,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _picks.addListener(_onPicksChanged);
     widget.account?.noteLimit?.addListener(_onNoteLimitChanged);
     widget.account?.addListener(_offerRecoveryKey);
+    widget.account?.addListener(_tellStorageFull);
     // The system-wide new-note shortcut has already raised the window by the
     // time this runs; the note itself is this page's to make.
     widget.desktopIntegration?.onNewNoteRequested = _createNote;
@@ -622,6 +624,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.folders?.removeListener(_onFoldersChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
     widget.account?.removeListener(_offerRecoveryKey);
+    widget.account?.removeListener(_tellStorageFull);
     widget.desktopIntegration?.onNewNoteRequested = null;
     widget.desktopIntegration?.onOpenRequested = null;
     widget.desktopIntegration?.window = null;
@@ -3320,6 +3323,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       action: 'Set up',
       onAction: () =>
           showKeyChangeDialog(context, account, KeyProofAction.recoveryKey),
+    );
+  }
+
+  /// Something just added can't sync because the account is full: said once,
+  /// over whatever is on screen unless a sheet or dialog is already up, in
+  /// which case the next change of state tries again.
+  void _tellStorageFull() {
+    final account = widget.account;
+    final refused = account?.storageFull;
+    if (!mounted || account == null || refused == null) return;
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+    account.storageFullShown();
+    unawaited(_showStorageFull(refused));
+  }
+
+  Future<void> _showStorageFull(NoteAttachmentRef refused) async {
+    final see = await showStorageFullSheet(context, refused);
+    if (!see || !mounted) return;
+    _showSettings(
+      section: SettingsSection.account,
+      reveal: 'plan-storage-usage',
     );
   }
 
