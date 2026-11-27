@@ -983,15 +983,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Delete note?'), findsOneWidget);
       expect(
-        find.text('Deletes "Trip budget" from every synced device.'),
+        find.text(
+          'Moves "Trip budget" to Recently deleted. You can put it back for '
+          '30 days.',
+        ),
         findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
       await tester.pumpAndSettle();
-      expect(find.text('Note deleted'), findsOneWidget);
+      expect(find.text('Moved to Recently deleted'), findsOneWidget);
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.byId(id), isNull);
+      expect(notes.byId(id)!.isTrashed, isTrue);
     });
 
     testWidgets("a guest's row offers Remove, which only takes the note out "

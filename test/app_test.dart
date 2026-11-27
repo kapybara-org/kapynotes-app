@@ -7803,8 +7803,8 @@ void main() {
       expect(notes.archivedNotes.single.title, 'Third');
     });
 
-    testWidgets('deletes for good inside the archive, once the question is '
-        'answered', (tester) async {
+    testWidgets('moves a note in the archive to Recently deleted, once the '
+        'question is answered', (tester) async {
       await openNote(tester, TargetPlatform.macOS);
       for (final note in [...notes.notes]) {
         notes.archive(note.id);
@@ -7832,7 +7832,8 @@ void main() {
       );
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.tombstones, hasLength(1));
+      expect(notes.trashedNotes.single.title, 'Third');
+      expect(notes.tombstones, isEmpty);
     });
 
     testWidgets('names itself in the row menu', (tester) async {
@@ -8095,7 +8096,7 @@ void main() {
       expect(notes.archivedNotes, hasLength(1));
     });
 
-    testWidgets('asks before it throws an archived note away for good', (
+    testWidgets('asks before it moves an archived note to Recently deleted', (
       tester,
     ) async {
       await threeNotes(tester);
@@ -8125,7 +8126,8 @@ void main() {
       );
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.tombstones, hasLength(1));
+      expect(notes.trashedNotes.single.title, 'Third');
+      expect(notes.tombstones, isEmpty);
     });
   });
 
@@ -8177,7 +8179,7 @@ void main() {
     expect(rowTitles(), ['Third', 'Second', 'First']);
   });
 
-  group('emptying the archive', () {
+  group('deleting from the archive', () {
     /// Three notes, all archived, with the archive open.
     Future<List<Note>> openArchive(WidgetTester tester) async {
       await pumpApp(tester);
@@ -8221,7 +8223,7 @@ void main() {
       );
     });
 
-    testWidgets('a note in the archive can be thrown away for good', (
+    testWidgets('a note in the archive moves to Recently deleted', (
       tester,
     ) async {
       final archived = await openArchive(tester);
@@ -8244,10 +8246,11 @@ void main() {
         notes.archivedNotes.map((note) => note.title),
         unorderedEquals(['First', 'Second']),
       );
-      expect(find.text('Note deleted'), findsOneWidget);
+      expect(find.text('Moved to Recently deleted'), findsOneWidget);
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.tombstones.single.id, third.id);
+      expect(notes.trashedNotes.single.id, third.id);
+      expect(notes.tombstones, isEmpty);
     });
 
     testWidgets('backing out of the question keeps the note', (tester) async {
@@ -8264,19 +8267,22 @@ void main() {
       expect(notes.tombstones, isEmpty);
     });
 
-    testWidgets('delete all empties it in one go', (tester) async {
+    testWidgets('delete all moves it to Recently deleted in one go', (
+      tester,
+    ) async {
       await openArchive(tester);
 
       await tester.tap(find.byKey(const ValueKey('archive-delete-all')));
       await tester.pumpAndSettle();
-      expect(find.text('Empty Archived Notes?'), findsOneWidget);
+      expect(find.text('Delete all archived notes?'), findsOneWidget);
       await confirm(tester);
 
       expect(notes.archivedNotes, isEmpty);
-      expect(find.text('3 notes deleted'), findsOneWidget);
+      expect(find.text('Moved 3 notes to Recently deleted'), findsOneWidget);
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.tombstones, hasLength(3));
+      expect(notes.trashedNotes, hasLength(3));
+      expect(notes.tombstones, isEmpty);
       // The notes that were never archived are untouched.
       expect(notes.notes, isEmpty);
     });
@@ -8326,7 +8332,8 @@ void main() {
       expect(notes.archivedNotes, isEmpty);
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.tombstones, hasLength(3));
+      expect(notes.trashedNotes, hasLength(3));
+      expect(notes.tombstones, isEmpty);
     });
 
     testWidgets('leaving the archive puts the picking away', (tester) async {
@@ -8812,8 +8819,8 @@ void main() {
         expect(find.widgetWithText(NoteRow, 'First note'), findsNothing);
         Toast.debugTimeUp();
         await tester.pumpAndSettle();
-        expect(notes.byId('first'), isNull);
-        expect(notes.tombstones, hasLength(1));
+        expect(notes.byId('first')!.isTrashed, isTrue);
+        expect(notes.tombstones, isEmpty);
       });
     }
 
@@ -12087,7 +12094,7 @@ void main() {
       await tester.pumpAndSettle();
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.byId(offsite.id), isNull);
+      expect(notes.byId(offsite.id)!.isTrashed, isTrue);
     });
 
     testWidgets('a short swipe springs back and a tap still opens the note', (
