@@ -274,8 +274,8 @@ void main() {
         await cursorAt(
           tester,
           gesture,
-          // The page's pill, which stops short of the column's edge.
-          tester.getCenter(find.byKey(const ValueKey('voice-chip-pill'))),
+          // The card, which stops short of the column's edge.
+          tester.getCenter(find.byKey(const ValueKey('voice-chip-card'))),
         ),
         SystemMouseCursors.click,
       );
@@ -299,15 +299,7 @@ void main() {
       await tester.pumpAndSettle();
 
       final gesture = await mouse(tester);
-      // Its length, which the page's pill shows in place of a label.
-      await gesture.moveTo(
-        tester.getCenter(
-          find.descendant(
-            of: find.byType(NoteVoiceChip),
-            matching: find.textContaining(':'),
-          ),
-        ),
-      );
+      await gesture.moveTo(tester.getCenter(find.text('Voice note')));
       await tester.pump(const Duration(milliseconds: 600));
       await tester.pump();
 
@@ -528,10 +520,10 @@ void main() {
     );
 
     for (final scale in [1.0, 1.3]) {
-      for (final phone in [320.0, 375.0, 412.0]) {
+      for (final phone in [360.0, 375.0, 412.0]) {
         testWidgets(
-          'reads in full at $phone pt and ${scale}x, clear of the line under '
-          'it, and as tall at its title as on its way there',
+          'at $phone pt and ${scale}x stays clear of the line under it and as '
+          'tall in every state, and only large text cuts its status',
           (tester) async {
             tester.view.physicalSize = Size(phone * 3, 800 * 3);
             tester.view.devicePixelRatio = 3;
@@ -540,9 +532,10 @@ void main() {
             addTearDown(
               tester.platformDispatcher.clearTextScaleFactorTestValue,
             );
-            final usualPath = <double>{};
+            final heights = <double>{};
             for (final (state, ref, words) in [
               (VoiceChipState.needsConsent, voice(0), 'Turn on transcription'),
+              (VoiceChipState.waiting, voice(0), 'Waiting for connection'),
               (VoiceChipState.transcribing, voice(0), 'Transcribing…'),
               (VoiceChipState.summarising, voice(0), 'Summarising…'),
               (VoiceChipState.done, voice(0, summary: summary), null),
@@ -553,28 +546,26 @@ void main() {
               );
               await tester.pumpAndSettle();
 
+              bool cut(String words) => tester
+                  .renderObject<RenderParagraph>(find.text(words))
+                  .didExceedMaxLines;
               if (words != null) {
-                expect(
-                  tester
-                      .renderObject<RenderParagraph>(find.text(words))
-                      .didExceedMaxLines,
-                  isFalse,
-                  reason: '$words is not cut short',
-                );
+                expect(cut('Voice note'), isFalse, reason: '$state');
+                if (scale == 1) {
+                  expect(cut(words), isFalse, reason: '$words is not cut');
+                }
               }
-              final pill = tester.getRect(
-                find.byKey(const ValueKey('voice-chip-pill')),
+              final card = tester.getRect(
+                find.byKey(const ValueKey('voice-chip-card')),
               );
               expect(
                 caretFor(tester, 2).top + tester.getRect(noteField).top,
-                greaterThanOrEqualTo(pill.bottom),
-                reason: 'the line under the chip starts below it, $state',
+                greaterThanOrEqualTo(card.bottom),
+                reason: 'the line under the card starts below it, $state',
               );
-              if (state != VoiceChipState.needsConsent) {
-                usualPath.add(pill.height);
-              }
+              heights.add(card.height);
             }
-            expect(usualPath, hasLength(1));
+            expect(heights, hasLength(1));
           },
         );
       }

@@ -70,13 +70,14 @@ Future<List<XFile>> pickImageFiles() async {
 /// nor usually the source of a picture added to a note.
 Future<List<XFile>> acquireNoteImages(
   BuildContext context, {
+  ImageLibraryPicker? takePhoto,
   ImageLibraryPicker? chooseFromLibrary,
 }) async {
   if (!AppPlatform.isMobile) return pickImageFiles();
   final source = await _chooseMobileImageSource(context);
   if (!context.mounted || source == null) return const [];
   return switch (source) {
-    _MobileImageSource.camera => takeNotePhoto(),
+    _MobileImageSource.camera => (takePhoto ?? takeNotePhoto)(),
     _MobileImageSource.library =>
       (chooseFromLibrary ?? pickExistingImageFiles)(),
   };
@@ -184,8 +185,8 @@ Future<ImageStageResult> stageImageFile(XFile file) async {
   }
 }
 
-/// The result of Android handing a photo-library choice back after recreating
-/// the app process.
+/// The result of Android handing a camera photo or photo-library choice back
+/// after recreating the app process.
 class LostImageRecovery {
   const LostImageRecovery({this.files = const [], this.error});
 
@@ -195,8 +196,8 @@ class LostImageRecovery {
 
 typedef LostImageRetriever = Future<LostImageRecovery> Function();
 
-/// Collects a photo-library result whose original Future disappeared when
-/// Android reclaimed the activity. Other platforms never need this step.
+/// Collects a camera or photo-library result whose original Future disappeared
+/// when Android reclaimed the activity. Other platforms never need this step.
 Future<LostImageRecovery> recoverLostImageFiles() async {
   if (!AppPlatform.isAndroid) return const LostImageRecovery();
   try {
@@ -206,7 +207,9 @@ Future<LostImageRecovery> recoverLostImageFiles() async {
       error: response.exception,
     );
   } catch (error) {
-    debugPrint('KapyNotes: could not recover photo-library result: $error');
+    debugPrint(
+      'KapyNotes: could not recover camera or photo-library result: $error',
+    );
     return LostImageRecovery(error: error);
   }
 }

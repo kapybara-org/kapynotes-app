@@ -14,12 +14,12 @@ import '../data/note_attachment.dart';
 import '../data/note_drawing.dart';
 import '../data/tags.dart';
 import '../data/task_lines.dart';
+import '../speech/moments.dart' show formatVoiceDuration;
 import 'checklist_pie.dart';
 import 'compact_icon_button.dart';
 import 'context_menu.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
-import 'editor/voice_chip.dart' show formatVoiceDuration;
 import 'notes_grouping.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'tag_colours.dart';
@@ -3019,6 +3019,7 @@ class _MediaMenuRowState extends State<_MediaMenuRow> {
       checked: widget.ticked,
       label: widget.label,
       excludeSemantics: true,
+      onTap: widget.onTap,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => setState(() => _hovering = true),

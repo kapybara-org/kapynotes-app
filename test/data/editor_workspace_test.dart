@@ -404,10 +404,72 @@ void main() {
       expect(workspace.selectedNoteId, 'alpha');
       expect(_notesIn(workspace), ['alpha', 'bravo']);
       expect(_tabsOf(workspace), [
-        ['charlie'],
         ['alpha', 'bravo'],
+        ['charlie'],
       ]);
       expect(workspace.reopen(), isFalse);
+    });
+
+    test('closed tabs come back newest first, each to its place on the row, '
+        'after a restart too', () {
+      final store = _MemoryStore();
+      final workspace = _opened('alpha', store: store)
+        ..openInNewTab('bravo')
+        ..openInNewTab('charlie')
+        ..openInNewTab('delta')
+        ..closeTab(2)
+        ..closeTab(0);
+      expect(_tabsOf(workspace), [
+        ['bravo'],
+        ['delta'],
+      ]);
+
+      final restored = _restored(store);
+      expect(restored.reopen(), isTrue);
+      expect(restored.selectedNoteId, 'alpha');
+      expect(_tabsOf(restored), [
+        ['alpha'],
+        ['bravo'],
+        ['delta'],
+      ]);
+      expect(restored.reopen(), isTrue);
+      expect(restored.selectedNoteId, 'charlie');
+      expect(_tabsOf(restored), [
+        ['alpha'],
+        ['bravo'],
+        ['charlie'],
+        ['delta'],
+      ]);
+      expect(restored.reopen(), isFalse);
+    });
+
+    test('a closed tab saved without its place comes back at the end', () {
+      final store = _MemoryStore()
+        ..data[EditorWorkspace.storeKey] = {
+          'tabs': [
+            {
+              'panes': ['alpha'],
+            },
+            {
+              'panes': ['bravo'],
+            },
+          ],
+          'closed': [
+            ['charlie'],
+            ['delta'],
+          ],
+          'closedAt': ['first', -1],
+          'day': _today,
+        };
+      final restored = _restored(store);
+      expect(restored.reopen(), isTrue);
+      expect(restored.reopen(), isTrue);
+      expect(_tabsOf(restored), [
+        ['alpha'],
+        ['bravo'],
+        ['charlie'],
+        ['delta'],
+      ]);
     });
 
     test('a closed note opened again is no longer among the closed ones', () {
@@ -999,6 +1061,28 @@ void main() {
         ['bravo'],
         ['charlie'],
       ]);
+    });
+
+    test('take a new order where the day is arranged anew, the tab in front '
+        'staying in front and a tab opened over them after', () {
+      final workspace = _opened('alpha')
+        ..showDay(tuesday, ['bravo', 'charlie', 'delta'])
+        ..activateTab(1)
+        ..openInNewTab('alpha');
+      expect(workspace.dayNoteIds, ['bravo', 'charlie', 'delta']);
+
+      expect(workspace.arrangeDay(['delta', 'bravo', 'charlie']), isTrue);
+      expect(_tabsOf(workspace), [
+        ['delta'],
+        ['bravo'],
+        ['charlie'],
+        ['alpha'],
+      ]);
+      expect(workspace.selectedNoteId, 'charlie');
+      expect(workspace.arrangeDay(['delta', 'bravo', 'charlie']), isFalse);
+
+      workspace.leaveDay();
+      expect(workspace.arrangeDay(['alpha']), isFalse);
     });
 
     test("a folder's tab opened over a day's goes with the day for Reopen "

@@ -8,6 +8,8 @@ import 'package:http/http.dart' as http;
 import '../billing/billing.dart';
 import '../core/platform.dart';
 import '../data/local_store.dart';
+import '../data/note.dart';
+import '../data/note_attachment.dart';
 import '../data/notes_store.dart';
 import '../sync/config.dart';
 import '../sync/key_store.dart';
@@ -19,6 +21,7 @@ import 'kapy_ai_store.dart';
 import 'kapy_chat_book.dart';
 import 'local_tools.dart';
 import 'open_router.dart';
+import 'recording_context.dart';
 import 'retrieval.dart';
 import 'tool_helper.dart';
 
@@ -77,6 +80,7 @@ class KapyAiController extends KapyAi {
        _notes = notes,
        _device = device,
        _billing = billing,
+       _token = token ?? (() => null),
        _now = now ?? DateTime.now,
        _sandboxed = (environment ?? Platform.environment).containsKey(
          appSandboxVariable,
@@ -88,7 +92,7 @@ class KapyAiController extends KapyAi {
     final web = client ?? http.Client();
     _cloud = KapyCloudClient(
       baseUrl: apiBaseUrl ?? Uri.parse(kApiBaseUrl),
-      token: token ?? () => null,
+      token: _token,
       client: web,
     );
     _openRouter = OpenRouterAccount(
@@ -96,8 +100,9 @@ class KapyAiController extends KapyAi {
       client: web,
     );
     _wasPro = isPro;
+    _wasSignedIn = _signedIn;
     _device.addListener(_onDevice);
-    _notes.addListener(_linkSources.clear);
+    _notes.addListener(_onNotes);
     _billing?.addListener(_onBilling);
     _book.addListener(_notify);
   }
@@ -107,6 +112,7 @@ class KapyAiController extends KapyAi {
   final NotesStore _notes;
   final DeviceModel _device;
   final Billing? _billing;
+  final String? Function() _token;
   final DateTime Function() _now;
   final bool _sandboxed;
   final ToolHelper _toolHelper;
@@ -136,6 +142,7 @@ class KapyAiController extends KapyAi {
 
   final Map<KapyAccountKind, LocalToolCheck> _checks = {};
   late bool _wasPro;
+  late bool _wasSignedIn;
   bool _disposed = false;
 
   void _notify() {
@@ -182,10 +189,19 @@ class KapyAiController extends KapyAi {
   @override
   bool get isPro => _billing?.hasPro ?? false;
 
+  bool get _signedIn => _token() != null;
+
   void _onBilling() {
-    if (isPro == _wasPro) return;
+    if (isPro == _wasPro && _signedIn == _wasSignedIn) return;
+    if (isPro != _wasPro && _started != null) unawaited(_refreshUsage());
     _wasPro = isPro;
-    if (_started != null) unawaited(_refreshUsage());
+    _wasSignedIn = _signedIn;
+    // Signed in or upgraded from the card: the held question goes ahead, or
+    // the card asks only for what is still missing.
+    if (_pending is KapyCloudLocked) {
+      _pending = null;
+      unawaited(_answer());
+    }
     _notify();
   }
 
@@ -523,6 +539,7 @@ class KapyAiController extends KapyAi {
       messages: messages ?? chat.messages,
       titleAt: title == null ? chat.titleAt : at,
       modelAt: model == null ? chat.modelAt : at,
+      recording: chat.recording,
     );
   }
 
@@ -550,7 +567,11 @@ class KapyAiController extends KapyAi {
   KapyPending? get pending => _pending;
 
   @override
-  Future<void> ask(String question, {String? noteId}) async {
+  Future<void> ask(
+    String question, {
+    String? noteId,
+    KapyRecordingRef? recording,
+  }) async {
     final text = question.trim();
     if (text.isEmpty || _answering) return;
     final asked = KapyMessage(
@@ -561,7 +582,9 @@ class KapyAiController extends KapyAi {
           : text,
       at: _now(),
     );
-    final chat = current;
+    final chat = recording == null || current?.recording == recording
+        ? current
+        : null;
     if (chat == null) {
       final at = _now();
       final created = KapyChat(
@@ -571,6 +594,7 @@ class KapyAiController extends KapyAi {
         updatedAt: at,
         model: model,
         messages: [asked],
+        recording: recording,
       );
       _currentId = created.id;
       _next = null;
@@ -584,8 +608,26 @@ class KapyAiController extends KapyAi {
     await _answer();
   }
 
-  /// [linkSources] by answer id, until a note changes.
+  /// [linkSources] and [readWhole] by answer id, until a note changes.
   final _linkSources = <String, String>{};
+  final _readWhole = <String, bool>{};
+
+  void _onNotes() {
+    _linkSources.clear();
+    _readWhole.clear();
+  }
+
+  @override
+  bool readWhole(KapyChat chat, KapyMessage answer) =>
+      _readWhole[answer.id] ??= () {
+        if (answer.readTo != null) return false;
+        final link = chat.recording;
+        final model = answer.model;
+        final voice = link == null ? null : _recording(link);
+        if (voice == null || model == null) return false;
+        return readRecording(voice.note, voice.ref, _budgetFor(model)).readTo ==
+            null;
+      }();
 
   @override
   String linkSources(KapyChat chat, KapyMessage answer) =>
@@ -609,8 +651,16 @@ class KapyAiController extends KapyAi {
     final question = chat.messages.last;
     if (question.role != KapyRole.user) return;
 
+    final recording = chat.recording;
+    final voice = recording == null ? null : _recording(recording);
+    if (recording != null && voice == null) {
+      _pending = KapyFailed(_refusal(recording), retry: false);
+      _notify();
+      return;
+    }
+
     final using = model;
-    final held = _holdFor(using);
+    final held = _holdFor(using, recording: recording != null);
     if (held != null) {
       _pending = held;
       _downloadMoved = false;
@@ -623,14 +673,18 @@ class KapyAiController extends KapyAi {
     _notify();
     KapyPending? failed;
     try {
-      final retrieval = retrieve(
-        store: _notes,
-        question: question.text,
-        noteId: _heldNoteId,
-        budget: using.kind == KapyModelKind.device
-            ? RetrievalBudget.device(_device.noteChars)
-            : RetrievalBudget.cloud,
-      );
+      final budget = _budgetFor(using);
+      final heard = voice == null
+          ? null
+          : readRecording(voice.note, voice.ref, budget);
+      final retrieval = heard == null
+          ? retrieve(
+              store: _notes,
+              question: question.text,
+              noteId: _heldNoteId,
+              budget: budget,
+            )
+          : Retrieval(notes: heard.parts, matching: 0);
       final read = readableNotes(_notes, retrieval.notes);
       final hidden = {
         for (final note in _notes.allNotes)
@@ -668,7 +722,9 @@ class KapyAiController extends KapyAi {
                 text: text,
                 at: _now(),
                 read: [
-                  for (final note in read)
+                  for (final note in {
+                    for (final note in read) note.id: note,
+                  }.values)
                     KapyNoteRef(
                       noteId: note.id,
                       title: note.title,
@@ -677,6 +733,7 @@ class KapyAiController extends KapyAi {
                 ],
                 matching: retrieval.matching,
                 model: using,
+                readTo: heard?.readTo,
               ),
             ],
           ),
@@ -701,8 +758,16 @@ class KapyAiController extends KapyAi {
         model: using,
         fallbacks: _alternativesTo(using),
       );
+    } on AnswerSignInNeeded {
+      failed = _cloudLocked(using, signIn: true);
+    } on AnswerProNeeded {
+      failed = _cloudLocked(using, upgrade: true);
     } on AnswerFailed catch (failure) {
-      failed = KapyFailed(failure.message, fallbacks: _alternativesTo(using));
+      failed = KapyFailed(
+        failure.message,
+        fallbacks: _alternativesTo(using),
+        retry: failure.retry,
+      );
     } catch (error) {
       debugPrint('KapyNotes: Kapy AI could not answer: ${error.runtimeType}');
       failed = const KapyFailed('Something went wrong. Try again.');
@@ -713,8 +778,37 @@ class KapyAiController extends KapyAi {
     _notify();
   }
 
+  /// The note and recording [link] names, when Kapy AI may read it: the
+  /// note is there and not hidden, and the recording has a transcript.
+  ({Note note, NoteVoiceRef ref})? _recording(KapyRecordingRef link) {
+    for (final note in _notes.allNotes) {
+      if (note.id != link.noteId || note.isHidden) continue;
+      for (final ref in note.attachments) {
+        if (ref is NoteVoiceRef &&
+            ref.hash == link.hash &&
+            (ref.transcript?.segments.isNotEmpty ?? false)) {
+          return (note: note, ref: ref);
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Why [_recording] found nothing to read for [link].
+  String _refusal(KapyRecordingRef link) =>
+      _notes.allNotes.any((note) => note.id == link.noteId && note.isHidden)
+      ? "Kapy AI doesn't read hidden notes."
+      : 'This recording has no transcript to read.';
+
+  /// What [model] reads of the notes, or of a recording.
+  RetrievalBudget _budgetFor(KapyModel model) =>
+      model.kind == KapyModelKind.device
+      ? RetrievalBudget.device(_device.noteChars)
+      : RetrievalBudget.cloud;
+
   /// What has to happen before [model] may answer, or null when nothing.
-  KapyPending? _holdFor(KapyModel model) {
+  /// [recording] when the question is about one.
+  KapyPending? _holdFor(KapyModel model, {bool recording = false}) {
     final blocked = _device.state.note;
     // Nothing on this device can answer and the person is not on Pro: the
     // note says more than "part of Pro" would, so it goes first.
@@ -741,13 +835,11 @@ class KapyAiController extends KapyAi {
           : KapyAccountConsent(account);
     }
     if (model.kind == KapyModelKind.cloud) {
-      if (!isPro) {
-        return KapyFailed(
-          'Kapy AI Cloud is part of Pro.',
-          fallbacks: _alternativesTo(model),
-        );
+      if (!isPro) return _cloudLocked(model);
+      if (_store.cloudConsent || (recording && _store.recordingCloudConsent)) {
+        return null;
       }
-      return _store.cloudConsent ? null : const KapyCloudConsent();
+      return KapyCloudConsent(recording: recording);
     }
     final state = _device.state;
     return switch (state.status) {
@@ -767,6 +859,19 @@ class KapyAiController extends KapyAi {
       ),
     };
   }
+
+  /// Kapy AI Cloud refused [model]'s question: [signIn] when the server said
+  /// the session ended, [upgrade] when it said there's no Pro, and either
+  /// whenever this device already knows it.
+  KapyCloudLocked _cloudLocked(
+    KapyModel model, {
+    bool signIn = false,
+    bool upgrade = false,
+  }) => KapyCloudLocked(
+    signIn: signIn || !_signedIn,
+    upgrade: upgrade || !isPro,
+    fallbacks: _alternativesTo(model),
+  );
 
   /// What could answer instead of [using], as choices for the person to make.
   /// Never applied on their behalf: each still asks for its own consent.
@@ -819,8 +924,12 @@ class KapyAiController extends KapyAi {
   @override
   Future<void> proceed() async {
     switch (_pending) {
-      case KapyCloudConsent():
-        _store.cloudConsent = true;
+      case KapyCloudConsent(:final recording):
+        if (recording) {
+          _store.recordingCloudConsent = true;
+        } else {
+          _store.cloudConsent = true;
+        }
         await _answer();
       case KapyAccountConsent(:final account):
         _store.giveAccountConsent(account);
@@ -843,7 +952,7 @@ class KapyAiController extends KapyAi {
         }
       case KapyAccountError() || KapyOffline() || KapyFailed():
         await _answer();
-      case KapyDownloading() || KapyLimitReached() || null:
+      case KapyDownloading() || KapyLimitReached() || KapyCloudLocked() || null:
         return;
     }
   }
@@ -851,6 +960,30 @@ class KapyAiController extends KapyAi {
   @override
   Future<void> answerWith(KapyModel model) async {
     pickModel(model);
+    final chat = current;
+    if (!_answering &&
+        _pending == null &&
+        chat != null &&
+        chat.messages.length > 1 &&
+        chat.messages.last.role == KapyRole.assistant) {
+      final question = chat.messages.lastWhere(
+        (message) => message.role == KapyRole.user,
+      );
+      _replace(
+        _edit(
+          chat,
+          messages: [
+            ...chat.messages,
+            KapyMessage(
+              id: NotesStore.newId(),
+              role: KapyRole.user,
+              text: question.text,
+              at: _now(),
+            ),
+          ],
+        ),
+      );
+    }
     _pending = null;
     await _answer();
   }
@@ -866,7 +999,7 @@ class KapyAiController extends KapyAi {
   void dispose() {
     _disposed = true;
     _device.removeListener(_onDevice);
-    _notes.removeListener(_linkSources.clear);
+    _notes.removeListener(_onNotes);
     _billing?.removeListener(_onBilling);
     _book.removeListener(_notify);
     super.dispose();

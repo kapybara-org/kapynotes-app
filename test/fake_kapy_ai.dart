@@ -202,8 +202,49 @@ class FakeKapyAi extends KapyAi {
   }
 
   @override
-  Future<void> ask(String question, {String? noteId}) async {
-    calls.add('ask:$question:${noteId ?? ''}');
+  Future<void> ask(
+    String question, {
+    String? noteId,
+    KapyRecordingRef? recording,
+  }) async {
+    calls.add(
+      recording == null
+          ? 'ask:$question:${noteId ?? ''}'
+          : 'askRecording:$question:${recording.hash}',
+    );
+    if (recording != null) {
+      // As the engine does: a question about a recording goes on its chat,
+      // or starts one.
+      final at = DateTime(2026, 11, 19, 10, 42);
+      final chat = _current?.recording == recording
+          ? _current!
+          : KapyChat(
+              id: 'recording-chat-${chatList.length + 1}',
+              title: question,
+              createdAt: at,
+              updatedAt: at,
+              model: _model,
+              recording: recording,
+            );
+      _current = KapyChat(
+        id: chat.id,
+        title: chat.title,
+        createdAt: chat.createdAt,
+        updatedAt: at,
+        model: chat.model,
+        recording: recording,
+        messages: [
+          ...chat.messages,
+          KapyMessage(
+            id: 'q${chat.messages.length}',
+            role: KapyRole.user,
+            text: question,
+            at: at,
+          ),
+        ],
+      );
+      chatList = [_current!, ...chatList.where((c) => c.id != chat.id)];
+    }
     _answering = true;
     notifyListeners();
   }

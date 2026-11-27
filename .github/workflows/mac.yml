@@ -2,7 +2,8 @@
 # they take for a reviewer to look at. Add the `mac` label to a pull request,
 # or run `gh workflow run mac.yml --ref <branch>`, adding
 # `-f tests='integration_test/a_test.dart integration_test/b_test.dart'` to
-# pick the files. A label run uses the pull request's merge commit and runs
+# pick the files. Naming voice_recording_test.dart sets up a microphone for
+# it first: see tool/ci/mac_microphone.sh. A label run uses the pull request's merge commit and runs
 # the default files. A dispatch runs the branch's own copy, so a branch cut
 # before this file landed merges main first. GitHub starts no pull_request run
 # while a pull request has a merge conflict, so until it's resolved the label
@@ -69,6 +70,10 @@ jobs:
 
       - run: flutter pub get --enforce-lockfile
 
+      # flutter_gemma's build hook fetches its native libraries from GitHub
+      # once, with no retry; this fetches them first, with retries (KAP-320).
+      - run: bash tool/ci/gemma_natives.sh
+
       - name: Integration tests on the Mac
         env:
           TESTS: ${{ inputs.tests }}
@@ -77,6 +82,9 @@ jobs:
           FLUTTER_XCODE_DEVELOPMENT_TEAM: ''
         run: |
           read -ra tests <<< "$TESTS"
+          if [[ " $TESTS " == *voice_recording_test.dart* ]]; then
+            bash tool/ci/mac_microphone.sh
+          fi
           bash tool/ci/mac_tests.sh "${tests[@]}"
 
       - name: List the screenshots

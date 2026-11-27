@@ -224,6 +224,8 @@ class KapyAiConversation extends StatelessWidget {
     required this.onPickAnother,
     required this.onManageAccounts,
     required this.now,
+    this.onSignIn,
+    this.onUpgrade,
     this.compact = false,
   });
 
@@ -235,6 +237,8 @@ class KapyAiConversation extends StatelessWidget {
   final ValueChanged<String> onOpenNote;
   final VoidCallback onPickAnother;
   final VoidCallback onManageAccounts;
+  final VoidCallback? onSignIn;
+  final VoidCallback? onUpgrade;
   final DateTime now;
 
   @override
@@ -262,6 +266,8 @@ class KapyAiConversation extends StatelessWidget {
           pending: pending,
           onPickAnother: onPickAnother,
           onManageAccounts: onManageAccounts,
+          onSignIn: onSignIn,
+          onUpgrade: onUpgrade,
         ),
       if (waiting) const _Thinking(),
     ];
@@ -581,12 +587,23 @@ class KapyAiNotice extends StatelessWidget {
     required this.pending,
     required this.onPickAnother,
     required this.onManageAccounts,
+    this.onSignIn,
+    this.onUpgrade,
   });
 
   final KapyAi kapyAi;
   final KapyPending pending;
   final VoidCallback onPickAnother;
+
+  /// Settings › Voice & AI, where a key or an account of the person's own is
+  /// added.
   final VoidCallback onManageAccounts;
+
+  /// Settings › Account & sync. Null in a build with nobody to sign in as.
+  final VoidCallback? onSignIn;
+
+  /// The Pro sheet. Null where there's no plan to show.
+  final VoidCallback? onUpgrade;
 
   @override
   Widget build(BuildContext context) {
@@ -631,15 +648,21 @@ class KapyAiNotice extends StatelessWidget {
         ? 'Apple Intelligence'
         : 'the on-device model';
     final (icon, title, lines, actions) = switch (pending) {
-      KapyCloudConsent() => (
+      KapyCloudConsent(:final recording) => (
         KapyIcons.cloudRounded,
         'Before the first answer',
-        [
-          'Kapy AI sends your question and only the notes that match it '
-              'through Kapy cloud, where an AI service answers it. Kapy keeps '
-              'nothing, and it is never used to train AI.',
-          'Hidden notes are never used, locked or unlocked.',
-        ],
+        recording
+            ? [
+                'Kapy AI sends your question and this transcript through Kapy '
+                    'cloud, where an AI service answers it. Kapy keeps '
+                    'nothing, and it is never used to train AI.',
+              ]
+            : [
+                'Kapy AI sends your question and only the notes that match it '
+                    'through Kapy cloud, where an AI service answers it. Kapy '
+                    'keeps nothing, and it is never used to train AI.',
+                'Hidden notes are never used, locked or unlocked.',
+              ],
         [
           goAhead,
           if (usable != null)
@@ -763,11 +786,14 @@ class KapyAiNotice extends StatelessWidget {
           ...offersIn(fallbacks, alwaysPick: true),
         ],
       ),
-      KapyFailed(:final message, :final fallbacks) => (
+      final KapyCloudLocked locked => _locked(locked, [
+        for (final other in locked.fallbacks.take(1)) use(other),
+      ]),
+      KapyFailed(:final message, :final fallbacks, :final retry) => (
         KapyIcons.warningRounded,
         'Couldn’t answer',
         [message],
-        [...offersIn(fallbacks), tryAgain],
+        [...offersIn(fallbacks, alwaysPick: !retry), if (retry) tryAgain],
       ),
     };
     return DecoratedBox(
@@ -829,6 +855,51 @@ class KapyAiNotice extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// Kapy AI Cloud won't answer yet: what the person can do about it, and
+  /// [offers] of what answers instead. Signing in and upgrading come first,
+  /// then their own AI account, which works on any plan.
+  (KapyIconData, String, List<String>, List<KapyAiButton>) _locked(
+    KapyCloudLocked locked,
+    List<KapyAiButton> offers,
+  ) {
+    final signIn = locked.signIn ? onSignIn : null;
+    final upgrade = locked.upgrade ? onUpgrade : null;
+    final (title, line) = switch ((signIn != null, upgrade != null)) {
+      (true, true) => (
+        'Kapy AI Cloud is part of Pro',
+        'Sign in if you have Pro, or upgrade. You can also use your own AI '
+            'account.',
+      ),
+      (false, true) => (
+        'Kapy AI Cloud is part of Pro',
+        'Upgrade to get answers from it. You can also use your own AI '
+            'account.',
+      ),
+      (true, false) => (
+        'Sign in to use Kapy AI Cloud',
+        'You’re signed out on this $kapyDeviceWord. Sign in again, or use '
+            'your own AI account.',
+      ),
+      (false, false) => (
+        'Kapy AI Cloud is part of Pro',
+        'Use your own AI account to get answers here.',
+      ),
+    };
+    return (
+      KapyIcons.cloudRounded,
+      title,
+      [line],
+      [
+        if (signIn != null)
+          KapyAiButton('Sign in', filled: true, onPressed: signIn),
+        if (upgrade != null)
+          KapyAiButton('Upgrade', filled: signIn == null, onPressed: upgrade),
+        KapyAiButton('Use your own account', onPressed: onManageAccounts),
+        ...offers,
+      ],
     );
   }
 

@@ -163,4 +163,28 @@ void main() {
       expect(text, isNot(contains(word)));
     }
   });
+
+  test('a chat about a recording reads back with it and how far it read', () {
+    final chat = KapyChat(
+      id: 'c1',
+      title: 'Pricing',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(2000),
+      model: apple,
+      recording: const KapyRecordingRef(noteId: 'n1', hash: 'h1'),
+      messages: [
+        KapyMessage(
+          id: 'm1',
+          role: KapyRole.assistant,
+          text: 'Annual plan first.',
+          at: DateTime.fromMillisecondsSinceEpoch(2000),
+          readTo: const Duration(minutes: 12),
+        ),
+      ],
+    );
+    final back = chatFromJson(jsonDecode(jsonEncode(chatToJson(chat))))!;
+    expect(back.recording, const KapyRecordingRef(noteId: 'n1', hash: 'h1'));
+    expect(back.messages.single.readTo, const Duration(minutes: 12));
+    expect(chatToJson(back), chatToJson(chat));
+  });
 }

@@ -4,12 +4,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
+import 'package:kapy_notes/core/toast.dart';
+import 'package:kapy_notes/data/folders.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
+import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
@@ -46,6 +50,9 @@ Future<void> _pump(
   WidgetTester tester, {
   List<String> bodies = const ['First', 'Second', 'Third'],
   TargetPlatform platform = TargetPlatform.macOS,
+  TagStore? tags,
+  FolderStore? folders,
+  NoteDayStore? days,
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -68,6 +75,9 @@ Future<void> _pump(
       prefs: prefs,
       shortcuts: ShortcutPrefs(store)..load(),
       hiddenNotesGate: _OpenGate(),
+      tags: tags,
+      folders: folders,
+      days: days,
     ),
   );
   await tester.pumpAndSettle();
@@ -76,6 +86,12 @@ Future<void> _pump(
 Note _note(String title) => notes.allNotes.singleWhere((n) => n.title == title);
 
 Finder _row(String title) => find.widgetWithText(NoteRow, title);
+
+/// The list's rows, top to bottom.
+List<String> _titles(WidgetTester tester) => [
+  for (final row in tester.widgetList<NoteRow>(find.byType(NoteRow)))
+    row.note.title,
+];
 
 Finder _item(String action, Note note) =>
     find.byKey(ValueKey('$action-note-${note.id}'));
@@ -172,7 +188,7 @@ void main() {
 
     expect(find.text('Delete note?'), findsOneWidget);
     expect(
-      find.text('Permanently deletes "Second" from every synced device.'),
+      find.text('Deletes "Second" from every synced device.'),
       findsOneWidget,
     );
     final box = find.byKey(const ValueKey('delete-stop-asking'));
@@ -187,11 +203,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('confirm-delete')));
     await tester.pumpAndSettle();
 
+    expect(_row('Second'), findsNothing);
+    expect(find.text('Note deleted'), findsOneWidget);
+    expect(prefs.askBeforeDeleting, isTrue);
+    // For good once its notice goes.
+    Toast.debugTimeUp();
+    await tester.pumpAndSettle();
     expect(notes.byId(second.id), isNull);
     expect(notes.archivedNotes, isEmpty);
     expect(notes.tombstones.map((stone) => stone.id), [second.id]);
-    expect(find.text('Note deleted'), findsOneWidget);
-    expect(prefs.askBeforeDeleting, isTrue);
 
     // Unticked, so the next one asks again.
     await _delete(tester, 'First');
@@ -218,7 +238,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('confirm-delete')));
     await tester.pumpAndSettle();
 
-    expect(notes.byId(second.id), isNull);
+    expect(_row('Second'), findsNothing);
     expect(prefs.askBeforeDeleting, isFalse);
     expect(store.data['askBeforeDeleting.v1'], isFalse);
 
@@ -229,8 +249,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AlertDialog), findsNothing);
-    expect(notes.byId(first.id), isNull);
+    expect(_row('First'), findsNothing);
     expect(find.text('Note deleted'), findsOneWidget);
+    Toast.debugTimeUp();
+    await tester.pumpAndSettle();
+    expect(notes.byId(second.id), isNull);
+    expect(notes.byId(first.id), isNull);
   });
 
   testWidgets('Don’t ask again counts only with a yes', (tester) async {
@@ -420,5 +444,210 @@ void main() {
       _action(tester, _item('delete', second)).label,
       'Delete permanently…',
     );
+  });
+  group('Note deleted, with Undo', () {
+    testWidgets('a second delete takes the first for good, and its own Undo '
+        'puts that note back, pinned, in its place', (tester) async {
+      await _pump(tester, bodies: ['First', 'Second', 'Third', 'Fourth']);
+      prefs.askBeforeDeleting = false;
+      final second = _note('Second');
+      final third = _note('Third');
+      notes.togglePinned(third.id);
+      await tester.pumpAndSettle();
+      final listed = _titles(tester);
+      expect(listed, containsAll(['First', 'Second', 'Third', 'Fourth']));
+
+      await _delete(tester, 'Second');
+      await _delete(tester, 'Third');
+      // The second delete takes the first for good, and holds itself.
+      expect(notes.byId(second.id), isNull);
+      expect(notes.tombstones.map((stone) => stone.id), [second.id]);
+      expect(_row('Third'), findsNothing);
+      expect(find.text('Note deleted'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+
+      expect(_titles(tester), [
+        for (final title in listed)
+          if (title != 'Second') title,
+      ]);
+      expect(notes.byId(third.id), same(third));
+      expect(notes.isPinned(third.id), isTrue);
+      expect(find.text('Note deleted'), findsNothing);
+      // Undo was the end of it: nothing goes once a later notice does.
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.byId(third.id), same(third));
+      expect(notes.tombstones.map((stone) => stone.id), [second.id]);
+    });
+
+    testWidgets('Undo puts the note back as it was: its place, pin, folder, '
+        'tags, day, words and dates', (tester) async {
+      final tags = TagStore(store);
+      await tags.load();
+      final folders = FolderStore(store);
+      await folders.load();
+      final days = NoteDayStore(store);
+      await days.load();
+      await _pump(tester, tags: tags, folders: folders, days: days);
+      prefs.askBeforeDeleting = false;
+      final second = _note('Second');
+      final work = folders.create('Work')!;
+      folders.file([second.id], work.id);
+      final travel = tags.create('Travel')!;
+      tags.addTag(second.id, travel.id);
+      final now = DateTime.now();
+      final yesterday = DateTime(now.year, now.month, now.day - 1);
+      days.setDay(second.id, yesterday);
+      notes.togglePinned(second.id);
+      await tester.pumpAndSettle();
+      final listed = _titles(tester);
+
+      await _delete(tester, 'Second');
+      expect(_row('Second'), findsNothing);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+
+      expect(_titles(tester), listed);
+      expect(notes.byId(second.id), same(second));
+      expect(notes.isPinned(second.id), isTrue);
+      expect(folders.tree.folderOf(second.id), work.id);
+      expect(tags.tagsOf(second.id).map((tag) => tag.id), [travel.id]);
+      expect(days.dayOf(second.id), yesterday);
+      expect(notes.tombstones, isEmpty);
+    });
+
+    testWidgets('Undo opens the note again where it was open', (tester) async {
+      await _pump(tester);
+      prefs.askBeforeDeleting = false;
+      await tester.tap(_row('Second'));
+      await tester.pumpAndSettle();
+
+      await _delete(tester, 'Second');
+      expect(tester.widget<NoteRow>(_row('First')).selected, isTrue);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<NoteRow>(_row('Second')).selected, isTrue);
+      expect(tester.widget<NoteRow>(_row('First')).selected, isFalse);
+      expect(prefs.lastOpenedNoteId, _note('Second').id);
+    });
+
+    testWidgets(
+      'Undo leaves the open note alone once the reader has moved on',
+      (tester) async {
+        await _pump(tester);
+        prefs.askBeforeDeleting = false;
+        await tester.tap(_row('Second'));
+        await tester.pumpAndSettle();
+        await _delete(tester, 'Second');
+        await tester.tap(_row('Third'));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.text('Undo'));
+        await tester.pumpAndSettle();
+        expect(_row('Second'), findsOneWidget);
+        expect(tester.widget<NoteRow>(_row('Third')).selected, isTrue);
+        expect(tester.widget<NoteRow>(_row('Second')).selected, isFalse);
+      },
+    );
+
+    testWidgets(
+      'a note not taken back goes for good once its notice has gone',
+      (tester) async {
+        Toast.debugAnimateLifetimeInTests = true;
+        addTearDown(() => Toast.debugAnimateLifetimeInTests = false);
+        await _pump(tester);
+        prefs.askBeforeDeleting = false;
+        final second = _note('Second');
+
+        await _rightClick(tester, 'Second');
+        await tester.tap(_item('delete', second));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(_row('Second'), findsNothing);
+        expect(find.text('Undo'), findsOneWidget);
+        expect(notes.byId(second.id), same(second));
+        expect(notes.tombstones, isEmpty);
+
+        await tester.pump(Toast.actionLifetime);
+        await tester.pumpAndSettle();
+        expect(find.text('Note deleted'), findsNothing);
+        expect(notes.byId(second.id), isNull);
+        expect(notes.tombstones.single.id, second.id);
+      },
+    );
+
+    testWidgets('leaving the app while Undo shows deletes the note, before '
+        'a phone can close the app unseen', (tester) async {
+      await _pump(tester);
+      prefs.askBeforeDeleting = false;
+      final second = _note('Second');
+      await _delete(tester, 'Second');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      expect(notes.isDeleting(second.id), isTrue);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      final relaunched = NotesStore(store);
+      await relaunched.load();
+
+      expect(relaunched.byId(second.id), isNull);
+      expect(
+        relaunched.tombstones.map((stone) => stone.id),
+        contains(second.id),
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.text('Undo'), findsNothing);
+      expect(notes.byId(second.id), isNull);
+    });
+
+    testWidgets('the app killed while Undo shows keeps the note for the next '
+        'launch', (tester) async {
+      await _pump(tester);
+      prefs.askBeforeDeleting = false;
+      final second = _note('Second');
+      await _delete(tester, 'Second');
+      expect(find.text('Undo'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox());
+      final relaunched = NotesStore(store);
+      await relaunched.load();
+
+      expect(relaunched.byId(second.id)?.body, 'Second');
+      expect(relaunched.notes.map((note) => note.id), contains(second.id));
+      expect(relaunched.tombstones, isEmpty);
+      expect(notes.byId(second.id), isNotNull);
+    });
+
+    testWidgets('emptying the archive offers Undo for every note, which puts '
+        'them back in order', (tester) async {
+      await _pump(tester);
+      for (final note in [...notes.notes]) {
+        notes.archive(note.id);
+      }
+      await tester.pumpAndSettle();
+      await _show(tester, NotesShow.archive);
+      final listed = _titles(tester);
+      expect(listed, hasLength(3));
+
+      await tester.tap(find.byKey(const ValueKey('archive-delete-all')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Deletes these 3 notes from every synced device.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      expect(notes.archivedNotes, isEmpty);
+      expect(find.text('3 notes deleted'), findsOneWidget);
+
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(_titles(tester), listed);
+      expect(notes.archivedNotes, hasLength(3));
+      expect(notes.tombstones, isEmpty);
+    });
   });
 }

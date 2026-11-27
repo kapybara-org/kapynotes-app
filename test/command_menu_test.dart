@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -361,6 +362,28 @@ void main() {
     expect(find.text('Calculation results'), findsNothing);
   });
 
+  testWidgets('a search for text size still finds the zoom after the note '
+      'text size, and the zoom keys as text size shortcuts (KAP-379)', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    await setUpNotes(tester);
+    await pumpMenu(tester, withSettings: true);
+    await type(tester, 'text size');
+    expect(row('Note text size'), findsOneWidget);
+    expect(row('Zoom'), findsOneWidget);
+    expect(
+      tester.getTopLeft(row('Zoom')).dy,
+      greaterThan(tester.getTopLeft(row('Note text size')).dy),
+    );
+
+    await type(tester, 'text size shortcut');
+    expect(keycapOn(tester, 'Zoom in'), '⌘=');
+    expect(keycapOn(tester, 'Zoom out'), '⌘-');
+    expect(keycapOn(tester, 'Reset zoom'), '⌘0');
+  });
+
   testWidgets('without the settings index there is no Settings section', (
     tester,
   ) async {
@@ -430,10 +453,9 @@ void main() {
       // D11: the footer says tab asks, and every key is plain text.
       expect(find.text('Ask Kapy AI'), findsOneWidget);
       final caps = tester.widgetList<Keycap>(find.byType(Keycap));
-      expect(
-        [for (final cap in caps) cap.label],
-        containsAll(['esc', 'tab', '↑↓', '↵']),
-      );
+      expect([
+        for (final cap in caps) cap.label,
+      ], containsAll(['esc', 'tab', '↑↓', '↵']));
       for (final cap in caps) {
         expect(cap.plain, isTrue, reason: cap.label);
       }
@@ -794,6 +816,63 @@ void main() {
         expect(tester.getSize(pill).height, greaterThanOrEqualTo(44));
       }
       expect(find.byType(Keycap), findsNothing);
+    });
+
+    testWidgets('the scope pills show their whole words at large text', (
+      tester,
+    ) async {
+      await setUpNotes(tester);
+      Rect chip(String scope) => tester.getRect(
+        find.descendant(
+          of: find.byKey(ValueKey('command-scope-$scope')),
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      RenderParagraph label(String scope) => tester.renderObject(
+        find.descendant(
+          of: find.byKey(ValueKey('command-scope-$scope')),
+          matching: find.byType(RichText),
+        ),
+      );
+
+      await pumpMenu(tester, phone: true);
+      for (final scope in ['all', 'notes', 'tasks', 'drawings']) {
+        expect(
+          tester.getSize(find.byKey(ValueKey('command-scope-$scope'))).height,
+          44,
+        );
+        expect(chip(scope).height, 30, reason: scope);
+      }
+
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpAndSettle();
+      for (final scope in ['all', 'notes', 'tasks', 'drawings']) {
+        final text = label(scope);
+        expect(
+          text.size.height,
+          text.getMaxIntrinsicHeight(double.infinity),
+          reason: '$scope shows its whole line',
+        );
+        final whole = tester.getRect(
+          find.descendant(
+            of: find.byKey(ValueKey('command-scope-$scope')),
+            matching: find.byType(RichText),
+          ),
+        );
+        expect(chip(scope).top, lessThanOrEqualTo(whole.top), reason: scope);
+        expect(
+          chip(scope).bottom,
+          greaterThanOrEqualTo(whole.bottom),
+          reason: scope,
+        );
+        expect(
+          tester.getSize(find.byKey(ValueKey('command-scope-$scope'))).height,
+          greaterThanOrEqualTo(chip(scope).height),
+          reason: scope,
+        );
+      }
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('a scope narrows the results and what Make offers', (
