@@ -146,6 +146,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _nightThemeKey = 'nightTheme.v1';
   static const String _increaseContrastKey = 'increaseContrast.v1';
   static const String _appTextSizeKey = 'appTextSize.v1';
+  static const String _zoomKey = 'zoom.v1';
   static const String _paperKey = 'paper.v1';
   static const String _defaultNoteKey = 'defaultNote.v1';
 
@@ -195,6 +196,7 @@ class LayoutPrefs extends ChangeNotifier {
   final ValueNotifier<AppTextSize> _appTextSize = ValueNotifier(
     AppTextSize.standard,
   );
+  final ValueNotifier<double> _zoom = ValueNotifier(1);
   PaperStyle _paperStyle = PaperStyle.plain;
   final ValueNotifier<bool> _transparencyEnabled = ValueNotifier(false);
   final ValueNotifier<double> _transparencyAmount = ValueNotifier(
@@ -282,9 +284,9 @@ class LayoutPrefs extends ChangeNotifier {
   bool get markdownEnabled => _markdownEnabled;
   WritingFont get writingFont => _writingFont;
 
-  /// An editor-only multiplier, controlled by the familiar zoom shortcuts.
-  /// The app-wide text preference and the device accessibility scale are
-  /// applied after this, so each choice keeps doing its own job.
+  /// An editor-only multiplier, set from Settings. The app-wide text
+  /// preference, the device accessibility scale and [zoom] are applied after
+  /// this, so each choice keeps doing its own job.
   double get editorTextScale => _editorTextScale;
 
   static const double minEditorTextScale = 0.8;
@@ -322,6 +324,15 @@ class LayoutPrefs extends ChangeNotifier {
   /// other unrelated preferences.
   ValueListenable<AppTextSize> get appTextSizeListenable => _appTextSize;
   AppTextSize get appTextSize => _appTextSize.value;
+
+  /// How much larger the whole desktop window draws, one of [zoomLevels].
+  /// This device's own, never synced, and narrower than [LayoutPrefs] for the
+  /// same reason as [appTextSizeListenable].
+  double get zoom => _zoom.value;
+  ValueListenable<double> get zoomListenable => _zoom;
+
+  /// The steps the zoom keys move through, as a browser's do.
+  static const List<double> zoomLevels = [0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
 
   /// What the sheet behind the writing looks like.
   PaperStyle get paperStyle => _paperStyle;
@@ -477,6 +488,7 @@ class LayoutPrefs extends ChangeNotifier {
       AppTextSize.values,
       AppTextSize.standard,
     );
+    _zoom.value = _nearestZoomLevel(_readDouble(_zoomKey) ?? 1);
     _paperStyle = _readEnum(_paperKey, PaperStyle.values, PaperStyle.plain);
     _transparencyEnabled.value =
         supportsTransparency && (_store.read<bool>(_transparencyKey) ?? false);
@@ -680,6 +692,22 @@ class LayoutPrefs extends ChangeNotifier {
     _store.putNow(_appTextSizeKey, value.name);
     notifyListeners();
   }
+
+  set zoom(double value) {
+    final level = _nearestZoomLevel(value);
+    if (level == _zoom.value) return;
+    _zoom.value = level;
+    _store.putNow(_zoomKey, level);
+    notifyListeners();
+  }
+
+  void zoomIn() =>
+      zoom = zoomLevels.firstWhere((level) => level > zoom, orElse: () => zoom);
+
+  void zoomOut() =>
+      zoom = zoomLevels.lastWhere((level) => level < zoom, orElse: () => zoom);
+
+  void resetZoom() => zoom = 1;
 
   /// Where the window can put a blurred desktop behind the Flutter view:
   /// macOS through its visual effect material, Windows through acrylic. Linux
@@ -1034,6 +1062,13 @@ class LayoutPrefs extends ChangeNotifier {
     if (value is String) return double.tryParse(value);
     return null;
   }
+
+  static double _nearestZoomLevel(double value) => value.isFinite
+      ? zoomLevels.reduce(
+          (best, level) =>
+              (level - value).abs() < (best - value).abs() ? level : best,
+        )
+      : 1;
 
   static double _normalizeEditorTextScale(double value) {
     if (!value.isFinite) return defaultEditorTextScale;

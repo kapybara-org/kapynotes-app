@@ -34,9 +34,9 @@ enum ShortcutAction {
   toggleKapyAi,
   deleteNote,
   openSettings,
-  increaseEditorTextSize,
-  decreaseEditorTextSize,
-  resetEditorTextSize,
+  zoomIn,
+  zoomOut,
+  resetZoom,
   insertImage,
   insertVideo,
   insertFile,
@@ -83,9 +83,9 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.toggleKapyAi => 'Open or close Kapy AI',
     ShortcutAction.deleteNote => 'Archive current note',
     ShortcutAction.openSettings => 'Open settings',
-    ShortcutAction.increaseEditorTextSize => 'Increase editor text',
-    ShortcutAction.decreaseEditorTextSize => 'Decrease editor text',
-    ShortcutAction.resetEditorTextSize => 'Reset editor text size',
+    ShortcutAction.zoomIn => 'Zoom in',
+    ShortcutAction.zoomOut => 'Zoom out',
+    ShortcutAction.resetZoom => 'Reset zoom',
     ShortcutAction.insertImage => 'Add an image',
     ShortcutAction.insertVideo => 'Add a video',
     ShortcutAction.insertFile => 'Attach a file',
@@ -142,12 +142,9 @@ extension ShortcutActionCopy on ShortcutAction {
       'Move the note you are editing to Archived Notes, or delete it for good '
           'if it is already there',
     ShortcutAction.openSettings => 'Open Settings',
-    ShortcutAction.increaseEditorTextSize =>
-      'Make the writing in every editor one step larger',
-    ShortcutAction.decreaseEditorTextSize =>
-      'Make the writing in every editor one step smaller',
-    ShortcutAction.resetEditorTextSize =>
-      'Return editor writing to its default size',
+    ShortcutAction.zoomIn => 'Make everything in the window one step larger',
+    ShortcutAction.zoomOut => 'Make everything in the window one step smaller',
+    ShortcutAction.resetZoom => 'Return the window to its usual size',
     ShortcutAction.insertImage => 'Choose a picture or take a photo',
     ShortcutAction.insertVideo => 'Choose a video to play in the note',
     ShortcutAction.insertFile =>
@@ -856,19 +853,19 @@ class ShortcutPrefs extends ChangeNotifier {
       // The same three zoom keys used by browsers and document editors. The
       // unshifted equals key is intentional: it works without knowing which
       // keyboard layout puts `+` above it.
-      ShortcutAction.increaseEditorTextSize => ShortcutBinding(
+      ShortcutAction.zoomIn => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.equal,
         physicalKey: PhysicalKeyboardKey.equal,
         meta: useMeta,
         control: !useMeta,
       ),
-      ShortcutAction.decreaseEditorTextSize => ShortcutBinding(
+      ShortcutAction.zoomOut => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.minus,
         physicalKey: PhysicalKeyboardKey.minus,
         meta: useMeta,
         control: !useMeta,
       ),
-      ShortcutAction.resetEditorTextSize => ShortcutBinding(
+      ShortcutAction.resetZoom => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.digit0,
         physicalKey: PhysicalKeyboardKey.digit0,
         meta: useMeta,

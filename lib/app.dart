@@ -7,6 +7,7 @@ import 'ai/device_model.dart';
 import 'ai/kapy_ai.dart';
 import 'ai/kapy_ai_controller.dart';
 import 'ai/kapy_chat_book.dart';
+import 'core/app_zoom.dart';
 import 'core/keyring.dart';
 import 'core/platform.dart';
 import 'core/popup_keyboard.dart';
@@ -788,6 +789,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         widget.prefs.transparencyListenable,
         widget.prefs.transparencyAmountListenable,
         widget.prefs.appTextSizeListenable,
+        widget.prefs.zoomListenable,
       ]),
       builder: (context, _) {
         final look = _look(transparency: true);
@@ -822,7 +824,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
             result = JoiningScope(account: widget.account, child: result);
 
-            final media = MediaQuery.of(context);
+            final media = zoomedMediaQuery(
+              MediaQuery.of(context),
+              View.of(context),
+            );
             final negativeInset = media.viewInsets.bottom < 0;
             return MediaQuery(
               data: media.copyWith(
