@@ -14962,6 +14962,40 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(field).controller!.text, 'Buy sta');
     });
+    testWidgets("the phone's add field goes away with the keyboard", (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      await notes.load();
+      notes.create(body: 'Groceries\nOat milk');
+      await pumpApp(
+        tester,
+        size: const Size(393, 852),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        ),
+      );
+      await showNotesList(tester);
+      final field = find.byKey(
+        const ValueKey('tasks-add-field'),
+        skipOffstage: false,
+      );
+      await tester.tap(find.byKey(const ValueKey('home-title-tasks')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('phone-new')));
+      await tester.pumpAndSettle();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(field.hitTestable(), findsOneWidget);
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isFalse);
+      expect(field.hitTestable(), findsNothing);
+    });
     testWidgets("Android's Back closes a note's slash menu before the page", (
       tester,
     ) async {

@@ -1140,7 +1140,6 @@ class TaskFinishedLine extends StatelessWidget {
               const SizedBox(width: 10),
               Text(title, style: taskText(13, 18, ink.secondary, 460)),
               const Spacer(),
-              const SizedBox(width: 10),
               KapyIcon(
                 KapyIcons.chevronRightRounded,
                 size: 14,

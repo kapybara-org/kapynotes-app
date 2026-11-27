@@ -225,6 +225,13 @@ class TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.hidden) setState(_endVisit);
   }
 
+  /// The Scaffold keeps the keyboard out of this page's insets, so a phone's
+  /// add field reads them from the view, and rebuilds as they change.
+  @override
+  void didChangeMetrics() {
+    if (widget.phone && widget.addFocus.hasFocus) setState(() {});
+  }
+
   /// A visit ends when the app goes to the background or Today leaves for
   /// another view: the rows held in place settle, and the day starts over.
   void _endVisit() {
