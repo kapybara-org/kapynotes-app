@@ -409,8 +409,8 @@ class TasksController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Start with your choice so far: it becomes Do now, earlier picks stay in
-  /// Up next, and the tasks not yet shown stay on the list.
+  /// Stop choosing and start your pick so far: it becomes Do now, earlier
+  /// picks stay in Up next, and the tasks not yet shown stay on the list.
   void startWith(TaskItem item) {
     forgetPair();
     // A burst of tasks picked up together, or another device's clock, can

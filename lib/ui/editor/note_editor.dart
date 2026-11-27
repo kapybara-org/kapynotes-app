@@ -30,6 +30,7 @@ import '../../core/platform_spell_check.dart';
 import '../../core/appearance.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
+import '../../core/type_ahead.dart';
 import '../../data/daily_separator.dart';
 import '../../data/attachment_limits.dart';
 import '../../data/note.dart';
@@ -56,6 +57,7 @@ import 'markdown_syntax.dart';
 import 'table_cell_editor.dart';
 import 'table_controls.dart';
 import 'table_geometry.dart';
+import 'note_find.dart';
 import 'note_footer.dart';
 import 'phone_format_bar.dart';
 import '../note_day_scope.dart';
@@ -99,7 +101,8 @@ import 'note_video_view.dart';
 import 'paste_feedback.dart';
 import 'remote_carets.dart';
 import 'note_field.dart';
-import 'note_sliver.dart' show LineSpan, LineTrailing, lineTrailingGap;
+import 'note_sliver.dart'
+    show LineSpan, LineTrailing, NoteFound, lineTrailingGap;
 import 'task_details_chrome.dart';
 import 'task_details_editing.dart';
 import 'results_gutter.dart';
@@ -342,9 +345,10 @@ class NoteEditor extends StatefulWidget {
   final CalcEngine engine;
   final Highlighter highlighter;
 
-  /// Whether a line with a result wraps its writing short of it and shows it
-  /// at the right of its first row, as a phone does. Otherwise the result
-  /// follows the writing at the end of its line, on a leader.
+  /// Whether a line with a result shows it at the right of its row, as a
+  /// phone does: beside writing that fits on one row short of it, and on a
+  /// row of its own under writing that doesn't. Otherwise the result follows
+  /// the writing at the end of its line, on a leader.
   final bool keepResultRoom;
 
   /// Whether the page around this editor is too short for its top and bottom
@@ -520,6 +524,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// Whether this note is being written in: its own field has focus, or one of
   /// its cells does.
   bool get _editingNote => _focusNode.hasFocus || _editingCell != null;
+
+  /// The find in this note, kept from the first time its bar opened so that
+  /// it opens again on the same words, and whether the bar is open.
+  NoteFind? _find;
+  bool _findOpen = false;
 
   /// Whether this note is being written in; see [_editingNote].
   bool get writing => _editingNote;
@@ -839,6 +848,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _cellEditor.dispose();
     _tableControls.dispose();
     _tableGeometry.dispose();
+    _find?.dispose();
     _controller.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -3858,6 +3868,140 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
+  /// Opens the bar that finds words in this note, or takes the keyboard back
+  /// to it, with its words selected to type over. Words selected on one line
+  /// of the note are the ones it looks for. Desktop only.
+  void openFind() {
+    if (!AppPlatform.isDesktop) return;
+    TypeAhead.hold();
+    final find = _find ??= NoteFind()..query.addListener(_onFindChanged);
+    final selection = _controller.selection;
+    if (selection.isValid && !selection.isCollapsed) {
+      final words = selection.textInside(_controller.text);
+      if (!words.contains('\n')) find.query.text = words;
+    }
+    find.query.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: find.query.text.length,
+    );
+    if (!_findOpen) {
+      setState(() => _findOpen = true);
+      _refreshFind(find);
+      _revealFound();
+    }
+    find.field.requestFocus();
+  }
+
+  void _onFindChanged() {
+    final find = _find;
+    if (find == null || !_findOpen) return;
+    final shown = find.currentMatch;
+    if (!_refreshFind(find)) return;
+    setState(() {});
+    if (find.currentMatch != shown) _revealFound();
+  }
+
+  /// Finds the bar's words in the note as it shows now: see
+  /// [NoteFind.refresh].
+  bool _refreshFind(NoteFind find) {
+    final selection = _controller.selection;
+    return find.refresh(
+      _controller.markdownFor(_controller.text),
+      _controller.hiddenIn(_controller.text),
+      from: selection.isValid ? selection.start : 0,
+    );
+  }
+
+  void _stepFind({bool back = false}) {
+    final find = _find;
+    if (find == null || !_findOpen || find.matches.isEmpty) return;
+    setState(() => find.step(back: back));
+    _revealFound();
+  }
+
+  /// F3 steps through the matches from the note as well as from the bar, and
+  /// ⌘G on a Mac, where F3 is the system's. Shift steps back.
+  KeyEventResult _findKey(FocusNode node, KeyEvent event) {
+    if (!_findOpen) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    for (final (activator, back) in [
+      (const SingleActivator(LogicalKeyboardKey.f3), false),
+      (const SingleActivator(LogicalKeyboardKey.f3, shift: true), true),
+      if (AppPlatform.isMacOS) ...[
+        (const SingleActivator(LogicalKeyboardKey.keyG, meta: true), false),
+        (
+          const SingleActivator(
+            LogicalKeyboardKey.keyG,
+            meta: true,
+            shift: true,
+          ),
+          true,
+        ),
+      ],
+    ]) {
+      if (!activator.accepts(event, keyboard)) continue;
+      _stepFind(back: back);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// Closes the find bar, with the match it was on selected in the note and
+  /// the keyboard back in the note.
+  void _closeFind() {
+    if (!_findOpen) return;
+    final match = _find?.currentMatch;
+    setState(() => _findOpen = false);
+    if (match != null) {
+      _controller.selection = TextSelection(
+        baseOffset: match.start,
+        extentOffset: match.end,
+      );
+    }
+    _focusNode.requestFocus();
+  }
+
+  /// Scrolls the match the find is on to the middle of the note, unless it
+  /// shows already, and again on the frame after while the lines measured
+  /// on the way move it. Folded details that hold it unfold first.
+  void _revealFound([int attempts = 3]) {
+    final match = _find?.currentMatch;
+    if (match == null || attempts == 0) return;
+    _openFoldAt(match.start);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_findOpen || _find?.currentMatch != match) return;
+      final rect = _field?.caretRectAt(TextPosition(offset: match.start));
+      if (rect == null || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final view = position.viewportDimension;
+      if (rect.top >= 0 && rect.bottom <= view) return;
+      final target = clampDouble(
+        position.pixels + rect.center.dy - view / 2,
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      if ((target - position.pixels).abs() < 1) return;
+      _scrollController.jumpTo(target);
+      _revealFound(attempts - 1);
+    });
+  }
+
+  /// What the find found, for the field to fill, while its bar is open: the
+  /// match it is on as the selection is filled, which is what esc leaves of
+  /// it, and the rest in clay.
+  NoteFound? _found() {
+    final find = _find;
+    if (!_findOpen || find == null || find.matches.isEmpty) return null;
+    final palette = context.palette;
+    return (
+      ranges: find.matches,
+      current: find.current,
+      color: palette.clay.withValues(alpha: 0.2),
+      currentColor:
+          DefaultSelectionStyle.of(context).selectionColor ?? palette.selection,
+    );
+  }
+
   /// Any key at all dismisses the link panel first. Escape is the one people
   /// reach for, but a panel that outlives the caret it was raised next to is
   /// wrong whichever key moved it.
@@ -3959,11 +4103,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _openFoldUnderCaret() {
-    final folds = _folds;
     final selection = _controller.selection;
-    if (folds == null || !selection.isValid) return;
+    if (selection.isValid) _openFoldAt(selection.extentOffset);
+  }
+
+  /// Unfolds the task details that hold [offset], if they are folded.
+  void _openFoldAt(int offset) {
+    final folds = _folds;
+    if (folds == null) return;
     final text = _controller.text;
-    final at = selection.extentOffset.clamp(0, text.length);
+    final at = offset.clamp(0, text.length);
     for (final block in _blocks()) {
       final details = block.details;
       if (details == null || !_taskFolded(block.task)) continue;
@@ -8072,6 +8221,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   edges: editing && !_markdownQuiet,
                 );
                 final concealment = _controller.markdownConcealment();
+                if (_findOpen) _refreshFind(_find!);
 
                 // Every table's grid, fitted to the writing column so that a
                 // wide one shrinks and wraps rather than running off the side of
@@ -8226,7 +8376,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   });
                 }
 
-                return MouseRegion(
+                final note = MouseRegion(
                   opaque: false,
                   onHover: widget.readOnly || !AppPlatform.hasPointer
                       ? null
@@ -8338,21 +8488,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                   final result when widget.keepResultRoom => (
                                     child: ResultChip(
                                       result: result,
-                                      collapsedWidth: contentWidth * 2 / 3,
+                                      collapsedWidth: contentWidth,
                                     ),
                                     leader: null,
                                     right: contentWidth,
-                                    firstRow: true,
                                     room:
-                                        math.min(
-                                          ResultChip.widthOf(context, result),
-                                          contentWidth * 2 / 3,
-                                        ) +
+                                        ResultChip.widthOf(context, result) +
                                         lineTrailingGap,
                                     height: ResultChip.heightOf(
                                       context,
                                       result,
-                                      contentWidth * 2 / 3,
+                                      contentWidth,
                                     ),
                                   ),
                                   final result => (
@@ -8366,7 +8512,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                       color: leaderColor,
                                     ),
                                     right: contentWidth,
-                                    firstRow: false,
                                     room: 0.0,
                                     height: 0.0,
                                   ),
@@ -8471,6 +8616,23 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     ],
                   ),
                 );
+                // The find bar pushes the note down rather than lying over
+                // what it finds. The note keeps the page's whole height for
+                // sizing its pictures, so none of them change as it opens.
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_findOpen)
+                      NoteFindBar(
+                        find: _find!,
+                        side: side,
+                        onNext: _stepFind,
+                        onPrevious: () => _stepFind(back: true),
+                        onClose: _closeFind,
+                      ),
+                    Expanded(child: note),
+                  ],
+                );
               },
             ),
           ),
@@ -8517,7 +8679,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return ImageDropTarget(
       enabled: !widget.readOnly && widget.images != null,
       onFiles: (files) => unawaited(insertDroppedMedia(files)),
-      child: page,
+      // Without semantics of its own, which would gather the page's labels
+      // into one.
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        includeSemantics: false,
+        onKeyEvent: _findKey,
+        child: page,
+      ),
     );
   }
 
@@ -8715,6 +8885,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 trailingOf: trailingOf,
                 selectionOf: _tableSelectionOf,
                 adjustSpan: _adjustTaskFold,
+                found: _found(),
                 cursorWidth: EditorMetrics.cursorWidth,
                 cursorHeight: EditorMetrics.cursorHeight(
                   widget.writingFont,

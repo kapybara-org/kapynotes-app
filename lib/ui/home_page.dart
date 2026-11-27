@@ -8,10 +8,10 @@ import 'package:flutter/services.dart'
         KeyEvent,
         KeyUpEvent,
         LogicalKeyboardKey,
-        PhysicalKeyboardKey,
         SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
 
+import '../audio/noise_removals.dart';
 import '../audio/voice_player.dart';
 import '../audio/voice_recording_controller.dart';
 import '../billing/note_limit.dart';
@@ -74,6 +74,7 @@ import '../data/store_updates.dart';
 import '../data/task_folds.dart';
 import '../data/update_checker.dart';
 import '../data/writing_streak.dart';
+import '../images/camera_capture.dart';
 import '../images/image_picker.dart';
 import '../video/video_picker.dart';
 import 'editor/note_editor.dart';
@@ -861,6 +862,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
+  /// The camera, for the note on screen. What it keeps goes in where the
+  /// caret is; closing it keeps nothing, and a note left blank goes as any
+  /// does.
+  Future<void> _takePhotoOrVideo() async {
+    final id = _selectedId;
+    final note = id == null ? null : widget.notes.byId(id);
+    if (note == null || !_canWriteNote(note)) return;
+    // Photos leaves the app for the system library, as the pickers do.
+    final protectsHiddenSession = _hiddenMode && note.isHidden;
+    if (protectsHiddenSession) _hiddenSystemUiDepth++;
+    try {
+      final files = await showNoteCamera(
+        context,
+        chooseFromLibrary: pickExistingMedia,
+        attachmentMaxBytes: _videoAttachmentMaxBytes(note),
+        startInVideo: widget.prefs.cameraVideo,
+        onVideoChosen: (video) => widget.prefs.cameraVideo = video,
+      );
+      if (files.isEmpty || !mounted || _selectedId != id) return;
+      await _selectedEditor?.insertDroppedMedia(files);
+    } finally {
+      if (protectsHiddenSession) _hiddenSystemUiDepth--;
+    }
+  }
+
   /// The file picker, which leaves the app as the photo pickers do: a hidden
   /// note's session outlasts it, or the picked files would land nowhere.
   Future<List<XFile>> _acquireFiles(String noteId) async {
@@ -1150,6 +1176,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // works out which of those it is when it next drains.
     widget.transcriptions?.enqueue(noteId, hash);
     unawaited(_drainTranscriptions());
+    if (mounted) NoiseRemovalScope.read(context)?.recorded(hash);
   }
 
   String _bodyForEndAttachment(Note note) {
@@ -4407,6 +4434,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 ? () => _tasksPage.currentState?.startEarly() ?? false
                 : null,
             onSearch: _openCommandMenu,
+            onFindInNote: _tasksMode ? null : () => _selectedEditor?.openFind(),
             onNewTask: _taskController == null ? null : _newTask,
             onNewDrawing: () => _createNote(drawing: true),
             onShowSpace: _showSpace,
@@ -5132,6 +5160,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           newTaskShortcut: widget.shortcuts
               .hintFor(ShortcutAction.newNote)
               ?.keycapLabel,
+          explainPair: _taskFolds?.howSeen == false,
           toolbar: PageToolbar(
             path: filter.done
                 ? PagePath(
@@ -5828,6 +5857,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             label: 'New voice note',
             icon: KapyIcons.micRounded,
           ),
+        if (AppPlatform.isMobile)
+          const KapyMenuAction(
+            value: 'camera',
+            label: 'New photo or video',
+            icon: KapyIcons.cameraOutlined,
+          ),
         const KapyMenuAction(
           value: 'drawing',
           label: 'New drawing',
@@ -5875,6 +5910,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (!_createNote()) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_startVoiceRecording());
+        });
+      case 'camera':
+        if (!_createNote()) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_takePhotoOrVideo());
         });
       case 'drawing':
         _createNote(drawing: true);
@@ -6875,6 +6915,7 @@ class _DesktopShortcuts extends StatelessWidget {
     this.onTakeNext,
     this.onStartEarly,
     required this.onSearch,
+    required this.onFindInNote,
     required this.onNewTask,
     required this.onNewDrawing,
     required this.onShowSpace,
@@ -6920,7 +6961,9 @@ class _DesktopShortcuts extends StatelessWidget {
     final action = switch (event.logicalKey) {
       LogicalKeyboardKey.arrowLeft => onKeepChoice,
       LogicalKeyboardKey.arrowRight => onTakeNext,
-      LogicalKeyboardKey.escape => onStartEarly,
+      LogicalKeyboardKey.escape ||
+      LogicalKeyboardKey.enter ||
+      LogicalKeyboardKey.numpadEnter => onStartEarly,
       _ => null,
     };
     if (action == null) return KeyEventResult.ignored;
@@ -6928,6 +6971,12 @@ class _DesktopShortcuts extends StatelessWidget {
     if (focused != null &&
         (focused.widget is EditableText ||
             focused.findAncestorWidgetOfExactType<EditableText>() != null)) {
+      return KeyEventResult.ignored;
+    }
+    // ↵ on a focused control is that control's own.
+    if (event.logicalKey != LogicalKeyboardKey.escape &&
+        focused != null &&
+        Actions.maybeFind<ActivateIntent>(focused) != null) {
       return KeyEventResult.ignored;
     }
     return action() ? KeyEventResult.handled : KeyEventResult.ignored;
@@ -6942,6 +6991,9 @@ class _DesktopShortcuts extends StatelessWidget {
   final bool Function()? onTakeNext;
   final bool Function()? onStartEarly;
   final VoidCallback onSearch;
+
+  /// Null where no note is in front of the reader, such as on Tasks.
+  final VoidCallback? onFindInNote;
   final VoidCallback? onNewTask;
   final VoidCallback onNewDrawing;
 
@@ -6979,13 +7031,6 @@ class _DesktopShortcuts extends StatelessWidget {
   final VoidCallback? onToggleKapyAi;
   final ShortcutPrefs shortcuts;
 
-  ShortcutBinding get _find => ShortcutBinding(
-    logicalKey: LogicalKeyboardKey.keyF,
-    physicalKey: PhysicalKeyboardKey.keyF,
-    meta: AppPlatform.isMacOS,
-    control: !AppPlatform.isMacOS,
-  );
-
   @override
   Widget build(BuildContext context) {
     // A cleared shortcut leaves no entry behind: the action keeps whatever
@@ -6999,10 +7044,8 @@ class _DesktopShortcuts extends StatelessWidget {
           control: !AppPlatform.isMacOS,
         ): ?onCompleteTask,
         ?shortcuts.bindingFor(ShortcutAction.findNotes)?.activator: onSearch,
-        // Find's own chord opens search too, unless it was given to
-        // something else.
-        if (shortcuts.conflictFor(ShortcutAction.findNotes, _find) == null)
-          _find.activator: onSearch,
+        ?shortcuts.bindingFor(ShortcutAction.findInNote)?.activator:
+            ?onFindInNote,
         ?shortcuts.bindingFor(ShortcutAction.newTask)?.activator: ?onNewTask,
         ?shortcuts.bindingFor(ShortcutAction.newDrawing)?.activator:
             onNewDrawing,

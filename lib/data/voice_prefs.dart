@@ -42,6 +42,8 @@ class VoicePrefs extends ChangeNotifier {
   static const String _liveToKey = 'voice.liveTranslateTo.v1';
   static const String _liveLockScreenKey = 'voice.liveOnLockScreen.v1';
   static const String _liveFoldedKey = 'voice.liveTextFolded.v1';
+  static const String _removeNoiseKey = 'voice.removeNoise.v1';
+  static const String _noiseOffKey = 'voice.noiseOff.v1';
 
   String? _language;
   bool _summarize = true;
@@ -69,6 +71,8 @@ class VoicePrefs extends ChangeNotifier {
   /// The live text card folded to its one-line tab, remembered on this
   /// device for the next recording.
   bool get liveTextFolded => _liveTextFolded;
+  bool _removeNoise = false;
+  Set<String> _noiseOff = const {};
 
   /// ISO-639-1, or null for "let the provider work it out".
   ///
@@ -110,6 +114,17 @@ class VoicePrefs extends ChangeNotifier {
   String get effectiveSummaryInstruction =>
       _summaryInstruction ?? defaultSummaryInstruction;
 
+  /// Whether each new recording has its noise removed once it is saved.
+  ///
+  /// Off by default: it costs a download and a few minutes of the device's
+  /// time per recording, which is somebody's choice to spend.
+  bool get removeNoise => _removeNoise;
+
+  /// Whether the recording with [hash] was switched back to its original
+  /// after its noise was removed. Its clean copy is kept, so switching again
+  /// is instant, and this is what says which of the two plays.
+  bool isNoiseOff(String hash) => _noiseOff.contains(hash);
+
   /// The consent version the user last said no to.
   ///
   /// Kept so the sheet is not put in front of them again on every recording.
@@ -147,6 +162,10 @@ class VoicePrefs extends ChangeNotifier {
     _liveTranslateTo = liveTo is String && liveTo.isNotEmpty ? liveTo : null;
     _liveOnLockScreen = _store.data[_liveLockScreenKey] != false;
     _liveTextFolded = _store.data[_liveFoldedKey] == true;
+    _removeNoise = _store.data[_removeNoiseKey] == true;
+
+    final noiseOff = _store.data[_noiseOffKey];
+    _noiseOff = noiseOff is List ? {...noiseOff.whereType<String>()} : const {};
 
     final terms = _store.data[_modelTermsKey];
     _modelTerms = terms is Map
@@ -168,6 +187,20 @@ class VoicePrefs extends ChangeNotifier {
     if (hasAcceptedTerms(modelId, version)) return;
     _modelTerms = {..._modelTerms, modelId: version};
     _store.putNow(_modelTermsKey, _modelTerms);
+    notifyListeners();
+  }
+
+  set removeNoise(bool value) {
+    if (value == _removeNoise) return;
+    _removeNoise = value;
+    _store.putNow(_removeNoiseKey, value);
+    notifyListeners();
+  }
+
+  void setNoiseOff(String hash, bool off) {
+    if (off == _noiseOff.contains(hash)) return;
+    _noiseOff = off ? {..._noiseOff, hash} : ({..._noiseOff}..remove(hash));
+    _store.putNow(_noiseOffKey, _noiseOff.toList());
     notifyListeners();
   }
 

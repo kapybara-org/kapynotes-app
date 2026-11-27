@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 import '../data/local_store.dart';
@@ -402,13 +404,15 @@ class KapyChatBook extends ChangeNotifier {
             titleAt: DateTime.fromMillisecondsSinceEpoch(merged.title.at),
             modelAt: DateTime.fromMillisecondsSinceEpoch(merged.model.at),
             recording: merged.recording,
+            recap: merged.recap,
           ),
         );
         _assembleAll(id);
       }
     } else {
       final newModel = model != null && model != existing.model;
-      final changed = merged.title.v != existing.title || newModel;
+      final newRecap = jsonEncode(merged.recap) != jsonEncode(existing.recap);
+      final changed = merged.title.v != existing.title || newModel || newRecap;
       if (changed) {
         _place(
           KapyChat(
@@ -428,6 +432,7 @@ class KapyChatBook extends ChangeNotifier {
                 ? DateTime.fromMillisecondsSinceEpoch(merged.model.at)
                 : existing.modelAt,
             recording: existing.recording,
+            recap: merged.recap,
           ),
         );
       }
@@ -516,6 +521,7 @@ class KapyChatBook extends ChangeNotifier {
         titleAt: chat.titleAt,
         modelAt: chat.modelAt,
         recording: chat.recording,
+        recap: chat.recap,
       ),
     );
   }
