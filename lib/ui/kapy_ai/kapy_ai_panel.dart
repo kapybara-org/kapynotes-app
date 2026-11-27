@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../ai/kapy_ai.dart';
 import '../../core/phone_keyboard.dart';
 import '../../core/platform.dart';
+import '../../core/popup_keyboard.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import 'kapy_ai_chats.dart';
@@ -589,11 +590,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
       return KapyAiEmpty(
         menu: _picking ? _menu : null,
         suggestions: noteId == null
-            ? const [
-                'What did I plan for this week?',
-                'Find my notes about Lisbon',
-                'Summarise what I wrote yesterday',
-              ]
+            ? kapyAiExamples
             : [
                 'Summarise this note',
                 'What’s still open here?',
@@ -976,9 +973,11 @@ const double _kapyAiSheetFull = 0.8;
 /// height. Pulled up it is the full panel, and pulled down past its rest, a
 /// tap on the scrim, or Close puts it away. [panel] is built for the sheet's
 /// layout of the moment, with what puts the sheet away and what pulls it up.
+/// [typing] lets its field keep the keyboard it asks for as it opens.
 Future<void> showKapyAiSheet(
   BuildContext context, {
   required bool rest,
+  bool typing = false,
   required Widget Function(
     VoidCallback close,
     VoidCallback expand,
@@ -992,6 +991,7 @@ Future<void> showKapyAiSheet(
     context: context,
     isScrollControlled: true,
     enableDrag: false,
+    routeSettings: typing ? const TypingPopupSettings() : null,
     backgroundColor: Colors.transparent,
     elevation: 0,
     barrierColor: palette.brightness == Brightness.dark

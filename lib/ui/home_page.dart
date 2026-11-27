@@ -3615,11 +3615,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// chip is attached. With [question] it first starts a new chat and asks
   /// it there, which is how ⌘K's Ask row and its Tab reach Kapy AI. On a
   /// phone, the note's own button ([fromNote]) has the sheet rest over the
-  /// note; everything else opens it at full height.
-  void _openKapyAi({String? question, bool fromNote = false}) {
+  /// note; everything else opens it at full height. [typing] opens it with
+  /// its field ready to type in, keyboard up, as the bar's New chat does.
+  /// With [aboutNote] false the chat is about no note, whichever is open
+  /// behind: the Kapy AI tab's + is not a note's own button.
+  void _openKapyAi({
+    String? question,
+    bool fromNote = false,
+    bool typing = false,
+    bool aboutNote = true,
+  }) {
     final ai = _kapyAi;
     if (ai == null || !ai.enabled) return;
-    final shown = _shownNote(_selectedId)?.id;
+    final shown = aboutNote ? _shownNote(_selectedId)?.id : null;
     final noteId = shown != null && _kapyNoteTitle(shown) != null
         ? shown
         : null;
@@ -3638,6 +3646,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       showKapyAiSheet(
         context,
         rest: fromNote && noteId != null,
+        typing: typing,
         panel: (close, expand, compact) => _kapyAiPanel(
           ai,
           onClose: close,
@@ -5721,12 +5730,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           KapyAiPage(
             kapyAi: ai,
             onOpenChat: _openKapyAi,
-            onManageAccounts: () => _showSettings(
-              section: SettingsSection.voice,
-              reveal: ai.accounts.isEmpty
-                  ? 'kapy-ai-toggle'
-                  : kapyAccountRowId(ai.accounts.first.kind),
-            ),
             account: _phoneAccount(),
             now: widget.notes.now,
           ),
@@ -5781,11 +5784,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       showKapyAi: _kapyAiOn,
       createLabel: tasks != null
           ? 'New task'
+          : ai != null
+          ? 'New chat'
           : _drawingsOnly
           ? 'New drawing'
           : 'New note',
       onCreate: tasks != null
           ? _createInSpace
+          : ai != null
+          ? () {
+              ai.newChat();
+              _openKapyAi(typing: true, aboutNote: false);
+            }
           : () => _createNote(drawing: _drawingsOnly),
       createActions: [
         const KapyMenuAction(
