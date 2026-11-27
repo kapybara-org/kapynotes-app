@@ -138,7 +138,13 @@ class NoiseRemovals extends ChangeNotifier {
   /// with what went wrong otherwise. A second call while one runs joins it.
   Future<NoiseProblem?> turnOn(String hash) async {
     final running = _jobs[hash];
-    if (running != null) return running.done.future;
+    if (running != null) {
+      if (!running.stopped) return running.done.future;
+      // A stopped run still unwinding, which may be a download another
+      // recording shares: let it finish, then start again.
+      await running.done.future;
+      return turnOn(hash);
+    }
     final job = _Job();
     _jobs[hash] = job;
     final problem = await _existing(hash) != null

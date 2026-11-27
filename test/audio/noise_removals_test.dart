@@ -264,6 +264,30 @@ void main() {
     expect(noise.stateOf(hash).stage, NoiseStage.off);
   });
 
+  test(
+    'a press after stop, while a shared download runs on, is not lost',
+    () async {
+      downloadGate = Completer();
+      final noise = build();
+      final other = 'ef' * 32;
+      final first = noise.turnOn(hash);
+      final second = noise.turnOn(other);
+      await pumpUntil(
+        () =>
+            noise.stateOf(hash).stage == NoiseStage.downloading &&
+            noise.stateOf(other).stage == NoiseStage.downloading,
+      );
+      noise.stop(hash);
+      expect(noise.stateOf(hash).stage, NoiseStage.off);
+      final again = noise.turnOn(hash);
+      downloadGate!.complete();
+      expect(await first, isNull);
+      expect(await second, isNull);
+      expect(await again, isNull);
+      expect(noise.stateOf(hash).stage, NoiseStage.on);
+    },
+  );
+
   test('says so when the recording is not on this device', () async {
     original = null;
     final noise = build();
@@ -310,7 +334,7 @@ void main() {
       '4f0ee28935b4a32abecc717d745416976565834d839601acf43031094b4dc94c',
     );
     expect(
-      file.urls.single,
+      file.urls.last,
       contains('/resolve/dd6818d00f50c836fed43a6243ebe49116de5964/'),
     );
   });

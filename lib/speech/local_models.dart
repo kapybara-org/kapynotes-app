@@ -464,8 +464,9 @@ const LocalSummaryModel gemma4E2bIt = LocalSummaryModel(
 /// asks for it rather than carried by every copy of the app.
 ///
 /// It has no card in Settings, so most of what a card would draw is left
-/// plain. Served from the pinned Hugging Face revision only, and checked
-/// against the hash compiled in here like every other model.
+/// plain. Served the way the others are: our copy on dl.kapynotes.com first,
+/// then the pinned Hugging Face revision it was copied from, both checked
+/// against the hash compiled in here.
 class NoiseRemovalModel implements DownloadableModel {
   const NoiseRemovalModel();
 
@@ -496,6 +497,7 @@ class NoiseRemovalModel implements DownloadableModel {
     LocalModelFile(
       name: 'dpdfnet2.onnx',
       urls: [
+        'https://dl.kapynotes.com/models/Ceva-IP/DPDFNet/dd6818d00f50c836fed43a6243ebe49116de5964/onnx/dpdfnet2.onnx',
         'https://huggingface.co/Ceva-IP/DPDFNet/resolve/dd6818d00f50c836fed43a6243ebe49116de5964/onnx/dpdfnet2.onnx',
       ],
       bytes: 10178747,
