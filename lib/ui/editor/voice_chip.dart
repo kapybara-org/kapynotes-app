@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/semantics.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../audio/noise_removals.dart';
 import '../../audio/voice_player.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
@@ -330,13 +331,17 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
     final metrics = touch ? _touchMetrics : _pointerMetrics;
     final removable = chip.onRemove != null && !touch;
     final lit = chip.onOpen != null && (_hovered || _pressed);
-    final status = chip._status;
+    final removing =
+        chip._status == null &&
+        (NoiseRemovalScope.maybeOf(context)?.stateOf(chip.ref.hash).isBusy ??
+            false);
+    final status = removing ? 'Removing noise…' : chip._status;
     final statusStyle = _style(
       palette,
       metrics.lineSize,
       metrics.line,
       AppWeight.body,
-      chip._isTransient ? palette.textTertiary : palette.textMuted,
+      chip._isTransient || removing ? palette.textTertiary : palette.textMuted,
     );
     return Container(
       key: const ValueKey('voice-chip-card'),
@@ -503,6 +508,21 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
     ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
     final total = formatVoiceDuration(chip.ref.duration);
     const separator = ' · ';
+    final cleaned =
+        NoiseRemovalScope.maybeOf(context)?.stateOf(chip.ref.hash).stage ==
+        NoiseStage.on;
+    final signWidth = cleaned ? metrics.lineSize + 4 : 0.0;
+    final sign = Padding(
+      padding: const EdgeInsets.only(right: 4),
+      child: Tooltip(
+        message: 'Noise removed',
+        child: KapyIcon(
+          KapyIcons.voiceIdRounded,
+          size: metrics.lineSize,
+          color: palette.textSecondary,
+        ),
+      ),
+    );
     final length = ValueListenableBuilder<double?>(
       valueListenable: chip.progress,
       builder: (context, progress, _) => Text(
@@ -537,22 +557,31 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
         height: metrics.line,
         child: ExcludeSemantics(
           child: touch
-              ? Stack(
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Visibility.maintain(
-                      visible: false,
-                      child: Text(
-                        '$total / $total',
-                        maxLines: 1,
-                        softWrap: false,
-                        style: lengthStyle,
+                    if (cleaned) sign,
+                    Flexible(
+                      child: Stack(
+                        children: [
+                          Visibility.maintain(
+                            visible: false,
+                            child: Text(
+                              '$total / $total',
+                              maxLines: 1,
+                              softWrap: false,
+                              style: lengthStyle,
+                            ),
+                          ),
+                          length,
+                        ],
                       ),
                     ),
-                    length,
                   ],
                 )
               : Row(
                   children: [
+                    if (cleaned) sign,
                     length,
                     if (status != null) ...[
                       Text(separator, style: statusStyle),
@@ -599,7 +628,10 @@ class _NoteVoiceChipState extends State<NoteVoiceChip> {
           textScaler: MediaQuery.textScalerOf(context),
           maxLines: 1,
         )..layout();
-        final wave = math.min(_waveWidth, math.max(0.0, room - reserved.width));
+        final wave = math.min(
+          _waveWidth,
+          math.max(0.0, room - reserved.width - signWidth),
+        );
         reserved.dispose();
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,

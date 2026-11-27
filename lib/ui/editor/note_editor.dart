@@ -349,9 +349,10 @@ class NoteEditor extends StatefulWidget {
   final CalcEngine engine;
   final Highlighter highlighter;
 
-  /// Whether a line with a result wraps its writing short of it and shows it
-  /// at the right of its first row, as a phone does. Otherwise the result
-  /// follows the writing at the end of its line, on a leader.
+  /// Whether a line with a result shows it at the right of its row, as a
+  /// phone does: beside writing that fits on one row short of it, and on a
+  /// row of its own under writing that doesn't. Otherwise the result follows
+  /// the writing at the end of its line, on a leader.
   final bool keepResultRoom;
 
   /// Whether the page around this editor is too short for its top and bottom
@@ -8508,21 +8509,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                   final result when widget.keepResultRoom => (
                                     child: ResultChip(
                                       result: result,
-                                      collapsedWidth: contentWidth * 2 / 3,
+                                      collapsedWidth: contentWidth,
                                     ),
                                     leader: null,
                                     right: contentWidth,
-                                    firstRow: true,
                                     room:
-                                        math.min(
-                                          ResultChip.widthOf(context, result),
-                                          contentWidth * 2 / 3,
-                                        ) +
+                                        ResultChip.widthOf(context, result) +
                                         lineTrailingGap,
                                     height: ResultChip.heightOf(
                                       context,
                                       result,
-                                      contentWidth * 2 / 3,
+                                      contentWidth,
                                     ),
                                   ),
                                   final result => (
@@ -8536,7 +8533,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                       color: leaderColor,
                                     ),
                                     right: contentWidth,
-                                    firstRow: false,
                                     room: 0.0,
                                     height: 0.0,
                                   ),
