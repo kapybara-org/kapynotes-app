@@ -3145,6 +3145,110 @@ void main() {
     }
   }
 
+  testWidgets('writing that would take two rows beside its phone pill runs '
+      'the full width with the pill under it', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.physicalSize = const Size(320, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const body = 'Trip\nHotel: 9 nights * 128 eur';
+    await tester.pumpWidget(
+      harness(body, keepResultRoom: true, platform: TargetPlatform.iOS),
+    );
+    await tester.pumpAndSettle();
+
+    final editable = NoteDriver(tester);
+    final rows = editable
+        .boxesFor(
+          TextSelection(
+            baseOffset: body.indexOf('\n') + 1,
+            extentOffset: body.length,
+          ),
+        )
+        .map((box) => box.top.round())
+        .toSet();
+    expect(rows, hasLength(1), reason: 'the writing runs the full width');
+    final pill = tester.getRect(
+      find.descendant(
+        of: chipWithText('1,152.00 EUR'),
+        matching: find.byType(AnimatedContainer),
+      ),
+    );
+    expect(
+      pill.top,
+      greaterThanOrEqualTo(lineRect(tester, body, 1).bottom - 0.5),
+    );
+  });
+
+  testWidgets('a tap on the writing just above a phone pill under it puts '
+      'the caret there and copies nothing', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final copied = <String>[];
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    const body =
+        'Trip\n'
+        'Flights for the two of us to Lisbon in October and the trains = '
+        '2 * 1147.50 eur';
+    await tester.pumpWidget(harness(body, keepResultRoom: true));
+    await tester.pumpAndSettle();
+
+    final chip = chipWithText('2,295.00 EUR');
+    final target = tester.getRect(chip);
+    final pill = tester.getRect(
+      find.descendant(of: chip, matching: find.byType(AnimatedContainer)),
+    );
+    final editable = NoteDriver(tester);
+    final words = [
+      for (final box in editable.boxesFor(
+        TextSelection(
+          baseOffset: body.indexOf('\n') + 1,
+          extentOffset: body.length,
+        ),
+      ))
+        if (box.right > box.left)
+          Rect.fromPoints(
+            editable.toGlobal(Offset(box.left, box.top)),
+            editable.toGlobal(Offset(box.right, box.bottom)),
+          ),
+    ];
+    final last = words.reduce((a, b) => a.bottom >= b.bottom ? a : b);
+    expect(pill.top, greaterThanOrEqualTo(last.bottom - 0.5));
+    // The 44 pt target reaches up into the writing's last row.
+    expect(target.top, lessThan(last.bottom - 2));
+    expect(last.right, greaterThan(target.left + 4));
+
+    // The pill itself still copies.
+    await tester.tapAt(pill.center);
+    await tester.pump(const Duration(seconds: 3));
+    expect(copied, hasLength(1));
+
+    final at = Offset(
+      (target.left + math.min(last.right, target.right)) / 2,
+      last.bottom - 2,
+    );
+    await tester.tapAt(at);
+    await tester.pump(const Duration(seconds: 3));
+    expect(copied, hasLength(1), reason: 'the tap on the writing copied');
+    expect(
+      editable.value.selection.extentOffset,
+      greaterThan(body.indexOf('\n')),
+      reason: 'the caret is on the calculation',
+    );
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('a phone result takes a tap only inside its own line', (
     tester,
   ) async {

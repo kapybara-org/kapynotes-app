@@ -1247,8 +1247,13 @@ class RenderNoteLine extends RenderBox
   bool hitTestChildren(BoxHitTestResult result, {required Offset position}) {
     final trailing = _trailingChild;
     final at = _trailingAt;
+    // A pill on a row of its own under the writing takes no tap on the
+    // writing, which its target would otherwise reach up into.
+    final onWriting =
+        _noteLayout.trailsUnder(_line) && position.dy < paragraph.height;
     if (trailing != null &&
         at != null &&
+        !onWriting &&
         result.addWithPaintOffset(
           offset: at,
           position: position,
