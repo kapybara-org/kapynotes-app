@@ -275,13 +275,17 @@ class LiveTranslation private constructor(
         }
         askMicrophone { granted ->
             if (!granted) return@askMicrophone answer("denied")
-            speechSupport { support ->
-                when (speechReadiness(support, from)) {
-                    Readiness.UNSUPPORTED -> answer("unsupported")
-                    Readiness.INSTALLED -> prepareTranslation(from, to, wifiOnly, answer)
-                    Readiness.DOWNLOADABLE -> downloadSpeech(bestTag(support, from)!!) { fetched ->
+            askSpeechSupport { support, recognizer ->
+                val tag = bestTag(support, from)
+                if (recognizer != null && tag != null && speechReadiness(support, from) == Readiness.DOWNLOADABLE) {
+                    return@askSpeechSupport downloadSpeech(tag, recognizer) { fetched ->
                         if (fetched) prepareTranslation(from, to, wifiOnly, answer) else answer("declined")
                     }
+                }
+                recognizer?.destroy()
+                when (speechReadiness(support, from)) {
+                    Readiness.INSTALLED -> prepareTranslation(from, to, wifiOnly, answer)
+                    else -> answer("unsupported")
                 }
             }
         }
@@ -858,12 +862,26 @@ class LiveTranslation private constructor(
      * given up on.
      */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private fun speechSupport(done: (RecognitionSupport?) -> Unit) {
+    private fun speechSupport(done: (RecognitionSupport?) -> Unit) =
+        askSpeechSupport { support, recognizer ->
+            recognizer?.destroy()
+            done(support)
+        }
+
+    /**
+     * [speechSupport], handing [done] the recogniser that asked, still
+     * open, for the caller to destroy. Destroying it lets the system tear
+     * the recognition service down, and a recogniser made a moment later
+     * then loses its connection with ERROR_SERVER_DISCONNECTED, so
+     * [prepare] downloads with this one instead.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    private fun askSpeechSupport(done: (RecognitionSupport?, SpeechRecognizer?) -> Unit) {
         val recognizer = try {
             SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
         } catch (error: RuntimeException) {
             Log.w(TAG, "No on-device recogniser to ask", error)
-            return done(null)
+            return done(null, null)
         }
         var answered = false
         lateinit var timeout: Runnable
@@ -871,8 +889,7 @@ class LiveTranslation private constructor(
             if (!answered) {
                 answered = true
                 main.removeCallbacks(timeout)
-                recognizer.destroy()
-                done(support)
+                done(support, recognizer)
             }
         }
         timeout = Runnable { answer(null) }
@@ -916,15 +933,13 @@ class LiveTranslation private constructor(
      * Asks the system to fetch the recogniser's language. Android 14 says
      * when it is done; on 13 there is no answer, so the support is asked
      * again until the language shows up. A download the system only
-     * schedules, for Wi-Fi or a charger, counts as not done.
+     * schedules, for Wi-Fi or a charger, counts as not done. Through
+     * [asked], the recogniser that asked what it could hear, which this
+     * destroys; a download that lost its connection is asked once more.
      */
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    private fun downloadSpeech(tag: String, done: (Boolean) -> Unit) {
-        val recognizer = try {
-            SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
-        } catch (error: RuntimeException) {
-            return done(false)
-        }
+    private fun downloadSpeech(tag: String, asked: SpeechRecognizer, done: (Boolean) -> Unit) {
+        var recognizer = asked
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE, tag)
         val deadline = System.currentTimeMillis() + SPEECH_DOWNLOAD_LIMIT_MS
         var answered = false
@@ -949,6 +964,18 @@ class LiveTranslation private constructor(
                     }
 
                     override fun onError(error: Int) {
+                        if (error == SpeechRecognizer.ERROR_SERVER_DISCONNECTED && recognizer === asked && !answered) {
+                            Log.i(TAG, "The recogniser's language download lost its connection; asking once more")
+                            recognizer = try {
+                                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                            } catch (failure: RuntimeException) {
+                                Log.w(TAG, "No on-device recogniser to ask again", failure)
+                                return answer(false)
+                            }
+                            recognizer.triggerModelDownload(intent, context.mainExecutor, this)
+                            asked.destroy()
+                            return
+                        }
                         Log.w(TAG, "The recogniser's language download failed: error $error")
                         answer(false)
                     }
