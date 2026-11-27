@@ -6,12 +6,14 @@ import 'package:window_manager/window_manager.dart';
 import 'ai/kapy_chat_book.dart';
 import 'ai/open_router.dart';
 import 'app.dart';
+import 'audio/noise_removal.dart';
 import 'billing/billing.dart';
 import 'billing/billing_api.dart';
 import 'billing/note_limit.dart';
 import 'billing/plan_terms.dart';
 import 'billing/purchase_store.dart';
 import 'billing/revenuecat_store.dart';
+import 'core/app_zoom.dart';
 import 'core/deep_links.dart';
 import 'core/desktop_integration.dart';
 import 'core/focus_hold.dart';
@@ -40,10 +42,15 @@ import 'sync/sync_api.dart';
 import 'sync/sync_state.dart';
 
 Future<void> main([List<String> args = const []]) async {
-  WidgetsFlutterBinding.ensureInitialized();
+  if (AppPlatform.isDesktop) {
+    AppZoomBinding.ensureInitialized();
+  } else {
+    WidgetsFlutterBinding.ensureInitialized();
+  }
   QuickCapture.startedWith(args);
   registerFontLicenses();
   registerVadLicense();
+  registerNoiseModelLicense();
   // After the binding has claimed the view-focus callback, so it wraps the
   // framework's handler rather than being replaced by it.
   if (AppPlatform.isMacOS) {
@@ -166,6 +173,9 @@ Future<void> main([List<String> args = const []]) async {
     await Future.wait([notes.load(), windowManager.ensureInitialized()]);
     prefs.load();
     shortcuts.load();
+    if (WidgetsBinding.instance case final AppZoomBinding binding) {
+      binding.follow(prefs.zoomListenable);
+    }
     await _configureWindow(prefs);
     desktopIntegration = DesktopIntegration(layoutPrefs: prefs);
   }

@@ -937,7 +937,7 @@ void main() {
       notes.archive(note.id);
     }
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.tap(find.byKey(const ValueKey('notes-view')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
     await tester.pumpAndSettle();
@@ -1572,7 +1572,7 @@ void main() {
       goldenTags.setTags(note.id, [for (final tag in tags) tag.id]);
     }
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.tap(find.byKey(const ValueKey('notes-view')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
     await tester.pumpAndSettle();
@@ -1593,10 +1593,10 @@ void main() {
       brightness: Brightness.dark,
     );
     for (final key in [
-      'sidebar-notes-filter',
+      'notes-view',
       'notes-filter-when',
       'notes-filter-when-thisWeek',
-      'sidebar-notes-filter',
+      'notes-view',
       'notes-filter-when',
     ]) {
       await tester.tap(find.byKey(ValueKey(key)));
@@ -1935,7 +1935,9 @@ void main() {
       });
 
       testWidgets('phone page with the keyboard up, $name', (tester) async {
-        await pumpPhone(tester);
+        // With the store pictures go in, as in the app, so Attach at the
+        // start of the bar is drawn as people see it rather than dimmed.
+        await pumpPhone(tester, withImageStore: true);
         tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
         addTearDown(tester.view.resetViewInsets);
         await tester.pumpAndSettle();

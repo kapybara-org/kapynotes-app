@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -957,6 +958,23 @@ class _SettingsDialogState extends State<SettingsDialog>
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
   }
 
+  /// A swipe or the mouse's Back and Forward over the dialog: to the
+  /// category above or below on the rail. Back from search results leaves
+  /// the search, for the category it was opened over.
+  bool _stepSections(BackForwardStep step) {
+    if (_searching) {
+      if (step == BackForwardStep.forward) return false;
+      _search.clear();
+      return true;
+    }
+    final sections = _sections;
+    final next =
+        sections.indexOf(_section) + (step == BackForwardStep.back ? -1 : 1);
+    if (next < 0 || next >= sections.length) return false;
+    _selectFromRail(sections[next]);
+    return true;
+  }
+
   /// A category chosen from the rail while results are showing is a change
   /// of mind about searching, so the search goes with it.
   void _selectFromRail(SettingsSection section) {
@@ -1505,11 +1523,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         ? _transparencyFloor +
               (1 - _transparencyFloor) * prefs.transparencyAmount
         : 0.0;
-    final textKeys = [
-      ShortcutAction.increaseEditorTextSize,
-      ShortcutAction.decreaseEditorTextSize,
-      ShortcutAction.resetEditorTextSize,
-    ].map(_keycaps).where((keys) => keys.isNotEmpty).join(' ');
+    final zoom = prefs.zoom;
+    final zoomPercent = '${(zoom * 100).round()}%';
     return [
       _Group(null, [
         _choice<AppearanceMode>(
@@ -1720,10 +1735,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         _Setting(
           'note-text-size-setting',
           'Note text size',
-          subtitle: textKeys.isEmpty
-              ? 'Text inside notes'
-              : 'Text inside notes · $textKeys',
-          keywords: ['zoom', 'bigger text', 'larger', 'smaller', 'font size'],
+          subtitle: 'Text inside notes',
+          keywords: ['bigger text', 'larger', 'smaller', 'font size'],
           value: percent,
           changed: scale != LayoutPrefs.defaultEditorTextScale,
           onReset: prefs.resetEditorTextSize,
@@ -1747,8 +1760,34 @@ class _SettingsDialogState extends State<SettingsDialog>
           onSelected: (size) => prefs.appTextSize = size,
           byDefault: AppTextSize.standard,
           keyPrefix: 'app-text-size',
-          keywords: ['font size', 'ui scale', 'zoom', 'bigger text', 'larger'],
+          keywords: ['font size', 'ui scale', 'bigger text', 'larger'],
         ),
+        if (!touch)
+          _Setting(
+            'zoom-setting',
+            'Zoom',
+            subtitle: 'The whole window',
+            keywords: [
+              'ui scale',
+              'bigger',
+              'larger',
+              'smaller',
+              'magnify',
+              'text size',
+            ],
+            value: zoomPercent,
+            changed: zoom != 1,
+            onReset: prefs.resetZoom,
+            control: SettingsStepper(
+              label: zoomPercent,
+              onDecrease: zoom > LayoutPrefs.zoomLevels.first
+                  ? prefs.zoomOut
+                  : null,
+              onIncrease: zoom < LayoutPrefs.zoomLevels.last
+                  ? prefs.zoomIn
+                  : null,
+            ),
+          ),
       ], lead: _AppearancePreview(prefs: prefs)),
     ];
   }
@@ -2491,7 +2530,16 @@ class _SettingsDialogState extends State<SettingsDialog>
       'shortcut-row-${action.name}',
       _shortcutLabel(action),
       subtitle: action.description,
-      keywords: ['shortcut', 'hotkey', 'keyboard', ?binding?.displayLabel],
+      keywords: [
+        'shortcut',
+        'hotkey',
+        'keyboard',
+        if (action == ShortcutAction.zoomIn ||
+            action == ShortcutAction.zoomOut ||
+            action == ShortcutAction.resetZoom)
+          'text size',
+        ?binding?.displayLabel,
+      ],
       value: binding?.displayLabel ?? 'None',
       changed: changed,
       onReset: reset,
@@ -3129,99 +3177,104 @@ class _SettingsDialogState extends State<SettingsDialog>
             'Found by name, by everyday words and by what each one changes',
           )
         : (section.label, section.summary);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        FocusTraversalGroup(
-          child: Container(
-            width: _navWidth,
-            padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
-            decoration: BoxDecoration(
-              color: palette.sidebarBackground,
-              border: Border(right: BorderSide(color: palette.paneEdge)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  height: 26,
-                  padding: const EdgeInsets.only(left: 10),
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Settings',
-                    style: chromeStyle(
-                      size: 13,
-                      line: 18,
-                      weight: AppWeight.button,
-                      color: palette.textPrimary,
+    return BackForwardArea(
+      onStep: _stepSections,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FocusTraversalGroup(
+            child: Container(
+              width: _navWidth,
+              padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+              decoration: BoxDecoration(
+                color: palette.sidebarBackground,
+                border: Border(right: BorderSide(color: palette.paneEdge)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    height: 26,
+                    padding: const EdgeInsets.only(left: 10),
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Settings',
+                      style: chromeStyle(
+                        size: 13,
+                        line: 18,
+                        weight: AppWeight.button,
+                        color: palette.textPrimary,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                // Settings opened on purpose, sent to one pane, leaves the
-                // keyboard to whatever that pane wanted it for.
-                _searchField(autofocus: widget.section == null),
-                const SizedBox(height: 14),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final updates = widget.updates;
-                      // Every category stays in view, so the card gets only
-                      // what the rail leaves: its rows, a gap and the version.
-                      final left =
-                          constraints.maxHeight -
-                          _sections.length * _SettingsRail.itemHeight -
-                          (updates == null ? 0 : 28);
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: _SettingsRail(
-                              sections: _sections,
-                              changed: _changedSections,
-                              // No category is the one on show while results
-                              // are.
-                              selected: _searching ? null : section,
-                              onSelect: _selectFromRail,
+                  const SizedBox(height: 14),
+                  // Settings opened on purpose, sent to one pane, leaves the
+                  // keyboard to whatever that pane wanted it for.
+                  _searchField(autofocus: widget.section == null),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final updates = widget.updates;
+                        // Every category stays in view, so the card gets only
+                        // what the rail leaves: its rows, a gap and the version.
+                        final left =
+                            constraints.maxHeight -
+                            _sections.length * _SettingsRail.itemHeight -
+                            (updates == null ? 0 : 28);
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: _SettingsRail(
+                                sections: _sections,
+                                changed: _changedSections,
+                                // No category is the one on show while results
+                                // are.
+                                selected: _searching ? null : section,
+                                onSelect: _selectFromRail,
+                              ),
                             ),
-                          ),
-                          if (updates != null) ...[
-                            SettingsUpdateCard(
-                              updates: updates,
-                              layoutPrefs: widget.layoutPrefs,
-                              maxHeight: left,
-                            ),
-                            const SizedBox(height: 10),
-                            _VersionStatus(updates: updates),
+                            if (updates != null) ...[
+                              SettingsUpdateCard(
+                                updates: updates,
+                                layoutPrefs: widget.layoutPrefs,
+                                maxHeight: left,
+                              ),
+                              const SizedBox(height: 10),
+                              _VersionStatus(updates: updates),
+                            ],
                           ],
-                        ],
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: _paneColumn(
+              title: title,
+              summary: summary,
+              pane: BackForwardSlide(
+                child: _ScrollingPane(
+                  key: _paneKey,
+                  controller: _scrollController,
+                  flashTarget: _flashTarget,
+                  flash: _flash,
+                  children: _searching ? [_searchResults()] : _paneFor(section),
                 ),
-              ],
+              ),
+              footer: _searching
+                  ? const _SearchHints()
+                  : section == SettingsSection.shortcuts
+                  ? _shortcutsFooter()
+                  : null,
             ),
           ),
-        ),
-        Expanded(
-          child: _paneColumn(
-            title: title,
-            summary: summary,
-            pane: _ScrollingPane(
-              key: _paneKey,
-              controller: _scrollController,
-              flashTarget: _flashTarget,
-              flash: _flash,
-              children: _searching ? [_searchResults()] : _paneFor(section),
-            ),
-            footer: _searching
-                ? const _SearchHints()
-                : section == SettingsSection.shortcuts
-                ? _shortcutsFooter()
-                : null,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -3439,10 +3492,10 @@ extension on ShortcutAction {
     ShortcutAction.toggleHiddenFolder ||
     ShortcutAction.toggleResults ||
     ShortcutAction.toggleAlwaysOnTop ||
-    ShortcutAction.openSettings => _ShortcutGroup.window,
-    ShortcutAction.increaseEditorTextSize ||
-    ShortcutAction.decreaseEditorTextSize ||
-    ShortcutAction.resetEditorTextSize ||
+    ShortcutAction.openSettings ||
+    ShortcutAction.zoomIn ||
+    ShortcutAction.zoomOut ||
+    ShortcutAction.resetZoom => _ShortcutGroup.window,
     ShortcutAction.pasteAsPlainText ||
     ShortcutAction.insertImage ||
     ShortcutAction.insertVideo ||

@@ -116,6 +116,23 @@ void main() {
   /// or two after the assignment.
   Future<void> settle() => Future<void>.delayed(Duration.zero);
 
+  /// A 1440 by 900 display with the menu bar across its top.
+  _NativeRecorder installDisplay() =>
+      _NativeRecorder('dev.leanflutter.plugins/screen_retriever', sequence: sequence)
+        ..answers['getAllDisplays'] = {
+          'displays': [
+            {
+              'id': 'primary',
+              'name': 'Primary',
+              'size': {'width': 1440.0, 'height': 900.0},
+              'visiblePosition': {'dx': 0.0, 'dy': 24.0},
+              'visibleSize': {'width': 1440.0, 'height': 876.0},
+              'scaleFactor': 2.0,
+            },
+          ],
+        }
+        ..install();
+
   /// Desktop now starts with the tray on, so anything testing the way there
   /// has to ask for the other end rather than inherit it from the default.
   Future<void> startWithoutTray() async {
@@ -124,6 +141,87 @@ void main() {
     window.calls.clear();
     tray.calls.clear();
   }
+
+  test('the smallest window grows with the zoom, up to what the display '
+      'holds, and a window too small for it grows to it on its display', () async {
+    final screen = installDisplay();
+    window.answers['getBounds'] = {
+      'x': 800.0,
+      'y': 80.0,
+      'width': 600.0,
+      'height': 720.0,
+    };
+    Matcher size(double width, double height) => allOf(
+      containsPair('width', width),
+      containsPair('height', height),
+    );
+
+    prefs.zoom = 1.5;
+    await settle();
+    await settle();
+    expect(window.lastArguments['setMinimumSize'], size(780, 780));
+    expect(
+      window.lastArguments['setBounds'],
+      allOf(containsPair('x', 660.0), containsPair('y', 80.0), size(780, 780)),
+      reason: 'it grows, and moves left rather than off the display',
+    );
+    expect(screen.calls, ['getAllDisplays']);
+
+    prefs.zoom = 2;
+    await settle();
+    await settle();
+    expect(
+      window.lastArguments['setMinimumSize'],
+      size(1040, 876),
+      reason: 'never taller than the display',
+    );
+
+    window.calls.clear();
+    window.answers['getBounds'] = {
+      'x': 400.0,
+      'y': 24.0,
+      'width': 1040.0,
+      'height': 876.0,
+    };
+    prefs.resetZoom();
+    await settle();
+    await settle();
+    expect(
+      window.lastArguments['setMinimumSize'],
+      size(
+        LayoutPrefs.minimumWindowSize.width,
+        LayoutPrefs.minimumWindowSize.height,
+      ),
+    );
+    expect(window.calls, isNot(contains('setBounds')));
+  });
+
+  test('a modal borrows its width at the zoom', () async {
+    installDisplay();
+    prefs.zoom = 1.5;
+    await settle();
+    await settle();
+    window.answers['getBounds'] = {
+      'x': 200.0,
+      'y': 80.0,
+      'width': 780.0,
+      'height': 780.0,
+    };
+
+    await integration.withMinimumWindowWidth(680, () async {
+      expect(window.lastArguments['setBounds'], containsPair('width', 1020.0));
+      expect(
+        window.lastArguments['setMinimumSize'],
+        containsPair('width', 1020.0),
+      );
+    });
+
+    expect(
+      window.lastArguments['setMinimumSize'],
+      allOf(containsPair('width', 780.0), containsPair('height', 780.0)),
+      reason: 'the zoomed smallest window, not the one at 100%',
+    );
+  });
 
   test('a modal borrows width and gives the squeezed window back', () async {
     window.answers['getBounds'] = {

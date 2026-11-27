@@ -929,12 +929,27 @@ class VoiceSummary {
   final String title;
   final List<String> points;
 
+  /// Whether [title] is one the person gave it, which a summary written
+  /// again keeps. Written only when true, under a key older builds do not
+  /// know: they keep the title and drop the flag when they rewrite the ref.
+  final bool named;
+
   VoiceSummary({
     required this.engine,
     required this.at,
     required this.title,
     required List<String> points,
+    this.named = false,
   }) : points = List.unmodifiable(points);
+
+  /// The same summary under the person's own [title].
+  VoiceSummary withTitle(String title) => VoiceSummary(
+    engine: engine,
+    at: at,
+    title: title,
+    points: points,
+    named: true,
+  );
 
   static VoiceSummary? fromJson(Object? raw) {
     if (raw is! Map) return null;
@@ -946,7 +961,13 @@ class VoiceSummary {
     if (points is! List) return null;
     final kept = points.whereType<String>().toList(growable: false);
     if (kept.isEmpty) return null;
-    return VoiceSummary(engine: engine, at: at, title: title, points: kept);
+    return VoiceSummary(
+      engine: engine,
+      at: at,
+      title: title,
+      points: kept,
+      named: raw['named'] == true,
+    );
   }
 
   Map<String, Object?> toJson() => {
@@ -954,6 +975,7 @@ class VoiceSummary {
     'at': at,
     'title': title,
     'points': points,
+    if (named) 'named': true,
   };
 
   /// Identity, not content. See [NoteVoiceRef.==].

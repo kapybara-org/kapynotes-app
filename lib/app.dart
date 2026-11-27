@@ -7,6 +7,7 @@ import 'ai/device_model.dart';
 import 'ai/kapy_ai.dart';
 import 'ai/kapy_ai_controller.dart';
 import 'ai/kapy_chat_book.dart';
+import 'core/app_zoom.dart';
 import 'core/keyring.dart';
 import 'core/platform.dart';
 import 'core/popup_keyboard.dart';
@@ -59,6 +60,7 @@ import 'mcp/mcp_service.dart';
 import 'sync/account.dart';
 import 'sync/key_store.dart';
 import 'ui/app_logo.dart';
+import 'ui/focus_reveal.dart';
 import 'ui/focus_ring.dart';
 import 'ui/home_page.dart';
 import 'ui/hidden_notes_gate.dart';
@@ -788,6 +790,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         widget.prefs.transparencyListenable,
         widget.prefs.transparencyAmountListenable,
         widget.prefs.appTextSizeListenable,
+        widget.prefs.zoomListenable,
       ]),
       builder: (context, _) {
         final look = _look(transparency: true);
@@ -810,7 +813,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           builder: (context, child) {
             final asks = _systemAsksForContrast;
             final solid = !_glassBehindWindow || asks;
-            Widget result = FocusRing(child: child ?? const SizedBox.shrink());
+            Widget result = FocusRing(
+              child: FocusReveal(child: child ?? const SizedBox.shrink()),
+            );
             if (widget.prefs.transparencyEnabled && solid) {
               final theme = Theme.of(context);
               final palette = theme.extension<CalcPalette>()!;
@@ -822,7 +827,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
             result = JoiningScope(account: widget.account, child: result);
 
-            final media = MediaQuery.of(context);
+            final media = zoomedMediaQuery(
+              MediaQuery.of(context),
+              View.of(context),
+            );
             final negativeInset = media.viewInsets.bottom < 0;
             return MediaQuery(
               data: media.copyWith(

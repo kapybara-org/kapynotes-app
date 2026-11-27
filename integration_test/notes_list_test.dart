@@ -21,6 +21,8 @@
 //   folder, the empty states, and a tree note's whole-row hover.
 // - Move to folder… on a row's menu (KAP-377): its list opens where the menu
 //   was, from the same corner, on the board and in a 400 wide window.
+// - KAP-408's calm list: the View menu beside the search, the one chip for
+//   what narrows the list, the checklist pie, and the list at 400 px.
 // Each state is taken light and dark, as screenshots in build/screenshots;
 // the boards' states dark only, as the boards draw them, with d1 and d3
 // light too.
@@ -51,7 +53,9 @@ import 'package:kapy_notes/ui/checklist_pie.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
-import 'package:kapy_notes/ui/editor_panes.dart' show NoteDragFeedback;
+import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
+import 'package:kapy_notes/ui/editor_panes.dart'
+    show EditorPaneFrame, NoteDragFeedback;
 import 'package:kapy_notes/ui/folders_ui.dart' show FolderPage, TreeNoteFace;
 import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
@@ -383,7 +387,7 @@ void main() {
     );
     await shot(tester, 'later-day-by-date');
 
-    await click(tester, find.byKey(const ValueKey('notes-grouping')));
+    await click(tester, find.byKey(const ValueKey('notes-view')));
     await click(tester, find.byKey(const ValueKey('notes-grouping-byTag')));
     for (final title in ['Standup', 'Renewal notes']) {
       expect(
@@ -560,33 +564,91 @@ void main() {
     matching: find.byType(NoteField),
   );
 
+  testWidgets("KAP-408's calm list: the View menu beside the search holds "
+      'Show, Media, Tags, Group by and Layout, one chip says what narrows the '
+      'list, and the list keeps working at 400 px', (tester) async {
+    await board(tester);
+    final list = find.byType(Sidebar);
+    final view = find.byKey(const ValueKey('notes-view'));
+    final menu = find.byKey(const ValueKey('notes-filter-menu'));
+    final chip = find.byKey(const ValueKey('notes-filter-chip'));
+    expect(
+      find.descendant(of: list, matching: find.text('New note')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('sidebar-space-count')), findsNothing);
+    expect(
+      tester.getCenter(view).dy,
+      moreOrLessEquals(
+        tester.getCenter(find.byKey(const ValueKey('sidebar-search-box'))).dy,
+        epsilon: 0.5,
+      ),
+    );
+
+    await click(tester, view);
+    await click(tester, find.byKey(const ValueKey('notes-layout-list')));
+    expect(menu, findsNothing);
+    expect(
+      find.descendant(of: list, matching: find.byType(NoteCardFace)),
+      findsNothing,
+    );
+    // A checklist is the pie before a row's date, never words under it.
+    expect(
+      find.descendant(of: list, matching: find.textContaining(' done')),
+      findsNothing,
+    );
+    await shot(tester, 'calm-list');
+
+    await click(tester, view);
+    expect(menu, findsOneWidget);
+    await shot(tester, 'calm-list-view');
+    await click(tester, find.byKey(const ValueKey('media-filter-video')));
+    await click(tester, find.byKey(const ValueKey('notes-filter-when')));
+    await click(
+      tester,
+      find.byKey(const ValueKey('notes-filter-when-thisWeek')),
+    );
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(
+        of: chip,
+        matching: find.text('Voice, Image · This week'),
+      ),
+      findsOneWidget,
+    );
+    await shot(tester, 'calm-list-chip');
+
+    const narrow = Size(400, 720);
+    await windowManager.setBounds(Offset.zero & narrow);
+    tester.view.physicalSize = narrow * tester.view.devicePixelRatio;
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    // At 400 px the list folds away, and comes back over the page.
+    await click(tester, find.byKey(const ValueKey('page-show-list')));
+    await shot(tester, 'calm-list-narrow');
+    await click(tester, view);
+    expect(tester.getRect(menu).right, lessThanOrEqualTo(narrow.width));
+    await shot(tester, 'calm-list-narrow-view');
+    await click(tester, find.byKey(const ValueKey('notes-filter-when')));
+    expect(menu, findsNothing);
+    expect(find.byKey(const ValueKey('notes-view-back')), findsOneWidget);
+    await shot(tester, 'calm-list-narrow-when');
+    await click(tester, find.byKey(const ValueKey('notes-view-back')));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    await click(tester, chip);
+    expect(chip, findsNothing);
+    expect(
+      find.descendant(of: list, matching: find.text('Call with Arjun')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets("D03's board: a second card's menu opens it in a new tab", (
     tester,
   ) async {
     await board(tester);
-    expect(find.byKey(const ValueKey('sidebar-space-count')), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('sidebar-new-note')),
-        matching: find.text('New note'),
-      ),
-      findsOneWidget,
-    );
-    final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
-    expect(
-      tester
-          .widget<Container>(
-            find.descendant(of: filter, matching: find.byType(Container)).first,
-          )
-          .decoration,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<Container>(find.byKey(const ValueKey('sidebar-view-switch')))
-          .decoration,
-      isNull,
-    );
     expectBoardDates(tester);
     await click(tester, row('Call with Arjun'));
     final tabs = find.byType(NoteTabRow);
@@ -1048,6 +1110,89 @@ void main() {
     final pointer = await hover(tester, face);
     expect(tester.getSize(face).width, width);
     await boardShot(tester, 'folders-whole-row-hover');
+    await pointer.removePointer();
+  });
+
+  /// The open note's meta line, the first pane's while split, ends every item
+  /// it shows inside the writing column.
+  void expectLineInColumn(WidgetTester tester, [List<String> keys = const []]) {
+    final line = find.byType(NoteMetaRow).first;
+    final pane = tester.getRect(find.byType(EditorPaneFrame).first);
+    final column = pane.right - (tester.getRect(line).left - pane.left);
+    for (final key in [
+      'note-edited',
+      'note-saved',
+      'note-progress',
+      'note-add-tag',
+      ...keys,
+    ]) {
+      final shown = find
+          .descendant(of: line, matching: find.byKey(ValueKey(key)))
+          .hitTestable();
+      if (shown.evaluate().isEmpty) continue;
+      expect(
+        tester.getRect(shown).right,
+        lessThanOrEqualTo(column),
+        reason: key,
+      );
+    }
+  }
+
+  // Split in a 600 wide window, the left pane's meta line had no right bound:
+  // 1 of 3 done ran into the pane's edge, and + Tag sat past it.
+  testWidgets("KAP-173: split at 600, a note's meta line keeps to its column", (
+    tester,
+  ) async {
+    await launch(
+      tester,
+      bodies: ['Right note', 'Quote for the deck\n☑ One\n☐ Two\n☐ Three'],
+      prepare: (tags, _) {
+        for (final name in ['Work', 'Acme']) {
+          tags.addTag(id('Quote for the deck'), tags.create(name)!.id);
+        }
+      },
+    );
+    await click(tester, row('Quote for the deck'));
+    await click(tester, find.byKey(const ValueKey('page-more')));
+    await click(tester, find.byKey(const ValueKey('page-more-split')));
+    await click(tester, row('Right note'));
+    await windowManager.setBounds(Offset.zero & const Size(600, 640));
+    await tester.pumpAndSettle(const Duration(seconds: 1));
+    expect(tester.getSize(find.byType(KapyNotesApp)).width, 600);
+    expectLineInColumn(tester);
+    await shot(tester, 'kap173-split-600');
+  });
+
+  // In a 400 wide window the meta line's tag chip sat at the window's edge,
+  // and the × it shows under the pointer was cut off.
+  testWidgets("KAP-378: at 400, a note's tags step aside where the line has "
+      "no room, and where it has, a chip's × shows whole", (tester) async {
+    late final String quarter;
+    await launch(
+      tester,
+      bodies: ['Quote for the deck\n☑ One\n☐ Two\n☐ Three'],
+      prepare: (tags, _) {
+        quarter = tags.create('Q4')!.id;
+        tags.addTag(id('Quote for the deck'), quarter);
+      },
+      size: const Size(400, 640),
+    );
+    expect(tester.getSize(find.byType(KapyNotesApp)).width, 400);
+    if (prefs.sidebarVisible) prefs.toggleSidebar();
+    await tester.pumpAndSettle();
+    final chip = find.byKey(ValueKey('tag-chip-$quarter'));
+    final remove = find.byKey(ValueKey('tag-chip-remove-$quarter'));
+    expect(find.text('1 of 3 done').hitTestable(), findsOneWidget);
+    expectLineInColumn(tester, ['tag-chip-$quarter']);
+    await shot(tester, 'kap378-400');
+
+    notes.updateBody(id('Quote for the deck'), 'Quote for the deck');
+    await tester.pumpAndSettle();
+    expect(chip.hitTestable(), findsOneWidget);
+    final pointer = await hover(tester, chip);
+    expect(remove.hitTestable(), findsOneWidget);
+    expect(tester.getRect(remove).right, lessThanOrEqualTo(400));
+    await shot(tester, 'kap378-400-hover');
     await pointer.removePointer();
   });
 

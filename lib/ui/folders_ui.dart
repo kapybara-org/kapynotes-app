@@ -154,35 +154,31 @@ class NotesFoldersSwitch extends StatelessWidget {
         selected: on,
         child: MouseRegion(
           cursor: on ? MouseCursor.defer : SystemMouseCursors.click,
-          child: GestureDetector(
-            key: ValueKey(
-              forFolders ? 'notes-switch-folders' : 'notes-switch-notes',
-            ),
-            behavior: HitTestBehavior.opaque,
-            onTap: on ? null : () => onChanged(forFolders),
-            child: Container(
-              decoration: on
-                  ? BoxDecoration(
-                      color: palette.tonalBackground,
-                      borderRadius: BorderRadius.circular(8),
-                    )
-                  : null,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  KapyIcon(
-                    forFolders
-                        ? KapyIcons.folderOutlined
-                        : KapyIcons.noteOutlined,
-                    size: 16,
-                    color: colour,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    forFolders ? 'Folders' : 'Notes',
-                    style: _figtree(13, 16, FontWeight.w500, colour),
-                  ),
-                ],
+          child: FocusableActionDetector(
+            enabled: !on,
+            actions: {
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (_) => onChanged(forFolders),
+              ),
+            },
+            child: GestureDetector(
+              key: ValueKey(
+                forFolders ? 'notes-switch-folders' : 'notes-switch-notes',
+              ),
+              behavior: HitTestBehavior.opaque,
+              onTap: on ? null : () => onChanged(forFolders),
+              child: Container(
+                decoration: on
+                    ? BoxDecoration(
+                        color: palette.tonalBackground,
+                        borderRadius: BorderRadius.circular(8),
+                      )
+                    : null,
+                alignment: Alignment.center,
+                child: Text(
+                  forFolders ? 'Folders' : 'Notes',
+                  style: _figtree(13, 16, FontWeight.w500, colour),
+                ),
               ),
             ),
           ),
@@ -205,17 +201,9 @@ class NotesFoldersSwitch extends StatelessWidget {
             child: SizedBox(height: AppHairline.of(context)),
           ),
           const SizedBox(height: 12),
-          Container(
+          SizedBox(
             key: const ValueKey('notes-folders-switch'),
-            height: AppControlMetrics.scaleBar(context, 40),
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              color: palette.raisedBackground ?? palette.cardBackground,
-              border: Border.all(
-                color: palette.raisedBorder ?? palette.controlBorder,
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
+            height: AppControlMetrics.scaleBar(context, 32),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [segment(false), segment(true)],
@@ -1075,11 +1063,10 @@ Future<void> _nameFolderAt(
   MenuSpot spot, {
   String initial = '',
   required FolderRefusal? Function(String name) submit,
-}) => showGeneralDialog<void>(
+}) => showKapyPopover<void>(
   context: context,
+  barrierDismissible: false,
   barrierLabel: 'Close',
-  barrierColor: Colors.transparent,
-  transitionDuration: Duration.zero,
   pageBuilder: (context, _, _) => CustomSingleChildLayout(
     delegate: PopoverAtSpot(spot, mediaPadding: MediaQuery.paddingOf(context)),
     child: TagPopover(
@@ -1195,12 +1182,9 @@ Future<({String? folderId})?> _pickFolderAt(
   required Set<String?> current,
   String? moving,
   required FolderRefusal? Function(String? folderId) check,
-}) => showGeneralDialog<({String? folderId})>(
+}) => showKapyPopover<({String? folderId})>(
   context: context,
-  barrierDismissible: true,
   barrierLabel: 'Close folders',
-  barrierColor: Colors.transparent,
-  transitionDuration: Duration.zero,
   pageBuilder: (context, _, _) => CustomSingleChildLayout(
     delegate: PopoverAtSpot(spot, mediaPadding: MediaQuery.paddingOf(context)),
     child: _FolderPicker(

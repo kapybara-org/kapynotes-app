@@ -22,6 +22,10 @@
 // only 44.1 or 48 kHz in, so every recording made on a PC arrives at the wrong
 // rate for every model in the catalogue.
 //
+// The channel also goes the other way: `encode` writes a recording whose noise
+// has been removed, raw PCM by then, back into an `.m4a` through the sink
+// writer, at the rate and bit rate a Windows recording would have had.
+//
 // The returned channel must be kept alive for as long as the engine is.
 std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
 RegisterAudioDecodeChannel(flutter::BinaryMessenger* messenger);

@@ -2322,8 +2322,10 @@ class _LateRecording extends VoiceRecordingController {
   };
 
   @override
-  Future<void> finishRecordingAndFlush() => finish.future.then((_) {
-    noteId = null;
-    notifyListeners();
-  });
+  Future<bool> finishRecordingAndFlush({bool discardSilent = false}) =>
+      finish.future.then((_) {
+        noteId = null;
+        notifyListeners();
+        return false;
+      });
 }
