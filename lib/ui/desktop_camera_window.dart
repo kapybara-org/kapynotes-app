@@ -543,8 +543,8 @@ class _DesktopCameraWindowState extends State<DesktopCameraWindow>
         mac
             ? 'Allow Kapy Notes in System Settings, under Privacy & '
                   'Security, then Camera.'
-            : 'Turn on camera access for desktop apps in Settings, under '
-                  'Privacy & security, then Camera.',
+            : 'In Settings, go to Privacy & security, then Camera, and turn '
+                  'on Let desktop apps access your camera.',
         mac ? 'Open System Settings' : 'Open Settings',
         () => unawaited(widget.camera.openPrivacySettings(microphone: false)),
       ),
@@ -851,9 +851,9 @@ class _MicrophoneOff extends StatelessWidget {
                   ? 'Your video will have no sound. To record sound, allow '
                         'Kapy Notes in System Settings, under Privacy & '
                         'Security, then Microphone.'
-                  : 'Your video will have no sound. To record sound, turn on '
-                        'microphone access for desktop apps in Settings, under '
-                        'Privacy & security, then Microphone.',
+                  : 'Your video will have no sound. To record sound, go to '
+                        'Settings, then Privacy & security, then Microphone, '
+                        'and turn on Let desktop apps access your microphone.',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 13,

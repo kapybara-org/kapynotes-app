@@ -367,9 +367,9 @@ void main() {
     await open(tester, startInVideo: true);
     expect(
       find.text(
-        'Your video will have no sound. To record sound, turn on microphone '
-        'access for desktop apps in Settings, under Privacy & security, then '
-        'Microphone.',
+        'Your video will have no sound. To record sound, go to Settings, then '
+        'Privacy & security, then Microphone, and turn on Let desktop apps '
+        'access your microphone.',
       ),
       findsOneWidget,
     );
@@ -409,8 +409,8 @@ void main() {
     await open(tester);
     expect(
       find.text(
-        'Turn on camera access for desktop apps in Settings, under Privacy & '
-        'security, then Camera.',
+        'In Settings, go to Privacy & security, then Camera, and turn on Let '
+        'desktop apps access your camera.',
       ),
       findsOneWidget,
     );
