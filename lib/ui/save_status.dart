@@ -195,14 +195,10 @@ class SaveStatusLabel extends StatelessWidget {
     SavePhase.saved || SavePhase.fading => _saved,
   };
 
-  /// How wide the widest notice is, icon included when [icon] is set. A bar
-  /// or a date line keeps this width while the words come and go, so the
-  /// week, the avatars and the date line stay where they are.
-  static double slotWidth(
-    TextStyle style,
-    TextScaler scaler, {
-    bool icon = true,
-  }) {
+  /// How wide the widest notice is, with its icon. The bar keeps this width
+  /// while the words come and go, so the week and the avatars stay where they
+  /// are.
+  static double slotWidth(TextStyle style, TextScaler scaler) {
     final notices = <SaveNotice>[
       _saving,
       _saved,
@@ -219,7 +215,7 @@ class SaveStatusLabel extends StatelessWidget {
         textScaler: scaler,
         maxLines: 1,
       )..layout();
-      final width = painter.width + (icon ? 20 : 0);
+      final width = painter.width + 20;
       painter.dispose();
       if (width > widest) widest = width;
     }

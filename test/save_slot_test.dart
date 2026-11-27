@@ -97,7 +97,7 @@ void main() {
     expect(store.read<int>('a'), 2);
   });
 
-  testWidgets('Saving and Saved do not move the week, the avatars or the date line', (
+  testWidgets('Saving and Saved do not move the week or the avatars', (
     tester,
   ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
@@ -140,16 +140,63 @@ void main() {
         }
       }
     }
+  });
 
-    tester.view.physicalSize = const Size(800, 240);
-    double? progress;
-    for (final (phase, problem) in phases) {
-      await tester.pumpWidget(_dateLine(phase, problem));
-      final progressX = tester.getTopLeft(find.text('1 of 3 done')).dx;
-      progress ??= progressX;
-      expect(progressX, progress, reason: '$phase');
-      expect(tester.takeException(), isNull);
+  testWidgets('the date line says it last: it takes no room at rest, moves '
+      'nothing before it, and a problem keeps its place against the tags', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(900, 240);
+    addTearDown(tester.view.reset);
+    final progress = find.text('1 of 3 done');
+    final total = find.byKey(const ValueKey('note-total'));
+    final tags = find.text('Work');
+    final notice = find.byKey(const ValueKey('note-saved'));
+
+    await tester.pumpWidget(_dateLine(SavePhase.rest, null, 640));
+    expect(notice, findsNothing);
+    final restProgress = tester.getTopLeft(progress).dx;
+    final restTotal = tester.getTopLeft(total).dx;
+    final tagsRight = tester.getRect(tags).right;
+    expect(total.hitTestable(), findsOneWidget);
+    expect(tags.hitTestable(), findsOneWidget);
+
+    for (final (phase, problem) in [
+      (SavePhase.saving, null),
+      (SavePhase.saved, null),
+      (SavePhase.failed, null),
+      (SavePhase.rest, syncProblem(SyncStatus.idle, paused: true)),
+    ]) {
+      await tester.pumpWidget(_dateLine(phase, problem, 640));
+      expect(tester.getTopLeft(progress).dx, restProgress, reason: '$phase');
+      expect(tester.getTopLeft(total).dx, restTotal, reason: '$phase');
+      expect(notice, findsOneWidget, reason: '$phase');
+      expect(tester.getRect(notice).left, greaterThan(tagsRight));
     }
+
+    await tester.pumpWidget(_dateLine(SavePhase.failed, null, 900));
+    final noticeWidth = tester.getRect(notice).width + 12;
+
+    // Room for everything but the notice with the tags: the tags give way to a
+    // problem, and Saving, which is shorter, fits beside them.
+    final column = tagsRight + noticeWidth - 5;
+    await tester.pumpWidget(_dateLine(SavePhase.rest, null, column));
+    expect(tags.hitTestable(), findsOneWidget);
+    await tester.pumpWidget(_dateLine(SavePhase.saving, null, column));
+    expect(tags.hitTestable(), findsOneWidget);
+    expect(notice.hitTestable(), findsOneWidget);
+    await tester.pumpWidget(_dateLine(SavePhase.failed, null, column));
+    expect(notice.hitTestable(), findsOneWidget);
+    expect(total.hitTestable(), findsOneWidget);
+    expect(tags.hitTestable(), findsNothing);
+
+    // Saving and Saved are only as good as the room: where there is none, they
+    // step aside like any fact, and the total stays.
+    await tester.pumpWidget(_dateLine(SavePhase.saving, null, tagsRight));
+    expect(tags.hitTestable(), findsOneWidget);
+    expect(notice.hitTestable(), findsNothing);
+    expect(total.hitTestable(), findsOneWidget);
   });
 }
 
@@ -196,7 +243,11 @@ Widget _bar(double width, int members, SavePhase phase, SaveNotice? problem) {
             ],
             currentUserId: 'me',
             onShare: () {},
-            assistant: const SizedBox(key: ValueKey('ai'), width: 32, height: 32),
+            assistant: const SizedBox(
+              key: ValueKey('ai'),
+              width: 32,
+              height: 32,
+            ),
             onMore: (_, _) {},
           ),
         ),
@@ -205,19 +256,20 @@ Widget _bar(double width, int members, SavePhase phase, SaveNotice? problem) {
   );
 }
 
-Widget _dateLine(SavePhase phase, SaveNotice? problem) {
+Widget _dateLine(SavePhase phase, SaveNotice? problem, double width) {
   return MaterialApp(
     theme: KapyTheme.dark(),
     home: Scaffold(
       body: Align(
         alignment: Alignment.topLeft,
         child: SizedBox(
-          width: 640,
+          width: width,
           child: DateLineSaved(
             save: (status: _Saying(phase), problem: problem),
             child: NoteMetaRow(
               edited: DateTime(2026, 11, 19, 8, 55),
               today: DateTime(2026, 11, 19),
+              width: width,
               tasks: 3,
               done: 1,
               total: '42',

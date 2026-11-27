@@ -189,8 +189,9 @@ class NoteMetaRow extends StatelessWidget {
     );
   }
 
-  /// [save] is set while this line owns the status, including at rest, so the
-  /// slot stays and the facts after it do not jump as the words come and go.
+  /// [save] is set while this line owns the status. It says nothing at rest
+  /// and, when it does, comes last, so nothing before it moves as the words
+  /// come and go.
   Widget _build(BuildContext context, SaveState? save) {
     final palette = context.palette;
     final quiet = TextStyle(
@@ -211,6 +212,14 @@ class NoteMetaRow extends StatelessWidget {
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final progress = '$done of $tasks done';
+    final notice = save == null || SaveStatusLabel.noticeOf(save) == null
+        ? null
+        : SaveStatusLabel(
+            save,
+            key: const ValueKey('note-saved'),
+            style: quiet,
+            icon: false,
+          );
     final items = <Widget>[
       if (!mobile)
         Text(
@@ -258,7 +267,6 @@ class NoteMetaRow extends StatelessWidget {
           key: const ValueKey('note-edited'),
           style: quiet,
         ),
-      if (save != null) _saveSlot(context, save, quiet, mobile: mobile),
       if (tasks > 0 && !mobile)
         Text(progress, key: const ValueKey('note-progress'), style: quiet)
       else if (tasks > 0)
@@ -330,6 +338,7 @@ class NoteMetaRow extends StatelessWidget {
           onPressed: onReadOnlyPressed,
         ),
     ];
+    final facts = [...items, ?notice];
     if (phone) {
       // One line, as M07 draws it: the facts a dot apart, then the tags after
       // a gap. It wraps when they don't fit, and the editor makes room for
@@ -342,8 +351,8 @@ class NoteMetaRow extends StatelessWidget {
             key: const ValueKey('note-facts'),
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              for (final (index, item) in items.indexed)
-                index == 0 || item.key == const ValueKey('note-saved-slot')
+              for (final (index, item) in facts.indexed)
+                index == 0
                     ? item
                     : Row(
                         mainAxisSize: MainAxisSize.min,
@@ -374,7 +383,7 @@ class NoteMetaRow extends StatelessWidget {
                 key: const ValueKey('note-facts'),
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  for (final (index, item) in items.indexed)
+                  for (final (index, item) in facts.indexed)
                     index == 0
                         ? item
                         : Row(
@@ -410,9 +419,12 @@ class NoteMetaRow extends StatelessWidget {
       height: EditorMetrics.metaRow,
       child: _MetaLine(
         width: width,
+        reserveLast:
+            save != null &&
+            (save.problem != null || save.status.phase == SavePhase.failed),
         children: [
           for (final (index, item) in items.indexed)
-            index == 0 || item.key == const ValueKey('note-saved-slot')
+            index == 0
                 ? item
                 : Row(
                     mainAxisSize: MainAxisSize.min,
@@ -427,54 +439,10 @@ class NoteMetaRow extends StatelessWidget {
           if (tags case final tags?)
             Padding(padding: const EdgeInsets.only(left: 6), child: tags),
           ?addTag,
+          if (notice != null)
+            Padding(padding: const EdgeInsets.only(left: 12), child: notice),
         ],
       ),
-    );
-  }
-
-  /// The save status, including the dot in front of it, in a slot as wide as
-  /// the longest notice. Empty at rest, so the facts after it stay put and
-  /// there is no stray dot.
-  Widget _saveSlot(
-    BuildContext context,
-    SaveState save,
-    TextStyle quiet, {
-    required bool mobile,
-  }) {
-    final scaler = MediaQuery.textScalerOf(context);
-    final labelWidth = SaveStatusLabel.slotWidth(quiet, scaler, icon: false);
-    final dotStyle = mobile
-        ? quiet.copyWith(color: context.palette.textDivider)
-        : quiet;
-    final dot = TextPainter(
-      text: TextSpan(text: '·', style: dotStyle),
-      textDirection: TextDirection.ltr,
-      textScaler: scaler,
-      maxLines: 1,
-    )..layout();
-    final sep = mobile ? _gap : 4.0;
-    // TextPainter comes out a few pixels under the rendered line.
-    final width = sep + dot.width + sep + labelWidth + 4;
-    dot.dispose();
-    return SizedBox(
-      key: const ValueKey('note-saved-slot'),
-      width: width,
-      child: SaveStatusLabel.noticeOf(save) == null
-          ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(width: sep),
-                Text('·', style: dotStyle),
-                SizedBox(width: sep),
-                SaveStatusLabel(
-                  save,
-                  key: const ValueKey('note-saved'),
-                  style: quiet,
-                  icon: false,
-                ),
-              ],
-            ),
     );
   }
 }
@@ -483,18 +451,28 @@ class NoteMetaRow extends StatelessWidget {
 /// whole. Where the column ends before one does, it and everything after it
 /// step aside, as the bar's items do, rather than run into the pane's edge.
 /// Only the date, first, shortens to fit a column too narrow even for it.
+///
+/// With [reserveLast] the last child keeps its room first, so the others give
+/// way to it: a problem with saving stays on screen until it clears.
 class _MetaLine extends MultiChildRenderObjectWidget {
-  const _MetaLine({required this.width, required super.children});
+  const _MetaLine({
+    required this.width,
+    required this.reserveLast,
+    required super.children,
+  });
 
   final double width;
+  final bool reserveLast;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderMetaLine(width);
+      _RenderMetaLine(width, reserveLast);
 
   @override
   void updateRenderObject(BuildContext context, _RenderMetaLine renderObject) =>
-      renderObject.width = width;
+      renderObject
+        ..width = width
+        ..reserveLast = reserveLast;
 }
 
 class _MetaLineData extends ContainerBoxParentData<RenderBox> {
@@ -503,7 +481,7 @@ class _MetaLineData extends ContainerBoxParentData<RenderBox> {
 
 class _RenderMetaLine extends RenderBox
     with ContainerRenderObjectMixin<RenderBox, _MetaLineData> {
-  _RenderMetaLine(this._width);
+  _RenderMetaLine(this._width, this._reserveLast);
 
   /// How far one already showing may reach past a column that holds still
   /// before it steps aside: a tag's × as the pointer rests on its chip, so the
@@ -511,13 +489,21 @@ class _RenderMetaLine extends RenderBox
   /// none, so each width shows the same items however it was reached.
   static const double _grace = 15;
 
-  double? _column;
+  double? _room;
 
   double get width => _width;
   double _width;
   set width(double value) {
     if (value == _width) return;
     _width = value;
+    markNeedsLayout();
+  }
+
+  bool get reserveLast => _reserveLast;
+  bool _reserveLast;
+  set reserveLast(bool value) {
+    if (value == _reserveLast) return;
+    _reserveLast = value;
     markNeedsLayout();
   }
 
@@ -535,26 +521,35 @@ class _RenderMetaLine extends RenderBox
   @override
   void performLayout() {
     final column = math.min(width, constraints.maxWidth);
-    final grace = column == _column ? _grace : 0.0;
-    _column = column;
     final height = constraints.maxHeight;
+    final reserved = _reserveLast ? lastChild : null;
+    reserved?.layout(BoxConstraints(maxHeight: height), parentUsesSize: true);
+    final room = math.max(0.0, column - (reserved?.size.width ?? 0));
+    final grace = room == _room ? _grace : 0.0;
+    _room = room;
     var x = 0.0;
     var fits = true;
-    for (var child = firstChild; child != null; child = childAfter(child)) {
-      child.layout(
+    for (var child = firstChild; child != reserved; child = childAfter(child)) {
+      child!.layout(
         BoxConstraints(
-          maxWidth: child == firstChild ? column : double.infinity,
+          maxWidth: child == firstChild ? room : double.infinity,
           maxHeight: height,
         ),
         parentUsesSize: true,
       );
       final data = child.parentData! as _MetaLineData;
-      final reach = x + child.size.width - column;
+      final reach = x + child.size.width - room;
       fits = fits && reach <= (data.shown ? grace : 0);
       data
         ..shown = fits
         ..offset = Offset(x, (height - child.size.height) / 2);
       if (fits) x += child.size.width;
+    }
+    if (reserved != null) {
+      reserved.parentData! as _MetaLineData
+        ..shown = true
+        ..offset = Offset(x, (height - reserved.size.height) / 2);
+      x += reserved.size.width;
     }
     size = constraints.constrain(Size(x, height));
   }

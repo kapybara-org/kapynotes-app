@@ -5434,7 +5434,9 @@ void main() {
     final note = notes.create(
       body: 'Quote for the deck\n☑ One\n☐ Two\n☐ Three',
     );
-    final quarter = tags.create('Q4')!;
+    // The line no longer carries a Saved at rest, so the tag is long enough
+    // to be the one that has no room beside the progress.
+    final quarter = tags.create('Q4 planning')!;
     tags.addTag(note.id, quarter.id);
     await pumpApp(
       tester,
