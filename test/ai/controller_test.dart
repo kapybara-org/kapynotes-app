@@ -944,7 +944,7 @@ void main() {
       book.put(
         KapyChat(
           id: 'recap',
-          title: 'Mon 16 recap',
+          title: 'Recap · Mon 16',
           createdAt: at,
           updatedAt: at,
           model: KapyModel.cloud,
@@ -953,6 +953,7 @@ void main() {
       );
       final ai = await build();
       expect(ai.chats, isEmpty);
+      expect(ai.hasRecaps, isTrue);
       await ai.ask('Lisbon?');
       expect(ai.chats.map((c) => c.title), ['Lisbon?']);
       ai.openChat('recap');

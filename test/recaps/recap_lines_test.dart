@@ -154,7 +154,7 @@ void main() {
       final lines = read('I could not find enough in your notes.');
       expect(lines.title, isNull);
       expect(lines.text, isEmpty);
-      expect(recapTitle(day), 'Thu 19 recap');
+      expect(recapTitle(day), 'Recap · Thu 19');
     });
 
     test('a year keeps one moment for each month it was sent', () {

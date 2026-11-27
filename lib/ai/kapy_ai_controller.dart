@@ -471,6 +471,9 @@ class KapyAiController extends KapyAi {
   bool get chatsSync => _book.syncing;
 
   @override
+  bool get hasRecaps => _book.chats.any((chat) => chat.recap != null);
+
+  @override
   KapyChat? get current {
     for (final chat in _all) {
       if (chat.id == _currentId) return chat;

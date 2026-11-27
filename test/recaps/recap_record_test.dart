@@ -121,7 +121,7 @@ void main() {
 
   test('a recap chat is a question and its answer, readable anywhere', () {
     final made = chat(record());
-    expect(made.title, '16–22 Nov recap');
+    expect(made.title, 'Recap · 16–22 Nov');
     expect(made.messages.map((m) => (m.role, m.text)), [
       (KapyRole.user, 'Make a recap of 16–22 Nov'),
       (KapyRole.assistant, 'TITLE: A busy week\nNEXT: Rest'),

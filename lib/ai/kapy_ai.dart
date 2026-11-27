@@ -430,6 +430,10 @@ abstract class KapyAi extends ChangeNotifier {
   /// Pro, and signed in with sync on. False keeps them on this device.
   bool get chatsSync => false;
 
+  /// Whether the book holds a recap, which [clearHistory] deletes with the
+  /// chats although it shows in the timeline rather than the chat list.
+  bool get hasRecaps => false;
+
   /// Newest first.
   List<KapyChat> get chats;
   KapyChat? get current;

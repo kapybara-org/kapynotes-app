@@ -203,8 +203,9 @@ class RecapLines {
   ].join('\n');
 }
 
-/// A recap's own name, where its answer gave it none: "Wed 19 recap".
-String recapTitle(RecapPeriod period) => '${period.label} recap';
+/// A recap's own name, where its answer gave it none: "Recap · Wed 19". An
+/// older build lists a recap as a chat under this name.
+String recapTitle(RecapPeriod period) => 'Recap · ${period.label}';
 
 /// The lines of [answer] that hold, for a recap of [period] that was sent
 /// [sent]. Every line is untrusted: a line without one of the period's

@@ -176,7 +176,7 @@ void main() {
     expect(outcome.lines.highlights.single.noteId, 'trip');
     expect(outcome.lines.quote!.at, const Duration(seconds: 10));
     final chat = book.chats.single;
-    expect(chat.title, 'Thu 19 recap');
+    expect(chat.title, 'Recap · Thu 19');
     expect(chat.messages.first.text, 'Make a recap of Thu 19');
     expect(recapAnswer(chat), outcome.lines.text);
     final record = recapOf(chat)!;
