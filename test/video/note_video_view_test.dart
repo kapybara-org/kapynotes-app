@@ -414,6 +414,32 @@ void main() {
     expect(player.calls.last, 'play', reason: '${player.calls}');
   });
 
+  for (final how in ['Close', 'back']) {
+    testWidgets('full screen closed by $how hands its moment back', (
+      tester,
+    ) async {
+      await pumpCard(tester);
+      await startPlaying(tester);
+      await tester.tap(find.byKey(const ValueKey('video-full-screen')));
+      await settleFiles(tester);
+      await tester.pump(const Duration(milliseconds: 200));
+      final viewer = player.made - 1;
+      player.positions[viewer] = const Duration(seconds: 7);
+      await tester.pump(const Duration(milliseconds: 600));
+      if (how == 'Close') {
+        tester
+            .widgetList<IconButton>(find.byType(IconButton))
+            .firstWhere((button) => button.tooltip == 'Close')
+            .onPressed!();
+      } else {
+        await tester.binding.handlePopRoute();
+      }
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteVideoViewer), findsNothing);
+      expect(player.positions[0], const Duration(seconds: 7));
+    });
+  }
+
   testWidgets('full screen has the time at both ends of its bar', (
     tester,
   ) async {

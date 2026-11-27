@@ -1078,6 +1078,13 @@ class Account extends ChangeNotifier {
   }
 
   void _onStorage(Note note, NoteAttachmentRef? refused) {
+    // A space somebody else owns is counted against their account, which
+    // this sheet is not about. Checked first: an upload that is let in
+    // there is not room in this account, and must not make the sheet show
+    // again.
+    final own =
+        note.spaceId == null || (_sharing?.spaceOf(note)?.isOwner ?? false);
+    if (!own) return;
     if (refused == null) {
       _storageFull = null;
       if (_forThisAccount(_storageFullEntry) == true) {
@@ -1085,13 +1092,7 @@ class Account extends ChangeNotifier {
       }
       return;
     }
-    // A space somebody else owns is counted against their account, which
-    // this sheet is not about.
-    final own =
-        note.spaceId == null || (_sharing?.spaceOf(note)?.isOwner ?? false);
-    if (!own ||
-        _storageFull != null ||
-        _forThisAccount(_storageFullEntry) == true) {
+    if (_storageFull != null || _forThisAccount(_storageFullEntry) == true) {
       return;
     }
     _storageFull = refused;

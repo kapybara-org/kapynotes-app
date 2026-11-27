@@ -13,6 +13,9 @@ import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/speech/speech_api.dart';
 import 'package:kapy_notes/sync/account.dart';
+import 'package:kapy_notes/sync/aead.dart';
+import 'package:kapy_notes/sync/key_wrap.dart';
+import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/auth_api.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
@@ -255,6 +258,54 @@ void main() {
         server.storageQuota = 8;
         await add(photo, 2);
         expect(d.account.storageFull, isA<NoteImageRef>());
+      },
+    );
+
+    test(
+      'an accepted upload into someone else\'s space leaves the flag set',
+      () async {
+        server.storageQuota = 8;
+        await add(video, 1);
+        d.account.storageFullShown();
+        // Gone, so the next pass cannot retry it and clear the flag because
+        // there really is room.
+        d.notes.delete(d.notes.notes.single.id);
+
+        final owner = 'someone-else';
+        server.user(owner);
+        const spaceId = 'theirs';
+        final theirs = server.user(d.auth.id).bundle?.identity?.x25519Public;
+        expect(theirs, isNotNull);
+        server.spaces[spaceId] =
+            FakeSpace(
+                id: spaceId,
+                kind: SpaceKind.team,
+                name: 'Theirs',
+                ownerId: owner,
+              )
+              ..members[owner] = SpaceRole.owner
+              ..members[d.auth.id] = SpaceRole.member
+              ..keys[d.auth.id] = await sealToPublicKey(randomKey(), theirs!);
+        await d.account.sharing!.refresh();
+        expect(d.account.sharing!.spaceById(spaceId)!.isOwner, isFalse);
+
+        server.storageQuota = 1 << 20;
+        final hash = await d.notes.blobs.put(
+          Uint8List.fromList(List.filled(512, 3)),
+        );
+        final id = d.notes
+            .create(spaceId: spaceId, contentKey: Uint8List(32))
+            .id;
+        d.notes.updateDocument(id, NoteAttachmentRef.placeholder, const [], [
+          photo(hash),
+        ]);
+        await d.account.sync!.syncNow();
+        await settle(server);
+        expect(d.notes.byId(id)!.attachments.single.isUploaded, isTrue);
+
+        server.storageQuota = 8;
+        await add(photo, 4);
+        expect(d.account.storageFull, isNull);
       },
     );
 

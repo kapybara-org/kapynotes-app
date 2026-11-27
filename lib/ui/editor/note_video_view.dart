@@ -753,7 +753,7 @@ class _NoteVideoViewerState extends State<NoteVideoViewer> {
     _scheduleHide();
   }
 
-  void _close() => Navigator.of(context).maybePop(_controller?.value.position);
+  void _close() => Navigator.of(context).pop(_controller?.value.position);
 
   @override
   void dispose() {
@@ -766,118 +766,126 @@ class _NoteVideoViewerState extends State<NoteVideoViewer> {
   @override
   Widget build(BuildContext context) {
     final controller = _controller;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Shortcuts(
-        shortcuts: const {
-          SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
-          SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
-        },
-        child: Actions(
-          actions: {
-            DismissIntent: CallbackAction<DismissIntent>(
-              onInvoke: (_) => _close(),
-            ),
-            ActivateIntent: CallbackAction<ActivateIntent>(
-              onInvoke: (_) => _togglePlayback(),
-            ),
+    return PopScope<Duration>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _close();
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Shortcuts(
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
+            SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
           },
-          child: Focus(
-            autofocus: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                setState(() => _controlsVisible = !_controlsVisible);
-                if (_controlsVisible) _scheduleHide();
-              },
-              onDoubleTap: _togglePlayback,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (controller != null && controller.value.isInitialized)
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: controller.value.aspectRatio,
-                        child: VideoPlayer(controller),
+          child: Actions(
+            actions: {
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (_) => _close(),
+              ),
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (_) => _togglePlayback(),
+              ),
+            },
+            child: Focus(
+              autofocus: true,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  setState(() => _controlsVisible = !_controlsVisible);
+                  if (_controlsVisible) _scheduleHide();
+                },
+                onDoubleTap: _togglePlayback,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (controller != null && controller.value.isInitialized)
+                      Center(
+                        child: AspectRatio(
+                          aspectRatio: controller.value.aspectRatio,
+                          child: VideoPlayer(controller),
+                        ),
+                      )
+                    else
+                      Center(
+                        child: _failed
+                            ? const Text(
+                                'This video could not be played.',
+                                style: TextStyle(color: Colors.white70),
+                              )
+                            : const CircularProgressIndicator(
+                                color: Colors.white,
+                              ),
                       ),
-                    )
-                  else
-                    Center(
-                      child: _failed
-                          ? const Text(
-                              'This video could not be played.',
-                              style: TextStyle(color: Colors.white70),
-                            )
-                          : const CircularProgressIndicator(
-                              color: Colors.white,
-                            ),
-                    ),
-                  if (_controlsVisible && controller != null)
-                    Center(
-                      child: IconButton(
-                        key: const ValueKey('video-play-pause'),
-                        onPressed: _togglePlayback,
-                        icon: KapyIcon(
-                          controller.value.isPlaying
-                              ? KapyIcons.pauseRounded
-                              : KapyIcons.playRounded,
-                          size: 34,
-                        ),
-                        color: Colors.white,
-                        style: IconButton.styleFrom(
-                          backgroundColor: Colors.black.withValues(alpha: 0.48),
-                          minimumSize: const Size.square(62),
-                          maximumSize: const Size.square(62),
-                        ),
-                      ),
-                    ),
-                  if (_controlsVisible && controller != null)
-                    Positioned(
-                      left: 18,
-                      right: 18,
-                      bottom: MediaQuery.paddingOf(context).bottom + 16,
-                      child: ValueListenableBuilder<VideoPlayerValue>(
-                        valueListenable: controller,
-                        builder: (context, value, bar) => Row(
-                          children: [
-                            Text(
-                              _clockLabel(value.position),
-                              key: const ValueKey('video-viewer-elapsed'),
-                              style: _overPicture(quiet: true),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(child: bar!),
-                            const SizedBox(width: 12),
-                            Text(
-                              _clockLabel(value.duration),
-                              key: const ValueKey('video-viewer-length'),
-                              style: _overPicture(quiet: true),
-                            ),
-                          ],
-                        ),
-                        child: VideoProgressIndicator(
-                          controller,
-                          allowScrubbing: true,
-                          colors: const VideoProgressColors(
-                            playedColor: Colors.white,
-                            bufferedColor: Colors.white38,
-                            backgroundColor: Colors.white24,
+                    if (_controlsVisible && controller != null)
+                      Center(
+                        child: IconButton(
+                          key: const ValueKey('video-play-pause'),
+                          onPressed: _togglePlayback,
+                          icon: KapyIcon(
+                            controller.value.isPlaying
+                                ? KapyIcons.pauseRounded
+                                : KapyIcons.playRounded,
+                            size: 34,
                           ),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          color: Colors.white,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.black.withValues(
+                              alpha: 0.48,
+                            ),
+                            minimumSize: const Size.square(62),
+                            maximumSize: const Size.square(62),
+                          ),
                         ),
                       ),
+                    if (_controlsVisible && controller != null)
+                      Positioned(
+                        left: 18,
+                        right: 18,
+                        bottom: MediaQuery.paddingOf(context).bottom + 16,
+                        child: ValueListenableBuilder<VideoPlayerValue>(
+                          valueListenable: controller,
+                          builder: (context, value, bar) => Row(
+                            children: [
+                              Text(
+                                _clockLabel(value.position),
+                                key: const ValueKey('video-viewer-elapsed'),
+                                style: _overPicture(quiet: true),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(child: bar!),
+                              const SizedBox(width: 12),
+                              Text(
+                                _clockLabel(value.duration),
+                                key: const ValueKey('video-viewer-length'),
+                                style: _overPicture(quiet: true),
+                              ),
+                            ],
+                          ),
+                          child: VideoProgressIndicator(
+                            controller,
+                            allowScrubbing: true,
+                            colors: const VideoProgressColors(
+                              playedColor: Colors.white,
+                              bufferedColor: Colors.white38,
+                              backgroundColor: Colors.white24,
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    Positioned(
+                      top: MediaQuery.paddingOf(context).top + 8,
+                      right: 8,
+                      child: IconButton(
+                        tooltip: 'Close',
+                        onPressed: _close,
+                        icon: const KapyIcon(KapyIcons.closeRounded),
+                        color: Colors.white,
+                      ),
                     ),
-                  Positioned(
-                    top: MediaQuery.paddingOf(context).top + 8,
-                    right: 8,
-                    child: IconButton(
-                      tooltip: 'Close',
-                      onPressed: _close,
-                      icon: const KapyIcon(KapyIcons.closeRounded),
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
