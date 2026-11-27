@@ -7171,10 +7171,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       final rect = _cellRect(field, active.table, active.row, active.column);
       if (rect == null) return;
       final view = box.localToGlobal(Offset.zero) & box.size;
-      final window = View.of(context);
-      final keyboardTop =
-          (window.physicalSize.height - window.viewInsets.bottom) /
-          window.devicePixelRatio;
+      final media = MediaQuery.of(context);
+      final keyboardTop = media.size.height - media.viewInsets.bottom;
       const margin = 12.0;
       final top = view.top + margin;
       final bottom = math.min(view.bottom, keyboardTop) - margin;
@@ -7501,10 +7499,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
 
   /// The title's underline and the meta row under it, scrolled with the
   /// text they belong to.
-  Widget _titleMarks(_TitleLayout title, EdgeInsets padding) {
+  Widget _titleMarks(_TitleLayout title, EdgeInsets padding, double column) {
     final checklist = _checklist();
     final now = (widget.now ?? DateTime.now)();
     final displayTime = widget.displayTime ?? (time) => time.toLocal();
+    final shelved = TagShelf.maybeOf(context) != null;
     final scale = title.row.height / EditorMetrics.titleRow;
     return ClipRect(
       child: ListenableBuilder(
@@ -7542,10 +7541,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             readOnlyLabel: widget.readOnly ? widget.readOnlyLabel : null,
             readOnlyIcon: widget.readOnlyIcon,
             onReadOnlyPressed: widget.onReadOnlyPressed,
-            tags: TagShelf.maybeOf(context) == null
-                ? null
-                : NoteTagChips(noteId: widget.noteId, adds: !widget.phone),
+            tags: shelved ? NoteTagChips(noteId: widget.noteId) : null,
+            addTag: shelved && !widget.phone
+                ? NoteAddTag(noteId: widget.noteId)
+                : null,
             phone: widget.phone,
+            width: column,
           ),
         ),
       ),
@@ -7803,9 +7804,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         final chip = _voiceChip(ref);
         spans[ref.offset] = (
           width: columnWidth,
-          height:
-              chip.heightIn(context, columnWidth, TextScaler.noScaling) +
-              noteImageGap,
+          height: noteVoiceChipHeight + noteImageGap,
           child: SizedBox(width: columnWidth, child: chip),
         );
         continue;
@@ -8371,7 +8370,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           ),
                         ),
                       if (title != null)
-                        Positioned.fill(child: _titleMarks(title, padding)),
+                        Positioned.fill(
+                          child: _titleMarks(
+                            title,
+                            padding,
+                            textPaneWidth - padding.horizontal,
+                          ),
+                        ),
                       if (!widget.readOnly)
                         Positioned.fill(child: _emptyLineMarks(padding)),
                       if (widget.markdownEnabled)

@@ -15,6 +15,7 @@ class Toast {
   const Toast._();
 
   static OverlayEntry? _current;
+  static VoidCallback? _currentAction;
   static int _generation = 0;
 
   /// What the toast showing does once it goes without its action: see
@@ -154,6 +155,14 @@ class Toast {
     return ToastProgress._(overlay, generation);
   }
 
+  /// Takes down the toast showing if its button runs [onAction]: an offer of
+  /// something since done another way.
+  static void withdraw(VoidCallback onAction) {
+    if (_current == null || _currentAction != onAction) return;
+    _generation++;
+    _dismiss();
+  }
+
   static int _showOn(
     OverlayState overlay,
     String message, {
@@ -207,6 +216,7 @@ class Toast {
       ),
     );
     _current = entry;
+    _currentAction = action?.$2;
     overlay.insert(entry);
     return generation;
   }
@@ -245,6 +255,7 @@ class Toast {
     // invisible, endlessly animating spinner.
     entry?.remove();
     _current = null;
+    _currentAction = null;
     _room.value = 0;
     _gone();
   }

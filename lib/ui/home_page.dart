@@ -24,6 +24,7 @@ import '../speech/local_model_store.dart';
 import '../speech/summarizer.dart';
 import '../speech/transcriber.dart';
 import '../speech/transcription_queue.dart';
+import '../core/app_zoom.dart';
 import '../core/desktop_integration.dart';
 import '../core/platform.dart';
 import '../core/quick_capture.dart';
@@ -54,6 +55,7 @@ import '../data/notes_store.dart';
 import '../data/onboarding.dart';
 import 'editor/voice_chip.dart';
 import 'editor/voice_insertion.dart';
+import 'voice_note_ask.dart';
 import 'voice_note_dialog.dart';
 import '../speech/speech_api.dart';
 import '../speech/speech_errors.dart';
@@ -1216,6 +1218,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final noteId = _selectedId;
     final note = widget.notes.byId(noteId ?? '');
     final canEdit = _canWriteNote(note);
+    final ai = _kapyAiOn ? _kapyAi : null;
     await openVoiceNoteDialog(
       context,
       ref: ref,
@@ -1278,6 +1281,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             : (instruction) =>
                   widget.voicePrefs!.summaryInstruction = instruction,
         failureReason: _failureReasonFor(ref),
+        ask: ai == null || note == null
+            ? null
+            : VoiceAskActions(
+                kapyAi: ai,
+                noteId: note.id,
+                hidden: note.isHidden,
+                onManageAccounts: () => _manageKapyAccounts(ai),
+                onSignIn: _kapySignIn,
+                onUpgrade: _kapyUpgrade,
+              ),
       ),
     );
   }
@@ -1447,8 +1460,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// build.
   bool get _listFits {
     final view = WidgetsBinding.instance.platformDispatcher.views.first;
-    return view.physicalSize.width / view.devicePixelRatio >=
-        kTwoPaneBreakpoint;
+    return zoomedSizeOf(view).width >= kTwoPaneBreakpoint;
   }
 
   /// Whether the notes list is on screen, beside the page or over it.
@@ -1931,9 +1943,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Opens the tab closed last again, in front.
+  /// Opens the tab closed last again, in front and in its place on the row,
+  /// and takes down the toast that offered it back.
   void _reopenTab() {
     if (!_workspace.canReopen) return;
+    Toast.withdraw(_reopenTab);
     _changeTabs(_workspace.openNoteIds, _workspace.reopen);
   }
 
@@ -3540,24 +3554,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     controller: _kapyPanel,
     noteTitle: _kapyNoteTitle,
     onOpenNote: onOpenNote,
-    onManageAccounts: () => _showSettings(
-      section: SettingsSection.voice,
-      reveal: ai.accounts.isEmpty
-          ? 'kapy-ai-toggle'
-          : kapyAccountRowId(ai.accounts.first.kind),
-    ),
-    onSignIn: widget.account == null
-        ? null
-        : () => _showSettings(section: SettingsSection.account),
-    onUpgrade: switch (widget.account?.billing) {
-      final billing? => () => unawaited(
-        showProSheet(context, billing: billing),
-      ),
-      null => null,
-    },
+    onManageAccounts: () => _manageKapyAccounts(ai),
+    onSignIn: _kapySignIn,
+    onUpgrade: _kapyUpgrade,
     onClose: onClose,
     now: widget.notes.now,
   );
+
+  /// Settings › Voice & AI, at the accounts Kapy AI can answer with.
+  void _manageKapyAccounts(KapyAi ai) => _showSettings(
+    section: SettingsSection.voice,
+    reveal: ai.accounts.isEmpty
+        ? 'kapy-ai-toggle'
+        : kapyAccountRowId(ai.accounts.first.kind),
+  );
+
+  VoidCallback? get _kapySignIn => widget.account == null
+      ? null
+      : () => _showSettings(section: SettingsSection.account);
+
+  VoidCallback? get _kapyUpgrade => switch (widget.account?.billing) {
+    final billing? => () => unawaited(showProSheet(context, billing: billing)),
+    null => null,
+  };
 
   /// The page with Kapy AI's panel beside it or over it, while it is open.
   Widget _withKapyAi(Widget page) {
@@ -4264,9 +4283,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                     : () => _focusPane(index),
             ],
             onOpenSettings: _showSettings,
-            onIncreaseEditorTextSize: widget.prefs.increaseEditorTextSize,
-            onDecreaseEditorTextSize: widget.prefs.decreaseEditorTextSize,
-            onResetEditorTextSize: widget.prefs.resetEditorTextSize,
+            onZoomIn: widget.prefs.zoomIn,
+            onZoomOut: widget.prefs.zoomOut,
+            onResetZoom: widget.prefs.resetZoom,
             onInsertImage: () => unawaited(
               _selectedEditor?.pickAndInsertImages() ?? Future<void>.value(),
             ),
@@ -4279,7 +4298,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                 : null,
             onDeleteNote: _removeOpenNote,
             onToggleKapyAi: _kapyAi == null ? null : _toggleKapyAi,
-            autofocus: _selectedId == null || !widget.prefs.readyToTypeOnOpen,
             child: content,
           ),
         );
@@ -4418,7 +4436,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ownDay: widget.days == null ? null : _ownDayOf,
               ofPickedDay: switch (_workspace.dayInTabs) {
                 null => null,
-                final day => (note) => _dayOfNote(note) == day,
+                final day =>
+                  (note) =>
+                      _dayOfNote(note) == day ||
+                      _workspace.dayNoteIds.contains(note.id),
               },
               when: _when,
               onWhenChanged: _setWhen,
@@ -6697,9 +6718,9 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onGoForward,
     required this.onFocusPane,
     required this.onOpenSettings,
-    required this.onIncreaseEditorTextSize,
-    required this.onDecreaseEditorTextSize,
-    required this.onResetEditorTextSize,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onResetZoom,
     required this.onInsertImage,
     required this.onRecordVoice,
     required this.onToggleSidebar,
@@ -6709,7 +6730,6 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onDeleteNote,
     required this.onToggleKapyAi,
     required this.shortcuts,
-    required this.autofocus,
   });
 
   final Widget child;
@@ -6772,9 +6792,9 @@ class _DesktopShortcuts extends StatelessWidget {
   /// One per pane position, left to right; null past the panes that are open.
   final List<VoidCallback?> onFocusPane;
   final VoidCallback onOpenSettings;
-  final VoidCallback onIncreaseEditorTextSize;
-  final VoidCallback onDecreaseEditorTextSize;
-  final VoidCallback onResetEditorTextSize;
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+  final VoidCallback onResetZoom;
   final VoidCallback onInsertImage;
   final VoidCallback onRecordVoice;
   final VoidCallback onToggleSidebar;
@@ -6786,7 +6806,6 @@ class _DesktopShortcuts extends StatelessWidget {
   /// Null where Kapy AI is not built in, which leaves its chord unbound.
   final VoidCallback? onToggleKapyAi;
   final ShortcutPrefs shortcuts;
-  final bool autofocus;
 
   ShortcutBinding get _find => ShortcutBinding(
     logicalKey: LogicalKeyboardKey.keyF,
@@ -6846,12 +6865,9 @@ class _DesktopShortcuts extends StatelessWidget {
             ?onFocusPane[2],
         ?shortcuts.bindingFor(ShortcutAction.openSettings)?.activator:
             onOpenSettings,
-        ?shortcuts.bindingFor(ShortcutAction.increaseEditorTextSize)?.activator:
-            onIncreaseEditorTextSize,
-        ?shortcuts.bindingFor(ShortcutAction.decreaseEditorTextSize)?.activator:
-            onDecreaseEditorTextSize,
-        ?shortcuts.bindingFor(ShortcutAction.resetEditorTextSize)?.activator:
-            onResetEditorTextSize,
+        ?shortcuts.bindingFor(ShortcutAction.zoomIn)?.activator: onZoomIn,
+        ?shortcuts.bindingFor(ShortcutAction.zoomOut)?.activator: onZoomOut,
+        ?shortcuts.bindingFor(ShortcutAction.resetZoom)?.activator: onResetZoom,
         ?shortcuts.bindingFor(ShortcutAction.insertImage)?.activator:
             onInsertImage,
         ?shortcuts.bindingFor(ShortcutAction.recordVoiceNote)?.activator:
@@ -6871,7 +6887,7 @@ class _DesktopShortcuts extends StatelessWidget {
       },
       child: FocusScope(
         node: focusNode,
-        autofocus: autofocus,
+        autofocus: true,
         onKeyEvent: _pairKey,
         child: child,
       ),
