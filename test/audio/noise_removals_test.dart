@@ -60,6 +60,16 @@ class _Decoder extends AudioDecoder {
   }
 }
 
+/// Clean copies in a folder that cannot be looked at, as when the app's own
+/// folder is out of reach.
+class _UnreadableCopies extends CleanCopies {
+  _UnreadableCopies(Directory dir) : super(directory: dir);
+
+  @override
+  Future<File?> existing(String hash) async =>
+      throw const FileSystemException('Permission denied');
+}
+
 void main() {
   late Directory dir;
   late VoicePrefs prefs;
@@ -286,6 +296,17 @@ void main() {
       expect(await second, isNull);
       expect(await again, isNull);
       expect(noise.stateOf(hash).stage, NoiseStage.on);
+    },
+  );
+
+  test(
+    'a copy that cannot be looked for leaves the original playing',
+    () async {
+      copies = _UnreadableCopies(Directory('${dir.path}/clean'));
+      final noise = build();
+      expect(noise.stateOf(hash).stage, NoiseStage.off);
+      expect(await noise.playable(hash), isNull);
+      expect(noise.stateOf(hash).stage, NoiseStage.off);
     },
   );
 

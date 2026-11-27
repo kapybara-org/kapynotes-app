@@ -129,6 +129,10 @@ class NoiseRemovals extends ChangeNotifier {
     } on ArgumentError {
       _made[hash] = false;
       return null;
+    } catch (error) {
+      debugPrint('KapyNotes: could not look for a clean copy: $error');
+      _made[hash] = false;
+      return null;
     }
   }
 
@@ -286,9 +290,7 @@ class NoiseRemovals extends ChangeNotifier {
   Future<void> _look(String hash) async {
     if (!_looking.add(hash)) return;
     try {
-      _made[hash] = await _copies.existing(hash) != null;
-    } on ArgumentError {
-      _made[hash] = false;
+      await _existing(hash);
     } finally {
       _looking.remove(hash);
     }
