@@ -148,8 +148,8 @@ class _Title extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 style: handTitle(
-                  size: 26,
-                  line: 32,
+                  size: 30,
+                  line: 36,
                   color: selected ? palette.textHeading : palette.textQuiet,
                 ),
               ),

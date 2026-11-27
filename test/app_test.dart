@@ -10786,43 +10786,44 @@ void main() {
         expect(lit(tester), PhoneTab.folders);
       }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-      testWidgets("Drawings' title is in the hand face, its count small beside "
-          'it, and its Pinned and Recent labels 13 pt in muted grey (M03)', (
-        tester,
-      ) async {
-        await pumpFolders(tester);
-        final shelf = notes.create(drawing: true);
-        notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
-        notes.togglePinned(shelf.id);
-        await tap(tester, barFolders);
-        await tap(tester, tile);
-        final palette = tester.element(title).palette;
+      testWidgets(
+        "Drawings' title is in the hand face, its count small beside "
+        'it, and its Pinned and Recent labels are D\'s 17 pt section headings (M03)',
+        (tester) async {
+          await pumpFolders(tester);
+          final shelf = notes.create(drawing: true);
+          notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+          notes.togglePinned(shelf.id);
+          await tap(tester, barFolders);
+          await tap(tester, tile);
+          final palette = tester.element(title).palette;
 
-        final heading = tester.widget<Text>(title).style!;
-        expect(heading.fontFamily, AppFonts.ui);
-        expect(heading.fontSize, 26);
-        expect(heading.height, 32 / 26);
-        expect(heading.color, palette.textHeading);
-        final count = tester
-            .widget<Text>(
-              find.descendant(
-                of: find.byType(PhoneListTitle),
-                matching: find.text('2'),
-              ),
-            )
-            .style!;
-        expect(count.fontFamily, AppFonts.ui);
-        expect(count.fontSize, 13);
-        expect(count.color, palette.textQuiet);
+          final heading = tester.widget<Text>(title).style!;
+          expect(heading.fontFamily, AppFonts.ui);
+          expect(heading.fontSize, 26);
+          expect(heading.height, 32 / 26);
+          expect(heading.color, palette.textHeading);
+          final count = tester
+              .widget<Text>(
+                find.descendant(
+                  of: find.byType(PhoneListTitle),
+                  matching: find.text('2'),
+                ),
+              )
+              .style!;
+          expect(count.fontFamily, AppFonts.ui);
+          expect(count.fontSize, 13);
+          expect(count.color, palette.textQuiet);
 
-        for (final label in ['Pinned', 'Recent']) {
-          final style = tester.widget<Text>(find.text(label)).style!;
-          expect(style.fontFamily, AppFonts.ui, reason: label);
-          expect(style.fontSize, 13, reason: label);
-          expect(style.height, 18 / 13, reason: label);
-          expect(style.color, palette.textSecondary, reason: label);
-        }
-      });
+          for (final label in ['Pinned', 'Recent']) {
+            final style = tester.widget<Text>(find.text(label)).style!;
+            expect(style.fontFamily, AppFonts.ui, reason: label);
+            expect(style.fontSize, 17, reason: label);
+            expect(style.height, 22 / 17, reason: label);
+            expect(style.color, palette.textPrimary, reason: label);
+          }
+        },
+      );
 
       double iconLeft(WidgetTester tester, Finder row, KapyIconData data) =>
           tester

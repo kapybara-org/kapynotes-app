@@ -335,7 +335,7 @@ class NoteCardFace extends StatelessWidget {
                             style: uiStyle(
                               AppTypeScale.row,
                               18,
-                              FontWeight.w400,
+                              FontWeight.w500,
                               palette.textPrimary,
                             ),
                           ),
@@ -457,7 +457,7 @@ class PhoneCardFace extends StatelessWidget {
               note.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: uiStyle(15, 20, FontWeight.w400, palette.textPrimary),
+              style: uiStyle(15, 20, FontWeight.w500, palette.textPrimary),
             ),
           ),
           const SizedBox(height: 3),
@@ -770,7 +770,7 @@ class NoteListRowFace extends StatelessWidget {
                         style: uiStyle(
                           AppTypeScale.row,
                           touch ? 22 : 18,
-                          FontWeight.w400,
+                          FontWeight.w500,
                           palette.textPrimary,
                         ),
                       ),
@@ -1100,7 +1100,7 @@ class DrawingCardFace extends StatelessWidget {
                       style: uiStyle(
                         13,
                         18,
-                        FontWeight.w400,
+                        FontWeight.w500,
                         palette.textPrimary,
                       ),
                     ),
@@ -1190,7 +1190,7 @@ class PhoneDrawingRowFace extends StatelessWidget {
                   style: uiStyle(
                     AppTypeScale.row,
                     22,
-                    FontWeight.w400,
+                    FontWeight.w500,
                     palette.textPrimary,
                   ),
                 ),
@@ -1286,7 +1286,7 @@ class DrawingListRowFace extends StatelessWidget {
                   style: uiStyle(
                     AppTypeScale.row,
                     18,
-                    FontWeight.w400,
+                    FontWeight.w500,
                     palette.textPrimary,
                   ),
                 ),
@@ -1331,6 +1331,7 @@ class NotesListHeading extends StatelessWidget {
     this.noun = 'note',
     this.height = 24,
     this.leading,
+    this.leadingGap = 8,
     this.trailing,
   });
 
@@ -1341,6 +1342,7 @@ class NotesListHeading extends StatelessWidget {
   final String noun;
   final double height;
   final Widget? leading;
+  final double leadingGap;
   final Widget? trailing;
 
   @override
@@ -1352,7 +1354,7 @@ class NotesListHeading extends StatelessWidget {
         children: [
           if (leading case final leading?) ...[
             leading,
-            const SizedBox(width: 8),
+            SizedBox(width: leadingGap),
           ],
           Expanded(
             child: Row(
@@ -1431,10 +1433,10 @@ class ViewAllLink extends StatelessWidget {
 /// A section label over the notes list: small, quiet and in sentence case,
 /// set apart by the space round it rather than by size or a rule.
 TextStyle _sectionLabel(CalcPalette palette) => chromeStyle(
-  size: 12,
+  size: 13,
   line: 16,
-  weight: AppWeight.regular,
-  color: palette.textSecondary,
+  weight: AppWeight.semibold,
+  color: palette.textPrimary,
 );
 
 /// A count or a date after a section label: the label's size, a grey

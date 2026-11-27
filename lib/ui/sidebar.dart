@@ -1516,6 +1516,7 @@ extension on Sidebar {
                   child: _PhoneDayHeading(
                     lead: 'Pinned',
                     date: '${groups.pinned.length}',
+                    pin: true,
                   ),
                 ),
                 ViewAllLink(
@@ -1535,7 +1536,7 @@ extension on Sidebar {
           ),
         );
       } else if (pinned.isNotEmpty) {
-        heading(const _PhoneHeading('Pinned'));
+        heading(const _PhoneHeading('Pinned', pin: true));
         section(pinned);
       }
       // A group's heading carries the room above it and sits right on its
@@ -1578,6 +1579,12 @@ extension on Sidebar {
             count: groups.pinned.length,
             noun: noun,
             height: 16,
+            leading: KapyIcon(
+              KapyIcons.pinOutlined,
+              size: 14,
+              color: palette.textPrimary,
+            ),
+            leadingGap: 4,
             trailing:
                 pinned.length < groups.pinned.length &&
                     onPinnedOnlyChanged != null
@@ -2146,8 +2153,8 @@ class SidebarWindowBar extends StatelessWidget {
     final onAskKapy = this.onAskKapy;
     final askKapyShortcut = this.askKapyShortcut;
     final titleStyle = handTitle(
-      size: 19,
-      line: 24,
+      size: 22,
+      line: 28,
       color: palette.textHeading,
     );
     final countText = [count, ?countLabel].join(' ');
@@ -4277,15 +4284,16 @@ class _PhoneShareHeading extends StatelessWidget {
   }
 }
 
-/// A day's heading over its card on a phone's list: "Today" in the section
-/// label's grey, then the date a grey quieter. A day with no name is headed
-/// by its date alone. Folders heads its notes in no folder with it too
-/// (M02): the words alone.
+/// A day's heading over its card on a phone's list: "Today" firm in the
+/// text's own colour, then the date smaller and a grey quieter. A day with
+/// no name is headed by its date alone. Folders heads its notes in no folder
+/// with it too (M02): the words alone. Pinned leads with its pin.
 class _PhoneDayHeading extends StatelessWidget {
-  const _PhoneDayHeading({required this.lead, this.date});
+  const _PhoneDayHeading({required this.lead, this.date, this.pin = false});
 
   final String? lead;
   final String? date;
+  final bool pin;
 
   @override
   Widget build(BuildContext context) {
@@ -4303,19 +4311,36 @@ class _PhoneDayHeading extends StatelessWidget {
           textBaseline: TextBaseline.alphabetic,
           spacing: 6,
           children: [
+            if (pin)
+              KapyIcon(
+                KapyIcons.pinOutlined,
+                size: 18,
+                color: palette.textPrimary,
+              ),
             if (lead case final lead?)
-              Text(lead, style: metaStyle(13, 18, palette.textSecondary)),
+              Flexible(
+                child: Text(
+                  lead,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _phoneHeadingStyle(palette),
+                ),
+              ),
             if (date case final date?)
               Flexible(
                 child: Text(
                   date,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: metaStyle(
-                    13,
-                    18,
-                    lead == null ? palette.textSecondary : palette.textQuiet,
-                  ),
+                  style: lead == null
+                      ? _phoneHeadingStyle(palette)
+                      : chromeStyle(
+                          size: 15,
+                          line: 22,
+                          weight: AppWeight.regular,
+                          color: palette.textTertiary,
+                          tabular: true,
+                        ),
                 ),
               ),
           ],
@@ -4371,22 +4396,42 @@ class PhonePinnedCards extends StatelessWidget {
 /// A heading over a phone's list: Pinned, where it has no View all, and
 /// Recent.
 class _PhoneHeading extends StatelessWidget {
-  const _PhoneHeading(this.label);
+  const _PhoneHeading(this.label, {this.pin = false});
 
   final String label;
+  final bool pin;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    header: true,
-    child: Padding(
-      padding: const EdgeInsets.only(left: 16),
-      child: Text(
-        label,
-        style: metaStyle(13, 18, context.palette.textSecondary),
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Semantics(
+      header: true,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 16),
+        child: Row(
+          spacing: 6,
+          children: [
+            if (pin)
+              KapyIcon(
+                KapyIcons.pinOutlined,
+                size: 18,
+                color: palette.textPrimary,
+              ),
+            Text(label, style: _phoneHeadingStyle(palette)),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
+
+/// A section heading on a phone's list: Pinned, Today, a day, Recent.
+TextStyle _phoneHeadingStyle(CalcPalette palette) => chromeStyle(
+  size: 17,
+  line: 22,
+  weight: AppWeight.semibold,
+  color: palette.textPrimary,
+);
 
 /// A phone list's title: the space's name large, its count small and quiet
 /// beside it (M02, M03).

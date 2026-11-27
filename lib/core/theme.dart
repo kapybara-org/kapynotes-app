@@ -705,11 +705,11 @@ class EditorMetrics {
   /// [padding] gives the column what it has.
   static const double columnWidth = 680;
 
-  /// The note's first line, its title: 26 semibold, the one title on the
+  /// The note's first line, its title: 28 semibold, the one title on the
   /// page, so it names the note without shouting over it. The meta row sits under it, 10 below the title and 24
   /// above the body. On a tablet it keeps a second line's room for the tags;
   /// a phone's facts and tags share one line, as M07 draws them.
-  static const double titleFontSize = 26;
+  static const double titleFontSize = 28;
   static const double titleRow = 32;
   static const FontWeight titleWeight = FontWeight.w600;
   static const double metaGap = 10;
@@ -1205,26 +1205,35 @@ class AppFonts {
   static const List<String> monoFallback = AppPlatform.monoFontFallback;
 }
 
-/// The interface's two weights: [regular] for everything people read, and
-/// [semibold] for a window's, a dialog's or a page's title. Hierarchy
-/// otherwise comes from size and grey level, never from weight.
+/// The waiting marker: Shared's count on the rail, the phone's Folders dot
+/// and the invitations dot in Settings. One red in every theme and mode, with
+/// white on it at 5 : 1 (tokens.md, Refine D).
+const Color waitingMarker = Color(0xFFC93B36);
+
+/// The interface's three weights: [regular] for everything people read,
+/// [medium] for a row's title, and [semibold] for a section heading and a
+/// window's, a dialog's or a note's title.
 class AppWeight {
   const AppWeight._();
 
   static const double regular = 400;
+  static const double medium = 500;
   static const double semibold = 600;
 
-  /// A Flutter weight on this ladder: w600 and up is a title, 400 to 599
-  /// reads, and anything under 400 (a display cut) is left alone.
+  /// A Flutter weight on this ladder: w600 and up is a title, w500 a row's
+  /// title, 400 to 499 reads, and anything under 400 (a display cut) is left
+  /// alone.
   static double axisOf(FontWeight weight) {
     final value = weight.value;
     if (value < 400) return value.toDouble();
-    return value >= 600 ? semibold : regular;
+    if (value >= 600) return semibold;
+    return value >= 500 ? medium : regular;
   }
 
   /// Nearest named weight, for a face with no `wght` axis.
   static FontWeight named(double axis) {
-    if (axis < 500) return FontWeight.w400;
+    if (axis < 450) return FontWeight.w400;
+    if (axis < 550) return FontWeight.w500;
     if (axis < 650) return FontWeight.w600;
     return FontWeight.w700;
   }
@@ -1522,21 +1531,21 @@ class KapyTheme {
 
   static const _riverbankDark = _Tones(
     window: Color(0xFF0D0D0D),
-    pane: Color(0xFF0F0E0E),
-    card: Color(0xFF131313),
-    raised: Color(0xFF20201F),
-    selected: Color(0xFF191918),
-    hairline: Color(0xFF202020),
-    divider: Color(0xFF252524),
-    chip: Color(0xFF1E1E1E),
-    switchOff: Color(0xFF2A2A28),
-    ring: Color(0xFF4D4D4D),
-    text: Color(0xFFDBDBDB),
-    title: Color(0xFFDADADA),
-    secondary: Color(0xFF969696),
-    tertiary: Color(0xFF878787),
-    quiet: Color(0xFF7C7C7B),
-    mark: Color(0xFF494948),
+    pane: Color(0xFF1A1A1A),
+    card: Color(0xFF1A1A1A),
+    raised: Color(0xFF262626),
+    selected: Color(0xFF262626),
+    hairline: Color(0xFF262626),
+    divider: Color(0xFF2E2E2E),
+    chip: Color(0xFF262626),
+    switchOff: Color(0xFF333333),
+    ring: Color(0xFF5C5C5C),
+    text: Color(0xFFEDEDED),
+    title: Color(0xFFEDEDED),
+    secondary: Color(0xFFA3A3A3),
+    tertiary: Color(0xFF8F8F8F),
+    quiet: Color(0xFF8F8F8F),
+    mark: Color(0xFF4A4A4A),
     accent: Color(0xFFE8772E),
     onAccent: Color(0xFF1A0E06),
     accentText: Color(0xFFE8772E),
@@ -1555,22 +1564,22 @@ class KapyTheme {
   /// The dark ladder turned over, each text tier at the contrast its dark
   /// twin has: about 13.4, 6.2, 5.3 and 4.6 to 1.
   static const _riverbankLight = _Tones(
-    window: Color(0xFFF3F3F2),
+    window: Color(0xFFF4F4F4),
     pane: Color(0xFFFFFFFF),
-    card: Color(0xFFF9F9F8),
-    raised: Color(0xFFEBEBEA),
-    selected: Color(0xFFECECEB),
-    hairline: Color(0xFFE6E6E5),
-    divider: Color(0xFFDEDEDD),
-    chip: Color(0xFFEFEFEE),
-    switchOff: Color(0xFFDCDCDA),
-    ring: Color(0xFFADADAB),
-    text: Color(0xFF2B2B2B),
-    title: Color(0xFF262626),
-    secondary: Color(0xFF5E5E5E),
-    tertiary: Color(0xFF666666),
-    quiet: Color(0xFF6E6E6D),
-    mark: Color(0xFFB5B5B3),
+    card: Color(0xFFFFFFFF),
+    raised: Color(0xFFEDEDED),
+    selected: Color(0xFFEDEDED),
+    hairline: Color(0xFFF0F0F0),
+    divider: Color(0xFFE5E5E5),
+    chip: Color(0xFFF1F1F1),
+    switchOff: Color(0xFFDCDCDC),
+    ring: Color(0xFFA3A3A3),
+    text: Color(0xFF171717),
+    title: Color(0xFF171717),
+    secondary: Color(0xFF525252),
+    tertiary: Color(0xFF6B6B6B),
+    quiet: Color(0xFF6B6B6B),
+    mark: Color(0xFFB5B5B5),
     accent: Color(0xFFD9692A),
     onAccent: Color(0xFF1A0E06),
     accentText: Color(0xFFB9551A),

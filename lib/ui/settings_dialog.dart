@@ -4509,6 +4509,8 @@ class _IndexRow extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         height: 20 / 15,
+                        fontWeight: AppWeight.font(AppWeight.medium),
+                        fontVariations: AppWeight.wght(AppWeight.medium),
                         color: palette.textPrimary,
                       ),
                     ),
@@ -4530,7 +4532,7 @@ class _IndexRow extends StatelessWidget {
                             const SizedBox(width: 12),
                             DecoratedBox(
                               decoration: BoxDecoration(
-                                color: palette.clay,
+                                color: waitingMarker,
                                 shape: BoxShape.circle,
                               ),
                               child: const SizedBox.square(dimension: 8),

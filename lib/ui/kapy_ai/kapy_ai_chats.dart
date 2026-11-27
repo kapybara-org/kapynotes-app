@@ -178,7 +178,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
                         13,
                         16,
                         open ? palette.textPrimary : palette.textSubheading,
-                        weight: FontWeight.w400,
+                        weight: FontWeight.w500,
                       ),
                     ),
                   ),

@@ -166,28 +166,28 @@ class SpacesRail extends StatelessWidget {
                         SliverToBoxAdapter(
                           child: Column(
                             children: [
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 8),
                               destination(
                                 LibrarySpace.notes,
                                 icon: KapyIcons.noteOutlined,
                                 label: 'Notes',
                               ),
                               if (tasks) ...[
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 8),
                                 destination(
                                   LibrarySpace.tasks,
                                   icon: KapyIcons.tasksOutlined,
                                   label: 'Tasks',
                                 ),
                               ],
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 8),
                               destination(
                                 LibrarySpace.drawings,
                                 icon: KapyIcons.penRounded,
                                 label: 'Drawings',
                               ),
                               if (invitations != null) ...[
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 8),
                                 destination(
                                   LibrarySpace.shared,
                                   icon: KapyIcons.groupOutlined,
@@ -246,7 +246,7 @@ class SpacesRail extends StatelessWidget {
 /// The words on the rail: a space's name under its icon, and the streak's
 /// run of days under its flame. 11 on a Mac, a floor above that elsewhere.
 TextStyle _railLabel(Color color) => chromeStyle(
-  size: AppTypeScale.micro,
+  size: 11.5,
   line: 14,
   weight: AppWeight.regular,
   color: color,
@@ -292,8 +292,8 @@ class _RailItemState extends State<_RailItem> {
     final tile = AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOutCubic,
-      width: 54,
-      height: 54,
+      width: 60,
+      height: 60,
       decoration: BoxDecoration(
         color: selected
             ? palette.selectedBackground
@@ -309,7 +309,7 @@ class _RailItemState extends State<_RailItem> {
           Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              KapyIcon(widget.icon, size: 18, color: ink),
+              KapyIcon(widget.icon, size: 22, color: ink),
               const SizedBox(height: 5),
               Text(
                 widget.label,
@@ -367,24 +367,26 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      height: 17.5,
-      constraints: const BoxConstraints(minWidth: 17.5),
+      height: 18,
+      constraints: const BoxConstraints(minWidth: 18),
       padding: const EdgeInsets.symmetric(horizontal: 5),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: scheme.errorContainer,
+        color: waitingMarker,
         borderRadius: BorderRadius.circular(AppRadii.pill),
+        boxShadow: [
+          BoxShadow(color: context.palette.railBackground, spreadRadius: 2),
+        ],
       ),
       child: Text(
         count > 99 ? '99+' : '$count',
         textScaler: TextScaler.noScaling,
         style: chromeStyle(
-          size: AppTypeScale.chip,
-          line: 13,
-          weight: AppWeight.regular,
-          color: scheme.error,
+          size: 11,
+          line: 18,
+          weight: AppWeight.semibold,
+          color: const Color(0xFFFFFFFF),
           tabular: true,
         ),
       ),
@@ -884,7 +886,6 @@ class _BarItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final ink = selected ? palette.textPrimary : palette.textSecondary;
-    final scheme = Theme.of(context).colorScheme;
     return Semantics(
       container: true,
       button: true,
@@ -907,7 +908,7 @@ class _BarItem extends StatelessWidget {
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    KapyIcon(icon, size: 18, color: ink),
+                    KapyIcon(icon, size: 22, color: ink),
                     if (dot)
                       Positioned(
                         top: -1,
@@ -916,8 +917,8 @@ class _BarItem extends StatelessWidget {
                           key: const ValueKey('bar-folders-dot'),
                           width: 6,
                           height: 6,
-                          decoration: BoxDecoration(
-                            color: scheme.error,
+                          decoration: const BoxDecoration(
+                            color: waitingMarker,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -937,14 +938,10 @@ class _BarItem extends StatelessWidget {
                     context,
                   ).clamp(maxScaleFactor: 1.3),
                   style: TextStyle(
-                    fontSize: 10.5,
-                    height: 13 / 10.5,
-                    fontWeight: AppWeight.font(
-                      selected ? AppWeight.regular : AppWeight.regular,
-                    ),
-                    fontVariations: AppWeight.wght(
-                      selected ? AppWeight.regular : AppWeight.regular,
-                    ),
+                    fontSize: 11.5,
+                    height: 14 / 11.5,
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                     color: ink,
                   ),
                 ),

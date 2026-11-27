@@ -270,7 +270,7 @@ class SettingsRowCopy extends StatelessWidget {
                 style: chromeStyle(
                   size: SettingsMetrics.titleSize,
                   line: pointer ? 18 : null,
-                  weight: AppWeight.regular,
+                  weight: AppWeight.medium,
                   color: titleColor ?? palette.textPrimary,
                 ),
               ),
