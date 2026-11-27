@@ -87,7 +87,6 @@ import 'package:kapy_notes/ui/sidebar_timestamp.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
 import 'package:kapy_notes/ui/tag_ui.dart';
-import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
 import 'package:kapy_notes/ui/phone_home_header.dart';
