@@ -59,11 +59,11 @@ recordings() {
 # update"), over the app, as it would ask a person turning live translation
 # on. Taps its Download button, as that person would.
 confirm_download() {
-  adb shell dumpsys window | tr -d '\r' | grep -q 'mCurrentFocus=.*languagepack.ui.DownloadActivity' || return 0
+  adb shell dumpsys activity activities | tr -d '\r' | grep -qE '(topResumedActivity|mResumedActivity).*languagepack.ui.DownloadActivity' || return 0
   adb exec-out screencap -p > "$out/b-download-prompt.png"
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
   local bounds
-  bounds=$(adb shell cat /sdcard/ui.xml | tr -d '\r' | grep -o 'text="Download"[^>]*bounds="[^"]*"' | grep -o 'bounds="[^"]*"' | head -1)
+  bounds=$(adb shell cat /sdcard/ui.xml | tr -d '\r' | grep -o 'text="Download"[^>]*package="com.google.android.as"[^>]*bounds="[^"]*"' | grep -o 'bounds="[^"]*"' | head -1)
   [[ $bounds =~ \[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\] ]] || return 0
   adb shell input tap $(( (BASH_REMATCH[1] + BASH_REMATCH[3]) / 2 )) $(( (BASH_REMATCH[2] + BASH_REMATCH[4]) / 2 ))
   echo "tapped Download on the recogniser's language prompt"
