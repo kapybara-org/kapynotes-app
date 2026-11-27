@@ -20,9 +20,9 @@ extension WritingFontDetails on WritingFont {
 
   String get description => switch (this) {
     WritingFont.mixed => 'Handwritten titles and headings with clean text',
-    WritingFont.handwritten => 'Relaxed strokes with a steady baseline',
+    WritingFont.handwritten => 'Your whole note in handwriting',
     WritingFont.clean => 'Comfortable text for longer notes',
-    WritingFont.monospace => 'Fixed-width text for notes and calculations',
+    WritingFont.monospace => 'Every letter the same width, so numbers line up',
     WritingFont.pixel => 'Blocky letters, like an old computer screen',
   };
 

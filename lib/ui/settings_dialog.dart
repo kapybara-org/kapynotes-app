@@ -1703,9 +1703,9 @@ class _SettingsDialogState extends State<SettingsDialog>
           byDefault: WritingFont.clean,
           keyPrefix: 'writing-font',
           styleFor: (font) {
-            // Mixed is named in the type its numbers are set in.
+            // Mixed is named in the hand its titles are written in.
             final shown = font == WritingFont.mixed
-                ? WritingFont.monospace
+                ? WritingFont.handwritten
                 : font;
             return TextStyle(
               fontFamily: shown.fontFamily,

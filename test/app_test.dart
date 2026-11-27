@@ -2524,8 +2524,8 @@ void main() {
     );
     expect(
       labelOf(WritingFont.mixed).style?.fontFamily,
-      WritingFont.monospace.fontFamily,
-      reason: 'Mixed is named in the type its numbers are set in',
+      WritingFont.handwritten.fontFamily,
+      reason: 'Mixed is named in the hand its titles are written in',
     );
 
     final monospace = find.byKey(const ValueKey('writing-font-monospace'));
