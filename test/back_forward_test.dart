@@ -180,6 +180,105 @@ void main() {
     expect(steps, ['page back']);
   }, variant: TargetPlatformVariant.desktop());
 
+  testWidgets('a vertical scroll never spends the swipe, and a swipe that '
+      'drifts down still steps once it is mostly sideways', (tester) async {
+    asDesktop();
+    final tall = ScrollController();
+    addTearDown(tall.dispose);
+    await tester.pumpWidget(
+      app(
+        BackForwardArea(
+          onStep: record('page'),
+          child: ListView(
+            controller: tall,
+            children: [
+              for (var row = 0; row < 40; row++)
+                SizedBox(height: 100, child: box('row $row')),
+            ],
+          ),
+        ),
+      ),
+    );
+    final at = tester.getCenter(find.byType(ListView));
+
+    final pointer = TestPointer(2, PointerDeviceKind.trackpad);
+    await tester.sendEventToBinding(pointer.panZoomStart(at));
+    for (var part = 1; part <= 4; part++) {
+      await tester.sendEventToBinding(
+        pointer.panZoomUpdate(at, pan: Offset(5.0 * part, -30.0 * part)),
+      );
+    }
+    await tester.pump();
+    expect(tall.offset, greaterThan(0), reason: 'the list scrolled');
+    expect(steps, isEmpty, reason: 'mostly down');
+    await tester.sendEventToBinding(
+      pointer.panZoomUpdate(at, pan: const Offset(220, -120)),
+    );
+    await tester.sendEventToBinding(pointer.panZoomEnd());
+    await tester.pumpAndSettle();
+    expect(steps, ['page back']);
+
+    for (var part = 0; part < 3; part++) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: at,
+          kind: PointerDeviceKind.mouse,
+          scrollDelta: const Offset(0, 40),
+        ),
+      );
+    }
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(steps, ['page back'], reason: 'a wheel down is no step');
+    await stepAt(tester, at, _forward, StepBy.wheel);
+    expect(steps, ['page back', 'page forward']);
+  }, variant: TargetPlatformVariant.desktop());
+
+  testWidgets('a canvas that pans sideways keeps its pan under a swipe or a '
+      'sideways wheel, even at the end of its extent', (tester) async {
+    asDesktop();
+    final canvas = ScrollController();
+    addTearDown(canvas.dispose);
+    await tester.pumpWidget(
+      app(
+        BackForwardArea(
+          onStep: record('page'),
+          child: BackForwardArea(
+            onStep: null,
+            child: Center(
+              child: SizedBox(
+                height: 100,
+                child: ListView(
+                  controller: canvas,
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (var cell = 0; cell < 12; cell++)
+                      SizedBox(width: 200, child: box('cell $cell')),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final at = tester.getCenter(find.byType(ListView));
+
+    for (final by in [StepBy.pan, StepBy.wheel]) {
+      canvas.jumpTo(400);
+      await tester.pump();
+      await stepAt(tester, at, _forward, by);
+      expect(canvas.offset, greaterThan(400), reason: '${by.name} pans');
+
+      canvas.jumpTo(canvas.position.maxScrollExtent);
+      await tester.pump();
+      await stepAt(tester, at, _forward, by);
+      canvas.jumpTo(0);
+      await tester.pump();
+      await stepAt(tester, at, _back, by);
+      expect(steps, isEmpty, reason: '${by.name} at either end');
+    }
+  }, variant: TargetPlatformVariant.desktop());
+
   testWidgets('what moved slides in from the side the step came from, and '
       'holds still where the system asks for less motion', (tester) async {
     asDesktop();
