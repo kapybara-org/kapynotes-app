@@ -17,6 +17,9 @@ import Flutter
 /// The samples are written to a file rather than returned, because thirty
 /// minutes is 57 MB and a method channel would hold the native buffer and the
 /// Dart copy at the same time. Dart owns the file once this returns.
+///
+/// The channel also goes the other way: `encode` writes a recording whose
+/// noise has been removed, raw PCM by then, back into an `.m4a`.
 enum AudioDecode {
   private static let channelName = "kapynotes/audio_decode"
 
@@ -31,6 +34,8 @@ enum AudioDecode {
       switch call.method {
       case "decode":
         decode(call.arguments, result)
+      case "encode":
+        encode(call.arguments, result)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -140,6 +145,84 @@ enum AudioDecode {
       throw Failure.empty
     }
     return (out.path, frames)
+  }
+
+  /// Writes raw 16-bit mono PCM back out as the app's own kind of recording.
+  ///
+  /// The way back from `decode`, for a recording whose noise has been
+  /// removed. `AVAudioFile` with AAC settings is Core Audio's AAC encoder and
+  /// MPEG-4 writer in one, the same pair behind the recorder, so the cleaned
+  /// file is the same kind of `.m4a` the note had before. Dart owns the
+  /// rename into place; this only promises to leave nothing behind when it
+  /// fails.
+  private static func encode(_ rawArguments: Any?, _ result: @escaping FlutterResult) {
+    guard
+      let arguments = rawArguments as? [String: Any],
+      let path = arguments["path"] as? String,
+      !path.isEmpty,
+      let destination = arguments["destination"] as? String,
+      !destination.isEmpty
+    else {
+      result(FlutterError(code: "arguments", message: "A recording is required.", details: nil))
+      return
+    }
+    let sampleRate = Double(arguments["sampleRate"] as? Int ?? 16000)
+    let bitRate = arguments["bitRate"] as? Int ?? 48000
+
+    // Off the main thread for the reason `decode` is: thirty minutes of
+    // audio is seconds of work.
+    DispatchQueue.global(qos: .userInitiated).async {
+      do {
+        // The pool makes sure the file is closed, which is when its header
+        // is written, before Dart is told it is there.
+        try autoreleasepool {
+          try write(path: path, destination: destination, sampleRate: sampleRate, bitRate: bitRate)
+        }
+        DispatchQueue.main.async { result(nil) }
+      } catch {
+        try? FileManager.default.removeItem(atPath: destination)
+        DispatchQueue.main.async {
+          result(
+            FlutterError(
+              code: "encode", message: "This recording could not be saved.", details: nil))
+        }
+      }
+    }
+  }
+
+  private static func write(
+    path: String, destination: String, sampleRate: Double, bitRate: Int
+  ) throws {
+    let input = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+    defer { try? input.close() }
+    let output = try AVAudioFile(
+      forWriting: URL(fileURLWithPath: destination),
+      settings: [
+        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+        AVSampleRateKey: sampleRate,
+        AVNumberOfChannelsKey: 1,
+        AVEncoderBitRateKey: bitRate,
+      ],
+      commonFormat: .pcmFormatInt16, interleaved: true)
+    guard
+      let buffer = AVAudioPCMBuffer(
+        pcmFormat: output.processingFormat, frameCapacity: inputCapacity),
+      let samples = buffer.int16ChannelData
+    else {
+      throw CocoaError(.fileWriteUnknown)
+    }
+
+    // A chunk at a time, never the whole file: thirty minutes is 57 MB.
+    let sampleSize = MemoryLayout<Int16>.size
+    while let data = try input.read(upToCount: Int(inputCapacity) * sampleSize), !data.isEmpty {
+      let frames = data.count / sampleSize
+      data.withUnsafeBytes { bytes in
+        UnsafeMutableRawPointer(samples[0]).copyMemory(
+          from: bytes.baseAddress!, byteCount: frames * sampleSize)
+      }
+      buffer.frameLength = AVAudioFrameCount(frames)
+      try output.write(from: buffer)
+    }
   }
 
   private enum Failure: LocalizedError {

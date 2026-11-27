@@ -49,7 +49,12 @@ void main() {
     await tester.pumpAndSettle(const Duration(seconds: 1));
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pumpAndSettle(const Duration(seconds: 1));
-    await tester.tap(find.byType(NoteVoiceChip));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NoteVoiceChip),
+        matching: find.text(voiceTitle),
+      ),
+    );
     await tester.pumpAndSettle(const Duration(seconds: 1));
     expect(
       find.descendant(of: _window, matching: find.text(voiceTitle)),

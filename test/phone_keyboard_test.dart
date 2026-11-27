@@ -13,6 +13,7 @@ import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_parts.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -126,91 +127,23 @@ void main() {
           'away, and the bar can be reached again', (tester) async {
         await _pump(tester, platform);
         await _openKapyAiPage(tester);
-        final field = find.byKey(const ValueKey('kapy-ai-page-field'));
-        await _tap(tester, field);
+        final search = find.byKey(const ValueKey('kapy-ai-page-search'));
+        await _tap(tester, search);
         await _keyboard(tester, up: true);
-        expect(_typing(tester, field), isTrue);
+        expect(_typing(tester, search), isTrue);
 
-        await _tapAt(
-          tester,
-          tester.getCenter(find.byKey(const ValueKey('kapy-ai-page-chats'))),
-        );
-        expect(_typing(tester, field), isFalse);
-        expect(tester.testTextInput.hasAnyClients, isFalse);
-
-        await _keyboard(tester, up: false);
-        await _tap(tester, find.byKey(const ValueKey('bar-notes')));
-        expect(find.byKey(const ValueKey('kapy-ai-page')), findsNothing);
-      });
-
-      testWidgets('Ask Kapy AI sits 12 above the keyboard while it’s up, and '
-          '12 above the bar once it’s down', (tester) async {
-        await _pump(tester, platform);
-        await _openKapyAiPage(tester);
-        final field = find.byKey(const ValueKey('kapy-ai-page-field'));
-        double above(double top) =>
-            top -
-            tester
-                .getRect(
-                  find
-                      .ancestor(of: field, matching: find.byType(Container))
-                      .first,
-                )
-                .bottom;
-        double bar() =>
-            tester.getRect(find.byKey(const ValueKey('phone-bar'))).top;
-        expect(above(bar()), 12);
-
-        await _tap(tester, field);
-        await _keyboard(tester, up: true);
-        expect(above(874 - 300), 12);
-
-        await tester.enterText(field, 'What is left');
-        await tester.pumpAndSettle();
-        expect(above(874 - 300), 12);
-
-        await _tapAt(
-          tester,
-          tester.getCenter(find.byKey(const ValueKey('kapy-ai-page-chats'))),
-        );
-        await _keyboard(tester, up: false);
-        expect(above(bar()), 12);
-      });
-
-      testWidgets('on the Kapy AI page, the model picker and the search pill '
-          'keep the keyboard', (tester) async {
-        await _pump(tester, platform);
-        await _openKapyAiPage(tester);
-        final field = find.byKey(const ValueKey('kapy-ai-page-field'));
-        final picker = find.byKey(const ValueKey('kapy-ai-picker'));
-        final button = find.bySemanticsLabel('Answers with Kapy AI Cloud');
-        await _tap(tester, field);
-        await _keyboard(tester, up: true);
-
-        await _tap(tester, button);
-        expect(picker, findsOneWidget);
-        expect(_typing(tester, field), isTrue);
-        await _tap(
-          tester,
-          find.byKey(const ValueKey('kapy-ai-model-cloud-cloud')),
-        );
-        expect(picker, findsNothing);
-        expect(_typing(tester, field), isTrue);
-
-        await _tap(tester, button);
         await _tapAt(
           tester,
           tester.getTopLeft(find.byKey(const ValueKey('kapy-ai-page-chats'))) +
               const Offset(20, 20),
         );
-        expect(picker, findsNothing, reason: 'a tap beside it closes it');
-        expect(_typing(tester, field), isTrue);
+        expect(_typing(tester, search), isFalse);
+        expect(tester.testTextInput.hasAnyClients, isFalse);
+        expect(ai.calls, isNot(contains(startsWith('ask:'))));
 
-        final search = find.byKey(const ValueKey('kapy-ai-page-search'));
-        final line = tester.getRect(search);
-        await _tapAt(tester, Offset(line.right - 4, line.top - 4));
-        expect(_typing(tester, search), isTrue);
-        expect(_typing(tester, field), isFalse);
+        await _keyboard(tester, up: false);
+        await _tap(tester, find.byKey(const ValueKey('bar-notes')));
+        expect(find.byKey(const ValueKey('kapy-ai-page')), findsNothing);
       });
 
       testWidgets('on Kapy AI’s sheet, Send, a suggestion, New chat and the '
@@ -218,7 +151,7 @@ void main() {
           'away', (tester) async {
         await _pump(tester, platform);
         await _openKapyAiPage(tester);
-        await _tap(tester, find.byKey(const ValueKey('kapy-ai-page-new-chat')));
+        await _tap(tester, find.byKey(const ValueKey('phone-new')));
         final field = find.byKey(const ValueKey('kapy-ai-field'));
         await _tap(tester, field);
         await _keyboard(tester, up: true);
@@ -232,8 +165,14 @@ void main() {
 
         ai.set(answering: false);
         await tester.pumpAndSettle();
-        await _tap(tester, find.text('Summarise this note'));
-        expect(ai.calls.last, startsWith('ask:Summarise this note:'));
+        await _tap(
+          tester,
+          find.descendant(
+            of: find.byKey(const ValueKey('kapy-ai-sheet')),
+            matching: find.text(kapyAiExamples.first),
+          ),
+        );
+        expect(ai.calls.last, startsWith('ask:${kapyAiExamples.first}:'));
         expect(_typing(tester, field), isTrue);
 
         await _tap(tester, find.byKey(const ValueKey('kapy-ai-new-chat')));

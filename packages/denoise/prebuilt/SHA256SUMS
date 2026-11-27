@@ -1,0 +1,11 @@
+5ecd1950e12cdfeb0857a13caecfa597e2fd2828a104ea9314b6820299003bfa  ./android-arm/libkapy_denoise.so
+bf1e35199b9bdb80686016578f9fa1ec3e2daccd3640c118faa16782238f2cb3  ./android-arm64/libkapy_denoise.so
+8ca6e1751ffd6206124560edfa27218c1da34f2eaadf12ea32a8ff7af8962f1b  ./android-x64/libkapy_denoise.so
+3df65ecca22ebce39ee805061bd8dc5a222d11ec26c933860b3c02843efaef01  ./ios-arm64/libkapy_denoise.dylib
+aad40f5498182f7b82bb448da9a9a645c5252c0bc5224169bd83a389319848ba  ./ios-sim-arm64/libkapy_denoise.dylib
+9f2f565655fe61006ae28f38c204d07b6b64bac438933c9f6bb20ff276a7726e  ./ios-sim-x64/libkapy_denoise.dylib
+18f52de8f92b695486c8623dbf4863205aeb75e0399fca002106952522d998ef  ./linux-arm64/libkapy_denoise.so
+704c3c9b19f6754a93107f372a8c3aa86373c0fed12b7f3a53743de7b922ec73  ./linux-x64/libkapy_denoise.so
+08292b273314524249619d2dc2da517bc4c5bf6b6f845a12fe698ee080857032  ./macos-arm64/libkapy_denoise.dylib
+3c5794355254704bf687d1c28f3bd0f4aad91ffd1425b5a9aae3a909defcbc21  ./macos-x64/libkapy_denoise.dylib
+3fef86656134bdd94e9a189326b2f779468f0831002e27123cdddfded66b91a7  ./windows-x64/kapy_denoise.dll

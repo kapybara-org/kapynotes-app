@@ -106,3 +106,54 @@ Future<DecodedAudio> decodeWithFfmpeg(
   }
   return decoded;
 }
+
+/// Encodes [pcm] — mono 16-bit PCM at [sampleRate] — into an AAC `.m4a` at
+/// [destination].
+///
+/// Linux's half of [AacEncoder], and the encode `LinuxVoiceRecorder` runs on
+/// the microphone: the same codec, the same bit rate and the `ipod` muxer,
+/// which is ffmpeg's name for the `.m4a` kind of MPEG-4, so a cleaned
+/// recording is the same kind of file as one made here. It writes straight to
+/// [destination]; [AacEncoder] gives it a name beside the real one and does
+/// the rename, and the clean-up when this fails.
+Future<void> encodeWithFfmpeg(
+  File pcm,
+  File destination, {
+  required int sampleRate,
+  required int bitRate,
+}) async {
+  final Process process;
+  try {
+    process = await startFfmpeg([
+      '-f',
+      's16le',
+      '-ar',
+      '$sampleRate',
+      '-ac',
+      '1',
+      '-i',
+      pcm.path,
+      '-c:a',
+      'aac',
+      '-b:a',
+      '$bitRate',
+      '-f',
+      'ipod',
+      '-y',
+      destination.path,
+    ]);
+  } on ProcessException catch (error) {
+    debugPrint('KapyNotes: could not start ffmpeg to encode: $error');
+    throw const AudioEncodeException(
+      'This build cannot save recordings on the device.',
+    );
+  }
+  final errors = ffmpegErrors(process);
+  process.stdout.drain<void>().ignore();
+  if (await process.exitCode != 0) {
+    debugPrint(
+      'KapyNotes: ffmpeg could not encode ${pcm.path}: ${await errors}',
+    );
+    throw const AudioEncodeException('This recording could not be saved.');
+  }
+}

@@ -57,6 +57,7 @@ import 'package:kapy_notes/sync/sync_service.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
 import 'package:kapy_notes/sync/trust.dart';
 import 'package:kapy_notes/ui/checklist_pie.dart';
+import 'package:kapy_notes/ui/compact_icon_button.dart';
 import 'package:kapy_notes/ui/context_menu.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:kapy_notes/ui/draw/drawing_canvas.dart';
@@ -80,7 +81,8 @@ import 'package:kapy_notes/ui/settings_rows.dart';
 import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
-import 'package:kapy_notes/ui/sidebar_swipe.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
+import 'package:kapy_notes/ui/folders_ui.dart' show FolderPage, FoldersTab;
 import 'package:kapy_notes/ui/sidebar_timestamp.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
@@ -96,6 +98,7 @@ import 'audio/voice_recording_controller_test.dart'
 import 'kapy_icon_finder.dart';
 import 'note_editor_test.dart' show sendShortcut;
 import 'quick_capture_test.dart' show stubLaunchIntent;
+import 'support/back_forward.dart';
 import 'support/note_driver.dart';
 import 'sync/fake_server.dart';
 import 'test_fonts.dart';
@@ -314,8 +317,17 @@ String? spaceTitle(WidgetTester tester) =>
     tester.widget<Text>(find.byKey(const ValueKey('sidebar-space-title'))).data;
 
 /// How many notes that space holds, beside its name.
-String? spaceCount(WidgetTester tester) =>
-    tester.widget<Text>(find.byKey(const ValueKey('sidebar-space-count'))).data;
+/// The count in the space title's tooltip, "2" of "2 notes".
+String? spaceCount(WidgetTester tester) => tester
+    .widget<Tooltip>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('sidebar-space-title')),
+        matching: find.byType(Tooltip),
+      ),
+    )
+    .message
+    ?.split(' ')
+    .first;
 
 /// Finds the notes-list toolbar action without coupling tests to the shortcut
 /// suffix that its hover tooltip now teaches.
@@ -388,10 +400,15 @@ Future<void> openPhoneFilters(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-/// Chooses [show] in the notes filter over the list.
+/// Chooses [show] in the View menu beside the rail, or a phone's filter.
 Future<void> showInFilter(WidgetTester tester, NotesShow show) async {
   await openPhoneFilters(tester);
-  await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+  final view = find.byKey(const ValueKey('notes-view'));
+  await tester.tap(
+    view.evaluate().isEmpty
+        ? find.byKey(const ValueKey('sidebar-notes-filter'))
+        : view,
+  );
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(ValueKey('notes-filter-${show.name}')));
   await tester.pumpAndSettle();
@@ -733,6 +750,310 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  group(
+    'a swipe and the mouse buttons step where the pointer is (KAPY-97)',
+    () {
+      const back = BackForwardStep.back;
+      const forward = BackForwardStep.forward;
+      final desktop = TargetPlatformVariant.desktop();
+
+      Future<FolderStore> pumpWithFolders(WidgetTester tester) async {
+        asDesktop();
+        final folders = FolderStore(store);
+        await folders.load();
+        await pumpApp(tester, size: const Size(1400, 800), folders: folders);
+        return folders;
+      }
+
+      String? folderInFront(WidgetTester tester) {
+        final page = find.byType(FolderPage);
+        return page.evaluate().isEmpty
+            ? null
+            : tester.widget<FolderPage>(page).folderId;
+      }
+
+      for (final by in StepBy.values) {
+        testWidgets('${by.name}: over the list it turns Notes and Folders, and '
+            'the list stays open', (tester) async {
+          await pumpWithFolders(tester);
+          notes.create(body: 'Alpha');
+          await tester.pumpAndSettle();
+          final list = find.byType(Sidebar);
+          expect(prefs.foldersShown, isFalse);
+
+          await stepOver(tester, list, back, by);
+          expect(prefs.foldersShown, isFalse, reason: 'Notes is the first');
+          await stepOver(tester, list, forward, by);
+          expect(prefs.foldersShown, isTrue);
+          expect(find.byType(FoldersTab), findsOneWidget);
+          await stepOver(tester, list, forward, by);
+          expect(prefs.foldersShown, isTrue, reason: 'Folders is the last');
+          await stepOver(tester, list, back, by);
+          expect(prefs.foldersShown, isFalse);
+          expect(list, findsOneWidget);
+          expect(openNoteBody(tester), 'Alpha', reason: 'the note stays');
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over a list with no Folders it walks the '
+            'notes shown, as the page does', (tester) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'First note');
+          notes.create(body: 'Second note');
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+          await tester.pumpAndSettle();
+          final list = find.byType(Sidebar);
+
+          await stepOver(tester, list, back, by);
+          expect(openNoteBody(tester), 'First note');
+          await stepOver(tester, list, forward, by);
+          expect(openNoteBody(tester), 'Second note');
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over the note it walks the notes shown', (
+          tester,
+        ) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'First note');
+          notes.create(body: 'Second note');
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+          await tester.pumpAndSettle();
+          final page = find.byType(NoteEditor);
+
+          await stepOver(tester, page, back, by);
+          expect(openNoteBody(tester), 'First note');
+          await stepOver(tester, page, forward, by);
+          expect(openNoteBody(tester), 'Second note');
+          expect(find.byType(Sidebar), findsOneWidget, reason: 'list stays');
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over the tab row it moves to the tab beside', (
+          tester,
+        ) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'First note');
+          notes.create(body: 'Second note');
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+          await tester.pumpAndSettle();
+          final modifier = AppPlatform.isMacOS
+              ? LogicalKeyboardKey.metaLeft
+              : LogicalKeyboardKey.controlLeft;
+          await tester.sendKeyDownEvent(modifier);
+          await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+          await tester.sendKeyUpEvent(modifier);
+          await tester.pumpAndSettle();
+          final row = find.byType(NoteTabRow);
+          expect(openNoteBody(tester), 'First note');
+
+          await stepOver(tester, row, back, by);
+          expect(openNoteBody(tester), 'First note', reason: 'the first tab');
+          await stepOver(tester, row, forward, by);
+          expect(openNoteBody(tester), 'Second note');
+          await stepOver(tester, row, back, by);
+          expect(openNoteBody(tester), 'First note');
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over Tasks it moves between its views', (
+          tester,
+        ) async {
+          asDesktop();
+          await notes.load();
+          notes.create(body: 'Errands\n☐ Pay the rent');
+          final tasks = TaskLibrary(
+            notes: notes,
+            store: store,
+            storage: MemoryDocStorage(),
+          );
+          await tasks.load();
+          await tasks.reconcileNow();
+          await pumpApp(tester, size: const Size(1400, 800), tasks: tasks);
+          await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+          await tester.pumpAndSettle();
+          bool done() =>
+              tester.widget<TasksScreen>(find.byType(TasksScreen)).filter.done;
+          expect(done(), isFalse);
+
+          await stepOver(tester, find.byType(TasksScreen), forward, by);
+          expect(done(), isTrue);
+          await stepOver(tester, find.byType(TasksSidebar), back, by);
+          expect(done(), isFalse);
+        }, variant: desktop);
+
+        testWidgets('${by.name}: over the filter menu Back closes its submenu '
+            'and Forward opens it again', (tester) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'Alpha');
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('notes-view')));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('When'));
+          await tester.pumpAndSettle();
+          final when = find.byWidgetPredicate(
+            (widget) => widget.runtimeType.toString() == '_WhenMenu',
+          );
+          expect(when, findsOneWidget);
+          final menu = tester.getCenter(find.text('When'));
+
+          await stepAt(tester, menu, back, by);
+          expect(when, findsNothing);
+          expect(find.text('When'), findsOneWidget, reason: 'the menu stays');
+          await stepAt(tester, menu, forward, by);
+          expect(when, findsOneWidget);
+        }, variant: desktop);
+      }
+
+      testWidgets('the Notes and Folders switch and the tabs take keyboard '
+          'focus, and Enter turns them, as a step does', (tester) async {
+        await pumpWithFolders(tester);
+        notes.create(body: 'First note');
+        notes.create(body: 'Second note');
+        await tester.pumpAndSettle();
+        await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+        await tester.pumpAndSettle();
+        final modifier = AppPlatform.isMacOS
+            ? LogicalKeyboardKey.metaLeft
+            : LogicalKeyboardKey.controlLeft;
+        await tester.sendKeyDownEvent(modifier);
+        await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+        await tester.sendKeyUpEvent(modifier);
+        await tester.pumpAndSettle();
+
+        Future<void> enterOn(Finder target) async {
+          Focus.of(tester.element(target)).requestFocus();
+          await tester.pump();
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await tester.pumpAndSettle();
+        }
+
+        await enterOn(
+          find.descendant(
+            of: find.byType(NoteTabRow),
+            matching: find.text('Second note'),
+          ),
+        );
+        expect(openNoteBody(tester), 'Second note');
+        await enterOn(find.byKey(const ValueKey('notes-switch-folders')));
+        expect(prefs.foldersShown, isTrue);
+        await enterOn(find.byKey(const ValueKey('notes-switch-notes')));
+        expect(prefs.foldersShown, isFalse);
+      }, variant: desktop);
+
+      testWidgets(
+        'over the list, Back goes up out of the folder in front, then '
+        'to Notes, and Forward comes back down',
+        (tester) async {
+          final folders = await pumpWithFolders(tester);
+          final trips = folders.create('Trips')!;
+          final lisbon = folders.create('Lisbon', parentId: trips.id)!;
+          prefs.setFolderOpen(trips.id, true);
+          prefs.foldersShown = true;
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Lisbon'));
+          await tester.pumpAndSettle();
+          expect(folderInFront(tester), lisbon.id);
+          final list = find.byType(Sidebar);
+
+          await stepOver(tester, list, back, StepBy.pan);
+          expect(folderInFront(tester), trips.id);
+          expect(prefs.foldersShown, isTrue);
+          await stepOver(tester, list, back, StepBy.wheel);
+          expect(prefs.foldersShown, isFalse);
+          expect(folderInFront(tester), trips.id, reason: 'the page stays');
+          await stepOver(tester, list, forward, StepBy.button);
+          expect(prefs.foldersShown, isTrue);
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(folderInFront(tester), lisbon.id);
+          await stepOver(tester, list, forward, StepBy.wheel);
+          expect(
+            folderInFront(tester),
+            lisbon.id,
+            reason: 'nothing further in',
+          );
+        },
+        variant: desktop,
+      );
+
+      testWidgets(
+        'over the list, Forward will not go back down into a folder that is '
+        'no longer a child of the one in front',
+        (tester) async {
+          final folders = await pumpWithFolders(tester);
+          final trips = folders.create('Trips')!;
+          final lisbon = folders.create('Lisbon', parentId: trips.id)!;
+          prefs.setFolderOpen(trips.id, true);
+          prefs.foldersShown = true;
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Lisbon'));
+          await tester.pumpAndSettle();
+          final list = find.byType(Sidebar);
+
+          await stepOver(tester, list, back, StepBy.pan);
+          expect(folderInFront(tester), trips.id);
+          folders.move(lisbon.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(folderInFront(tester), trips.id, reason: 'Lisbon moved out');
+          expect(prefs.foldersShown, isTrue);
+          folders.move(lisbon.id, parentId: trips.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(
+            folderInFront(tester),
+            trips.id,
+            reason: 'the way is forgotten',
+          );
+        },
+        variant: desktop,
+      );
+
+      testWidgets(
+        'over the list, Forward forgets every way down once one of them is '
+        'gone',
+        (tester) async {
+          final folders = await pumpWithFolders(tester);
+          final trips = folders.create('Trips')!;
+          final lisbon = folders.create('Lisbon', parentId: trips.id)!;
+          final oldTown = folders.create('Old town', parentId: lisbon.id)!;
+          prefs.setFolderOpen(trips.id, true);
+          prefs.setFolderOpen(lisbon.id, true);
+          prefs.foldersShown = true;
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Old town'));
+          await tester.pumpAndSettle();
+          expect(folderInFront(tester), oldTown.id);
+          final list = find.byType(Sidebar);
+
+          await stepOver(tester, list, back, StepBy.pan);
+          await stepOver(tester, list, back, StepBy.pan);
+          expect(folderInFront(tester), trips.id);
+          folders.move(lisbon.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(folderInFront(tester), trips.id, reason: 'Lisbon moved out');
+          folders.move(oldTown.id, parentId: trips.id);
+          await tester.pumpAndSettle();
+          await stepOver(tester, list, forward, StepBy.pan);
+          expect(
+            folderInFront(tester),
+            trips.id,
+            reason: 'Old town is a child again, but the way was forgotten',
+          );
+        },
+        variant: desktop,
+      );
+    },
+  );
+
   group('voice choices survive a relaunch', () {
     void saveChoices(LocalStore saved) {
       saved.data['voice.transcriptEngine.v1'] = 'device';
@@ -823,7 +1144,7 @@ void main() {
     }
 
     Future<void> openTagsFilter(WidgetTester tester) async {
-      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.tap(find.byKey(const ValueKey('notes-view')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
       await tester.pumpAndSettle();
@@ -1038,7 +1359,7 @@ void main() {
         await tester.tapAt(const Offset(1000, 700));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tester.tap(find.byKey(const ValueKey('notes-view')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('notes-filter-hidden')));
         await tester.pumpAndSettle();
@@ -1359,7 +1680,7 @@ void main() {
       expect(find.text('Groceries'), findsNothing);
       expect(find.text('Trip to Kochi'), findsWidgets);
 
-      await tester.tap(find.byKey(const ValueKey('sidebar-filter-clear')));
+      await tester.tap(find.byKey(const ValueKey('notes-filter-chip')));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Groceries').first);
       await tester.pumpAndSettle();
@@ -4079,6 +4400,66 @@ void main() {
     }
   });
 
+  group('with a silent microphone (KAP-424)', () {
+    for (final platform in [
+      TargetPlatform.linux,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+    ]) {
+      testWidgets('on ${platform.name} the bar says so, and the shortcut that '
+          'stops it saves nothing', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final temp = Directory.systemTemp.createTempSync('kapy-silent-mic');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        final recorder = FakeVoiceRecorder(writesFile: false);
+        final recording = VoiceRecordingController(
+          recorder: recorder,
+          tempDirectory: temp,
+        );
+        addTearDown(recording.dispose);
+        final note = notes.create(body: 'Standup');
+        await pumpApp(
+          tester,
+          size: const Size(1400, 800),
+          recording: recording,
+        );
+        final shortcut = shortcuts.bindingFor(ShortcutAction.recordVoiceNote)!;
+
+        await sendShortcut(tester, shortcut);
+        await tester.pump();
+        expect(recording.isRecording, isTrue);
+        // A muted microphone: a level every tenth of a second, all silence.
+        for (var tenth = 0; tenth < 35; tenth++) {
+          recorder.amplitudes.add(-160);
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(
+          tester.widget<Text>(find.byKey(const ValueKey('recording-status'))).data,
+          'Microphone is silent',
+        );
+        expect(find.byKey(const ValueKey('recording-elapsed')), findsOneWidget);
+        expect(find.text('0:03'), findsOneWidget);
+
+        await sendShortcut(tester, shortcut);
+        final told = find.text('Nothing saved: the microphone was silent');
+        for (var wait = 0; wait < 100 && told.evaluate().isEmpty; wait++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump();
+        }
+
+        expect(recording.isRecording, isFalse);
+        expect(told, findsOneWidget);
+        expect(find.text('Recording stopped'), findsNothing);
+        expect(notes.byId(note.id)!.attachments, isEmpty);
+        expect(temp.listSync(), isEmpty, reason: 'no clip and no marker left');
+        await tester.pump(const Duration(seconds: 5));
+      });
+    }
+  });
+
   group('notes list', () {
     setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -4127,14 +4508,14 @@ void main() {
     ) async {
       await library(tester);
       expect(headings(tester), ['Today', 'Yesterday', 'Tue 17', 'Tue 20 Oct']);
-      expect(find.text('By date'), findsOneWidget);
+      expect(find.text('By date'), findsNothing, reason: 'in the View menu');
 
-      await tester.tap(find.byKey(const ValueKey('notes-grouping')));
+      await tester.tap(find.byKey(const ValueKey('notes-view')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('notes-grouping-aToZ')));
       await tester.pumpAndSettle();
       expect(headings(tester), ['C', 'O', 'P', 'S']);
-      expect(find.text('A–Z'), findsOneWidget);
+      expect(find.byKey(const ValueKey('notes-filter-menu')), findsNothing);
       // Kept for the next launch.
       expect(store.data['notesGrouping.v1'], 'aToZ');
     });
@@ -4150,7 +4531,7 @@ void main() {
 
       // The menu's When row says how far back the list reaches, and its
       // submenu the days each span covers.
-      await tap(const ValueKey('sidebar-notes-filter'));
+      await tap(const ValueKey('notes-view'));
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('notes-filter-when')),
@@ -4171,19 +4552,19 @@ void main() {
       expect(headings(tester), ['Today', 'Yesterday', 'Tue 17']);
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey('notes-when-chip')),
+          of: find.byKey(const ValueKey('notes-filter-chip')),
           matching: find.text('This week'),
         ),
         findsOneWidget,
       );
-      await tester.tap(find.byKey(const ValueKey('notes-when-chip')));
+      await tester.tap(find.byKey(const ValueKey('notes-filter-chip')));
       await tester.pumpAndSettle();
       expect(headings(tester), hasLength(4));
-      expect(find.byKey(const ValueKey('notes-when-chip')), findsNothing);
+      expect(find.byKey(const ValueKey('notes-filter-chip')), findsNothing);
 
       // Nothing was written last week: the list says so, and offers the way
       // back.
-      await tap(const ValueKey('sidebar-notes-filter'));
+      await tap(const ValueKey('notes-view'));
       await tap(const ValueKey('notes-filter-when'));
       await tap(const ValueKey('notes-filter-when-lastWeek'));
       expect(find.text('No notes last week'), findsOneWidget);
@@ -4202,7 +4583,7 @@ void main() {
             (widget.decoration! as BoxDecoration).shape == BoxShape.circle,
       ),
     );
-    final whenChip = find.byKey(const ValueKey('notes-when-chip'));
+    final whenChip = find.byKey(const ValueKey('notes-filter-chip'));
     Future<void> tap(WidgetTester tester, Finder target) async {
       await tester.tap(target);
       await tester.pumpAndSettle();
@@ -4472,7 +4853,7 @@ void main() {
 
       // Shown only notes with a voice note, the list is empty, and so is
       // every day.
-      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('notes-view')));
       await tap(tester, find.byKey(const ValueKey('media-filter-video')));
       await tap(tester, find.byKey(const ValueKey('media-filter-image')));
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
@@ -4490,7 +4871,7 @@ void main() {
           reason: space,
         );
       }
-      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('notes-view')));
       await tap(tester, find.byKey(const ValueKey('notes-filter-archive')));
       expect(find.byType(DayStrip), findsNothing);
     });
@@ -5236,7 +5617,7 @@ void main() {
           row.note.title,
       };
       Future<void> when(String span) async {
-        await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tap(tester, find.byKey(const ValueKey('notes-view')));
         await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
         await tap(tester, find.byKey(ValueKey('notes-filter-when-$span')));
       }
@@ -5263,19 +5644,19 @@ void main() {
       expect(find.byKey(const ValueKey('day-strip-date')), findsOneWidget);
       expect(day(19), findsNothing);
 
-      await tap(tester, find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tap(tester, find.byKey(const ValueKey('notes-view')));
       await tap(tester, find.byKey(const ValueKey('notes-filter-when')));
       expect(find.byKey(const ValueKey('notes-when-menu')), findsOneWidget);
     });
 
-    testWidgets('the narrowest list keeps the grouping menu and the chip', (
+    testWidgets('the narrowest list keeps the View icon and the chip', (
       tester,
     ) async {
       await library(tester);
       prefs.sidebarWidth = LayoutPrefs.minSidebarWidth;
       await tester.pumpAndSettle();
       for (final key in [
-        'sidebar-notes-filter',
+        'notes-view',
         'notes-filter-when',
         'notes-filter-when-thisMonth',
       ]) {
@@ -5284,15 +5665,15 @@ void main() {
       }
 
       final list = tester.getRect(find.byType(Sidebar));
-      for (final key in ['notes-grouping', 'notes-when-chip']) {
+      for (final key in ['notes-view', 'notes-filter-chip']) {
         expect(
           tester.getRect(find.byKey(ValueKey(key))).right,
           lessThanOrEqualTo(list.right),
         );
       }
-      await tester.tap(find.byKey(const ValueKey('notes-when-chip')));
+      await tester.tap(find.byKey(const ValueKey('notes-filter-chip')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('notes-when-chip')), findsNothing);
+      expect(find.byKey(const ValueKey('notes-filter-chip')), findsNothing);
       expect(headings(tester), hasLength(4));
     });
   });
@@ -5965,8 +6346,7 @@ void main() {
     expect(search.top, greaterThanOrEqualTo(bar.bottom));
     expect(search.left - sidebar.left, greaterThanOrEqualTo(12));
     expect(sidebar.right - search.right, greaterThanOrEqualTo(12));
-    // New note sits in the bar, as it does beside the page: quiet, with its
-    // plus in sage.
+    // New note is the bar's +, as it is beside the page.
     expect(
       find.descendant(
         of: find.byType(SidebarWindowBar),
@@ -5974,18 +6354,28 @@ void main() {
       ),
       findsOneWidget,
     );
-    final newNote = tester.widget<TonalButton>(
-      find.byKey(const ValueKey('sidebar-new-note')),
+    expect(
+      tester.getSize(find.byKey(const ValueKey('sidebar-new-note'))),
+      const Size.square(32),
     );
-    expect(newNote.quiet, isTrue);
-    expect(newNote.sageIcon, isTrue);
   });
 
   testWidgets(
-    'the search field is a 4% fill with no border, and its shortcut plain '
-    'Geist Mono in T3 that leaves the placeholder room',
+    'the search field is a 4% fill with no border, and under the pointer its '
+    'shortcut is plain Geist Mono in T3 that leaves the placeholder room',
     (tester) async {
       await pumpApp(tester);
+      final searchKeycap = find.byKey(
+        const ValueKey('sidebar-search-shortcut'),
+      );
+      expect(searchKeycap, findsNothing);
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(
+        tester.getCenter(find.byKey(const ValueKey('sidebar-search-box'))),
+      );
+      await tester.pumpAndSettle();
 
       final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
       final search = find.byKey(const ValueKey('sidebar-search-box'));
@@ -5999,9 +6389,6 @@ void main() {
       expect(
         find.descendant(of: search, matching: find.byType(Keycap)),
         findsNothing,
-      );
-      final searchKeycap = find.byKey(
-        const ValueKey('sidebar-search-shortcut'),
       );
       final keycap = tester.getRect(searchKeycap);
       final hint = tester.widget<Text>(searchKeycap);
@@ -6072,20 +6459,25 @@ void main() {
       }
     });
 
-    testWidgets('New drawing has no keycap and names its chord on hover, where '
-        'New note keeps its keycap', (tester) async {
+    testWidgets("Drawings' + names New drawing and its chord on hover, as "
+        "My notes' + names New note, and neither prints a keycap", (
+      tester,
+    ) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
       await pumpApp(tester);
       final chord = shortcuts.hintFor(ShortcutAction.newNote)!;
-      expect(tester.widget<TonalButton>(plus()).shortcut, chord.keycapLabel);
+      expect(
+        tester.widget<CompactIconButton>(plus()).tooltip,
+        SidebarWindowBar.newTooltip('note', chord),
+      );
 
       await tester.tap(find.byKey(const ValueKey('rail-drawings')));
       await tester.pumpAndSettle();
-      final newDrawing = tester.widget<TonalButton>(plus());
-      expect(newDrawing.label, 'New drawing');
-      expect(newDrawing.shortcut, isNull);
-      expect(newDrawing.tooltip, SidebarWindowBar.newTooltip('drawing', chord));
+      expect(
+        tester.widget<CompactIconButton>(plus()).tooltip,
+        SidebarWindowBar.newTooltip('drawing', chord),
+      );
       expect(
         find.descendant(
           of: find.byType(SidebarWindowBar),
@@ -6096,7 +6488,7 @@ void main() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey('sidebar-search-field')),
-          matching: find.text('Search drawings'),
+          matching: find.text('Search'),
         ),
         findsOneWidget,
       );
@@ -6192,7 +6584,7 @@ void main() {
       ]);
       await pumpApp(tester);
       Future<void> showArchive() async {
-        await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tester.tap(find.byKey(const ValueKey('notes-view')));
         await tester.pumpAndSettle();
         await tester.tap(find.byKey(const ValueKey('notes-filter-archive')));
         await tester.pumpAndSettle();
@@ -6377,7 +6769,7 @@ void main() {
       expect(spaceTitle(tester), 'My notes');
       expect(titles(tester), unorderedEquals(['Seeds', 'Garden']));
 
-      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.tap(find.byKey(const ValueKey('notes-view')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('notes-filter-tags')));
       await tester.pumpAndSettle();
@@ -7361,7 +7753,7 @@ void main() {
     await pumpApp(tester);
 
     expect(prefs.hiddenFolderVisible, isFalse);
-    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.tap(find.byKey(const ValueKey('notes-view')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('notes-filter-hidden')), findsNothing);
     await tester.tap(find.byKey(const ValueKey('notes-filter-all')));
@@ -7394,7 +7786,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('settings-done')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await tester.tap(find.byKey(const ValueKey('notes-view')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('notes-filter-hidden')), findsOneWidget);
   });
@@ -8227,19 +8619,15 @@ void main() {
     ) async {
       await pumpApp(tester);
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.tap(find.byKey(const ValueKey('notes-view')));
       await tester.pumpAndSettle();
 
-      // A bare box once sent people looking for a delete, so the word beside
-      // it is what this pins, with the icon every archive action shares.
+      // A bare box once sent people looking for a delete, so the word is
+      // what this pins. The View menu's rows are words alone (KAP-408).
       final entry = find.byKey(const ValueKey('notes-filter-archive'));
       expect(entry, findsOneWidget);
       expect(
         find.descendant(of: entry, matching: find.text('Archive')),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(of: entry, matching: findKapyIcon(archiveIcon)),
         findsOneWidget,
       );
     });
@@ -8978,38 +9366,6 @@ void main() {
       await showNotesList(tester);
       expect(find.widgetWithText(NoteRow, 'Open the list'), findsOneWidget);
       expect(bar, findsNothing);
-    });
-
-    testWidgets('two-finger trackpad swipes work in a narrow macOS window', (
-      tester,
-    ) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      store.data['notes.v1'] = [
-        {
-          'id': 'compact-mac-swipe',
-          'body': 'Trackpad note',
-          'createdAt': 1000,
-          'updatedAt': 1000,
-        },
-      ];
-
-      await pumpApp(tester, size: const Size(640, 800));
-      expect(find.byType(NoteRow), findsNothing);
-
-      final pointer = TestPointer(1, PointerDeviceKind.trackpad);
-      const center = Offset(320, 400);
-      await tester.sendEventToBinding(pointer.panZoomStart(center));
-      await tester.sendEventToBinding(
-        pointer.panZoomUpdate(
-          center,
-          pan: const Offset(-SidebarSwipe.threshold - 20, 0),
-        ),
-      );
-      await tester.sendEventToBinding(pointer.panZoomEnd());
-      await tester.pumpAndSettle();
-
-      expect(find.widgetWithText(NoteRow, 'Trackpad note'), findsOneWidget);
     });
 
     testWidgets('creates a ready-to-type note when the store is empty', (
@@ -12362,9 +12718,8 @@ void main() {
       expect(box().foregroundDecoration, isNull);
     });
 
-    testWidgets('New note sits in the bar over the search, with its keycap', (
-      tester,
-    ) async {
+    testWidgets('New note is the + in the bar over the search, its chord '
+        'in its tooltip', (tester) async {
       await notes.load();
       notes.create(body: 'Something written');
       await pumpApp(tester);
@@ -12378,11 +12733,12 @@ void main() {
       expect(tester.getCenter(add).dy, closeTo(bar.center.dy, 0.5));
       expect(tester.getRect(add).bottom, lessThanOrEqualTo(search.top));
       expect(
-        find.descendant(
-          of: add,
-          matching: find.text(
-            shortcuts.bindingFor(ShortcutAction.newNote)!.keycapLabel,
-          ),
+        find.text(shortcuts.bindingFor(ShortcutAction.newNote)!.keycapLabel),
+        findsNothing,
+      );
+      expect(
+        find.byTooltip(
+          'New note  ${shortcuts.bindingFor(ShortcutAction.newNote)!.displayLabel}',
         ),
         findsOneWidget,
       );
@@ -12396,7 +12752,7 @@ void main() {
       expect(notes.notes, hasLength(2));
     });
 
-    testWidgets('a list dragged narrow keeps the name, and New note its plus', (
+    testWidgets('a list dragged narrow keeps the name and the plus', (
       tester,
     ) async {
       await notes.load();
@@ -12555,7 +12911,7 @@ void main() {
       notes.create(body: 'Words');
       await pumpApp(tester);
       Future<Finder> openFilter() async {
-        await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+        await tester.tap(find.byKey(const ValueKey('notes-view')));
         await tester.pumpAndSettle();
         return find.byKey(const ValueKey('media-filter-voice'));
       }
@@ -12756,7 +13112,7 @@ void main() {
       expect(spaceTitle(tester), 'Archive');
       expect(spaceCount(tester), '1');
 
-      await tester.tap(find.byKey(const ValueKey('sidebar-filter-clear')));
+      await tester.tap(find.byKey(const ValueKey('notes-filter-chip')));
       await tester.pumpAndSettle();
       expect(rowTitles(tester), ['Kept']);
       expect(spaceTitle(tester), 'My notes');
@@ -12834,7 +13190,7 @@ void main() {
           ),
         ]);
         await pumpApp(tester);
-        final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
+        final filter = find.byKey(const ValueKey('notes-view'));
         Future<void> tick(String kind) async {
           await tester.tap(find.byKey(ValueKey('media-filter-$kind')));
           await tester.pumpAndSettle();
@@ -12849,8 +13205,9 @@ void main() {
         await tick('voice');
         await tick('video');
         expect(rowTitles(tester), ['Floor plan']);
+        final chip = find.byKey(const ValueKey('notes-filter-chip'));
         expect(
-          find.descendant(of: filter, matching: find.text('Image')),
+          find.descendant(of: chip, matching: find.text('Image')),
           findsOneWidget,
         );
 
@@ -12861,11 +13218,19 @@ void main() {
 
         await tick('all');
         expect(rowTitles(tester).toSet(), {'Groceries', 'Floor plan'});
-        expect(
-          find.descendant(of: filter, matching: find.text('All notes')),
-          findsOneWidget,
-        );
+        expect(chip, findsNothing);
         expect(spaceCount(tester), '2');
+
+        // The chip gives every kind back too.
+        await tick('voice');
+        await tick('video');
+        expect(rowTitles(tester), ['Floor plan']);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        await tester.tap(chip);
+        await tester.pumpAndSettle();
+        expect(rowTitles(tester).toSet(), {'Groceries', 'Floor plan'});
+        expect(chip, findsNothing);
       },
     );
 
@@ -12910,7 +13275,9 @@ void main() {
           .toList();
 
       expect(styles(), [NoteRowStyle.card, NoteRowStyle.card]);
-      await tester.tap(find.byKey(const ValueKey('sidebar-view-list')));
+      await tester.tap(find.byKey(const ValueKey('notes-view')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('notes-layout-list')));
       await tester.pumpAndSettle();
       expect(styles(), [NoteRowStyle.row, NoteRowStyle.row]);
       expect(prefs.noteCards, isFalse);
@@ -14151,7 +14518,7 @@ void main() {
         findsNothing,
       );
 
-      await tester.tap(find.byKey(const ValueKey('notes-grouping')));
+      await tester.tap(find.byKey(const ValueKey('notes-view')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('notes-grouping-byTag')));
       await tester.pumpAndSettle();

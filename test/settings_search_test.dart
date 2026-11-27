@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/testing.dart';
@@ -10,11 +11,13 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/update_checker.dart';
 import 'package:kapy_notes/data/voice_prefs.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_search.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'support/back_forward.dart';
 import 'support/store_updates.dart';
 
 /// Finding a setting by typing its name — or any of the other words people
@@ -181,6 +184,35 @@ void main() {
     prefs = LayoutPrefs(store)..load();
     shortcuts = ShortcutPrefs(store)..load();
   });
+
+  for (final by in StepBy.values) {
+    testWidgets('${by.name}: a swipe or the mouse buttons move between '
+        'categories, and Back leaves a search', (tester) async {
+      await _open(tester, platform: defaultTargetPlatform);
+      final content = find.byKey(const ValueKey('settings-dialog-content'));
+      Finder shown(SettingsSection section) => find.text(section.summary);
+      expect(shown(SettingsSection.appearance), findsOneWidget);
+
+      await stepOver(tester, content, BackForwardStep.back, by);
+      expect(shown(SettingsSection.appearance), findsOneWidget);
+      await stepOver(tester, content, BackForwardStep.forward, by);
+      expect(shown(SettingsSection.notes), findsOneWidget);
+      await stepOver(tester, content, BackForwardStep.back, by);
+      expect(shown(SettingsSection.appearance), findsOneWidget);
+
+      await _type(tester, 'theme');
+      expect(
+        find.byKey(const ValueKey('settings-search-results')),
+        findsOneWidget,
+      );
+      await stepOver(tester, content, BackForwardStep.back, by);
+      expect(
+        find.byKey(const ValueKey('settings-search-results')),
+        findsNothing,
+      );
+      expect(shown(SettingsSection.appearance), findsOneWidget);
+    }, variant: TargetPlatformVariant.desktop());
+  }
 
   group('the match', () {
     final entries = [
