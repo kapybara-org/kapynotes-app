@@ -653,7 +653,7 @@ class KapyAiNotice extends StatelessWidget {
         ? 'Apple Intelligence'
         : 'the on-device model';
     final (icon, title, lines, actions) = switch (pending) {
-      KapyCloudConsent(:final recording) => (
+      KapyCloudConsent(:final recording, device: final deviceToo) => (
         KapyIcons.cloudRounded,
         'Before the first answer',
         recording
@@ -670,7 +670,7 @@ class KapyAiNotice extends StatelessWidget {
               ],
         [
           goAhead,
-          if (usable != null)
+          if (usable != null && deviceToo)
             KapyAiButton(
               'Use this device',
               onPressed: () => unawaited(ai.answerWith(usable)),

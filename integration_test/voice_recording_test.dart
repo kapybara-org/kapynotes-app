@@ -30,6 +30,8 @@ import 'package:kapy_notes/audio/voice_player.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:record/record.dart';
 
+import 'noise_removal_support.dart';
+
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -144,6 +146,17 @@ void main() {
 
     await player.pause();
     await player.stop();
+  });
+
+  testWidgets('noise comes off a real recording, and the clean copy plays', (
+    tester,
+  ) async {
+    expect(await controller.start(noteId: 'n1'), isTrue);
+    await Future<void>.delayed(const Duration(seconds: 3));
+    final result = await controller.stop();
+    expect(result, isNotNull);
+
+    await removeNoiseAndPlay(result!.file, temp);
   });
 
   testWidgets('a recording under a second is thrown away, not kept', (

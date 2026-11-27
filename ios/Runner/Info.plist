@@ -88,7 +88,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Kapy Notes uses the microphone to record voice notes.</string>
+	<string>Kapy Notes uses the microphone to record voice notes and the sound in your videos.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
@@ -100,7 +100,7 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Kapy Notes turns your recordings into text on this device, without sending them anywhere.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Kapy Notes uses the camera when you take a photo for a note.</string>
+	<string>Kapy Notes uses the camera when you take a photo or record a video for a note.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Kapy Notes opens your photo library when you choose pictures for a note.</string>
 </dict>

@@ -691,9 +691,10 @@ The spec described an Electron build. These changed for Flutter:
   opens focused on a fresh line, and returning to the app starts another
   append position without saving empty lines. It can be disabled in Settings
   › General.
-- Shortcuts: `⌘/Ctrl N` new note, `⌘/Ctrl F` search, `⌘/Ctrl S` toggle
-  sidebar, `⇧⌘⌫` / `Ctrl+Shift+Delete` archive the note, `⇧⌘T` /
-  `Ctrl+Shift+T` reopen closed tabs, the last first. Two more are
+- Shortcuts: `⌘/Ctrl N` new note, `⌘/Ctrl F` find in the open note,
+  `⇧⌘F` / `Ctrl+Shift+F` search every note, `⌘/Ctrl K` link the selected
+  words, `⌘/Ctrl S` toggle sidebar, `⇧⌘⌫` / `Ctrl+Shift+Delete` archive the
+  note, `⇧⌘T` / `Ctrl+Shift+T` reopen closed tabs, the last first. Two more are
   registered with the OS and answer from inside any other app — which also
   means every other app loses them while this one runs, so they sit on chords
   little else uses: `⇧⌥⌘L` / `Alt+Shift+L` summons the window, `⇧⌥⌘N` /
