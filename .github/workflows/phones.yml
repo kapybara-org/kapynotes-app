@@ -53,6 +53,18 @@ jobs:
           persist-credentials: false
       - run: bash tool/ci/phone_screenshots.sh --check
 
+  # Checks phone_screenshots.sh's handling of an app that never connects,
+  # stalls or runs too long, with fake devices, beside the phone jobs.
+  hangs:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: bash tool/ci/phone_screenshots_test.sh
+
   android:
     needs: names
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
