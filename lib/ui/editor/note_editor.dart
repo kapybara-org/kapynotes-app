@@ -329,8 +329,9 @@ class NoteEditor extends StatefulWidget {
   final bool readOnly;
 
   /// What the footer calls [readOnly]: View only for the sharing role, or the
-  /// note limit's own words, which [onReadOnlyPressed] then explains.
-  final String readOnlyLabel;
+  /// note limit's own words, which [onReadOnlyPressed] then explains. Null
+  /// where the page says so itself, as Recently deleted's bar does.
+  final String? readOnlyLabel;
   final KapyIconData readOnlyIcon;
   final VoidCallback? onReadOnlyPressed;
 
@@ -8450,8 +8451,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             if (statusShown)
               NoteFooter(
                 typing: widget.typing,
-                readOnly: widget.readOnly,
-                readOnlyLabel: widget.readOnlyLabel,
+                readOnly: widget.readOnly && widget.readOnlyLabel != null,
+                readOnlyLabel: widget.readOnlyLabel ?? '',
                 readOnlyIcon: widget.readOnlyIcon,
                 onReadOnlyPressed: widget.onReadOnlyPressed,
               ),

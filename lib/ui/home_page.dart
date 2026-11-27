@@ -121,6 +121,7 @@ import 'tasks/tasks_screen.dart';
 import 'tasks/tasks_sidebar.dart';
 import 'sidebar.dart';
 import 'sidebar_timestamp.dart';
+import 'trashed_note_bar.dart';
 import 'settings_dialog.dart';
 import 'settings/sharing_section.dart' show SharingStart;
 import 'tag_colours.dart';
@@ -148,11 +149,13 @@ bool isCrampedPage(Size size, double keyboardInset) =>
     keyboardInset > 0 && size.height - keyboardInset < kCrampedPageHeight;
 
 /// What the toast says as notes go: [deleted] of the reader's own, which
-/// go for good, and [removed] that somebody else shares, which only leave
-/// the reader's notes.
+/// go to Recently deleted, and [removed] that somebody else shares, which
+/// only leave the reader's notes.
 String forgottenMessage({required int deleted, required int removed}) {
   if (deleted == 0) return 'Removed from your notes';
-  final gone = deleted == 1 ? 'Note deleted' : '$deleted notes deleted';
+  final gone = deleted == 1
+      ? 'Moved to Recently deleted'
+      : 'Moved $deleted notes to Recently deleted';
   return removed == 0 ? gone : '$gone, and $removed removed from your notes';
 }
 
@@ -379,6 +382,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   bool _settingsOpen = false;
   bool _archiveMode = false;
   bool _hiddenMode = false;
+  bool _trashMode = false;
   bool _hiddenAuthBusy = false;
   int _hiddenSystemUiDepth = 0;
   bool _voiceActionBusy = false;
@@ -402,7 +406,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// made in.
   final NotePicks _picks = NotePicks();
 
-  bool get _specialMode => _archiveMode || _hiddenMode;
+  bool get _specialMode => _archiveMode || _hiddenMode || _trashMode;
+
+  /// The notes the list holds before the filter narrows them: Recently
+  /// deleted, Archive, Hidden with its own deleted notes, or the person's.
+  List<Note> get _collection => _trashMode
+      ? widget.notes.trashedNotes
+      : _archiveMode
+      ? widget.notes.archivedNotes
+      : _hiddenMode
+      ? [...widget.notes.hiddenNotes, ...widget.notes.hiddenTrashedNotes]
+      : widget.notes.notes;
 
   /// A mobile overlay owns the screen while it is open. Editors can rebuild
   /// underneath one when a folder changes, but must not reclaim focus and
@@ -693,7 +707,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final opening = _workspace.selectedNoteId;
     _workspace.rollOver(_today);
     final fixed = widget.notes.byId(widget.prefs.defaultNoteId);
-    if (fixed != null && !fixed.isArchived && !fixed.isHidden) {
+    if (fixed != null &&
+        !fixed.isArchived &&
+        !fixed.isHidden &&
+        !fixed.isTrashed) {
       _workspace.open(fixed.id);
     } else if (!_openDraft() && opening != null) {
       _workspace.open(opening);
@@ -791,7 +808,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _showRecordingNote() {
     final id = widget.recording?.session?.noteId;
     final note = id == null ? null : widget.notes.byId(id);
-    if (id == null || note == null || (note.isHidden && !_hiddenMode)) return;
+    if (id == null ||
+        note == null ||
+        note.isTrashed ||
+        (note.isHidden && !_hiddenMode)) {
+      return;
+    }
     if (id != _selectedId) _select(id, focusEditor: false);
     if (!_phonePageOpen) setState(() => _phonePageOpen = true);
   }
@@ -1148,6 +1170,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   bool _mayRevealInCurrentCollection(Note note) {
     if (note.isHidden) return _hiddenMode;
+    if (note.isTrashed) return _trashMode;
     if (note.isArchived) return _archiveMode;
     return !_specialMode;
   }
@@ -1353,13 +1376,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         }
       }
     }
-    final collectionIds =
-        (_archiveMode
-                ? widget.notes.archivedNotes
-                : _hiddenMode
-                ? widget.notes.hiddenNotes
-                : widget.notes.notes)
-            .map((note) => note.id);
+    final collectionIds = _collection.map((note) => note.id);
     final workspacePreview = _noteSwitchWorkspace;
     if (workspacePreview != null &&
         !workspacePreview.canContinueWith(collectionIds)) {
@@ -1397,11 +1414,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void _reconcileSelection() {
     _noteSwitcher.retain(widget.notes.allNotes.map((note) => note.id));
     if (!_noteSwitcher.isActive) _noteSwitchModifier = null;
-    final available = _archiveMode
-        ? widget.notes.archivedNotes
-        : _hiddenMode
-        ? widget.notes.hiddenNotes
-        : widget.notes.notes;
+    final available = _collection;
     if (_specialMode) {
       if (available.isEmpty) {
         _setSelectedId(null);
@@ -1446,7 +1459,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       keepList: _usesCompactLayout && !_phonePageOpen,
     );
     final parked = widget.notes.byId(_noteBeforeSpace);
-    if (parked == null || parked.isHidden || parked.isArchived) {
+    if (parked == null ||
+        parked.isHidden ||
+        parked.isArchived ||
+        parked.isTrashed) {
       _noteBeforeSpace = _openedBySpace = null;
     }
   }
@@ -1583,7 +1599,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _freshNoteIds.remove(id);
       final note = widget.notes.byId(id);
       // Filed away on purpose is not abandoned.
-      if (note == null || note.isShared || note.isArchived) continue;
+      if (note == null || note.isShared || note.isArchived || note.isTrashed) {
+        continue;
+      }
       if (note.isEmpty && note.attachments.isEmpty) abandoned.add(id);
     }
     if (abandoned.isEmpty) return;
@@ -2386,6 +2404,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     setState(() {
       _archiveQuery = '';
       _archiveMode = false;
+      _trashMode = false;
       _tasksMode = false;
       if (!creatingHidden) _hiddenMode = false;
       // A new note is the person's own, so it is listed where they can see
@@ -2416,7 +2435,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// else's. And a note holding a picture or a recording is not empty, whatever
   /// its text says — [Note.isEmpty] only reads the body.
   Note? _blankNoteAlreadyOpen() {
-    if (_archiveMode) return null;
+    if (_archiveMode || _trashMode) return null;
     final note = widget.notes.byId(_selectedId);
     return note != null && _isBlankPage(note) ? note : null;
   }
@@ -2424,7 +2443,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Whether [note] is still a blank page, which a new note may as well be.
   /// See [_blankNoteAlreadyOpen].
   bool _isBlankPage(Note note) {
-    if (note.isArchived || note.isShared) return false;
+    if (note.isArchived || note.isShared || note.isTrashed) return false;
     if (note.isHidden != _hiddenMode) return false;
     if (!note.isEmpty || note.attachments.isNotEmpty) return false;
     // A blank canvas was chosen as one: "new note" means a page to write on.
@@ -2436,10 +2455,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// What the archive shortcut does to the note that is open.
   ///
   /// The rule the notes list follows too: the key does what that note's own
-  /// glyph does. In the list it files the note away; in the archive, where
-  /// there is nothing left to file, it is the permanent delete — behind the
-  /// question that one always asks. Null where no note is open, or where a
-  /// shared one is not this reader's to change.
+  /// glyph does. In the list it files the note away; in the archive and
+  /// Hidden, where there is nothing left to file, it deletes; and in
+  /// Recently deleted it deletes for good, behind the question that always
+  /// asks. Null where no note is open, or where a shared one is not this
+  /// reader's to change.
   VoidCallback? get _removeOpenNote {
     final id = _selectedId;
     if (id == null || !_canEditNote(_shownNote(id))) return null;
@@ -2566,6 +2586,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (going.contains(_selectedId)) _openNearby(index);
   }
 
+  void _putBackNote(String id) => _putBackNotes([id]);
+
+  /// Takes notes out of Recently deleted, back where they were: one from its
+  /// row or its page, or every picked one.
+  void _putBackNotes(List<String> ids) {
+    final going = [
+      for (final id in ids)
+        if (widget.notes.byId(id) case final note?
+            when note.isTrashed && _canEditNote(note))
+          note,
+    ];
+    if (going.isEmpty) return;
+    final index = _visibleNotes.indexWhere((note) => note.id == _selectedId);
+    widget.notes.putBackAll([for (final note in going) note.id]);
+    _picks.clear();
+    final note = widget.notes.byId(going.first.id);
+    Toast.show(
+      context,
+      going.length > 1
+          ? 'Put back ${going.length} notes'
+          : note?.isArchived ?? false
+          ? 'Put back in Archive'
+          : note?.isHidden ?? false
+          ? 'Put back in Hidden Notes'
+          : 'Put back in Notes',
+      icon: restoreIcon,
+    );
+    if (going.any((note) => note.id == _selectedId)) _openNearby(index);
+  }
+
   /// Opens the note now at [index] of the list on screen, or the last one,
   /// once the open note has gone from the archive or Hidden Notes.
   void _openNearby(int index) {
@@ -2583,7 +2633,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// one, once Hidden Notes is set up.
   Future<void> _hideNotes(List<String> ids) async {
     bool hides(Note? note) =>
-        note != null && !note.isArchived && !note.isHidden && !note.isShared;
+        note != null &&
+        !note.isArchived &&
+        !note.isHidden &&
+        !note.isShared &&
+        !note.isTrashed;
     if (!ids.any((id) => hides(widget.notes.byId(id)))) return;
     if (_hiddenAuthBusy) return;
     setState(() => _hiddenAuthBusy = true);
@@ -2680,8 +2734,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         _archiveNotes(ids);
       case PickedAction.restore:
         _restoreNotes(ids);
+      case PickedAction.putBack:
+        _putBackNotes(ids);
       case PickedAction.delete:
         unawaited(_deletePicked(ids));
+      case PickedAction.deleteNow:
+        unawaited(_deleteNow(ids));
     }
   }
 
@@ -2689,24 +2747,24 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (mounted) setState(() {});
   }
 
-  /// Throws one note away, for good once its toast's Undo has gone: see
-  /// [_forget].
-  ///
-  /// The note leaves this device and, through the tombstone, every other one
-  /// it syncs to. A note somebody else shares with this account only leaves
-  /// its own notes. A question goes first; it offers not to be asked again,
-  /// and Settings asks it again.
+  /// Deletes one note: see [_forget]. One of the reader's own goes to
+  /// Recently deleted on every device it syncs to, and one already there
+  /// goes for good, behind [_deleteNow]'s question. A note somebody else
+  /// shares with this account only leaves its own notes. A question goes
+  /// first; it offers not to be asked again, and Settings asks it again.
   Future<void> _deleteNote(String id) async {
     final note = widget.notes.byId(id);
     if (note == null || !_canRemoveNote(note)) return;
     final owner = _sharedBy(note);
+    if (note.isTrashed && owner == null) return _deleteNow([id]);
     if (widget.prefs.askBeforeDeleting) {
       final title = note.title.trim();
       final name = title.isEmpty ? 'this note' : '"$title"';
       final confirmed = await _confirmDelete(
         title: owner == null ? 'Delete note?' : 'Remove from your notes?',
         body: owner == null
-            ? 'Deletes $name from every synced device.'
+            ? 'Moves $name to Recently deleted. You can put it back for 30 '
+                  'days.'
             : 'Removes $name from your notes, and from your other devices '
                   'once they are up to date. $owner and '
                   "everyone it's shared with keep it.",
@@ -2726,7 +2784,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return space.shortNameOf(space.ownerId);
   }
 
-  /// What deleting [ids] from the archive does, said before it happens.
+  /// What deleting [ids] does, said before it happens.
   String _deleteBody(List<String> ids) {
     final theirs = ids
         .where((id) => _sharedBy(widget.notes.byId(id)) != null)
@@ -2735,14 +2793,16 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         'Notes shared with you are removed from your notes, and from your '
         'other devices once they are up to date. Their owners keep them.';
     if (theirs == 0) {
-      return 'Deletes ${_noteCount(ids.length).toLowerCase()} from every '
-          'synced device.';
+      return 'Moves ${_noteCount(ids.length).toLowerCase()} to Recently '
+          'deleted. You can put ${ids.length == 1 ? 'it' : 'them'} back for '
+          '30 days.';
     }
     if (theirs == ids.length) return shared;
-    return 'Deletes your own notes from every synced device. $shared';
+    return 'Moves your own notes to Recently deleted, where you can put them '
+        'back for 30 days. $shared';
   }
 
-  /// Empties the archive.
+  /// Deletes everything in the archive.
   Future<void> _deleteAllArchived() async {
     final ids = widget.notes.archivedNotes
         .where((note) => _canEditNote(note))
@@ -2751,7 +2811,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (ids.isEmpty) return;
     final removed = _sharedByOthers(ids);
     final confirmed = await _confirmDelete(
-      title: 'Empty Archived Notes?',
+      title: 'Delete all archived notes?',
       body: _deleteBody(ids),
       action: removed == ids.length ? 'Remove all' : 'Delete all',
     );
@@ -2759,15 +2819,19 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _forget(ids);
   }
 
-  /// Throws picked notes away. One goes as its row's Delete does, asking
-  /// only if the reader still wants to be asked; several always ask, with
-  /// how many.
+  /// Deletes picked notes. One goes as its row's Delete does; several ask
+  /// too, with how many, only if the reader still wants to be asked.
   Future<void> _deletePicked(List<String> picked) async {
     if (picked.length == 1) return _deleteNote(picked.single);
     final ids = picked
         .where((id) => _canRemoveNote(widget.notes.byId(id)))
         .toList();
     if (ids.isEmpty) return;
+    if (!widget.prefs.askBeforeDeleting) {
+      _forget(ids);
+      _picks.clear();
+      return;
+    }
     final removed = _sharedByOthers(ids);
     final theirs = removed == ids.length;
     final confirmed = await _confirmDelete(
@@ -2784,21 +2848,66 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _picks.clear();
   }
 
+  /// Deletes notes in Recently deleted for good: one from its row or page,
+  /// every picked one, or, [emptying], all of them. It always asks first.
+  Future<void> _deleteNow(List<String> ids, {bool emptying = false}) async {
+    final going = [
+      for (final id in ids)
+        if (widget.notes.byId(id) case final note?
+            when note.isTrashed &&
+                _canEditNote(note) &&
+                _sharedBy(note) == null)
+          note,
+    ];
+    if (going.isEmpty) return;
+    final title = going.first.title.trim();
+    final confirmed = await _confirmDelete(
+      title: going.length == 1
+          ? 'Delete note for good?'
+          : 'Delete ${going.length} notes for good?',
+      body: going.length == 1
+          ? 'Deletes ${title.isEmpty ? 'this note' : '"$title"'} from every '
+                'synced device, with its pictures and recordings.'
+          : 'Deletes them from every synced device, with their pictures and '
+                'recordings.',
+      action: emptying ? 'Empty' : 'Delete',
+    );
+    if (!confirmed || !mounted) return;
+    _forget([for (final note in going) note.id]);
+    _picks.clear();
+  }
+
+  /// Empties Recently deleted.
+  Future<void> _emptyTrash() => _deleteNow([
+    for (final note in widget.notes.trashedNotes) note.id,
+  ], emptying: true);
+
   /// How many of [ids] somebody else shares with this account.
   int _sharedByOthers(List<String> ids) =>
       ids.where((id) => _sharedBy(widget.notes.byId(id)) != null).length;
 
   /// The part every delete shares: take the notes out of every list, drop
   /// whatever the selection and the editor were holding onto, and say so,
-  /// with Undo. They go for good once the toast does, with the pictures and
-  /// recordings nothing else refers to. Until then nothing of them has
-  /// changed, so Undo puts them back as they were, the open one open again
-  /// on a desktop's page, and the app being killed keeps them. Leaving the
-  /// app ends the toast as its time running out would: see
-  /// [Toast.giveUpUndo].
+  /// with Undo. The reader's own notes go to Recently deleted. Ones already
+  /// there, and ones somebody else shares, go for good once the toast does,
+  /// with the pictures and recordings nothing else refers to; until then
+  /// nothing of them has changed. Undo puts them all back as they were, the
+  /// open one open again on a desktop's page, and the app being killed
+  /// keeps them. Leaving the app ends the toast as its time running out
+  /// would: see [Toast.giveUpUndo].
   void _forget(List<String> ids) {
     final removing = ids.toSet();
     final removed = _sharedByOthers(ids);
+    final forGood = {
+      for (final id in ids)
+        if (widget.notes.byId(id) case final note?
+            when note.isTrashed || _sharedBy(note) != null)
+          id,
+    };
+    final trashing = [
+      for (final id in ids)
+        if (!forGood.contains(id)) id,
+    ];
     _letGo(removing);
     final losingSelected = removing.contains(_selectedId);
     final index = losingSelected
@@ -2811,7 +2920,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         losingSelected && !_usesCompactLayout && (_specialMode || !othersOpen)
         ? _selectedId
         : null;
-    final notes = widget.notes..holdDelete(removing);
+    final notes = widget.notes..holdDelete(forGood);
+    final trashed = notes.trashAll(trashing);
     _picks.drop(removing);
     setState(() {
       if (losingSelected && _specialMode) {
@@ -2824,19 +2934,27 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _openInPlaceOf(index, othersOpen: othersOpen);
     }
     final inItsPlace = _selectedId;
+    final emptied = forGood.length - removed;
     Toast.show(
       context,
-      forgottenMessage(deleted: ids.length - removed, removed: removed),
-      icon: deleteIcon,
+      emptied == 0
+          ? forgottenMessage(deleted: trashing.length, removed: removed)
+          : emptied == 1
+          ? 'Note deleted'
+          : '$emptied notes deleted',
+      icon: trashing.isEmpty ? deleteIcon : trashIcon,
       action: 'Undo',
       onAction: () {
-        notes.undoDelete(removing);
+        notes
+          ..undoDelete(forGood)
+          ..undoTrash(trashed);
         if (reopen == null || !mounted || _selectedId != inItsPlace) return;
         setState(() => _setSelectedId(reopen));
         widget.prefs.lastOpenedNoteId = reopen;
       },
       onGone: () {
-        notes.deleteAll(removing);
+        if (forGood.isEmpty) return;
+        notes.deleteAll(forGood);
         // The notes are gone, so their attachments have no owner. See
         // [NotesStore.sweepBlobs] for why this is the only place that counts.
         unawaited(notes.sweepBlobs());
@@ -2923,15 +3041,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return confirmed;
   }
 
-  void _toggleArchive() {
+  void _toggleArchive() => _toggleShown(NotesShow.archive);
+
+  /// Opens Archive or Recently deleted on its first note, or leaves it for
+  /// the notes.
+  void _toggleShown(NotesShow show) {
     _picks.clear();
     setState(() {
-      final entering = !_archiveMode;
-      _archiveMode = entering;
+      final entering = _show != show;
+      _archiveMode = entering && show == NotesShow.archive;
+      _trashMode = entering && show == NotesShow.trash;
       _hiddenMode = false;
       _archiveQuery = '';
       if (entering) {
-        _setSelectedId(_narrowed(widget.notes.archivedNotes).firstOrNull?.id);
+        _setSelectedId(_narrowed(_collection).firstOrNull?.id);
       } else {
         final previous = _selectedId;
         _workspace.reconcile(
@@ -2969,6 +3092,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _picks.clear();
     setState(() {
       _archiveMode = false;
+      _trashMode = false;
       _hiddenMode = true;
       _archiveQuery = '';
       _setSelectedId(_narrowed(widget.notes.hiddenNotes).firstOrNull?.id);
@@ -3011,9 +3135,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     switch (show) {
       case NotesShow.all:
         if (_archiveMode) _toggleArchive();
+        if (_trashMode) _toggleShown(NotesShow.trash);
         if (_hiddenMode) _leaveHiddenNotes();
       case NotesShow.archive:
         if (!_archiveMode) _toggleArchive();
+      case NotesShow.trash:
+        if (!_trashMode) _toggleShown(NotesShow.trash);
       case NotesShow.hidden:
         if (!_hiddenMode) unawaited(_toggleHiddenNotes());
     }
@@ -3065,12 +3192,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ];
   }
 
-  /// The notes a tag's count counts: the archived ones in Archive, and
-  /// otherwise the rest, with Hidden's only while Hidden is open.
+  /// The notes a tag's count counts: the archived ones in Archive, the
+  /// deleted ones in Recently deleted, and otherwise the rest, with Hidden's
+  /// only while Hidden is open.
   Set<String> _countedNoteIds() => {
     for (final note
-        in _archiveMode
-            ? widget.notes.archivedNotes
+        in _archiveMode || _trashMode
+            ? _collection
             : [
                 ...widget.notes.notes,
                 if (_hiddenMode) ...widget.notes.hiddenNotes,
@@ -3184,7 +3312,23 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// read-only by the note limit. Archiving, restoring and deleting ask only
   /// [_canEditNote] — deleting is the way back under the limit, so a note the
   /// limit holds must never lose it.
-  bool _canWriteNote(Note? note) => _canEditNote(note) && !_limitHolds(note!);
+  bool _canWriteNote(Note? note) =>
+      _canEditNote(note) && !note!.isTrashed && !_limitHolds(note);
+
+  /// [page] under the bar a note in Recently deleted opens with.
+  Widget _withTrashBar(Note note, Widget page) {
+    if (!note.isTrashed) return page;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TrashedNoteBar(
+          phone: _usesCompactLayout,
+          onPutBack: _canEditNote(note) ? () => _putBackNote(note.id) : null,
+        ),
+        Expanded(child: page),
+      ],
+    );
+  }
 
   bool _limitHolds(Note note) => _noteLimit?.isLocked(note) ?? false;
 
@@ -3743,6 +3887,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         .hintFor(ShortcutAction.toggleHiddenFolder)
         ?.displayLabel,
     archivedCount: _narrowed(widget.notes.archivedNotes).length,
+    trashedCount: _narrowed(widget.notes.trashedNotes).length,
     media: space == LibrarySpace.drawings ? null : _mediaFilter,
     onMediaChanged: (media) => setState(() => _mediaFilter = media),
     onClear: _clearFilter,
@@ -3985,6 +4130,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Which notes the filter shows.
   NotesShow get _show => _archiveMode
       ? NotesShow.archive
+      : _trashMode
+      ? NotesShow.trash
       : _hiddenMode
       ? NotesShow.hidden
       : NotesShow.all;
@@ -4030,13 +4177,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Drawings beside the rail. A [phone] lists every drawing under Recent, so
   /// its Drawings counts them all.
   int _matchingCount({required bool phone}) {
-    final notes = _filtered(
-      _archiveMode
-          ? widget.notes.archivedNotes
-          : _hiddenMode
-          ? widget.notes.hiddenNotes
-          : widget.notes.notes,
-    );
+    final notes = _filtered(_collection);
     return (_space == LibrarySpace.notes ||
                 (_space == LibrarySpace.drawings && !phone)) &&
             widget.prefs.notesGrouping == NotesGrouping.byDate
@@ -4201,8 +4342,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final notes = _filtered(
       _archiveMode
           ? widget.notes.searchArchived(_archiveQuery)
-          : _hiddenMode
-          ? widget.notes.hiddenNotes
+          : _specialMode
+          ? _collection
           : widget.notes.search(''),
     );
     if (!_showingPinnedOnly) return notes;
@@ -4394,14 +4535,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                   : _workspace.openNoteIds.difference({?_selectedId}),
               onArchive: _archiveNote,
               onRestore: _restoreNote,
+              onPutBack: _putBackNote,
               onHide: (id) => unawaited(_hideNote(id)),
               onUnhide: _unhideNote,
               onTogglePin: _specialMode ? null : _togglePinnedNote,
               archiveMode: _archiveMode,
               hiddenMode: _hiddenMode,
+              trashMode: _trashMode,
               onDelete: _deleteNote,
               asksBeforeDeleting: widget.prefs.askBeforeDeleting,
-              onDeleteAll: () => unawaited(_deleteAllArchived()),
+              onDeleteAll: _trashMode
+                  ? () => unawaited(_emptyTrash())
+                  : () => unawaited(_deleteAllArchived()),
               picks: _picks,
               onPicked: _actOnPicked,
               onShare: widget.account == null ? null : _shareNote,
@@ -4669,6 +4814,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return PagePath(
       icon: _archiveMode
           ? archiveIcon
+          : _trashMode
+          ? trashIcon
           : _hiddenMode
           ? hiddenIcon
           : switch (_space) {
@@ -4722,6 +4869,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         : null;
     final canSplit = !_specialMode && _workspace.canSplit;
     final mayEdit = note != null && _canEditNote(note);
+    final trashed = note?.isTrashed ?? false;
     final removeShortcut = widget.shortcuts
         .hintFor(ShortcutAction.deleteNote)
         ?.keycapLabel;
@@ -4749,7 +4897,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           label: 'Move to folder…',
           icon: KapyIcons.folderMoveOutlined,
         ),
-      if (mayEdit && widget.days != null) ...[
+      if (mayEdit && !trashed && widget.days != null) ...[
         const KapyMenuAction(
           value: 'day',
           label: 'Move to another day',
@@ -4774,7 +4922,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           label: 'Restore note',
           icon: restoreIcon,
         ),
-      if (mayEdit && _hiddenMode)
+      if (mayEdit && _hiddenMode && !trashed)
         const KapyMenuAction(
           value: 'unhide',
           label: 'Move to Notes',
@@ -4789,11 +4937,28 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           icon: deleteIcon,
           destructive: true,
         ),
-      if (mayEdit)
+      if (mayEdit && trashed) ...[
+        const KapyMenuAction(
+          value: 'put-back',
+          label: 'Put back',
+          icon: restoreIcon,
+        ),
+        KapyMenuAction(
+          value: 'delete',
+          label: _sharedBy(note) == null ? 'Delete now…' : 'Remove note…',
+          icon: deleteIcon,
+          hint: removeShortcut,
+          destructive: true,
+        ),
+      ] else if (mayEdit)
         KapyMenuAction(
           value: _specialMode ? 'delete' : 'archive',
-          label: _specialMode ? 'Delete permanently' : 'Archive note',
-          icon: _specialMode ? deleteIcon : archiveIcon,
+          label: !_specialMode
+              ? 'Archive note'
+              : widget.prefs.askBeforeDeleting
+              ? 'Delete note…'
+              : 'Delete note',
+          icon: _specialMode ? trashIcon : archiveIcon,
           hint: removeShortcut,
           destructive: _specialMode,
         ),
@@ -4804,12 +4969,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// shares it, then Hidden Notes, then the ways out of the list.
   KapyMenu _phoneMenu(Note note) {
     final mayEdit = _canEditNote(note);
+    final trashed = note.isTrashed;
+    final theirs = _sharedBy(note) != null;
     final days = widget.days;
     return (
       heading: null,
       groups: [
         [
-          if (mayEdit && days != null) ...[
+          if (mayEdit && !trashed && days != null) ...[
             const KapyMenuAction(
               value: 'day',
               label: 'Move to another day',
@@ -4864,11 +5031,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               label: 'Restore note',
               icon: restoreIcon,
             ),
-          if (mayEdit && _hiddenMode)
+          if (mayEdit && _hiddenMode && !trashed)
             const KapyMenuAction(
               value: 'unhide',
               label: 'Move to Notes',
               icon: unhideIcon,
+            ),
+          if (mayEdit && trashed)
+            const KapyMenuAction(
+              value: 'put-back',
+              label: 'Put back',
+              icon: restoreIcon,
             ),
         ],
         [
@@ -4881,15 +5054,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (_canRemoveNote(note))
             KapyMenuAction(
               value: 'delete',
-              label: [
-                _sharedBy(note) != null
-                    ? 'Remove note'
-                    : _specialMode
-                    ? 'Delete permanently'
-                    : 'Delete note',
-                if (widget.prefs.askBeforeDeleting) '…',
-              ].join(),
-              icon: deleteIcon,
+              label: theirs
+                  ? [
+                      'Remove note',
+                      if (widget.prefs.askBeforeDeleting) '…',
+                    ].join()
+                  : trashed
+                  ? 'Delete now…'
+                  : [
+                      'Delete note',
+                      if (widget.prefs.askBeforeDeleting) '…',
+                    ].join(),
+              icon: trashed || theirs ? deleteIcon : trashIcon,
               destructive: true,
             ),
         ],
@@ -4933,6 +5109,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         unawaited(_hideNote(note.id));
       case 'restore':
         _restoreNote(note.id);
+      case 'put-back':
+        _putBackNote(note.id);
       case 'unhide':
         _unhideNote(note.id);
       case 'archive':
@@ -5078,11 +5256,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       final selected = widget.notes.byId(_selectedId);
       return selected == null
           ? EmptyState(onCreate: _createNote)
-          : _buildEditor(
+          : _withTrashBar(
               selected,
-              key: _archiveEditorKey,
-              active: true,
-              cramped: cramped,
+              _buildEditor(
+                selected,
+                key: _archiveEditorKey,
+                active: true,
+                cramped: cramped,
+              ),
             );
     }
     if (_folderInFront case final folderId?) {
@@ -5349,6 +5530,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_tasksMode) return null;
     if (_hiddenMode) return _PhoneLevel.hidden;
     if (_archiveMode) return _PhoneLevel.archive;
+    if (_trashMode) return _PhoneLevel.trash;
     return switch (_phoneTab) {
       PhoneTab.notes when _showingPinnedOnly => _PhoneLevel.pinned,
       PhoneTab.folders when _drawingsOnly => _PhoneLevel.drawings,
@@ -5383,7 +5565,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     switch (_phoneLevel) {
       case _PhoneLevel.pinned:
         setState(() => _pinnedOnly = false);
-      case _PhoneLevel.archive || _PhoneLevel.hidden:
+      case _PhoneLevel.archive || _PhoneLevel.hidden || _PhoneLevel.trash:
         _setShow(NotesShow.all);
       case _:
         _showFolders();
@@ -5425,10 +5607,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final pinned = _pinnedOnly;
     final archive = _archiveMode;
     final hidden = _hiddenMode;
+    final trash = _trashMode;
     final drawings = _drawingsOnly;
     final tab = _sidebarTab;
     final folder = _phoneFolder;
-    _pinnedOnly = _archiveMode = _hiddenMode = _drawingsOnly = false;
+    _pinnedOnly = _archiveMode = _hiddenMode = _trashMode = _drawingsOnly =
+        false;
     _sidebarTab = SidebarTab.mine;
     _phoneFolder = null;
     try {
@@ -5437,6 +5621,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       _pinnedOnly = pinned;
       _archiveMode = archive;
       _hiddenMode = hidden;
+      _trashMode = trash;
       _drawingsOnly = drawings;
       _sidebarTab = tab;
       _phoneFolder = folder;
@@ -5837,14 +6022,18 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onSelect: _select,
       onArchive: _archiveNote,
       onRestore: _restoreNote,
+      onPutBack: _putBackNote,
       onHide: (id) => unawaited(_hideNote(id)),
       onUnhide: _unhideNote,
       onTogglePin: _specialMode ? null : _togglePinnedNote,
       archiveMode: _archiveMode,
       hiddenMode: _hiddenMode,
+      trashMode: _trashMode,
       onDelete: _deleteNote,
       asksBeforeDeleting: widget.prefs.askBeforeDeleting,
-      onDeleteAll: () => unawaited(_deleteAllArchived()),
+      onDeleteAll: _trashMode
+          ? () => unawaited(_emptyTrash())
+          : () => unawaited(_deleteAllArchived()),
       picks: _picks,
       onPicked: _actOnPicked,
       onShare: widget.account == null ? null : _shareNote,
@@ -6412,12 +6601,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     GlobalKey<NoteEditorState> key, {
     required bool cramped,
   }) {
-    if (_opensAsDrawing(note)) return _buildDrawing(note);
+    if (_opensAsDrawing(note)) return _withTrashBar(note, _buildDrawing(note));
     final folders = widget.folders;
     final editor = _phoneNoteEditor(note, key, cramped: cramped);
-    return folders == null
-        ? editor
-        : NoteFolders(tree: folders.tree, child: editor);
+    return _withTrashBar(
+      note,
+      folders == null ? editor : NoteFolders(tree: folders.tree, child: editor),
+    );
   }
 
   Widget _phoneNoteEditor(
@@ -6491,7 +6681,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           onActivity: (selection, text, {required edited}) =>
               _reportPresence(note.id, selection, text, edited: edited),
           readOnly: !_canWriteNote(note),
-          readOnlyLabel: _limitHolds(note) ? 'Read-only on Free' : 'View only',
+          readOnlyLabel: note.isTrashed
+              ? null
+              : _limitHolds(note)
+              ? 'Read-only on Free'
+              : 'View only',
           readOnlyIcon: _limitHolds(note)
               ? KapyIcons.lockRounded
               : KapyIcons.visibilityOutlined,
@@ -6591,7 +6785,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             _reportPresence(note.id, selection, text, edited: edited);
           },
           readOnly: !_canWriteNote(note),
-          readOnlyLabel: _limitHolds(note) ? 'Read-only on Free' : 'View only',
+          readOnlyLabel: note.isTrashed
+              ? null
+              : _limitHolds(note)
+              ? 'Read-only on Free'
+              : 'View only',
           readOnlyIcon: _limitHolds(note)
               ? KapyIcons.lockRounded
               : KapyIcons.visibilityOutlined,
@@ -6908,4 +7106,4 @@ typedef _PhoneNotePage = ({
 
 /// A list a phone opens from its tab's own page, on a page of its own over
 /// it, which Back leaves for that page.
-enum _PhoneLevel { pinned, archive, hidden, drawings, shared, folder }
+enum _PhoneLevel { pinned, archive, hidden, trash, drawings, shared, folder }

@@ -202,6 +202,15 @@ class SidebarTimestamp {
   /// The time of day on a 24-hour clock: "16:05".
   static String clock(DateTime shown) => _clock(shown);
 
+  /// How long a note in Recently deleted has before it goes for good, in
+  /// whole days and never less than one: it goes on the first check after
+  /// [endsAt].
+  static String daysLeft(DateTime endsAt, {required DateTime now}) {
+    final hours = endsAt.difference(now).inHours;
+    final days = hours <= 24 ? 1 : (hours / 24).ceil();
+    return days == 1 ? '1 day left' : '$days days left';
+  }
+
   static int _daysBetween(DateTime shown, DateTime current) => DateTime.utc(
     current.year,
     current.month,

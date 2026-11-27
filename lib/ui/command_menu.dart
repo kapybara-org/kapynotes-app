@@ -19,7 +19,7 @@ import 'keycap.dart';
 import 'notes_list.dart' show NotesShow;
 import 'settings_dialog.dart' show SettingsIndex, SettingsSection;
 import 'settings_search.dart';
-import 'sidebar.dart' show archiveIcon, hiddenIcon;
+import 'sidebar.dart' show archiveIcon, hiddenIcon, trashIcon;
 import 'sidebar_timestamp.dart';
 import 'spaces_rail.dart';
 import 'tag_colours.dart';
@@ -555,6 +555,11 @@ class _CommandMenuState extends State<CommandMenu> {
         title: 'Archive',
         keycap: _keycap(ShortcutAction.showArchive),
         choice: const ShowNotesChoice(NotesShow.archive),
+      ),
+      const _Line.row(
+        icon: trashIcon,
+        title: 'Recently deleted',
+        choice: ShowNotesChoice(NotesShow.trash),
       ),
       _Line.row(
         icon: KapyIcons.settingsGearOutlined,

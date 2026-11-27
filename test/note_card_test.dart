@@ -436,6 +436,7 @@ void main() {
                 onShowChanged: (_) {},
                 hiddenListed: true,
                 archivedCount: 0,
+                trashedCount: 0,
                 onClear: () {},
                 media: NoteMedia.values.toSet(),
                 today: DateTime(2026, 11, 19),
