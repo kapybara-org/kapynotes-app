@@ -163,6 +163,20 @@ Future<List<XFile>> pickExistingImageFiles() async {
   }
 }
 
+/// Opens the native photo library with photos and videos together, for the
+/// camera's Photos button.
+Future<List<XFile>> pickExistingMedia() async {
+  try {
+    return await platform_picker.ImagePicker().pickMultipleMedia(
+      limit: 20,
+      requestFullMetadata: false,
+    );
+  } catch (error) {
+    debugPrint('KapyNotes: photo library failed: $error');
+    return const [];
+  }
+}
+
 /// Reads one picker/drop result only far enough for the editor to display it.
 /// Compression and durable storage continue after this returns.
 Future<ImageStageResult> stageImageFile(XFile file) async {

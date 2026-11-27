@@ -71,6 +71,7 @@ import '../data/store_updates.dart';
 import '../data/task_folds.dart';
 import '../data/update_checker.dart';
 import '../data/writing_streak.dart';
+import '../images/camera_capture.dart';
 import '../images/image_picker.dart';
 import '../video/video_picker.dart';
 import 'editor/note_editor.dart';
@@ -838,6 +839,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (protectsHiddenSession) _hiddenSystemUiDepth++;
     try {
       return await acquireNoteVideos();
+    } finally {
+      if (protectsHiddenSession) _hiddenSystemUiDepth--;
+    }
+  }
+
+  /// The camera, for the note on screen. What it keeps goes in where the
+  /// caret is; closing it keeps nothing, and a note left blank goes as any
+  /// does.
+  Future<void> _takePhotoOrVideo() async {
+    final id = _selectedId;
+    final note = id == null ? null : widget.notes.byId(id);
+    if (note == null || !_canWriteNote(note)) return;
+    // Photos leaves the app for the system library, as the pickers do.
+    final protectsHiddenSession = _hiddenMode && note.isHidden;
+    if (protectsHiddenSession) _hiddenSystemUiDepth++;
+    try {
+      final files = await showNoteCamera(
+        context,
+        chooseFromLibrary: pickExistingMedia,
+        attachmentMaxBytes: _videoAttachmentMaxBytes(note),
+        startInVideo: widget.prefs.cameraVideo,
+        onVideoChosen: (video) => widget.prefs.cameraVideo = video,
+      );
+      if (files.isEmpty || !mounted || _selectedId != id) return;
+      await _selectedEditor?.insertDroppedMedia(files);
     } finally {
       if (protectsHiddenSession) _hiddenSystemUiDepth--;
     }
@@ -4983,6 +5009,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           newTaskShortcut: widget.shortcuts
               .hintFor(ShortcutAction.newNote)
               ?.keycapLabel,
+          explainPair: _taskFolds?.howSeen == false,
           toolbar: PageToolbar(
             path: filter.done
                 ? PagePath(
@@ -5683,6 +5710,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             label: 'New voice note',
             icon: KapyIcons.micRounded,
           ),
+        if (AppPlatform.isMobile)
+          const KapyMenuAction(
+            value: 'camera',
+            label: 'New photo or video',
+            icon: KapyIcons.cameraOutlined,
+          ),
         const KapyMenuAction(
           value: 'drawing',
           label: 'New drawing',
@@ -5730,6 +5763,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         if (!_createNote()) return;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_startVoiceRecording());
+        });
+      case 'camera':
+        if (!_createNote()) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_takePhotoOrVideo());
         });
       case 'drawing':
         _createNote(drawing: true);
@@ -6736,7 +6774,9 @@ class _DesktopShortcuts extends StatelessWidget {
     final action = switch (event.logicalKey) {
       LogicalKeyboardKey.arrowLeft => onKeepChoice,
       LogicalKeyboardKey.arrowRight => onTakeNext,
-      LogicalKeyboardKey.escape => onStartEarly,
+      LogicalKeyboardKey.escape ||
+      LogicalKeyboardKey.enter ||
+      LogicalKeyboardKey.numpadEnter => onStartEarly,
       _ => null,
     };
     if (action == null) return KeyEventResult.ignored;
@@ -6744,6 +6784,12 @@ class _DesktopShortcuts extends StatelessWidget {
     if (focused != null &&
         (focused.widget is EditableText ||
             focused.findAncestorWidgetOfExactType<EditableText>() != null)) {
+      return KeyEventResult.ignored;
+    }
+    // ↵ on a focused control is that control's own.
+    if (event.logicalKey != LogicalKeyboardKey.escape &&
+        focused != null &&
+        Actions.maybeFind<ActivateIntent>(focused) != null) {
       return KeyEventResult.ignored;
     }
     return action() ? KeyEventResult.handled : KeyEventResult.ignored;

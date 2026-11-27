@@ -11,6 +11,8 @@ import 'package:flutter/gestures.dart'
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:camera_platform_interface/camera_platform_interface.dart'
+    show CameraPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/app.dart';
@@ -44,6 +46,7 @@ import 'package:kapy_notes/data/rates.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/writing_streak.dart';
+import 'package:kapy_notes/images/camera_capture.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
@@ -96,6 +99,7 @@ import 'package:kapy_notes/ui/window_drag_area.dart';
 import 'audio/voice_recording_controller_test.dart'
     show FakeRecordingControls, FakeVoiceRecorder;
 import 'kapy_icon_finder.dart';
+import 'images/fake_camera.dart';
 import 'note_editor_test.dart' show sendShortcut;
 import 'quick_capture_test.dart' show stubLaunchIntent;
 import 'support/back_forward.dart';
@@ -7049,13 +7053,29 @@ void main() {
         await pumpWithPair(tester);
         await tester.tap(find.byKey(const ValueKey('rail-tasks')));
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
 
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
+      });
+
+      testWidgets('on ${platform.name}, ↵ stops choosing and starts your pick '
+          'so far', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await pumpWithPair(tester);
+        await tester.tap(find.byKey(const ValueKey('rail-tasks')));
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pumpAndSettle();
+        expect(find.text('Most important so far'), findsOneWidget);
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.pumpAndSettle();
         expect(find.byKey(const ValueKey('tasks-do-now')), findsOneWidget);
       });
@@ -7075,10 +7095,10 @@ void main() {
         );
 
         await press(tester, ShortcutAction.showTasks);
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
       });
 
       testWidgets('on ${platform.name}, New task from Notes still puts the '
@@ -7092,15 +7112,15 @@ void main() {
         expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         expect(FocusManager.instance.primaryFocus?.debugLabel, 'Add a task');
 
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await tester.pumpAndSettle();
-        expect(find.text('First on the list'), findsOneWidget);
+        expect(find.text('First on your list'), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
         await tester.pumpAndSettle();
-        expect(find.text('Your choice so far'), findsOneWidget);
+        expect(find.text('Most important so far'), findsOneWidget);
       });
     }
   });
@@ -11647,10 +11667,9 @@ void main() {
         expect(find.byType(NoteField), findsOneWidget);
       });
 
-      testWidgets("offers New note, New task, New voice note and New drawing, "
-          "in M05's order, each at least 44 pt, and no Quick find", (
-        tester,
-      ) async {
+      testWidgets("offers New note, New task, New voice note, New photo or "
+          "video and New drawing, in M05's order, each at least 44 pt, and no "
+          "Quick find", (tester) async {
         await pumpPlus(tester);
         await open(tester);
         expect(
@@ -11661,14 +11680,48 @@ void main() {
                     .evaluate())
               (text.widget as Text).data,
           ],
-          ['New note', 'New task', 'New voice note', 'New drawing'],
+          [
+            'New note',
+            'New task',
+            'New voice note',
+            'New photo or video',
+            'New drawing',
+          ],
         );
-        for (final value in ['note', 'task', 'voice', 'drawing']) {
+        for (final value in ['note', 'task', 'voice', 'camera', 'drawing']) {
           final row = find.byKey(ValueKey('phone-new-$value'));
           expect(tester.getSize(row).height, greaterThanOrEqualTo(44));
         }
         expect(find.byKey(const ValueKey('phone-new-find')), findsNothing);
         expect(find.text('Quick find'), findsNothing);
+      });
+
+      testWidgets('New photo or video makes a note and opens the camera; '
+          'closed with nothing kept, it leaves no note behind', (tester) async {
+        final temp = Directory.systemTemp.createTempSync('kapy-camera-');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        final previous = CameraPlatform.instance;
+        CameraPlatform.instance = FakeCameraPlatform(temp);
+        addTearDown(() => CameraPlatform.instance = previous);
+        await pumpPlus(tester);
+        final before = notes.notes.length;
+
+        await choose(tester, 'camera');
+        expect(find.byType(CameraCapturePage), findsOneWidget);
+        expect(notes.notes.length, before + 1);
+
+        await tester.tap(find.byKey(const ValueKey('camera-close')));
+        await tester.pumpAndSettle();
+        expect(find.byType(CameraCapturePage), findsNothing);
+        expect(find.byType(NoteEditor), findsOneWidget);
+
+        // As after New voice note: the blank note goes once another is
+        // opened.
+        await tester.tap(find.byKey(const ValueKey('page-home')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Groceries').first);
+        await tester.pumpAndSettle();
+        expect(notes.notes.length, before);
       });
 
       testWidgets('New note makes a note and opens it', (tester) async {

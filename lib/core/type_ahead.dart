@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -169,7 +170,9 @@ final class _Hold {
   }
 
   /// Presses esc where the keyboard now is, as the focus tree would have
-  /// passed it on: from [focused] up, until something takes it.
+  /// passed it on: from [focused] up, until something takes it. A text field
+  /// on a Mac hands esc to the system, which answers it with its cancel
+  /// selector, and Flutter turns that into Dismiss, so this does the same.
   static void _escapeFrom(FocusNode focused) {
     const event = KeyDownEvent(
       physicalKey: PhysicalKeyboardKey.escape,
@@ -178,8 +181,14 @@ final class _Hold {
     );
     for (final node in [focused, ...focused.ancestors]) {
       final result = node.onKeyEvent?.call(node, event);
-      if (result == KeyEventResult.handled ||
-          result == KeyEventResult.skipRemainingHandlers) {
+      if (result == KeyEventResult.handled) return;
+      if (result == KeyEventResult.skipRemainingHandlers) {
+        final context = focused.context;
+        if (defaultTargetPlatform == TargetPlatform.macOS &&
+            context != null &&
+            context.mounted) {
+          Actions.maybeInvoke(context, const DismissIntent());
+        }
         return;
       }
     }
