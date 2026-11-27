@@ -212,6 +212,89 @@ void main() {
     },
   );
 
+  group('a note hidden while the recap is made', () {
+    final week = periodOf(DateTime(2026, 11, 19), RecapKind.week);
+    setUp(() async {
+      world.note('mon', '2026-11-16T10:00:00Z', body: 'Monday plans\nShip it');
+      world.note('secret', '2026-11-17T10:00:00Z', body: 'Secret plan\nQuit');
+      world.note('fri', '2026-11-20T10:00:00Z', body: 'Friday review\nShipped');
+      await notesOn(2025, const []);
+    });
+
+    const recap =
+        'TITLE: Shipped\n'
+        'HIGHLIGHT: Secret plan | Quit in June\n'
+        'HIGHLIGHT: Monday plans | The plan\n'
+        'HIGHLIGHT: Friday review | The review\n'
+        'NEXT: Talk about the Secret plan';
+
+    void expectLeftOut(ScriptedEngine ai, RecapMade made) {
+      expect(
+        ai.asked.last.notes.map((n) => '${n.title}\n${n.text}').join('\n'),
+        isNot(contains(RegExp('secret|june', caseSensitive: false))),
+      );
+      expect(made.lines.highlights.map((it) => it.noteId), ['mon', 'fri']);
+      expect(made.lines.next, isNull);
+      expect(made.lines.text, isNot(contains('Secret')));
+      expect(recapAnswer(book.chats.single), isNot(contains('Secret')));
+    }
+
+    test('drops what the digest says about it, at no extra cost', () async {
+      final ai = ScriptedEngine();
+      ai.reply = (request) {
+        if (request.question.startsWith('These are my notes')) {
+          if (ai.asked.length == 1) {
+            world.store.hide('secret');
+            return 'Monday plans said to ship it. Secret plan: quit in '
+                'June.\nShip on Friday.';
+          }
+        }
+        return recap;
+      };
+      final made = await make(week, ai) as RecapMade;
+      expect(ai.asked, hasLength(2));
+      expect(
+        ai.asked.last.notes.first.text,
+        'Monday plans said to ship it.\n'
+        'Ship on Friday.',
+      );
+      expectLeftOut(ai, made);
+    });
+
+    test('asks for the part again where the digest never names it', () async {
+      final ai = ScriptedEngine();
+      ai.reply = (request) {
+        if (ai.asked.length == 1) {
+          world.store.hide('secret');
+          return 'Monday plans said to ship it. Someone may quit in June.';
+        }
+        if (ai.asked.length == 2) return 'Monday plans said to ship it.';
+        return recap;
+      };
+      final made = await make(week, ai) as RecapMade;
+      expect(ai.asked, hasLength(3));
+      expect(ai.asked[1].notes.map((n) => n.title), ['Monday plans']);
+      expect(ai.asked.last.notes.first.text, 'Monday plans said to ship it.');
+      expectLeftOut(ai, made);
+    });
+
+    test(
+      'drops its highlight when it is hidden during the last call',
+      () async {
+        final ai = ScriptedEngine();
+        ai.reply = (request) {
+          if (ai.asked.length == 1) return 'Monday plans said to ship it.';
+          world.store.hide('mon');
+          return recap;
+        };
+        world.store.hide('secret');
+        final made = await make(week, ai) as RecapMade;
+        expect(made.lines.highlights.map((it) => it.noteId), ['fri']);
+        expect(made.lines.text, isNot(contains('Monday plans')));
+      },
+    );
+  });
+
   group('a part that fails', () {
     setUp(() => notesOn(2026, [1, 8, 15, 22, 29]));
     final november = periodOf(DateTime(2026, 11, 1), RecapKind.month);

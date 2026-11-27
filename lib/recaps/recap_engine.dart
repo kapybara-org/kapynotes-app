@@ -120,46 +120,73 @@ class RecapEngine {
   }) async {
     final period = plan.period;
     final material = plan.material;
+    Future<RecapPiece> ask(RecapSlice slice) async {
+      final items = material.within(slice.first, slice.last);
+      final notes = packRecap(
+        recapNotesFor(items, _notes, today: _now()),
+        budget,
+      );
+      final piece = RecapPiece(
+        _cut(
+          await _ask(
+            engine,
+            model,
+            recapDigestQuestion(period, slice.label),
+            notes,
+          ),
+          recapDigestChars * 4 ~/ 3,
+        ),
+        (RecapSent()..heard(notes, items)).notes,
+      );
+      _keep(slice.key, piece);
+      return piece;
+    }
+
     final sent = RecapSent();
-    final digests = <ReadNote>[];
-    var made = 0;
+    final pieces = <RecapPiece>[];
     for (final slice in plan.slices) {
       if (stopped?.call() ?? false) {
-        return RecapStopped(null, made + 1, plan.parts);
+        return RecapStopped(null, pieces.length + 1, plan.parts);
       }
-      var piece = slice.ready;
-      if (piece == null) {
-        final items = material.within(slice.first, slice.last);
-        final notes = packRecap(
-          recapNotesFor(items, _notes, today: _now()),
-          budget,
-        );
-        try {
-          piece = RecapPiece(
-            _cut(
-              await _ask(
-                engine,
-                model,
-                recapDigestQuestion(period, slice.label),
-                notes,
-              ),
-              recapDigestChars * 4 ~/ 3,
-            ),
-            (RecapSent()..heard(notes, items)).notes,
-          );
-        } on AnswerFailure catch (failure) {
-          return RecapStopped(failure, made + 1, plan.parts);
+      try {
+        pieces.add(slice.ready ?? await ask(slice));
+      } on AnswerFailure catch (failure) {
+        return RecapStopped(failure, pieces.length + 1, plan.parts);
+      }
+      onPart?.call(pieces.length, plan.parts);
+    }
+    if (stopped?.call() ?? false) {
+      return RecapStopped(null, pieces.length + 1, plan.parts);
+    }
+
+    final readable = _readable();
+    final gone = <String>{};
+    final digests = <ReadNote>[];
+    for (final (index, slice) in plan.slices.indexed) {
+      var piece = pieces[index];
+      final hidden = {
+        for (final item in material.within(slice.first, slice.last))
+          if (!readable.contains(item.note.id)) item.note.id,
+      };
+      if (hidden.isNotEmpty) {
+        final without = _without(piece, hidden);
+        if (without == null) {
+          try {
+            piece = await ask(slice);
+          } on AnswerFailure catch (failure) {
+            return RecapStopped(failure, index + 1, plan.parts);
+          }
+        } else {
+          piece = without;
         }
-        _keep(slice.key, piece);
+      }
+      for (final MapEntry(key: title, value: id)
+          in pieces[index].sent.entries) {
+        if (hidden.contains(id)) gone.add(title);
       }
       sent.notes.addAll(piece.sent);
       if (period.kind == RecapKind.year) sent.months.add(slice.first.month);
       digests.add(recapNote('', slice.label, piece.text, slice.last));
-      made++;
-      onPart?.call(made, plan.parts);
-    }
-    if (stopped?.call() ?? false) {
-      return RecapStopped(null, made + 1, plan.parts);
     }
 
     final rest = plan.rest;
@@ -177,7 +204,22 @@ class RecapEngine {
     } on AnswerFailure catch (failure) {
       return RecapStopped(failure, plan.parts, plan.parts);
     }
-    final lines = readRecapLines(answer, period: period, sent: sent);
+    final stillReadable = _readable();
+    for (final MapEntry(key: title, value: id) in sent.notes.entries) {
+      if (!stillReadable.contains(id)) gone.add(title);
+    }
+    sent.notes.removeWhere((_, id) => !stillReadable.contains(id));
+    sent.voices.removeWhere(
+      (_, voice) => !stillReadable.contains(voice.noteId),
+    );
+    final lines = readRecapLines(
+      [
+        for (final line in answer.split('\n'))
+          if (!_names(line, gone)) line,
+      ].join('\n'),
+      period: period,
+      sent: sent,
+    );
     final now = _now();
     final over = DateTime(now.year, now.month, now.day).isAfter(period.last);
     final record = RecapRecord(
@@ -223,6 +265,36 @@ class RecapEngine {
     }
   }
 
+  /// The ids of the notes a recap may still read: not hidden, archived or
+  /// deleted, now.
+  Set<String> _readable() => {for (final note in _notes.notes) note.id};
+
+  /// [piece] without every sentence that names one of [hidden]'s notes, or
+  /// null where a note it was sent is named nowhere in it, so its words about
+  /// that note can't be found and the slice is asked again.
+  RecapPiece? _without(RecapPiece piece, Set<String> hidden) {
+    final titles = {
+      for (final MapEntry(key: title, value: id) in piece.sent.entries)
+        if (hidden.contains(id) && title.isNotEmpty) title,
+    };
+    if (titles.isEmpty) return piece.sent.isEmpty ? null : piece;
+    final lower = piece.text.toLowerCase();
+    if (!titles.every(lower.contains)) return null;
+    return RecapPiece(
+      [
+        for (final line in piece.text.split('\n'))
+          [
+            for (final sentence in line.split(_sentenceEnd))
+              if (!_names(sentence, titles)) sentence,
+          ].join(' '),
+      ].join('\n').trim(),
+      {
+        for (final MapEntry(key: title, value: id) in piece.sent.entries)
+          if (!hidden.contains(id)) title: id,
+      },
+    );
+  }
+
   void _keep(String key, RecapPiece piece) {
     _kept.remove(key);
     _kept[key] = piece;
@@ -234,5 +306,13 @@ class RecapEngine {
 
 /// What came back, within [max] characters: a model asked for a digest of
 /// some length can still write more.
+final RegExp _sentenceEnd = RegExp(r'(?<=[.!?])\s+');
+
+/// Whether [text] names any of [titles], which are in lower case.
+bool _names(String text, Set<String> titles) {
+  final lower = text.toLowerCase();
+  return titles.any((title) => title.isNotEmpty && lower.contains(title));
+}
+
 String _cut(String text, int max) =>
     text.length <= max ? text : text.substring(0, max);
