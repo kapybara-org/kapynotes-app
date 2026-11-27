@@ -509,59 +509,6 @@ void main() {
       },
     );
 
-    test('a held-key switch counts only the note it ends on', () {
-      final store = _MemoryStore();
-      final workspace = _opened('alpha', store: store)
-        ..openInNewTab('bravo')
-        ..openInNewTab('charlie');
-      expect(_recent(workspace), ['alpha', 'charlie', 'bravo']);
-
-      final session = workspace.beginPreviewSession();
-      expect(session.displacedBy('delta'), {'alpha'});
-      expect(session.preview('delta'), isTrue);
-      expect(_tabsOf(workspace), [
-        ['delta'],
-        ['bravo'],
-        ['charlie'],
-      ]);
-      expect(session.displacedBy('charlie'), {'delta'});
-      expect(session.preview('charlie'), isTrue);
-      expect(_tabsOf(workspace), [
-        ['alpha'],
-        ['bravo'],
-        ['charlie'],
-      ], reason: 'a step starts from how the walk found the tabs');
-      expect(workspace.selectedNoteId, 'charlie');
-      expect(session.displacedBy('charlie'), isEmpty);
-      expect(session.displacedBy('bravo'), {'charlie'});
-      expect(session.preview('bravo'), isTrue);
-      expect(_recent(workspace), ['alpha', 'charlie', 'bravo']);
-      expect(
-        (store.data[EditorWorkspace.storeKey] as Map)['tab'],
-        0,
-        reason: 'a step is not written down',
-      );
-
-      expect(session.commit(), isTrue);
-      expect(session.isActive, isFalse);
-      expect(_recent(workspace), ['bravo', 'alpha', 'charlie']);
-      expect((store.data[EditorWorkspace.storeKey] as Map)['tab'], 1);
-    });
-
-    test('cancelling a held-key switch puts every tab back', () {
-      final workspace = _opened('alpha')..openInNewTab('bravo');
-      final session = workspace.beginPreviewSession()..preview('charlie');
-      expect(workspace.selectedNoteId, 'charlie');
-
-      expect(session.cancel(), isTrue);
-      expect(_tabsOf(workspace), [
-        ['alpha'],
-        ['bravo'],
-      ]);
-      expect(workspace.selectedNoteId, 'alpha');
-      expect(session.preview('bravo'), isFalse);
-    });
-
     test('notes open to the side share one tab, which keeps them', () {
       final workspace = _opened('alpha')..openToSide('bravo');
       expect(_tabsOf(workspace), [
@@ -881,26 +828,6 @@ void main() {
         'work',
       ]);
       expect(workspace.canReopen, isFalse);
-    });
-
-    test("a held-key walk shows notes in a folder's place, and puts it "
-        'back', () {
-      final workspace = _opened('alpha')..openFolder('work');
-      final cancelled = workspace.beginPreviewSession();
-      expect(cancelled.preview('bravo'), isTrue);
-      expect(_rowOf(workspace), [
-        ['bravo'],
-      ]);
-      expect(cancelled.cancel(), isTrue);
-      expect(_rowOf(workspace), ['work']);
-
-      final committed = workspace.beginPreviewSession();
-      expect(committed.preview('bravo'), isTrue);
-      expect(committed.commit(), isTrue);
-      expect(_rowOf(workspace), [
-        ['bravo'],
-      ]);
-      expect(workspace.backNoteId, isNull, reason: 'Back shows the folder');
     });
   });
 
