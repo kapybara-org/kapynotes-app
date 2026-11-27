@@ -5,6 +5,7 @@ import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_chats.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_conversation.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_markdown.dart';
@@ -14,6 +15,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'fake_kapy_ai.dart';
 import 'kapy_icon_finder.dart';
+import 'support/back_forward.dart';
 import 'test_fonts.dart';
 
 /// The panel, its picker, its chats, its notices and its answers, one piece
@@ -114,6 +116,27 @@ void main() {
     kapyAiAvailable = true;
   });
   tearDown(() => kapyAiAvailable = wasAvailable);
+
+  for (final by in StepBy.values) {
+    testWidgets('${by.name}: a swipe or the mouse buttons go back from the '
+        'chat to the chats, and forward to it again', (tester) async {
+      asDesktop();
+      final controller = KapyAiPanelController()..open(noteId: 'n1');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(_harness(_panel(FakeKapyAi(), controller)));
+      final panel = find.byKey(const ValueKey('kapy-ai-panel'));
+      expect(find.text('Kapy AI'), findsOneWidget);
+
+      await stepOver(tester, panel, BackForwardStep.back, by);
+      expect(find.text('Chats'), findsOneWidget);
+      expect(find.byType(KapyAiChats), findsOneWidget);
+      await stepOver(tester, panel, BackForwardStep.back, by);
+      expect(find.byType(KapyAiChats), findsOneWidget, reason: 'the first');
+      await stepOver(tester, panel, BackForwardStep.forward, by);
+      expect(find.byType(KapyAiChats), findsNothing);
+      expect(find.text('Kapy AI'), findsOneWidget);
+    }, variant: TargetPlatformVariant.desktop());
+  }
 
   group('Punycode', () {
     for (final (host, ascii) in [

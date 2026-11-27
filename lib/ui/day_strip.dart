@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -422,49 +423,65 @@ class _DayStripState extends State<DayStrip> {
                 final shown = _shown;
                 final counts = _counts(shown);
                 final filled = picked ?? today;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CompactIconButton(
-                      key: const ValueKey('day-strip-back'),
-                      tooltip: 'The week before',
-                      extent: 32,
-                      width: DayStrip._arrowWidth,
-                      radius: 8,
-                      onPressed: () => setState(() => _shift -= 7),
-                      icon: const KapyIcon(
-                        KapyIcons.chevronLeftRounded,
-                        size: 16,
+                return BackForwardArea(
+                  onStep: (step) {
+                    setState(
+                      () => _shift += step == BackForwardStep.back ? -7 : 7,
+                    );
+                    return true;
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CompactIconButton(
+                        key: const ValueKey('day-strip-back'),
+                        tooltip: 'The week before',
+                        extent: 32,
+                        width: DayStrip._arrowWidth,
+                        radius: 8,
+                        onPressed: () => setState(() => _shift -= 7),
+                        icon: const KapyIcon(
+                          KapyIcons.chevronLeftRounded,
+                          size: 16,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: DayStrip._arrowGap),
-                    for (final (index, day) in shown.indexed) ...[
-                      if (index > 0) const SizedBox(width: DayStrip._dayGap),
-                      _Day(
-                        key: ValueKey('day-strip-${_date(day)}'),
-                        day: day,
-                        today: day == today,
-                        picked: day == picked,
-                        filled: day == filled,
-                        count: counts[day]!,
-                        opensTabs: widget.opensTabs,
-                        onTap: () => _choose(day),
+                      const SizedBox(width: DayStrip._arrowGap),
+                      BackForwardSlide(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final (index, day) in shown.indexed) ...[
+                              if (index > 0)
+                                const SizedBox(width: DayStrip._dayGap),
+                              _Day(
+                                key: ValueKey('day-strip-${_date(day)}'),
+                                day: day,
+                                today: day == today,
+                                picked: day == picked,
+                                filled: day == filled,
+                                count: counts[day]!,
+                                opensTabs: widget.opensTabs,
+                                onTap: () => _choose(day),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: DayStrip._arrowGap),
+                      CompactIconButton(
+                        key: const ValueKey('day-strip-forward'),
+                        tooltip: 'The week after',
+                        extent: 32,
+                        width: DayStrip._arrowWidth,
+                        radius: 8,
+                        onPressed: () => setState(() => _shift += 7),
+                        icon: const KapyIcon(
+                          KapyIcons.chevronRightRounded,
+                          size: 16,
+                        ),
                       ),
                     ],
-                    const SizedBox(width: DayStrip._arrowGap),
-                    CompactIconButton(
-                      key: const ValueKey('day-strip-forward'),
-                      tooltip: 'The week after',
-                      extent: 32,
-                      width: DayStrip._arrowWidth,
-                      radius: 8,
-                      onPressed: () => setState(() => _shift += 7),
-                      icon: const KapyIcon(
-                        KapyIcons.chevronRightRounded,
-                        size: 16,
-                      ),
-                    ),
-                  ],
+                  ),
                 );
               },
             ),
@@ -1120,19 +1137,28 @@ class _DayPickerState extends State<DayPicker> {
         ),
       );
     }
-    return Material(
-      color: palette.surfaceBackground,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        side: BorderSide(
-          color: palette.controlBorder,
-          width: AppHairline.of(context),
+    return BackForwardArea(
+      onStep: (step) {
+        _page(step == BackForwardStep.back ? -1 : 1);
+        return true;
+      },
+      child: Material(
+        color: palette.surfaceBackground,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+          side: BorderSide(
+            color: palette.controlBorder,
+            width: AppHairline.of(context),
+          ),
         ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: SizedBox(width: 7 * 32 + 6 * 4, child: grid),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: 7 * 32 + 6 * 4,
+            child: BackForwardSlide(child: grid),
+          ),
+        ),
       ),
     );
   }
