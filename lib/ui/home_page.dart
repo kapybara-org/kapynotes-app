@@ -6432,7 +6432,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ),
     );
     final header = PhoneNoteHeader(
-      ends: false,
       onHome: _phoneGoHome,
       typing: typing,
       day: hasDays ? day : null,
