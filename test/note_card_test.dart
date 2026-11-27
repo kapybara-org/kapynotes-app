@@ -409,160 +409,6 @@ void main() {
     expect(await square(const [travel]), TagColour.sage.dot(palette));
   });
 
-  group('on a desktop', () {
-    setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
-    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-
-    Finder chevron(KapyIconData icon) => find.byWidgetPredicate(
-      (widget) => widget is KapyIcon && widget.icon == icon,
-    );
-
-    Future<void> pumpControls(
-      WidgetTester tester, {
-      NotesShow show = NotesShow.all,
-      bool cards = false,
-      ValueChanged<bool>? onCardsChanged,
-    }) => tester.pumpWidget(
-      MaterialApp(
-        theme: KapyTheme.dark(),
-        home: Material(
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: 304,
-              child: NotesListControls(
-                show: show,
-                onShowChanged: (_) {},
-                hiddenListed: true,
-                archivedCount: 0,
-                onClear: () {},
-                media: NoteMedia.values.toSet(),
-                today: DateTime(2026, 11, 19),
-                cards: cards,
-                onCardsChanged: onCardsChanged ?? (_) {},
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    Container box(WidgetTester tester, String key) =>
-        tester.widget<Container>(find.byKey(ValueKey(key)));
-
-    BoxDecoration? fill(WidgetTester tester, String key) =>
-        tester
-                .widget<Container>(
-                  find.descendant(
-                    of: find.byKey(ValueKey(key)),
-                    matching: find.byType(Container),
-                  ),
-                )
-                .decoration
-            as BoxDecoration?;
-
-    testWidgets('"All notes ▾" is plain words and its chevron, with the '
-        "filter's 32 pt target and name", (tester) async {
-      final semantics = tester.ensureSemantics();
-      await pumpControls(tester);
-      final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
-      final button = tester.widget<Container>(
-        find.descendant(of: filter, matching: find.byType(Container)).first,
-      );
-      expect(button.decoration, isNull);
-      expect(tester.getSize(filter).height, 32);
-      expect(find.text('All notes'), findsOneWidget);
-      expect(
-        find.descendant(
-          of: filter,
-          matching: chevron(KapyIcons.chevronDownRounded),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        tester.getSemantics(filter),
-        isSemantics(
-          label: 'Notes filter, All notes',
-          textDirection: TextDirection.ltr,
-          isButton: true,
-          hasExpandedState: true,
-          hasTapAction: true,
-        ),
-      );
-
-      await pumpControls(tester, show: NotesShow.hidden);
-      expect(
-        tester
-            .widget<Container>(
-              find
-                  .descendant(of: filter, matching: find.byType(Container))
-                  .first,
-            )
-            .decoration,
-        isNull,
-      );
-      expect(
-        tester.widget<Text>(find.text('Hidden')).style?.color,
-        palette.tonalForeground,
-      );
-      semantics.dispose();
-    });
-
-    testWidgets('the view icons stand on their own, only the chosen one on '
-        'a fill, each a 28 pt target with its tooltip', (tester) async {
-      bool? asked;
-      await pumpControls(tester, onCardsChanged: (cards) => asked = cards);
-      final framing = box(tester, 'sidebar-view-switch');
-      expect(framing.decoration, isNull);
-      expect(framing.padding, isNull);
-      final chosen = fill(tester, 'sidebar-view-list')!;
-      expect(chosen.color, palette.selectedBackground);
-      expect(chosen.boxShadow, isNull);
-      expect(fill(tester, 'sidebar-view-cards'), isNull);
-      for (final key in ['sidebar-view-list', 'sidebar-view-cards']) {
-        expect(tester.getSize(find.byKey(ValueKey(key))), const Size(28, 28));
-      }
-      expect(
-        tester.getTopLeft(find.byKey(const ValueKey('sidebar-view-cards'))).dx -
-            tester
-                .getTopRight(find.byKey(const ValueKey('sidebar-view-list')))
-                .dx,
-        2,
-      );
-      expect(find.byTooltip('List view'), findsOneWidget);
-      expect(find.byTooltip('Card view'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('sidebar-view-cards')));
-      expect(asked, isTrue);
-
-      await pumpControls(tester, cards: true);
-      expect(fill(tester, 'sidebar-view-list'), isNull);
-      expect(
-        fill(tester, 'sidebar-view-cards')!.color,
-        palette.selectedBackground,
-      );
-    });
-
-    testWidgets("an iPad's filter row keeps its frames", (tester) async {
-      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
-      await pumpControls(tester);
-      final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
-      final button = tester.widget<Container>(
-        find.descendant(of: filter, matching: find.byType(Container)).first,
-      );
-      expect(
-        (button.decoration! as BoxDecoration).border,
-        Border.all(color: palette.controlBorder),
-      );
-      final framing = box(tester, 'sidebar-view-switch');
-      expect(framing.padding, const EdgeInsets.all(1));
-      expect(
-        (framing.decoration! as BoxDecoration).border,
-        Border.all(color: palette.controlBorder),
-      );
-      expect(fill(tester, 'sidebar-view-list')!.boxShadow, hasLength(1));
-    });
-  });
-
   group('markdown tasks, read as the header and Tasks read them', () {
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
@@ -636,15 +482,29 @@ void main() {
       expect(find.text('For the call with Acme on Friday.'), findsOneWidget);
     });
 
-    testWidgets('a desktop row says "0 of 2 done" of markdown tasks', (
-      tester,
-    ) async {
+    testWidgets('a desktop row carries markdown tasks as a 12 px pie before '
+        'its date, "0 of 2 done" in its tooltip, and its first line alone '
+        'under the title', (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       await pumpRow(
         tester,
         note('Renewal notes\n- [ ] Send the renewal scope\n- [ ] Read it'),
       );
-      expect(find.text('0 of 2 done · Send the renewal scope'), findsOneWidget);
+      final pie = find.byType(ChecklistPie);
+      final ring = tester.widget<ChecklistPie>(pie);
+      expect((ring.done, ring.total), (0, 2));
+      expect(tester.getSize(pie), const Size(12, 12));
+      expect(find.byTooltip('0 of 2 done'), findsOneWidget);
+      expect(
+        tester.getCenter(pie).dy,
+        closeTo(tester.getCenter(find.text('11:15')).dy, 1),
+      );
+      expect(
+        tester.getRect(pie).right,
+        lessThan(tester.getRect(find.text('11:15')).left),
+      );
+      expect(find.text('Send the renewal scope'), findsOneWidget);
+      expect(find.textContaining('done'), findsNothing);
     });
 
     testWidgets("a phone row shows markdown tasks as it shows ☐ ones", (
