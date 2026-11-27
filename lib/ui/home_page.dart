@@ -2819,19 +2819,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _forget(ids);
   }
 
-  /// Deletes picked notes. One goes as its row's Delete does; several ask
-  /// too, with how many, only if the reader still wants to be asked.
+  /// Deletes picked notes. One goes as its row's Delete does, asking only if
+  /// the reader still wants to be asked; several always ask, with how many.
   Future<void> _deletePicked(List<String> picked) async {
     if (picked.length == 1) return _deleteNote(picked.single);
     final ids = picked
         .where((id) => _canRemoveNote(widget.notes.byId(id)))
         .toList();
     if (ids.isEmpty) return;
-    if (!widget.prefs.askBeforeDeleting) {
-      _forget(ids);
-      _picks.clear();
-      return;
-    }
     final removed = _sharedByOthers(ids);
     final theirs = removed == ids.length;
     final confirmed = await _confirmDelete(

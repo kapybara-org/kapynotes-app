@@ -775,8 +775,8 @@ extension on Sidebar {
 
   /// What an action says it does, under the line that counts the picked
   /// notes. One that leaves some of them out says how many it acts on. One
-  /// note deletes as a row does; more ask only if the reader still wants to
-  /// be asked, except Delete now, which always asks.
+  /// note deletes as a row does, asking only if the reader still wants to be
+  /// asked; more always ask.
   String _pickedLabel(PickedAction action, List<Note> notes, int picked) {
     final some = notes.length < picked ? ' ${_count(notes.length)}' : '';
     return switch (action) {
@@ -791,11 +791,9 @@ extension on Sidebar {
       PickedAction.delete =>
         notes.length == 1
             ? _deleteLabel(notes.single)
-            : [
-                notes.every(_theirs) ? 'Remove' : 'Delete',
-                ' ${_count(notes.length)}',
-                if (asksBeforeDeleting) '…',
-              ].join(),
+            : notes.every(_theirs)
+            ? 'Remove ${_count(notes.length)}…'
+            : 'Delete ${_count(notes.length)}…',
       PickedAction.deleteNow =>
         notes.length == 1
             ? _deleteLabel(notes.single)
