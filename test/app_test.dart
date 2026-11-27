@@ -6111,7 +6111,7 @@ void main() {
 
   testWidgets(
     'the search field is a control fill with no border, and its shortcut '
-    'shows on hover, plain Geist in T3',
+    'sits at its end, plain Geist in T3',
     (tester) async {
       await pumpApp(tester);
 
@@ -6130,11 +6130,6 @@ void main() {
       final searchKeycap = find.byKey(
         const ValueKey('sidebar-search-shortcut'),
       );
-      expect(searchKeycap, findsNothing);
-      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      addTearDown(mouse.removePointer);
-      await mouse.addPointer(location: tester.getCenter(search));
-      await tester.pump();
       final field = tester.getRect(search);
       final keycap = tester.getRect(searchKeycap);
       final hint = tester.widget<Text>(searchKeycap);

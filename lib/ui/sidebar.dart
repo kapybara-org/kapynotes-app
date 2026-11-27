@@ -2684,7 +2684,7 @@ class _BelowInvitations extends StatelessWidget {
 ///
 /// The one search a list keeps is the menu's way into Archive, which shows
 /// here as [query] with a ✕ that drops it.
-class SidebarSearchField extends StatefulWidget {
+class SidebarSearchField extends StatelessWidget {
   const SidebarSearchField({
     super.key,
     required this.onSearch,
@@ -2716,17 +2716,9 @@ class SidebarSearchField extends StatefulWidget {
   final ShortcutBinding? shortcut;
   final String placeholder;
 
-  @override
-  State<SidebarSearchField> createState() => _SidebarSearchFieldState();
-}
-
-class _SidebarSearchFieldState extends State<SidebarSearchField> {
-  /// The desktop field's keycap shows only under the pointer.
-  bool _hovered = false;
-
   Widget? _end(CalcPalette palette, double extent) {
-    final onClear = widget.onClear;
-    if (widget.query.isNotEmpty && onClear != null) {
+    final onClear = this.onClear;
+    if (query.isNotEmpty && onClear != null) {
       // Inside the field's tap region, so Clear keeps the keyboard up.
       return TextFieldTapRegion(
         child: CompactIconButton(
@@ -2742,10 +2734,10 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
         ),
       );
     }
-    final shortcut = widget.shortcut;
-    if (shortcut == null || !AppPlatform.hasPointer || !_hovered) return null;
+    final shortcut = this.shortcut;
+    if (shortcut == null || !AppPlatform.hasPointer) return null;
     return Tooltip(
-      message: '${widget.placeholder} · ${shortcut.displayLabel}',
+      message: '$placeholder · ${shortcut.displayLabel}',
       child: Semantics(
         label: 'Search shortcut ${shortcut.displayLabel}',
         excludeSemantics: true,
@@ -2766,12 +2758,9 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final query = widget.query;
-    final placeholder = widget.placeholder;
-    final onSearch = widget.onSearch;
     final searching = query.isNotEmpty;
-    final end = _end(palette, widget.phone ? 32 : 20);
-    if (!widget.phone) {
+    final end = _end(palette, phone ? 32 : 20);
+    if (!phone) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: Semantics(
@@ -2783,8 +2772,6 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
             onTap: onSearch,
             child: MouseRegion(
               cursor: SystemMouseCursors.text,
-              onEnter: (_) => setState(() => _hovered = true),
-              onExit: (_) => setState(() => _hovered = false),
               child: Container(
                 key: const ValueKey('sidebar-search-box'),
                 height: 30,
@@ -2826,8 +2813,8 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
       );
     }
 
-    final trailing = widget.trailing;
-    final field = widget.field;
+    final trailing = this.trailing;
+    final field = this.field;
     final well = MouseRegion(
       cursor: SystemMouseCursors.text,
       child: Container(

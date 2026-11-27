@@ -1,4 +1,3 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -287,17 +286,9 @@ void main() {
         ),
       ),
     );
-    final shortcut = find.byKey(const ValueKey('sidebar-search-shortcut'));
-    expect(shortcut, findsNothing, reason: 'the keycap waits for the pointer');
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(
-      location: tester.getCenter(
-        find.byKey(const ValueKey('sidebar-search-box')),
-      ),
+    final keycap = tester.widget<Text>(
+      find.byKey(const ValueKey('sidebar-search-shortcut')),
     );
-    await tester.pump();
-    final keycap = tester.widget<Text>(shortcut);
     expect(keycap.style!.color, palette.textTertiary);
   });
 
