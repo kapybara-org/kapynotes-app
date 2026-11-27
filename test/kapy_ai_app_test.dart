@@ -1121,13 +1121,12 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('Drawings\' field says Search drawings, even with Kapy AI on', (
-      tester,
-    ) async {
+    testWidgets("the list's field says just Search, in Drawings too, even "
+        'with Kapy AI on', (tester) async {
       await _pump(tester, sidebar: true);
       await tester.tap(find.byKey(const ValueKey('rail-drawings')));
       await tester.pumpAndSettle();
-      expect(sidebarField('Search drawings'), findsOneWidget);
+      expect(sidebarField('Search'), findsOneWidget);
       expect(sidebarField('Search or Ask Kapy AI'), findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('rail-notes')));
