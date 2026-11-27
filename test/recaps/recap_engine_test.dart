@@ -325,6 +325,44 @@ void main() {
     setUp(() => notesOn(2026, [1, 8, 15, 22, 29]));
     final year = periodOf(DateTime(2026, 1, 1), RecapKind.year);
 
+    test(
+      'never sends a month digest again once a note in it is hidden',
+      () async {
+        world.note(
+          'secret',
+          '2026-03-10T10:00:00Z',
+          body: 'Secret plan\nQuit in June',
+        );
+        await notesOn(2026, const []);
+        now = DateTime(2026, 4, 2);
+        await make(
+          periodOf(DateTime(2026, 3), RecapKind.month),
+          ScriptedEngine()
+            ..reply = (request) =>
+                request.question.startsWith('These are digests')
+                ? 'TITLE: March\nHIGHLIGHT: Secret plan | Quit in June'
+                : 'Secret plan: quit in June.',
+        );
+        expect(recapOf(engine.recaps.single)!.digest, contains('Secret plan'));
+
+        world.note(
+          'secret',
+          '2026-03-10T10:00:00Z',
+          body: 'Secret plan\nQuit in June',
+          hidden: true,
+        );
+        await notesOn(2026, const []);
+        now = DateTime(2027, 1, 5);
+        final ai = ScriptedEngine()..reply = (_) => 'TITLE: 2026';
+        await make(year, ai);
+        for (final request in ai.asked) {
+          for (final note in request.notes) {
+            expect('${note.title}\n${note.text}', isNot(contains('Secret')));
+          }
+        }
+      },
+    );
+
     test('reads each month recap made once it was over: 1 call', () async {
       for (var month = 1; month <= 12; month++) {
         now = DateTime(2026, month + 1, 2);
@@ -407,4 +445,32 @@ void main() {
       expect(book.chats.single.messages, hasLength(3));
     },
   );
+
+  for (final (how, gone) in <(String, void Function(String id))>[
+    ('hidden', (id) => world.store.hide(id)),
+    ('archived', (id) => world.store.archive(id)),
+    ('deleted', (id) => world.store.delete(id)),
+  ]) {
+    test('never sends a note $how after the plan was made', () async {
+      world.note('secret', '2026-11-19T11:00:00Z', body: 'Secret plan\nQuit');
+      await notesOn(2026, [19]);
+      final day = dayOf(DateTime(2026, 11, 19));
+      final planned = plan(day);
+      gone('secret');
+      final ai = ScriptedEngine(['TITLE: Day']);
+      await engine.make(
+        planned,
+        digest: world.digest(day),
+        model: KapyModel.cloud,
+        engine: ai,
+        budget: RetrievalBudget.cloud,
+        timeZone: 'UTC',
+        firstWeekday: DateTime.monday,
+      );
+      expect(
+        ai.asked.single.notes.map((n) => '${n.title}\n${n.text}').join('\n'),
+        isNot(contains('Secret')),
+      );
+    });
+  }
 }

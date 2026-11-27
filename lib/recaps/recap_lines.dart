@@ -88,17 +88,19 @@ String recapQuestion(RecapPeriod period) {
       'Write nothing else. Keep each line under 20 words.';
 }
 
-/// [text] with any line that starts like a label written so it no longer
-/// does, so a note, a transcript or an earlier digest cannot hand the model
-/// a line to repeat as if the recap wrote it.
-String recapDefanged(String text) =>
-    text.replaceAllMapped(_lineLabel, (match) => '${match[1]}${match[2]} -');
-
-final RegExp _lineLabel = RegExp(
-  '^(\\s*)(${_allLabels.join('|')})\\s*:',
-  caseSensitive: false,
-  multiLine: true,
-);
+/// [text] with every line that [readRecapLines] would take for a labelled
+/// line written so it no longer is one, so a note, a transcript or an earlier
+/// digest cannot hand the model a line to repeat as if the recap wrote it.
+/// Each line is judged as the reader sees it: without list marks, bold or
+/// invisible characters.
+String recapDefanged(String text) => [
+  for (final line in text.split('\n'))
+    switch (_labelled.firstMatch(_plain(line))) {
+      final match? when _allLabels.contains(match[1]!.toUpperCase()) =>
+        '${match[1]} - ${match[2]}',
+      _ => line,
+    },
+].join('\n');
 
 /// A voice note a recap was sent: the note it is in, and the recording.
 typedef RecapVoice = ({String noteId, NoteVoiceRef ref});

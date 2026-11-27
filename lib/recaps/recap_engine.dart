@@ -82,7 +82,11 @@ class RecapEngine {
         if (record == null ||
             record.digest == null ||
             record.period.kind != RecapKind.month ||
-            record.period.first.year != material.period.first.year) {
+            record.period.first.year != material.period.first.year ||
+            record.fingerprint !=
+                recapFingerprint(
+                  material.within(record.period.first, record.period.last),
+                )) {
           continue;
         }
         final month = record.period.first.month;

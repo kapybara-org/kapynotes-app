@@ -193,8 +193,13 @@ List<ReadNote> recapNotesFor(
   NotesStore store, {
   required DateTime today,
 }) {
+  final archived = {
+    for (final note in store.allNotes)
+      if (note.isArchived) note.id,
+  };
   final readable = readableNotes(store, [
-    for (final item in items) item.note,
+    for (final item in items)
+      if (!archived.contains(item.note.id)) item.note,
   ]).toSet();
   final kept = [
     for (final item in items)
