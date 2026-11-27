@@ -1296,6 +1296,33 @@ void main() {
       await previous();
       expect(openNoteBody(tester), 'First note');
     }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('off a Mac, Shift+Meta+] is no tab shortcut', (tester) async {
+      asDesktop();
+      await pumpApp(tester, size: const Size(1400, 800));
+      notes.create(body: 'Second note');
+      notes.create(body: 'First note');
+      await tester.pumpAndSettle();
+      await openTabs(tester, ['First note', 'Second note']);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      // Windows has no key code for a brace, so the event is a Mac's.
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.braceRight,
+        platform: 'macos',
+        physicalKey: PhysicalKeyboardKey.bracketRight,
+      );
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.braceRight,
+        platform: 'macos',
+        physicalKey: PhysicalKeyboardKey.bracketRight,
+      );
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'First note');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
   });
 
   group('voice choices survive a relaunch', () {
@@ -4203,6 +4230,25 @@ void main() {
       await tester.pumpAndSettle();
       expect(openNoteBody(tester), 'First note');
       expect(tabTitles(tester), ['First note', 'Second note']);
+    });
+
+    testWidgets('a click in the list ends the walk, so ⌘↵ after it moves '
+        'nothing', (tester) async {
+      await threeNotes(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
+
+      await tester.tap(find.widgetWithText(NoteRow, 'Third note'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Third note');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Third note');
+      expect(tabRow(), findsNothing);
     });
 
     testWidgets('the row grows in under the toolbar, and at once with less '
