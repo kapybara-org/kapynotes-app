@@ -208,13 +208,15 @@ done
 # The tests that record come last, phone_recording_away the very last: it
 # records, locks the phone and opens Settings over the app, none of which the
 # others expect. An iPhone ends an app whose permissions change while it runs,
-# so a simulator's microphone is granted before the app starts; an emulator's
-# is granted by the test's host.
-if ! adb -s "$device" get-state >/dev/null 2>&1; then
-  xcrun simctl privacy "$device" grant microphone com.kapybara.kapynotes || status=1
-fi
-drive phone_remove_noise
-drive phone_recording_away
+# so a simulator's microphone is granted before each of them starts: flutter
+# drive uninstalls the app when a file ends, and its permissions go with it.
+# An emulator's is granted by the test's host.
+for test in phone_remove_noise phone_recording_away; do
+  if ! adb -s "$device" get-state >/dev/null 2>&1; then
+    xcrun simctl privacy "$device" grant microphone com.kapybara.kapynotes || status=1
+  fi
+  drive "$test"
+done
 
 if adb -s "$device" get-state >/dev/null 2>&1 && wanted phone_bar_android; then
   mode=$(adb -s "$device" shell settings get secure navigation_mode | tr -d '\r')
