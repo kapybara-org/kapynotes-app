@@ -1523,11 +1523,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         ? _transparencyFloor +
               (1 - _transparencyFloor) * prefs.transparencyAmount
         : 0.0;
-    final textKeys = [
-      ShortcutAction.increaseEditorTextSize,
-      ShortcutAction.decreaseEditorTextSize,
-      ShortcutAction.resetEditorTextSize,
-    ].map(_keycaps).where((keys) => keys.isNotEmpty).join(' ');
+    final zoom = prefs.zoom;
+    final zoomPercent = '${(zoom * 100).round()}%';
     return [
       _Group(null, [
         _choice<AppearanceMode>(
@@ -1738,10 +1735,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         _Setting(
           'note-text-size-setting',
           'Note text size',
-          subtitle: textKeys.isEmpty
-              ? 'Text inside notes'
-              : 'Text inside notes · $textKeys',
-          keywords: ['zoom', 'bigger text', 'larger', 'smaller', 'font size'],
+          subtitle: 'Text inside notes',
+          keywords: ['bigger text', 'larger', 'smaller', 'font size'],
           value: percent,
           changed: scale != LayoutPrefs.defaultEditorTextScale,
           onReset: prefs.resetEditorTextSize,
@@ -1765,8 +1760,34 @@ class _SettingsDialogState extends State<SettingsDialog>
           onSelected: (size) => prefs.appTextSize = size,
           byDefault: AppTextSize.standard,
           keyPrefix: 'app-text-size',
-          keywords: ['font size', 'ui scale', 'zoom', 'bigger text', 'larger'],
+          keywords: ['font size', 'ui scale', 'bigger text', 'larger'],
         ),
+        if (!touch)
+          _Setting(
+            'zoom-setting',
+            'Zoom',
+            subtitle: 'The whole window',
+            keywords: [
+              'ui scale',
+              'bigger',
+              'larger',
+              'smaller',
+              'magnify',
+              'text size',
+            ],
+            value: zoomPercent,
+            changed: zoom != 1,
+            onReset: prefs.resetZoom,
+            control: SettingsStepper(
+              label: zoomPercent,
+              onDecrease: zoom > LayoutPrefs.zoomLevels.first
+                  ? prefs.zoomOut
+                  : null,
+              onIncrease: zoom < LayoutPrefs.zoomLevels.last
+                  ? prefs.zoomIn
+                  : null,
+            ),
+          ),
       ], lead: _AppearancePreview(prefs: prefs)),
     ];
   }
@@ -2509,7 +2530,16 @@ class _SettingsDialogState extends State<SettingsDialog>
       'shortcut-row-${action.name}',
       _shortcutLabel(action),
       subtitle: action.description,
-      keywords: ['shortcut', 'hotkey', 'keyboard', ?binding?.displayLabel],
+      keywords: [
+        'shortcut',
+        'hotkey',
+        'keyboard',
+        if (action == ShortcutAction.zoomIn ||
+            action == ShortcutAction.zoomOut ||
+            action == ShortcutAction.resetZoom)
+          'text size',
+        ?binding?.displayLabel,
+      ],
       value: binding?.displayLabel ?? 'None',
       changed: changed,
       onReset: reset,
@@ -3462,10 +3492,10 @@ extension on ShortcutAction {
     ShortcutAction.toggleHiddenFolder ||
     ShortcutAction.toggleResults ||
     ShortcutAction.toggleAlwaysOnTop ||
-    ShortcutAction.openSettings => _ShortcutGroup.window,
-    ShortcutAction.increaseEditorTextSize ||
-    ShortcutAction.decreaseEditorTextSize ||
-    ShortcutAction.resetEditorTextSize ||
+    ShortcutAction.openSettings ||
+    ShortcutAction.zoomIn ||
+    ShortcutAction.zoomOut ||
+    ShortcutAction.resetZoom => _ShortcutGroup.window,
     ShortcutAction.pasteAsPlainText ||
     ShortcutAction.insertImage ||
     ShortcutAction.insertVideo ||

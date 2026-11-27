@@ -184,6 +184,51 @@ void main() {
 
   group('a chat on the stream', () {
     test(
+      'a chat about a recording keeps its link across devices and a rename',
+      () async {
+        final (laptop, phone) = await pair();
+        const link = KapyRecordingRef(noteId: 'n1', hash: 'h1');
+        final made = chat(title: 'What did we decide?');
+        final pricing = KapyChat(
+          id: made.id,
+          title: made.title,
+          createdAt: made.createdAt,
+          updatedAt: made.updatedAt,
+          model: made.model,
+          messages: made.messages,
+          recording: link,
+        );
+        laptop.chats.put(pricing);
+        await laptop.pass();
+        await phone.pass();
+        expect(phone.chats.chats.single.recording, link);
+
+        // Renamed the way a build without the link writes the chat back.
+        afterChats(laptop, phone);
+        later(phone);
+        phone.chats.put(
+          KapyChat(
+            id: pricing.id,
+            title: 'Invoice split',
+            createdAt: pricing.createdAt,
+            updatedAt: phone.clock,
+            titleAt: phone.clock,
+            modelAt: pricing.modelAt,
+            model: pricing.model,
+            messages: pricing.messages,
+          ),
+        );
+        await phone.pass();
+        expect((await live('chat')).single['recording'], link.toJson());
+        await laptop.pass();
+        expect(laptop.chats.chats.single.title, 'Invoice split');
+        expect(laptop.chats.chats.single.recording, link);
+        laptop.dispose();
+        phone.dispose();
+      },
+    );
+
+    test(
       'reaches another device as sealed records under ids only the account can name',
       () async {
         final (laptop, phone) = await pair();
