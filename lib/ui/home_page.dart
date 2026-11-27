@@ -113,6 +113,7 @@ import 'notes_list.dart';
 import 'page_pane.dart';
 import 'page_toolbar.dart';
 import 'page_turn.dart';
+import 'save_status.dart';
 import 'phone_folder_tiles.dart';
 import 'phone_home_header.dart';
 import 'phone_note_header.dart';
@@ -431,6 +432,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     ?widget.dayTabs,
   ]);
 
+  /// "Saving…" and "Saved" as the person writes, for the page's bar.
+  late final SaveStatus _saveStatus = SaveStatus(widget.notes.writes);
+
   /// Tasks, while the rail has it open.
   bool _tasksMode = false;
 
@@ -618,6 +622,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   void dispose() {
     widget.account?.sync?.leaveNote(_selectedId);
     _namer?.dispose();
+    _saveStatus.dispose();
     HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     FocusManager.instance.removeListener(_syncStatusBar);
     if (_statusBarHidden) unawaited(StatusBar.setHidden(false));
@@ -3399,6 +3404,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // until it is next built.
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     widget.notes.updateDocument(id, body, formats, attachments, edit);
+    _saveStatus.edited();
     _namer?.typed(id);
   }
 
@@ -3498,9 +3504,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   String? get _sidebarShortcut =>
       widget.shortcuts.hintFor(ShortcutAction.toggleSidebar)?.displayLabel;
 
-  /// Shares whatever note is open, for the title bar's own action. Null with
-  /// nothing selected, which greys that action rather than removing it and
-  /// shifting the ones beside it every time the selection changes.
+  /// Shares whatever note is open, for Share in the page's More and the
+  /// avatars of the people it is shared with. Null with nothing selected,
+  /// which greys Share.
   VoidCallback? get _shareSelected {
     final id = _selectedId;
     return id == null || _specialMode || _shownNote(id) == null
@@ -3748,8 +3754,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// The Sparkles button for a toolbar, or null where Kapy AI is not built.
-  /// In the page's bar it is a 32 control with a 16 icon, last behind a
-  /// hairline.
+  /// In the page's bar it is a 32 control with a 16 icon, before More.
   Widget? _kapyAiButton({
     required double extent,
     double gap = 0,
@@ -3769,7 +3774,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       radius: pageBar ? 8 : 10,
       iconSize: pageBar ? 16 : 17,
       trailingGap: gap,
-      divided: pageBar,
       showsOpen: showsOpen,
     );
   }
@@ -4752,7 +4756,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     showListShortcut: _sidebarShortcut,
                                     create: create,
                                     noteOpen: selected != null,
-                                    syncStatus: widget.account?.syncStatus,
+                                    save: _save,
                                     unloadedPictures: unloaded.length,
                                     onShowUnloadedPicture: unloaded.isEmpty
                                         ? null
@@ -4763,7 +4767,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                     present: _selectedPresence,
                                     currentUserId:
                                         widget.account?.sharing?.userId ?? '',
-                                    noteShared: selected?.isShared ?? false,
                                     onShare: _shareSelected,
                                     assistant: assistant,
                                     actions: _folderInFront == null
@@ -4793,7 +4796,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
                                   child: BackForwardSlide(
                                     child: LayoutBuilder(
                                       builder: (context, page) => DateLineSaved(
-                                        saved: _savedOnDateLine(
+                                        save: _saveOnDateLine(
                                           selected,
                                           page.maxWidth,
                                           unloadedPictures: unloaded.length,
@@ -4865,10 +4868,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Saved, for the open note's date line while the page is too narrow for
-  /// it in the bar, or for the count of pictures that didn't load that
-  /// stands in for it there.
-  ({String label, String? tooltip})? _savedOnDateLine(
+  /// The save status, for the open note's date line while the page is too
+  /// narrow for it in the bar, or for the count of pictures that didn't load
+  /// that stands in for it there.
+  SaveState? _saveOnDateLine(
     Note? note,
     double pageWidth, {
     required int unloadedPictures,
@@ -4883,13 +4886,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         )) {
       return null;
     }
-    final saved = savedState(widget.account?.syncStatus);
-    return (label: saved.label, tooltip: saved.tooltip);
+    return _save;
   }
 
-  /// What the page's More menu offers: the window's own actions, then the
-  /// open note's, in the order and on the terms of that note's menu in the
-  /// list.
+  /// The open note's save status and whatever keeps it from syncing.
+  SaveState get _save {
+    final account = widget.account;
+    return (
+      status: _saveStatus,
+      problem: account == null
+          ? null
+          : syncProblem(
+              account.syncStatus,
+              paused: account.sync?.personalNeedsPro ?? false,
+              signInAgain:
+                  account.state == AccountState.signedOut &&
+                  account.signedOutReason != null,
+            ),
+    );
+  }
+
+  /// What the page's More menu offers: Share, greyed with no note open, then
+  /// the window's own actions, then the open note's, in the order and on the
+  /// terms of that note's menu in the list.
   List<KapyMenuAction> _pageActions(Note? note) {
     final splitBlocker = _specialMode
         ? null
@@ -4905,6 +4924,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         ?.keycapLabel;
     final pinned = note != null && widget.notes.isPinned(note.id);
     return [
+      if (!_specialMode)
+        KapyMenuAction(
+          value: 'share',
+          label: note?.isShared ?? false ? 'Manage sharing' : 'Share note',
+          icon: KapyIcons.shareRounded,
+          enabled: _shareSelected != null,
+        ),
       KapyMenuAction(
         value: 'split',
         label: canSplit ? 'Split view' : splitBlocker ?? 'Split view',
@@ -7026,6 +7052,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.account?.sync?.reportTyping(id);
     if (id == _untouchedWelcomeId) _untouchedWelcomeId = null;
     widget.notes.updateDrawing(id, drawing ?? note.drawing!, title: title);
+    _saveStatus.edited();
   }
 }
 
