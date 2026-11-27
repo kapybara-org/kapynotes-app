@@ -126,6 +126,12 @@ class FakeKapyAi extends KapyAi {
   @override
   bool get chatsSync => syncing ?? _pro;
 
+  /// Set to say the book holds a recap.
+  bool recaps = false;
+
+  @override
+  bool get hasRecaps => recaps;
+
   @override
   KapyModel get defaultModel => _default;
   @override

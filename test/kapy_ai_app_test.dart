@@ -101,19 +101,29 @@ Finder get _button => find.byKey(const ValueKey('page-kapy-ai'));
 Finder get _panel => find.byKey(const ValueKey('kapy-ai-panel'));
 Finder get _ask => find.byKey(const ValueKey('sidebar-ask-kapy'));
 
-Future<void> _chord(WidgetTester tester, LogicalKeyboardKey letter) async {
+Future<void> _chord(
+  WidgetTester tester,
+  LogicalKeyboardKey letter, {
+  bool shift = false,
+}) async {
   final key = AppPlatform.isMacOS
       ? LogicalKeyboardKey.metaLeft
       : LogicalKeyboardKey.controlLeft;
   await tester.sendKeyDownEvent(key);
+  if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
   await tester.sendKeyDownEvent(letter);
   await tester.sendKeyUpEvent(letter);
+  if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
   await tester.sendKeyUpEvent(key);
   await tester.pumpAndSettle();
 }
 
 Future<void> _toggleWithKeys(WidgetTester tester) =>
     _chord(tester, LogicalKeyboardKey.keyJ);
+
+/// Search's own chord, ⇧⌘F or Ctrl+Shift+F.
+Future<void> _search(WidgetTester tester) =>
+    _chord(tester, LogicalKeyboardKey.keyF, shift: true);
 
 Future<void> _openSettings(
   WidgetTester tester, {
@@ -1112,7 +1122,7 @@ void main() {
     Future<String> openMenuOverNote(WidgetTester tester) async {
       final note = notes.create(body: 'Trip budget\n900 flights');
       await _pump(tester, sidebar: true);
-      await _chord(tester, LogicalKeyboardKey.keyK);
+      await _search(tester);
       expect(menu, findsOneWidget);
       return note.id;
     }
@@ -1310,7 +1320,7 @@ void main() {
       final composer = find.byKey(const ValueKey('kapy-ai-field'));
       await tester.enterText(composer, 'my own words');
       await tester.pumpAndSettle();
-      await _chord(tester, LogicalKeyboardKey.keyK);
+      await _search(tester);
       expect(menu, findsOneWidget);
       await type(tester, 'lisbon');
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
@@ -1388,7 +1398,7 @@ void main() {
       ai.enabled = false;
       await tester.pumpAndSettle();
       expect(sidebarField('Search'), findsOneWidget);
-      await _chord(tester, LogicalKeyboardKey.keyK);
+      await _search(tester);
       expect(find.text('Search…'), findsOneWidget);
       expect(find.text('Search or Ask Kapy AI…'), findsNothing);
     });
@@ -1778,9 +1788,32 @@ void main() {
       await tester.pumpAndSettle();
       expect(ai.calls, isNot(contains('clearHistory')));
 
+      expect(
+        find.text(
+          'Every Kapy AI chat is deleted on all your devices. This can’t be '
+          'undone.',
+        ),
+        findsOneWidget,
+      );
+
       await tester.tap(find.text('Clear').last);
       await tester.pumpAndSettle();
       expect(ai.calls, contains('clearHistory'));
+    });
+
+    testWidgets('Clear… says it deletes the recaps too', (tester) async {
+      ai = FakeKapyAi(pro: true)..recaps = true;
+      await _openSettings(tester, kapyAi: ai, reveal: 'kapy-ai-clear-history');
+
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-clear')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Every Kapy AI chat is deleted on all your devices. This also '
+          'deletes your recaps. This can’t be undone.',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('the shortcut has a row, and search finds the groups', (

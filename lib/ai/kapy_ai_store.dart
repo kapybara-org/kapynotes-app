@@ -115,6 +115,7 @@ Map<String, Object?> chatToJson(KapyChat chat) => {
   'model': chat.model.toJson(),
   'messages': [for (final message in chat.messages) _messageToJson(message)],
   if (chat.recording case final recording?) 'recording': recording.toJson(),
+  'recap': ?chat.recap,
 };
 
 KapyChat? chatFromJson(Object? raw) {
@@ -136,8 +137,12 @@ KapyChat? chatFromJson(Object? raw) {
         ?_messageFromJson(message),
     ],
     recording: KapyRecordingRef.fromJson(raw['recording']),
+    recap: _map(raw['recap']),
   );
 }
+
+Map<String, Object?>? _map(Object? raw) =>
+    raw is Map ? raw.cast<String, Object?>() : null;
 
 Map<String, Object?> _messageToJson(KapyMessage message) => {
   'id': message.id,

@@ -11,6 +11,7 @@
 		A1B2C0D000000000000000C2 /* QuickCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000C1 /* QuickCapture.swift */; };
 		C1A0B0010000000000000002 /* RichClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0010000000000000001 /* RichClipboard.swift */; };
 		C1A0B00B0000000000000002 /* SystemRegion.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00B0000000000000001 /* SystemRegion.swift */; };
+		C1A0B00D0000000000000002 /* CameraSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00D0000000000000001 /* CameraSupport.swift */; };
 		C1A0B00C0000000000000002 /* FileExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B00C0000000000000001 /* FileExport.swift */; };
 		C1A0B0050000000000000002 /* Summaries.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0050000000000000001 /* Summaries.swift */; };
 		C1A0B0070000000000000002 /* Transcription.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0070000000000000001 /* Transcription.swift */; };
@@ -103,6 +104,7 @@
 		A1B2C0D000000000000000C1 /* QuickCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCapture.swift; sourceTree = "<group>"; };
 		C1A0B0010000000000000001 /* RichClipboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichClipboard.swift; sourceTree = "<group>"; };
 		C1A0B00B0000000000000001 /* SystemRegion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemRegion.swift; sourceTree = "<group>"; };
+		C1A0B00D0000000000000001 /* CameraSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraSupport.swift; sourceTree = "<group>"; };
 		C1A0B00C0000000000000001 /* FileExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileExport.swift; sourceTree = "<group>"; };
 		C1A0B0050000000000000001 /* Summaries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Summaries.swift; sourceTree = "<group>"; };
 		C1A0B0070000000000000001 /* Transcription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcription.swift; sourceTree = "<group>"; };
@@ -197,6 +199,7 @@
 				D3C0A0B00000000000000006 /* RecordingActivity.swift */,
 				C1A0B0010000000000000001 /* RichClipboard.swift */,
 				C1A0B00B0000000000000001 /* SystemRegion.swift */,
+				C1A0B00D0000000000000001 /* CameraSupport.swift */,
 				C1A0B00C0000000000000001 /* FileExport.swift */,
 				C1A0B0050000000000000001 /* Summaries.swift */,
 				C1A0B0070000000000000001 /* Transcription.swift */,
@@ -434,6 +437,7 @@
 				A1B2C0D000000000000000C2 /* QuickCapture.swift in Sources */,
 				C1A0B0010000000000000002 /* RichClipboard.swift in Sources */,
 				C1A0B00B0000000000000002 /* SystemRegion.swift in Sources */,
+				C1A0B00D0000000000000002 /* CameraSupport.swift in Sources */,
 				C1A0B00C0000000000000002 /* FileExport.swift in Sources */,
 				C1A0B0050000000000000002 /* Summaries.swift in Sources */,
 				C1A0B0070000000000000002 /* Transcription.swift in Sources */,
