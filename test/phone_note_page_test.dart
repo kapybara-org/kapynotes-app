@@ -2414,6 +2414,32 @@ void main() {
       expect(x(fill), moreOrLessEquals(x(day(18)), epsilon: 0.5));
     });
 
+    testWidgets("a day's tabs turn with its note, under a header that keeps "
+        'its height while the drag goes', (tester) async {
+      seed();
+      await pump(tester);
+      await turn(tester, onHeader(tester), 200);
+      await turn(tester, onHeader(tester), 200);
+      final tabs = find.byKey(const ValueKey('day-tabs'));
+      expect(tabs, findsOneWidget, reason: 'Monday has two notes');
+      expect(find.descendant(of: header, matching: tabs), findsNothing);
+      final height = tester.getSize(header).height;
+      final left = tester.getTopLeft(tabs).dx;
+      final drag = await tester.startGesture(onHeader(tester));
+      await drag.moveBy(const Offset(-40, 0));
+      await drag.moveBy(const Offset(-60, 0));
+      await tester.pump();
+      expect(tester.getTopLeft(tabs).dx, moreOrLessEquals(left - 100));
+      expect(tester.getSize(header).height, height);
+      await drag.up();
+      await tester.pump();
+      expect(tabs, findsOneWidget, reason: 'they leave with the note');
+      expect(find.descendant(of: header, matching: tabs), findsNothing);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(tabs, findsNothing);
+    });
+
     testWidgets('a turn into another week slides the week there', (
       tester,
     ) async {

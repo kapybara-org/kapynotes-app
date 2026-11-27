@@ -6191,40 +6191,52 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               MediaQuery.sizeOf(context),
               MediaQuery.viewInsetsOf(context).bottom,
             );
-            // The header stays put while the note under it turns to another
-            // day, and shows that day once the turn is let go.
+            final head = cramped
+                ? null
+                : _phoneNoteHeader(
+                    note,
+                    // The Scaffold takes the keyboard out of its own body's
+                    // insets, so the page's are read from above it, where
+                    // only this page rebuilds as the keyboard slides. A blank
+                    // page (M11) keeps its header as it is until the first
+                    // words.
+                    typing:
+                        note.body.isNotEmpty &&
+                        MediaQuery.viewInsetsOf(outer).bottom > 0,
+                    tabsOn: day,
+                    kept: {...kept, note.id},
+                  );
+            // The header stays put while the note under it, its day's tabs
+            // with it, turns to another day, and shows that day once the turn
+            // is let go.
             return PageTurn(
               before: shown == null
                   ? null
-                  : (_) => _phoneDayAhead(by(-1), cramped: cramped),
+                  : (_) => _phoneDayAhead(note, by(-1), cramped: cramped),
               after: shown == null
                   ? null
-                  : (_) => _phoneDayAhead(by(1), cramped: cramped),
+                  : (_) => _phoneDayAhead(note, by(1), cramped: cramped),
               onTurn: (later) => _turnPhoneDay(by(later ? 1 : -1)),
               onlyFromTop: true,
-              top: cramped
+              top: head == null
                   ? null
                   : (_, turning) => SafeArea(
                       bottom: false,
                       child: turning == null
-                          ? _phoneNoteHeader(
+                          ? head.header
+                          : _phoneDayAheadHeader(
                               note,
-                              // The Scaffold takes the keyboard out of its own
-                              // body's insets, so the page's are read from
-                              // above it, where only this page rebuilds as the
-                              // keyboard slides. A blank page (M11) keeps its
-                              // header as it is until the first words.
-                              typing:
-                                  note.body.isNotEmpty &&
-                                  MediaQuery.viewInsetsOf(outer).bottom > 0,
-                              tabsOn: day,
-                              kept: {...kept, note.id},
-                            )
-                          : _phoneDayAheadHeader(note, by(turning ? 1 : -1)),
+                              by(turning ? 1 : -1),
+                            ).header,
                     ),
               child: KeyedSubtree(
                 key: ObjectKey(editor),
-                child: _phoneNoteArea(note, editor, cramped: cramped),
+                child: _phoneNoteArea(
+                  note,
+                  editor,
+                  cramped: cramped,
+                  end: head?.end,
+                ),
               ),
             );
           },
@@ -6233,28 +6245,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// [day]'s note as a turn to it shows it while it slides in under the
-  /// header: its first, on the editor that note then keeps, or nothing on a
-  /// day with none, where the turn opens a blank page.
-  Widget _phoneDayAhead(DateTime day, {required bool cramped}) {
+  /// [day]'s note as a turn from [from]'s page to it shows it while it
+  /// slides in under the header, under its tabs where it has several: its
+  /// first, on the editor that note then keeps, or nothing on a day with
+  /// none, where the turn opens a blank page.
+  Widget _phoneDayAhead(Note from, DateTime day, {required bool cramped}) {
+    final end = cramped ? null : _phoneDayAheadHeader(from, day).end;
     final note = _phoneTabsOn(day).notes.firstOrNull;
     if (note == null) {
       return KeyedSubtree(
         key: ValueKey(('blank-day', day)),
-        child: const SizedBox.shrink(),
+        child: _phoneNoteArea(from, null, cramped: cramped, end: end),
       );
     }
     final editor = _phoneTurnEditors[note.id] ??= GlobalKey();
     return KeyedSubtree(
       key: ObjectKey(editor),
-      child: _phoneNoteArea(note, editor, cramped: cramped, ahead: true),
+      child: _phoneNoteArea(
+        note,
+        editor,
+        cramped: cramped,
+        ahead: true,
+        end: end,
+      ),
     );
   }
 
-  /// The header [day] has once a turn from [from]'s page to it is let go:
-  /// its first note's, under its tabs where it has several, or [from]'s on
-  /// [day] where it has none.
-  Widget _phoneDayAheadHeader(Note from, DateTime day) {
+  /// The header [day] has once a turn from [from]'s page to it is let go,
+  /// and its end: its first note's, with its tabs where it has several, or
+  /// [from]'s on [day] where it has none.
+  ({Widget header, Widget end}) _phoneDayAheadHeader(Note from, DateTime day) {
     final tabs = _phoneTabsOn(day).notes;
     final note = tabs.firstOrNull;
     if (note == null) {
@@ -6290,13 +6310,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _select(note.id, focusEditor: false);
   }
 
-  /// A phone note's page under its header: the note, or nothing for a
-  /// blank day's page before it has one.
+  /// A phone note's page under its header: the header's [end], with the
+  /// day's tabs, then the note, or nothing for a blank day's page before it
+  /// has one.
   Widget _phoneNoteArea(
     Note note,
-    GlobalKey<NoteEditorState> editor, {
+    GlobalKey<NoteEditorState>? editor, {
     required bool cramped,
     bool ahead = false,
+    Widget? end,
   }) => ColoredBox(
     color: context.palette.paperColor,
     child: SafeArea(
@@ -6304,15 +6326,26 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // The footer insets its own controls past the home indicator, as the
       // page bar does past the status bar.
       bottom: false,
-      child: _phoneEditor(note, editor, cramped: cramped, ahead: ahead),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ?end,
+          Expanded(
+            child: editor == null
+                ? const SizedBox.shrink()
+                : _phoneEditor(note, editor, cramped: cramped, ahead: ahead),
+          ),
+        ],
+      ),
     ),
   );
 
   /// A phone note's header: Home, its day, Kapy AI and More, then its week
-  /// and its day's tasks, and on a page showing [tabsOn]'s notes as tabs,
-  /// those and the ones it keeps, [kept] (A1). The week is only for My
-  /// notes, as on a Mac.
-  Widget _phoneNoteHeader(
+  /// and its day's tasks; and its end, which the page draws under it so it
+  /// turns with the note: on a page showing [tabsOn]'s notes as tabs, those
+  /// and the ones it keeps, [kept] (A1), then the hairline. The week is only
+  /// for My notes, as on a Mac.
+  ({Widget header, Widget end}) _phoneNoteHeader(
     Note note, {
     required bool typing,
     DateTime? tabsOn,
@@ -6340,7 +6373,25 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final tabs = hasDays && tabsOn != null
         ? _phoneTabsOn(tabsOn, counted: counted, kept: kept)
         : null;
-    return PhoneNoteHeader(
+    final end = PhoneNoteHeaderEnd(
+      room: hasDays && _phoneWeekOpen && tasks == 0,
+      tabs: tabs == null || tabsOn == null
+          ? null
+          : DayTabsRow(
+              notes: tabs.notes,
+              pinned: tabs.pinned,
+              open: note.id,
+              onOpen: (id) => _select(id, focusEditor: false),
+              onNew: () => _writeOnDay(tabsOn),
+              onList: () =>
+                  unawaited(_openPhoneDayNotes(tabsOn, tabs.notes, note.id)),
+              onPin: (id, {required pin}) =>
+                  _pinDayTab(tabsOn, id, pin: pin, kept: kept),
+              onMove: (id, to) => _movePhoneTab(tabsOn, id, to, kept: kept),
+            ),
+    );
+    final header = PhoneNoteHeader(
+      ends: false,
       onHome: _phoneGoHome,
       typing: typing,
       day: hasDays ? day : null,
@@ -6360,20 +6411,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               ownDay: widget.days == null ? null : _ownDayOf,
             )
           : null,
-      tabs: tabs == null || tabsOn == null
-          ? null
-          : DayTabsRow(
-              notes: tabs.notes,
-              pinned: tabs.pinned,
-              open: note.id,
-              onOpen: (id) => _select(id, focusEditor: false),
-              onNew: () => _writeOnDay(tabsOn),
-              onList: () =>
-                  unawaited(_openPhoneDayNotes(tabsOn, tabs.notes, note.id)),
-              onPin: (id, {required pin}) =>
-                  _pinDayTab(tabsOn, id, pin: pin, kept: kept),
-              onMove: (id, to) => _movePhoneTab(tabsOn, id, to, kept: kept),
-            ),
       tasks: tasks,
       onTasks: tasks == 0 ? null : () => unawaited(_openPhoneTasks()),
       members: _selectedMembers,
@@ -6388,6 +6425,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       menu: _phoneMenu(note),
       onMenu: (action, at) => _runPageAction(action, note, at),
     );
+    return (header: header, end: end);
   }
 
   /// A day picked in a phone note's week: with no notes, a page to write on
