@@ -5745,6 +5745,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             keepBefore: true,
             after: tasks == null && tasksPage != null ? (_) => tasksPage : null,
             onTurn: (tasks) => _showHome(tasks: tasks),
+            // Home's header stays put while Notes and Tasks turn under it:
+            // each page's own hides, and Notes' and Tasks' copies are drawn
+            // over them instead, crossfading as the turn goes.
+            over: tasksPage == null
+                ? null
+                : (_, shift) {
+                    final toTasks = (tasks != null ? 1 - shift : -shift).clamp(
+                      0.0,
+                      1.0,
+                    );
+                    return Stack(
+                      children: [
+                        Opacity(
+                          opacity: 1 - toTasks,
+                          child: _asHome(tasks: false, _phoneHomeHeader),
+                        ),
+                        Positioned.fill(
+                          child: Opacity(
+                            opacity: toTasks,
+                            child: _asHome(tasks: true, _phoneHomeHeader),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
             onBack: _phoneLevel != null
                 ? () => unawaited(_phoneNavigator.currentState?.maybePop())
                 : null,
@@ -5823,7 +5848,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _phoneHomeHeader(),
+              HiddenWhileTurning(child: _phoneHomeHeader()),
               Expanded(
                 child: TasksScreen(
                   key: _tasksPage,
@@ -5987,7 +6012,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               trailing: _phoneAccount(),
             )
           : _phoneHome
-          ? _phoneHomeHeader()
+          ? HiddenWhileTurning(child: _phoneHomeHeader())
           : tree
           ? PhoneListTitle(title: 'Folders', trailing: _phoneAccount())
           : PhoneListTitle(
