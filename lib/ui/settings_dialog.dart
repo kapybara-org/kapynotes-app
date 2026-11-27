@@ -9,6 +9,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../ai/kapy_ai.dart';
+import '../audio/noise_removals.dart';
 import '../calc/format.dart';
 import '../core/appearance.dart';
 import '../core/desktop_integration.dart';
@@ -2001,9 +2002,23 @@ class _SettingsDialogState extends State<SettingsDialog>
     ];
   }
 
+  /// What the setting says, which is where its download shows: nobody
+  /// pressed a button on a recording to start it.
+  String _removeNoiseSubtitle(NoiseRemovals noise, VoicePrefs prefs) {
+    const usual = 'From each new recording. Your original is kept';
+    if (!prefs.removeNoise) return usual;
+    final model = noise.models.stateOf(noise.model);
+    if (model.isBusy) return 'Downloading… ${(model.progress * 100).floor()}%';
+    if (model.status == LocalModelStatus.failed) {
+      return "Couldn't download noise removal. It tries again with your next recording";
+    }
+    return usual;
+  }
+
   List<_Group> _voiceGroups() {
     final prefs = widget.voicePrefs;
     if (prefs == null) return const [];
+    final noise = NoiseRemovalScope.maybeOf(context);
     final signedIn = widget.account?.speech != null;
     final access = widget.cloudAccess;
     final store = widget.localModels;
@@ -2042,6 +2057,19 @@ class _SettingsDialogState extends State<SettingsDialog>
           byDefault: true,
           keywords: ['summarise', 'summarize', 'recording', 'voice note'],
         ),
+        if (noise != null)
+          _toggle(
+            'voice-remove-noise-toggle',
+            'Always remove noise from recordings',
+            _removeNoiseSubtitle(noise, prefs),
+            value: prefs.removeNoise,
+            onChanged: (value) {
+              prefs.removeNoise = value;
+              if (value) unawaited(noise.prepare());
+            },
+            byDefault: false,
+            keywords: ['noise', 'background', 'clean', 'recording'],
+          ),
         _Setting(
           'voice-language-row',
           'Language',

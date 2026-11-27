@@ -5,10 +5,12 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../audio/noise_removals.dart';
 import '../audio/voice_export.dart';
 import '../audio/voice_player.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
 import '../data/note_attachment.dart';
 import '../data/voice_prefs.dart' show speechLanguages;
 import '../speech/moments.dart';
@@ -1352,6 +1354,10 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
               ),
             );
 
+            final noise = NoiseRemovalScope.maybeOf(context) == null
+                ? null
+                : _NoisePill(hash: widget.ref.hash);
+
             if (!touch) {
               return Padding(
                 padding: const EdgeInsets.fromLTRB(22, 10, 22, 8),
@@ -1363,6 +1369,7 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
                     const SizedBox(width: 12),
                     time,
                     const SizedBox(width: 12),
+                    if (noise != null) ...[noise, const SizedBox(width: 8)],
                     speed,
                   ],
                 ),
@@ -1380,13 +1387,19 @@ class _VoiceNotePlayerRowState extends State<VoiceNotePlayerRow> {
                     ],
                   ),
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      SizedBox(width: size + 12),
-                      time,
-                      const Spacer(),
-                      speed,
-                    ],
+                  SizedBox(
+                    // The ×'s 44 pt target while noise is being removed,
+                    // held all along so the sheet does not jump.
+                    height: noise == null ? null : 44,
+                    child: Row(
+                      children: [
+                        SizedBox(width: size + 12),
+                        time,
+                        const Spacer(),
+                        if (noise != null) ...[noise, const SizedBox(width: 8)],
+                        speed,
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1494,6 +1507,204 @@ class _HeadPainter extends CustomPainter {
   @override
   bool shouldRepaint(_HeadPainter old) =>
       old.fraction != fraction || old.color != color;
+}
+
+/// Remove noise: one toggle before the speed. Off plays the original; on,
+/// filled in sage, plays the clean copy. The first press fetches what it
+/// needs if this device has never removed noise, then makes the copy, with
+/// a pie and a × to stop it. Only the × stops it, so a stray tap on a phone
+/// cannot throw away minutes of work.
+class _NoisePill extends StatelessWidget {
+  const _NoisePill({required this.hash});
+
+  final String hash;
+
+  @override
+  Widget build(BuildContext context) {
+    final noise = NoiseRemovalScope.maybeOf(context)!;
+    final palette = context.palette;
+    final touch = !AppPlatform.hasPointer;
+    final state = noise.stateOf(hash);
+    final on = state.stage == NoiseStage.on;
+    final height = touch ? 30.0 : 24.0;
+    final color = on ? palette.tonalForeground : palette.textSecondary;
+    final words = switch (state.stage) {
+      NoiseStage.downloading => 'Downloading',
+      NoiseStage.removing => 'Removing noise',
+      NoiseStage.off || NoiseStage.on => 'Remove noise',
+    };
+    final label = Container(
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      alignment: Alignment.center,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (state.isBusy)
+            SettingsPie(fraction: min(state.progress, 0.99))
+          else
+            KapyIcon(KapyIcons.voiceIdRounded, size: 14, color: color),
+          const SizedBox(width: 6),
+          Text(
+            words,
+            style: TextStyle(
+              fontSize: AppTypeScale.caption,
+              fontWeight: AppWeight.font(AppWeight.button),
+              fontVariations: AppWeight.wght(AppWeight.button),
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(7),
+      side: on ? BorderSide.none : BorderSide(color: palette.controlBorder),
+    );
+
+    if (!state.isBusy) {
+      return Tooltip(
+        message: on
+            ? 'Play the original'
+            : noise.isNew(hash)
+            ? 'Clears background noise. Your original is kept.'
+            : 'Remove noise',
+        child: Semantics(
+          button: true,
+          toggled: on,
+          label: 'Remove noise',
+          excludeSemantics: true,
+          child: Material(
+            color: on ? palette.tonalBackground : palette.wellBackground,
+            shape: shape,
+            child: InkWell(
+              key: const ValueKey('voice-remove-noise'),
+              customBorder: shape,
+              onTap: on
+                  ? () => noise.turnOff(hash)
+                  : () => removeNoise(
+                      Overlay.of(context, rootOverlay: true),
+                      noise,
+                      hash,
+                    ),
+              child: label,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final percent = '${(state.progress * 100).floor()}%';
+    final stop = Tooltip(
+      message: 'Stop',
+      child: Semantics(
+        button: true,
+        label: 'Stop',
+        excludeSemantics: true,
+        child: InkWell(
+          key: const ValueKey('voice-remove-noise-stop'),
+          onTap: () => noise.stop(hash),
+          child: SizedBox(
+            width: touch ? 44 : height,
+            height: touch ? 44 : height,
+            child: touch
+                ? null
+                : Center(
+                    child: KapyIcon(
+                      KapyIcons.closeRounded,
+                      size: 12,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+    final pill = Material(
+      color: palette.wellBackground,
+      shape: shape,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            label: '$words, $percent',
+            excludeSemantics: true,
+            child: touch
+                ? Tooltip(
+                    message: 'Stop with the ×',
+                    triggerMode: TooltipTriggerMode.tap,
+                    child: label,
+                  )
+                : label,
+          ),
+          Container(width: 1, height: 14, color: palette.controlBorder),
+          if (touch)
+            SizedBox.square(
+              dimension: height,
+              child: Center(
+                child: KapyIcon(
+                  KapyIcons.closeRounded,
+                  size: 12,
+                  color: palette.textSecondary,
+                ),
+              ),
+            )
+          else
+            stop,
+        ],
+      ),
+    );
+    if (!touch) return pill;
+    // The pill keeps the row's 30 pt height; the ×'s 44 pt target lies over
+    // its end, reaching a little into the label's padding.
+    return SizedBox(
+      height: 44,
+      child: Stack(
+        alignment: Alignment.centerRight,
+        children: [
+          pill,
+          Positioned(right: 0, top: 0, bottom: 0, child: stop),
+        ],
+      ),
+    );
+  }
+}
+
+/// Removes the noise from [hash] for a press on the button, and says how it
+/// went once it has, on [overlay], because the window may have closed by
+/// then.
+Future<void> removeNoise(
+  OverlayState overlay,
+  NoiseRemovals noise,
+  String hash,
+) async {
+  final fresh = noise.isNew(hash);
+  final problem = await noise.turnOn(hash);
+  if (!overlay.mounted) return;
+  if (problem == null) {
+    if (fresh && noise.stateOf(hash).stage == NoiseStage.on) {
+      Toast.showOn(overlay, 'Noise removed. Your original is kept.');
+    }
+    return;
+  }
+  final again =
+      problem == NoiseProblem.failed ||
+      problem == NoiseProblem.couldNotDownload;
+  Toast.showOn(
+    overlay,
+    switch (problem) {
+      NoiseProblem.couldNotDownload =>
+        "Couldn't download noise removal. Check your connection.",
+      NoiseProblem.notDownloaded =>
+        "This recording hasn't downloaded yet. Try again when you're online.",
+      NoiseProblem.noSpace =>
+        'Not enough space on this device to remove the noise.',
+      NoiseProblem.failed => "Couldn't remove the noise.",
+    },
+    isError: true,
+    action: again ? 'Try again' : null,
+    onAction: again ? () => unawaited(removeNoise(overlay, noise, hash)) : null,
+  );
 }
 
 /// 1× → 1.5× → 2×.
