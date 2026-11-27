@@ -535,7 +535,7 @@ void main() {
             final heights = <double>{};
             for (final (state, ref, words) in [
               (VoiceChipState.needsConsent, voice(0), 'Turn on transcription'),
-              (VoiceChipState.waiting, voice(0), 'Waiting for network'),
+              (VoiceChipState.waiting, voice(0), 'Waiting to connect'),
               (VoiceChipState.transcribing, voice(0), 'Transcribing…'),
               (VoiceChipState.summarising, voice(0), 'Summarising…'),
               (VoiceChipState.done, voice(0, summary: summary), null),
