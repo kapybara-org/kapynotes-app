@@ -419,6 +419,9 @@ void main() {
     );
     expect(_selected(tester, SlashCommandType.camera), isTrue);
     expect(find.text('Camera  ⌘⇧P'), findsOneWidget);
+    for (final name in ['Back', 'Camera', 'Photo', 'Video']) {
+      expect(find.bySemanticsLabel(name), findsOneWidget, reason: name);
+    }
     expect(_footer(tester), containsAllInOrder(['move', 'insert', 'back']));
     expect(_footer(tester), isNot(contains('close')));
 
