@@ -9,9 +9,10 @@ import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/note_drawing.dart';
 import '../../data/notes_store.dart';
+import '../back_forward.dart';
 import '../compact_icon_button.dart';
 import '../editor/editor_formatting.dart';
-import '../sidebar_swipe.dart';
+import '../focus_ring.dart';
 import 'drawing_geometry.dart';
 import 'drawing_painter.dart';
 
@@ -179,11 +180,11 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   String? _textId;
   Offset? _textAt;
   final TextEditingController _textController = TextEditingController();
-  final FocusNode _textFocus = FocusNode(debugLabel: 'drawing text');
+  final FocusNode _textFocus = NoRingFocusNode(debugLabel: 'drawing text');
 
   late final TextEditingController _titleController;
   final FocusNode _titleFocus = FocusNode(debugLabel: 'drawing title');
-  final FocusNode _canvasFocus = FocusNode(debugLabel: 'drawing canvas');
+  final FocusNode _canvasFocus = NoRingFocusNode(debugLabel: 'drawing canvas');
 
   NoteDrawing get drawing => _drawing;
   DrawTool get tool => _tool;
@@ -879,8 +880,8 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       child: Stack(
         children: [
           // Every stroke and pan belongs to the canvas: neither a phone's
-          // page swipe nor a desktop's sidebar swipe may take one.
-          Positioned.fill(child: SidebarSwipeExclusion(child: canvas)),
+          // page swipe nor a desktop's back and forward swipe may take one.
+          Positioned.fill(child: BackForwardArea(onStep: null, child: canvas)),
           if (_textId != null && _textAt != null) _buildTextField(context),
           Positioned(left: 0, right: 0, top: 0, child: _buildHeader(context)),
           if (!widget.readOnly && _drawing.isEmpty && _gesture == null)

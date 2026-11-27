@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -252,8 +253,9 @@ class Sidebar extends StatelessWidget {
   /// only move the focus to it.
   final Set<String> openElsewhereIds;
 
-  /// Whether a note is on the day last picked in the page's week, which
-  /// lights it more quietly than the open one. Asked only of the rows built.
+  /// Whether a note is on the day last picked in the page's week, or is one
+  /// of the notes that day opened, which lights it more quietly than the open
+  /// one. Asked only of the rows built.
   final bool Function(Note note)? ofPickedDay;
 
   /// Opens a note in a tab of its own behind the one in front: ⌘-click or
@@ -542,11 +544,13 @@ class Sidebar extends StatelessWidget {
                             picks!.step(_order, delta, open: _highlighted?.id),
                   onStopPicking: _picking ? picks!.clear : null,
                   archiveShortcut: archiveShortcut,
-                  child: _foldersTab
-                      ? _buildFolders(context)
-                      : notes.isEmpty
-                      ? _buildEmpty(context)
-                      : _sweeps(_buildBesideRail(context)),
+                  child: BackForwardSlide(
+                    child: _foldersTab
+                        ? _buildFolders(context)
+                        : notes.isEmpty
+                        ? _buildEmpty(context)
+                        : _sweeps(_buildBesideRail(context)),
+                  ),
                 ),
               ),
             ),
@@ -844,11 +848,11 @@ extension on Sidebar {
   }
 
   /// Does what the picked notes' menu names. Tags and Move to folder… open
-  /// their pickers at [anchor]; the rest go to [onPicked].
+  /// their pickers from [anchor]; the rest go to [onPicked].
   Future<void> _choosePicked(
     String value,
     BuildContext context,
-    Offset anchor,
+    MenuSpot anchor,
   ) async {
     if (value == 'picked-tags') {
       return showTagPickerAt(context, anchor, _taggable(context));
@@ -1026,8 +1030,10 @@ extension on Sidebar {
               _choosePicked(
                 value,
                 context,
-                box?.localToGlobal(box.size.bottomLeft(Offset.zero)) ??
-                    Offset.zero,
+                spotAt(
+                  box?.localToGlobal(box.size.bottomLeft(Offset.zero)) ??
+                      Offset.zero,
+                ),
               ),
             );
           },
@@ -3071,7 +3077,7 @@ class NoteRow extends StatefulWidget {
   /// what was chosen from it, with the row's context and where a picker it
   /// opens goes.
   final KapyMenu Function(BuildContext context)? pickedActions;
-  final Future<void> Function(String value, BuildContext context, Offset at)?
+  final Future<void> Function(String value, BuildContext context, MenuSpot at)?
   onPickedAction;
 
   /// Whether the note is in a shared space, which the row marks so a person
@@ -3360,6 +3366,7 @@ class _NoteRowState extends State<NoteRow> {
     if (menu.groups.every((group) => group.isEmpty)) return;
 
     String? choice;
+    var spot = spotAt(position);
     if (AppPlatform.isMobile) {
       choice = await _showTouchActions(context, menu);
     } else {
@@ -3383,21 +3390,24 @@ class _NoteRowState extends State<NoteRow> {
         globalPosition: position,
         preferredGlobalBounds: preferredBounds,
         items: kapyMenuItems(menu, key: _actionKey),
+        onClosed: (placed) => spot = placed,
       );
     }
-    await _choose(choice, at: position);
+    await _choose(choice, at: spot);
   }
 
   /// Runs one of the row's menu choices. The menu offers them, and so does the
   /// row itself as accessibility actions, so both go through here.
-  Future<void> _choose(String? choice, {Offset? at}) async {
+  Future<void> _choose(String? choice, {MenuSpot? at}) async {
     if (!mounted) return;
-    Offset anchor() {
+    MenuSpot anchor() {
       final box = context.findRenderObject() as RenderBox?;
       return at ??
-          (box == null
-              ? Offset.zero
-              : box.localToGlobal(box.size.bottomRight(Offset.zero)));
+          spotAt(
+            box == null
+                ? Offset.zero
+                : box.localToGlobal(box.size.bottomRight(Offset.zero)),
+          );
     }
 
     if (widget.selecting) {

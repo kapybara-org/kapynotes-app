@@ -23,11 +23,13 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/task_library.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
 import 'package:kapy_notes/ui/keycap.dart';
 import 'package:kapy_notes/ui/menu_bar_panel.dart';
 import 'package:kapy_notes/ui/tasks/tasks_controller.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/back_forward.dart';
 import 'test_fonts.dart';
 
 class _MemoryStore extends LocalStore {
@@ -230,6 +232,23 @@ void main() {
     await tasks.reconcileNow();
     later();
     return note;
+  }
+
+  for (final by in StepBy.values) {
+    testWidgets('${by.name}: a swipe or the mouse buttons turn between Notes '
+        'and Tasks, on the Mac, the one with the panel', (tester) async {
+      asDesktop();
+      await pumpPanel(tester);
+      final panel = find.byKey(const ValueKey('menu-bar-panel'));
+      expect(prefs.menuBarOpensTasks, isFalse);
+
+      await stepOver(tester, panel, BackForwardStep.forward, by);
+      expect(prefs.menuBarOpensTasks, isTrue);
+      await stepOver(tester, panel, BackForwardStep.forward, by);
+      expect(prefs.menuBarOpensTasks, isTrue, reason: 'Tasks is the last');
+      await stepOver(tester, panel, BackForwardStep.back, by);
+      expect(prefs.menuBarOpensTasks, isFalse);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
   }
 
   group('tabs', () {
@@ -647,9 +666,9 @@ void main() {
         find.descendant(of: footer, matching: find.byType(Keycap)),
         findsNothing,
       );
-      // Shift+Option+Command+X, written in the order a Mac's menus use.
+      // Shift+Option+Command+L, written in the order a Mac's menus use.
       expect(
-        find.descendant(of: footer, matching: find.text('⌥⇧⌘X')),
+        find.descendant(of: footer, matching: find.text('⌥⇧⌘L')),
         findsOneWidget,
       );
     });
@@ -672,18 +691,18 @@ void main() {
         find.descendant(of: footer, matching: find.text('⌃⌘J')),
         findsOneWidget,
       );
-      expect(find.text('⌥⇧⌘X'), findsNothing);
+      expect(find.text('⌥⇧⌘L'), findsNothing);
     });
 
     testWidgets('it names no shortcut another app holds', (tester) async {
       await pumpPanel(tester);
       expect(find.text('Open this from anywhere with'), findsOneWidget);
-      expect(find.text('⌥⇧⌘X'), findsOneWidget);
+      expect(find.text('⌥⇧⌘L'), findsOneWidget);
 
       taken.add(ShortcutAction.openApp);
       await pumpPanel(tester, opening: 1);
       expect(find.byKey(const ValueKey('menu-bar-open-app')), findsOneWidget);
-      expect(find.text('⌥⇧⌘X'), findsNothing);
+      expect(find.text('⌥⇧⌘L'), findsNothing);
       expect(find.text('Open this from anywhere with'), findsOneWidget);
 
       taken
@@ -692,7 +711,7 @@ void main() {
       await pumpPanel(tester, opening: 2);
       expect(find.byKey(const ValueKey('menu-bar-empty')), findsOneWidget);
       expect(find.text('Open this from anywhere with'), findsNothing);
-      expect(find.text('⌥⇧⌘X'), findsOneWidget);
+      expect(find.text('⌥⇧⌘L'), findsOneWidget);
     });
 
     testWidgets('the footer opens the window and Find', (tester) async {

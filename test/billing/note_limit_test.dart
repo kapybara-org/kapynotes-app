@@ -117,19 +117,22 @@ void main() {
     expect(limit.canCreate, isTrue);
   });
 
-  test('before plans are enforced nothing is limited, signed in or out', () async {
-    write(8);
-    await account.restore();
-    await Future<void>.delayed(Duration.zero);
-    expect(account.state, AccountState.signedOut);
-    expect(limit.limit, isNull);
+  test(
+    'before plans are enforced nothing is limited, signed in or out',
+    () async {
+      write(8);
+      await account.restore();
+      await Future<void>.delayed(Duration.zero);
+      expect(account.state, AccountState.signedOut);
+      expect(limit.limit, isNull);
 
-    billingApi.answer = entitlementsFor;
-    await account.signIn(email: 'a@b.co', password: 'x');
-    await account.billing!.refresh();
-    expect(limit.limit, isNull);
-    expect(limit.canCreate, isTrue);
-  });
+      billingApi.answer = entitlementsFor;
+      await account.signIn(email: 'a@b.co', password: 'x');
+      await account.billing!.refresh();
+      expect(limit.limit, isNull);
+      expect(limit.canCreate, isTrue);
+    },
+  );
 
   test('the five at the top of the list stay editable, pinned first', () async {
     final written = write(8); // written[7] is the most recent
@@ -180,6 +183,21 @@ void main() {
     expect(limit.canCreate, isTrue);
   });
 
+  test("a note deleted with Undo on offer makes its room at once, and Undo "
+      'takes it back', () async {
+    final written = write(5);
+    await signInOnFree();
+    expect(limit.canCreate, isFalse);
+
+    notes.holdDelete([written[4].id]);
+    expect(limit.count, 4);
+    expect(limit.canCreate, isTrue);
+
+    notes.undoDelete([written[4].id]);
+    expect(limit.count, 5);
+    expect(limit.canCreate, isFalse);
+  });
+
   test('when the server raises the limit to twenty, the notes held read-only '
       'are editable at once, with nothing changed in them', () async {
     final written = write(8);
@@ -218,20 +236,23 @@ void main() {
     expect(limit.canCreate, isTrue);
   });
 
-  test('signed out, the device keeps its own fortnight from the day it heard', () async {
-    final written = write(6);
-    termsApi.enforced = true;
-    await account.restore();
-    await Future<void>.delayed(Duration.zero);
-    expect(account.state, AccountState.signedOut);
-    expect(terms.enforced, isTrue);
-    expect(limit.limit, isNull, reason: 'its own fourteen days have started');
+  test(
+    'signed out, the device keeps its own fortnight from the day it heard',
+    () async {
+      final written = write(6);
+      termsApi.enforced = true;
+      await account.restore();
+      await Future<void>.delayed(Duration.zero);
+      expect(account.state, AccountState.signedOut);
+      expect(terms.enforced, isTrue);
+      expect(limit.limit, isNull, reason: 'its own fourteen days have started');
 
-    clock = clock.add(const Duration(days: 14, minutes: 1));
-    notes.updateBody(written[5].id, 'Still writing'); // anything that asks
-    expect(limit.limit, 5);
-    expect(limit.lockedIds, {written[0].id});
-  });
+      clock = clock.add(const Duration(days: 14, minutes: 1));
+      notes.updateBody(written[5].id, 'Still writing'); // anything that asks
+      expect(limit.limit, 5);
+      expect(limit.lockedIds, {written[0].id});
+    },
+  );
 
   test('Pro bought before signing in lifts it, on this device', () async {
     final written = write(6);
@@ -244,7 +265,10 @@ void main() {
 
     // Bought with nobody signed in: unlimited notes is the one part of Pro
     // that works without an account, so it is the part this unlocks.
-    expect(await account.billing!.buy(Sku.proLifetime), isA<PurchaseCompleted>());
+    expect(
+      await account.billing!.buy(Sku.proLifetime),
+      isA<PurchaseCompleted>(),
+    );
     expect(account.billing!.proOnThisDevice, isTrue);
 
     expect(limit.limit, isNull);
@@ -266,15 +290,19 @@ void main() {
     expect(limit.limit, 5);
   });
 
-  test('an account that showed plans are enforced leaves the clock running', () async {
-    write(6);
-    await signInOnFree();
-    expect(terms.deviceTrialEndsAt, isNotNull);
-    expect(
-      terms.deviceTrialEndsAt,
-      clock.add(const Duration(days: 14)),
-      reason: 'started when the account said so, so signing out later does '
-          'not hand out a fresh fortnight',
-    );
-  });
+  test(
+    'an account that showed plans are enforced leaves the clock running',
+    () async {
+      write(6);
+      await signInOnFree();
+      expect(terms.deviceTrialEndsAt, isNotNull);
+      expect(
+        terms.deviceTrialEndsAt,
+        clock.add(const Duration(days: 14)),
+        reason:
+            'started when the account said so, so signing out later does '
+            'not hand out a fresh fortnight',
+      );
+    },
+  );
 }

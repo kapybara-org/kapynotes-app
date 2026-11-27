@@ -238,4 +238,69 @@ void main() {
       expect(meta.title.v.length, chatTitleMax);
     });
   });
+
+  group('a chat about a recording', () {
+    const recording = KapyRecordingRef(noteId: 'n1', hash: 'h1');
+    const wire = {'noteId': 'n1', 'hash': 'h1'};
+
+    KapyChat chat({
+      String title = 'Pricing',
+      int titleAt = 5,
+      KapyRecordingRef? link,
+    }) => KapyChat(
+      id: _chatId,
+      title: title,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(titleAt),
+      titleAt: DateTime.fromMillisecondsSinceEpoch(titleAt),
+      modelAt: DateTime.fromMillisecondsSinceEpoch(1),
+      model: KapyModel.cloud,
+      recording: link,
+    );
+
+    test('carries its recording in the chat record', () {
+      final payload = ChatMeta.of(chat(link: recording)).toPayload();
+      expect(payload['recording'], wire);
+      expect(
+        ChatMeta.fromPayload(jsonDecode(jsonEncode(payload)))!.recording,
+        recording,
+      );
+      expect(ChatMeta.of(chat()).toPayload().containsKey('recording'), isFalse);
+    });
+
+    test('keeps it through a rename on a build that does not know it', () {
+      // A build from before it holds the record as pulled, with the link
+      // among the fields it does not know, and its own chat without it.
+      final pulled = ChatMeta.fromPayload(
+        ChatMeta.of(chat(link: recording)).toPayload(),
+      )!;
+      final renamed = ChatMeta.of(
+        chat(title: 'Invoice split', titleAt: 9),
+      ).merge(pulled);
+      expect(renamed.title.v, 'Invoice split');
+      expect(renamed.toPayload()['recording'], wire);
+    });
+
+    test('an answer keeps how far into it it read', () {
+      final message = KapyMessage(
+        id: '0195f0d0-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+        role: KapyRole.assistant,
+        text: 'Annual plan first.',
+        at: DateTime.utc(2026, 11, 17, 10),
+        model: KapyModel.cloud,
+        readTo: const Duration(minutes: 12),
+      );
+      final back = chatMessageOf([
+        for (final part in chatMessageParts(_chatId, message))
+          ChatMessagePart.fromPayload(
+            jsonDecode(jsonEncode(part.toPayload())),
+          )!,
+      ])!;
+      expect(back.readTo, const Duration(minutes: 12));
+      expect(
+        chatMessageParts(_chatId, _message('x')).single.toPayload(),
+        isNot(contains('readTo')),
+      );
+    });
+  });
 }

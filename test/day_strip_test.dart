@@ -2,9 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/back_forward.dart';
 import 'test_fonts.dart';
 
 void main() {
@@ -104,6 +106,57 @@ void main() {
     // A finger's arrows take 48 each.
     expect(DayStrip.daysIn(540, arrow: 48), 5);
   });
+
+  for (final by in StepBy.values) {
+    testWidgets('${by.name}: a swipe or the mouse buttons over the calendar '
+        'turn it a month, as its ‹ and › do', (tester) async {
+      asDesktop();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Center(
+              child: DayPicker(
+                month: DateTime(2026, 11),
+                today: thursday,
+                filled: thursday,
+                counts: (_) => const {},
+                firstWeekday: DateTime.monday,
+                onPicked: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      final calendar = find.byType(DayPicker);
+      expect(find.textContaining('November'), findsOneWidget);
+
+      await stepOver(tester, calendar, BackForwardStep.back, by);
+      expect(find.textContaining('October'), findsOneWidget);
+      await stepOver(tester, calendar, BackForwardStep.forward, by);
+      await stepOver(tester, calendar, BackForwardStep.forward, by);
+      expect(find.textContaining('December'), findsOneWidget);
+    }, variant: TargetPlatformVariant.desktop());
+  }
+
+  for (final by in StepBy.values) {
+    testWidgets('${by.name}: a swipe or the mouse buttons over the week turn '
+        'it a week, as ‹ and › do', (tester) async {
+      asDesktop();
+      await pumpStrip(tester);
+      final at = tester.getCenter(day(19));
+
+      await stepAt(tester, at, BackForwardStep.back, by);
+      for (final date in [9, 10, 11, 12, 13, 14, 15]) {
+        expect(day(date), findsOneWidget, reason: '$date November');
+      }
+      expect(day(19), findsNothing);
+      await stepAt(tester, at, BackForwardStep.forward, by);
+      await stepAt(tester, at, BackForwardStep.forward, by);
+      expect(day(26), findsOneWidget);
+      expect(day(19), findsNothing);
+    }, variant: TargetPlatformVariant.desktop());
+  }
 
   testWidgets('seven days with today in the middle, a dot for each note up to '
       'three', (tester) async {
