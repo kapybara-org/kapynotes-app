@@ -641,7 +641,7 @@ class _PhoneTaskBox extends StatelessWidget {
                     ? KapyIcon(
                         KapyIcons.checkRounded,
                         size: 14,
-                        color: palette.paperColor,
+                        color: palette.onAccent,
                       )
                     : null,
               ),

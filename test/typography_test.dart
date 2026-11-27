@@ -64,7 +64,7 @@ void main() {
     expect(title.fontFamily, AppFonts.ui);
     expect(title.fontWeight, FontWeight.w600);
     expect(title.fontFamilyFallback!.first, AppFonts.uiFallback.first);
-    expect(title.fontSize, 26);
+    expect(title.fontSize, 28);
     expect(title.fontSize! / base.fontSize!, inInclusiveRange(1.5, 1.8));
   });
 

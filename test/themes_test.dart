@@ -25,35 +25,36 @@ void main() {
       final p = KapyTheme.palette(AppTheme.riverbank, Brightness.dark);
       for (final (colour, want, role) in [
         (p.sidebarBackground, 0xFF0D0D0D, 'window'),
-        (p.editorBackground, 0xFF0F0E0E, 'note pane'),
-        (p.cardBackground, 0xFF131313, 'card'),
-        (p.controlBackground, 0xFF20201F, 'button fill'),
-        (p.selectedBackground, 0xFF191918, 'selected row'),
-        (p.hover, 0xFF191918, 'hover'),
-        (p.pageBorder, 0xFF202020, 'hairline'),
-        (p.paneEdge, 0xFF252524, 'pane divider'),
-        (p.switchTrackOff, 0xFF2A2A28, 'switch off'),
-        (p.checkboxBorder, 0xFF4D4D4D, 'checkbox ring'),
-        (p.resultPillBackground, 0xFF1E1E1E, 'grey chip'),
-        (p.textPrimary, 0xFFDBDBDB, 'text'),
-        (p.textHeading, 0xFFDADADA, 'title'),
-        (p.textSecondary, 0xFF969696, 'secondary'),
-        (p.textDescription, 0xFF969696, 'description'),
-        (p.textTertiary, 0xFF878787, 'tertiary'),
-        (p.textDivider, 0xFF494948, 'dots and chevrons'),
+        (p.editorBackground, 0xFF1A1A1A, 'note pane'),
+        (p.cardBackground, 0xFF1A1A1A, 'card'),
+        (p.controlBackground, 0xFF262626, 'button fill'),
+        (p.selectedBackground, 0xFF262626, 'selected row'),
+        (p.hover, 0xFF262626, 'hover'),
+        (p.pageBorder, 0xFF262626, 'hairline'),
+        (p.paneEdge, 0xFF2E2E2E, 'pane divider'),
+        (p.switchTrackOff, 0xFF333333, 'switch off'),
+        (p.checkboxBorder, 0xFF5C5C5C, 'checkbox ring'),
+        (p.resultPillBackground, 0xFF262626, 'grey chip'),
+        (p.textPrimary, 0xFFEDEDED, 'text'),
+        (p.textHeading, 0xFFEDEDED, 'title'),
+        (p.textSecondary, 0xFFA3A3A3, 'secondary'),
+        (p.textDescription, 0xFFA3A3A3, 'description'),
+        (p.textTertiary, 0xFF8F8F8F, 'tertiary'),
+        (p.textDivider, 0xFF4A4A4A, 'dots and chevrons'),
         (p.accent, 0xFFE8772E, 'accent'),
-        (p.onAccent, 0xFF1A0E06, 'ink on the accent'),
+        (p.onAccent, 0xFFFFFFFF, 'white on an orange fill'),
+        (p.accentFill, 0xFFC05815, 'the orange under white words'),
         (p.accentText, 0xFFE8772E, 'orange words'),
         (p.switchThumb, 0xFFFFFFFF, 'the knob stays white'),
       ]) {
         expect(colour, Color(want), reason: role);
       }
-      // #7C7C7B reads at 4.45:1 on a card, so it is lifted just past 4.5.
+      // Quiet text is the tertiary grey, about 5.4:1 on a card.
+      expect(p.textQuiet, const Color(0xFF8F8F8F));
       expect(
         _contrast(p.textQuiet, p.cardBackground),
         greaterThanOrEqualTo(4.5),
       );
-      expect(_contrast(p.textQuiet, p.cardBackground), lessThan(5.0));
       expect(
         p.selection,
         const Color(0xFFE8772E).withAlpha(0x4D),
@@ -65,11 +66,12 @@ void main() {
       final p = KapyTheme.palette(AppTheme.riverbank, Brightness.light);
       expect(p.editorBackground, const Color(0xFFFFFFFF));
       expect(p.accent, const Color(0xFFD9692A));
-      expect(p.onAccent, const Color(0xFF1A0E06));
+      expect(p.onAccent, const Color(0xFFFFFFFF));
+      expect(p.accentFill, const Color(0xFFBD5A22));
       expect(p.selection, const Color(0xFFD9692A).withAlpha(0x40));
       for (final (ink, low, high, what) in [
-        (p.textPrimary, 12.5, 15.0, 'text'),
-        (p.textSecondary, 5.8, 6.8, 'secondary'),
+        (p.textPrimary, 17.0, 18.5, 'text'),
+        (p.textSecondary, 7.3, 8.3, 'secondary'),
         (p.textTertiary, 5.0, 6.0, 'tertiary'),
       ]) {
         final ratio = _contrast(ink, p.editorBackground);
@@ -86,9 +88,10 @@ void main() {
         expect(p.textPrimary, base.textPrimary);
         expect(p.textHeading, base.textHeading);
         expect(p.onAccent, base.onAccent);
+        expect(p.accentFill, base.accentFill);
         final hue = HSLColor.fromColor(p.accent).hue;
         expect(hue, inInclusiveRange(15, 30), reason: 'orange, never blue');
-        expect(p.totalPillBackground, p.accent);
+        expect(p.totalPillBackground, p.accentFill);
         expect(p.selectedBorder, p.accent);
         expect(
           _contrast(p.cardBackground, p.sidebarBackground),
@@ -170,9 +173,14 @@ void main() {
         ]) {
           expect(_contrast(p.accent, ground), greaterThanOrEqualTo(3));
         }
-        expect(_contrast(p.onAccent, p.accent), greaterThanOrEqualTo(4.5));
+        expect(_contrast(p.onAccent, p.accentFill), greaterThanOrEqualTo(4.5));
 
         final ic = p.withIncreasedContrast();
+        expect(
+          _contrast(ic.onAccent, ic.accentFill),
+          greaterThanOrEqualTo(4.5),
+        );
+        expect(ic.totalPillBackground, ic.accentFill);
         // 14:1 as the spec rounds it: Dusk dark is 13.98.
         expect(
           _contrast(ic.textPrimary, ic.editorBackground),

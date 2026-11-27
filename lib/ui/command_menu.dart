@@ -1241,7 +1241,7 @@ class _CommandMenuState extends State<CommandMenu> {
                               ? KapyIcon(
                                   KapyIcons.checkRounded,
                                   size: 14,
-                                  color: palette.paperColor,
+                                  color: palette.onAccent,
                                 )
                               : null,
                         ),

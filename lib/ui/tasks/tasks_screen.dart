@@ -1923,7 +1923,7 @@ class _Box extends StatelessWidget {
                 ? KapyIcon(
                     KapyIcons.checkRounded,
                     size: 14,
-                    color: palette.paperColor,
+                    color: palette.onAccent,
                   )
                 : null,
           ),
@@ -2118,7 +2118,7 @@ class _PhoneTaskRow extends StatelessWidget {
                               child: KapyIcon(
                                 KapyIcons.checkRounded,
                                 size: 14,
-                                color: palette.paperColor,
+                                color: palette.onAccent,
                               ),
                             ),
                           ),
@@ -2264,7 +2264,7 @@ class TasksBandActions extends StatelessWidget {
             done: done,
             total: total,
             fill: ink.sage,
-            check: context.palette.paperColor,
+            check: context.palette.onAccent,
           ),
           const SizedBox(width: 6),
           ExcludeSemantics(

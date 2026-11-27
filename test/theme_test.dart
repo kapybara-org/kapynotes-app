@@ -13,9 +13,9 @@ void main() {
   test('dark theme is the design system neutral ladder', () {
     final palette = KapyTheme.darkPalette;
 
-    expect(palette.editorBackground, const Color(0xFF0F0E0E));
+    expect(palette.editorBackground, const Color(0xFF1A1A1A));
     expect(palette.gutterBackground, palette.editorBackground);
-    expect(palette.textPrimary, const Color(0xFFDBDBDB));
+    expect(palette.textPrimary, const Color(0xFFEDEDED));
     expect(palette.paperFiber, Colors.transparent);
 
     // Names and figures stay in the note's ink; only the operators, the
@@ -24,7 +24,7 @@ void main() {
       {palette.number, palette.keyword, palette.function, palette.variable},
       {palette.textPrimary},
     );
-    expect(palette.textTertiary, const Color(0xFF878787));
+    expect(palette.textTertiary, const Color(0xFF8F8F8F));
     expect(
       {palette.operator, palette.unit, palette.currency, palette.comment},
       {palette.textTertiary},
@@ -32,7 +32,7 @@ void main() {
     expect(palette.railBackground, palette.sidebarBackground);
     expect(palette.raisedBackground, isNull);
     expect(palette.raisedBorder, isNull);
-    // A result is a grey chip: the note's ink on #1E1E1E.
+    // A result is a grey chip: the note's ink on #262626.
     expect(
       {
         palette.chipNumber,
@@ -43,10 +43,10 @@ void main() {
       },
       {palette.textPrimary},
     );
-    expect(palette.resultPillBackground, const Color(0xFF1E1E1E));
+    expect(palette.resultPillBackground, const Color(0xFF262626));
     final theme = KapyTheme.dark();
     expect(theme.colorScheme.primary, const Color(0xFFE8772E));
-    expect(theme.colorScheme.onPrimary, const Color(0xFF1A0E06));
+    expect(theme.colorScheme.onPrimary, const Color(0xFFFFFFFF));
     expect(theme.colorScheme.error, const Color(0xFFEB534E));
     expect(theme.colorScheme.errorContainer, const Color(0xFF291919));
     expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
@@ -64,9 +64,10 @@ void main() {
 
   test('the radii are the design system', () {
     expect(AppRadii.control, 7);
-    expect(AppRadii.group, 10);
+    expect(AppRadii.group, 8);
     expect(AppRadii.surface, 12);
-    expect(AppRadii.card, 20);
+    expect(AppRadii.card, 14);
+    expect(AppRadii.phoneList, 18);
     final dialog =
         KapyTheme.dark().dialogTheme.shape! as RoundedRectangleBorder;
     expect(dialog.borderRadius, BorderRadius.circular(AppRadii.surface));
@@ -85,7 +86,7 @@ void main() {
     expect(filled.visualDensity, VisualDensity.standard);
     expect(filled.padding!.resolve({})!.vertical, greaterThanOrEqualTo(16));
     expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w400);
-    expect(filled.backgroundColor!.resolve({}), palette.accent);
+    expect(filled.backgroundColor!.resolve({}), palette.accentFill);
     expect(filled.foregroundColor!.resolve({}), palette.onAccent);
     expect(
       (filled.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
@@ -135,10 +136,13 @@ void main() {
     expect(theme.dividerTheme.color, palette.pageBorder);
   });
 
-  test('two weights: regular, and semibold for titles', () {
+  test('three weights: regular, medium for row titles, semibold for '
+      'headings', () {
     expect(AppWeight.regular, 400);
+    expect(AppWeight.medium, 500);
     expect(AppWeight.semibold, 600);
-    expect(AppWeight.axisOf(FontWeight.w500), AppWeight.regular);
+    expect(AppWeight.axisOf(FontWeight.w500), AppWeight.medium);
+    expect(AppWeight.named(AppWeight.medium), FontWeight.w500);
     expect(AppWeight.axisOf(FontWeight.w700), AppWeight.semibold);
     expect(AppWeight.named(AppWeight.regular), FontWeight.w400);
     expect(AppWeight.named(AppWeight.semibold), FontWeight.w600);

@@ -411,7 +411,7 @@ class _EditorPaneFrameState extends State<EditorPaneFrame> {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: DecoratedBox(
                         decoration: BoxDecoration(
-                          color: scheme.primary,
+                          color: context.palette.accentFill,
                           borderRadius: BorderRadius.circular(AppRadii.pill),
                         ),
                         child: Padding(

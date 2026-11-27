@@ -269,7 +269,7 @@ class NoteMetaRow extends StatelessWidget {
                 done: done,
                 total: tasks,
                 fill: Theme.of(context).colorScheme.primary,
-                check: palette.paperColor,
+                check: palette.onAccent,
               ),
               const SizedBox(width: 6),
               Text(progress, style: strong),

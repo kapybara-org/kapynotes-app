@@ -157,8 +157,14 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// Riverbank's sage, and each theme's own accent.
   final Color accent;
 
-  /// Ink set on [accent]: the check in a ticked box, a filled button's label.
+  /// Ink set on an orange fill, text and icons alike: white, the check in a
+  /// ticked box, a filled button's label, a total's figures.
   final Color onAccent;
+
+  /// The fill under words in [onAccent]: a filled button, a total's pill. A
+  /// deeper shade of [accent], so white reads at 4.5:1; fills that carry only
+  /// an icon keep [accent].
+  final Color accentFill;
 
   /// Code in a note, Paper's p-5-0: clay keywords, sage strings, ochre
   /// numbers and teal built-ins, each a shade deeper in light.
@@ -281,6 +287,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     final hairline = _mix(editorBackground, ink, 0.22);
     final outline = _mix(editorBackground, ink, 0.5);
     final strongAccent = _mix(accent, extreme, 0.18);
+    final deeperFill = _mix(accentFill, const Color(0xFF000000), 0.18);
     return copyWith(
       number: ink,
       keyword: ink,
@@ -311,7 +318,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       accent: strongAccent,
       selectedBorder: strongAccent,
       focusRing: _mix(focusRing, extreme, 0.18),
-      totalPillBackground: strongAccent,
+      accentFill: deeperFill,
+      totalPillBackground: deeperFill,
       accentText: _mix(accentText, extreme, 0.3),
       tonalForeground: _mix(tonalForeground, extreme, 0.45),
       increasedContrast: true,
@@ -387,6 +395,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.shadow,
     required this.accent,
     required this.onAccent,
+    required this.accentFill,
     required this.codeKeyword,
     required this.codeString,
     required this.codeNumber,
@@ -470,6 +479,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? shadow,
     Color? accent,
     Color? onAccent,
+    Color? accentFill,
     Color? codeKeyword,
     Color? codeString,
     Color? codeNumber,
@@ -550,6 +560,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     shadow: shadow ?? this.shadow,
     accent: accent ?? this.accent,
     onAccent: onAccent ?? this.onAccent,
+    accentFill: accentFill ?? this.accentFill,
     codeKeyword: codeKeyword ?? this.codeKeyword,
     codeString: codeString ?? this.codeString,
     codeNumber: codeNumber ?? this.codeNumber,
@@ -639,6 +650,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       shadow: mix(shadow, other.shadow),
       accent: mix(accent, other.accent),
       onAccent: mix(onAccent, other.onAccent),
+      accentFill: mix(accentFill, other.accentFill),
       codeKeyword: mix(codeKeyword, other.codeKeyword),
       codeString: mix(codeString, other.codeString),
       codeNumber: mix(codeNumber, other.codeNumber),
@@ -1580,7 +1592,8 @@ class KapyTheme {
     quiet: Color(0xFF8F8F8F),
     mark: Color(0xFF4A4A4A),
     accent: Color(0xFFE8772E),
-    onAccent: Color(0xFF1A0E06),
+    onAccent: Color(0xFFFFFFFF),
+    accentFill: Color(0xFFC05815),
     accentText: Color(0xFFE8772E),
     dots: [
       Color(0xFFC9A447),
@@ -1614,7 +1627,8 @@ class KapyTheme {
     quiet: Color(0xFF6B6B6B),
     mark: Color(0xFFB5B5B5),
     accent: Color(0xFFD9692A),
-    onAccent: Color(0xFF1A0E06),
+    onAccent: Color(0xFFFFFFFF),
+    accentFill: Color(0xFFBD5A22),
     accentText: Color(0xFFB9551A),
     dots: [
       Color(0xFFA88424),
@@ -1998,7 +2012,7 @@ class KapyTheme {
               ),
             ).copyWith(
               backgroundColor: fillStates(
-                accent,
+                palette.accentFill,
                 ink: onAccent,
                 disabled: palette.controlBackground,
               ),
@@ -2268,6 +2282,7 @@ class _Tones {
     required this.mark,
     required this.accent,
     required this.onAccent,
+    required this.accentFill,
     required this.accentText,
     required this.dots,
   });
@@ -2311,6 +2326,7 @@ class _Tones {
 
   final Color accent;
   final Color onAccent;
+  final Color accentFill;
   final Color accentText;
   final List<Color> dots;
 
@@ -2336,6 +2352,7 @@ class _Tones {
         mark: mark,
         accent: accent,
         onAccent: onAccent,
+        accentFill: accentFill,
         accentText: accentText,
         dots: dots,
       );
@@ -2406,7 +2423,7 @@ CalcPalette _fromTones(_Tones t) {
     scrim: dark ? const Color(0xB3000000) : t.text.withAlpha(0x33),
     resultPillBackground: t.chip,
     resultPillText: t.text,
-    totalPillBackground: accent,
+    totalPillBackground: t.accentFill,
     totalPillText: t.onAccent,
     clay: accent,
     clayText: accentText,
@@ -2430,6 +2447,7 @@ CalcPalette _fromTones(_Tones t) {
     shadow: dark ? const Color(0xFF000000) : t.text.withAlpha(0x66),
     accent: accent,
     onAccent: t.onAccent,
+    accentFill: t.accentFill,
     codeKeyword: accentText,
     codeString: code(t.dots[4]),
     codeNumber: code(t.dots[0]),
