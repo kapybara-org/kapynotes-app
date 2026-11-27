@@ -367,7 +367,7 @@ void main() {
       (year, 1081, false, true, 0.004),
       (year, 1081, true, false, 0.004),
       (year, 1500, false, false, 0.01),
-      (year, 1500, true, false, 0.02),
+      (year, 1500, true, false, 0.017),
     ]) {
       final how =
           '${period.kind.name} of $notes, ${fullest ? 'fullest' : 'as most are'}';
@@ -468,6 +468,56 @@ void main() {
       topics: [(name: 'Café ${'話' * 15}', notes: 3)],
     ).toJson();
     expect((json['topics']! as List).single, ['Café ${'話' * 11}', 3]);
+  });
+
+  test('past the drop rate a record keeps its parts where its whole filter '
+      'alone would drop no less often', () {
+    final year = periodOf(DateTime(2026, 11, 19), RecapKind.year);
+    final read = <RecapRead>[
+      for (var month = 1; month <= 12; month++)
+        (
+          first: year.indexOf(DateTime(2026, month))!,
+          last: year.indexOf(DateTime(2026, month + 1, 0))!,
+          notes: RecapFilter.of([for (var i = 0; i < 10; i++) '$month-$i']),
+        ),
+      (first: 0, last: year.days - 1, notes: RecapFilter.of(['rest'])),
+    ];
+    // As a record read back holds it, which keeps its own size when written
+    // again, as a prune does: one slot a note, so it matches often.
+    final whole = RecapFilter.union([
+      for (final part in read) part.notes,
+    ])!.sized(40);
+    expect(whole.m, lessThanOrEqualTo(2));
+    expect(whole.falseRate, greaterThan(0.3));
+    final json = RecapRecord(
+      period: year,
+      timeZone: 'Asia/Kolkata',
+      firstWeekday: DateTime.monday,
+      madeAt: made,
+      numbers: RecapNumbers(
+        counts: const RecapCounts(notes: 121),
+        tasksOpen: 0,
+        chart: List.filled(12, 10),
+        longestRun: 3,
+        topics: const [],
+        previous: const RecapCounts(),
+      ),
+      fingerprint: '0123456789abcdef',
+      read: read,
+      allRead: whole,
+    ).toJson();
+    final record = RecapRecord.fromJson(jsonDecode(jsonEncode(json)))!;
+    final parts = record.read;
+    expect(parts, isNotNull, reason: 'whole alone would drop no less often');
+    final drops =
+        record.allRead!.falseRate *
+        (1 -
+            parts!.fold(
+              1.0,
+              (none, part) => none * (1 - part.notes.falseRate),
+            ));
+    expect(drops, greaterThan(recapDropsMost), reason: 'past the rate');
+    expect(record.allRead!.falseRate, whole.falseRate);
   });
 
   test('a recap chat at its longest leaves room in its chat record', () {

@@ -184,6 +184,82 @@ void main() {
       expect(RecapFilter.fromJson(c, k, b), isNull, reason: what);
     }
   });
+
+  test('a set whose last slot is past its slots is no filter at all', () {
+    expect(
+      base64Encode(written([212, 1046], 2, RecapFilter.roomyM)),
+      '2VI1Khf/',
+      reason: 'the hand-written coding is the one records keep',
+    );
+    expect(
+      RecapFilter.fromJson(
+        2,
+        RecapFilter.roomyM,
+        base64Encode(written([212, 1046], 2, RecapFilter.roomyM)),
+      )!.mayHold('a'),
+      isTrue,
+    );
+    const m = RecapFilter.roomyM;
+    for (final slots in [
+      [212, 2 * m],
+      [2 * m, 2 * m],
+      [212, 2 * m + 700],
+    ]) {
+      expect(
+        RecapFilter.fromJson(2, m, base64Encode(written(slots, 2, m))),
+        isNull,
+        reason: '$slots of ${2 * m} slots',
+      );
+    }
+  });
+}
+
+/// A set's bytes for [slots], sorted, of [count] notes at [m] slots a note,
+/// written by hand from RecapFilter's coding, so a test can make one the
+/// writer never would.
+Uint8List written(List<int> slots, int count, int m) {
+  int mix(int hash) {
+    var h = hash;
+    h ^= h >> 16;
+    h = (h * 0x85ebca6b) & 0xffffffff;
+    h ^= h >> 13;
+    h = (h * 0xc2b2ae35) & 0xffffffff;
+    return h ^ (h >> 16);
+  }
+
+  var hash = 0x811c9dc5;
+  for (final value in [count, m, ...slots]) {
+    for (var shift = 0; shift < 32; shift += 8) {
+      hash = ((hash ^ ((value >> shift) & 0xff)) * 0x01000193) & 0xffffffff;
+    }
+  }
+  final check = mix(hash) & 0xffff;
+  final k = recapRiceBits(m);
+  final bits = <int>[];
+  var previous = 0;
+  for (final slot in slots) {
+    final gap = slot - previous;
+    previous = slot;
+    bits
+      ..addAll(List.filled(gap >> k, 1))
+      ..add(0);
+    for (var i = k - 1; i >= 0; i--) {
+      bits.add((gap >> i) & 1);
+    }
+  }
+  while (bits.length % 8 != 0) {
+    bits.add(1);
+  }
+  final bytes = [
+    check >> 8,
+    check & 0xff,
+    for (var i = 0; i < bits.length; i += 8)
+      bits.sublist(i, i + 8).fold(0, (byte, bit) => (byte << 1) | bit),
+  ];
+  while (bytes.length % 3 != 0) {
+    bytes.add(0xff);
+  }
+  return Uint8List.fromList(bytes);
 }
 
 extension on Uint8List {
