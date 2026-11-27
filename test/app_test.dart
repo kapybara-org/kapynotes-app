@@ -2902,9 +2902,7 @@ void main() {
     expect(prefs.editorTextScale, 1);
   });
 
-  testWidgets('Settings shows the zoom and steps it', (
-    tester,
-  ) async {
+  testWidgets('Settings shows the zoom and steps it', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpApp(tester);
@@ -2917,7 +2915,10 @@ void main() {
       find.descendant(of: row, matching: find.text('The whole window')),
       findsOneWidget,
     );
-    expect(find.descendant(of: row, matching: find.text('100%')), findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('100%')),
+      findsOneWidget,
+    );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('note-text-size-setting')),
@@ -2927,11 +2928,17 @@ void main() {
     );
 
     await tester.tap(
-      find.descendant(of: row, matching: find.byKey(const ValueKey('stepper-up'))),
+      find.descendant(
+        of: row,
+        matching: find.byKey(const ValueKey('stepper-up')),
+      ),
     );
     await tester.pumpAndSettle();
     expect(prefs.zoom, 1.1);
-    expect(find.descendant(of: row, matching: find.text('110%')), findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('110%')),
+      findsOneWidget,
+    );
     expect(prefs.editorTextScale, 1);
   });
 
@@ -2949,7 +2956,8 @@ void main() {
       for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
         AppPlatform.debugTargetPlatformOverride = platform;
         for (final listShown in [true, false]) {
-          final reason = '${(zoom * 100).round()}%, ${platform.name}, list '
+          final reason =
+              '${(zoom * 100).round()}%, ${platform.name}, list '
               '${listShown ? 'shown' : 'hidden'}';
           await pumpApp(tester, sidebarVisible: listShown);
           prefs.zoom = zoom;
@@ -2978,7 +2986,10 @@ void main() {
           await tester.ensureVisible(zoomRow);
           await tester.pumpAndSettle();
           for (final words in ['Zoom', 'The whole window']) {
-            final text = find.descendant(of: zoomRow, matching: find.text(words));
+            final text = find.descendant(
+              of: zoomRow,
+              matching: find.text(words),
+            );
             expect(
               tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
               isFalse,
@@ -3329,14 +3340,14 @@ void main() {
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyP);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyP);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyU);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyU);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
     await tester.pumpAndSettle();
 
     final recorded = shortcuts.bindingFor(ShortcutAction.findNotes)!;
-    expect(recorded.logicalKey, LogicalKeyboardKey.keyP);
+    expect(recorded.logicalKey, LogicalKeyboardKey.keyU);
     expect(recorded.meta, isTrue);
     expect(recorded.shift, isTrue);
   });
@@ -4439,7 +4450,9 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
         }
         expect(
-          tester.widget<Text>(find.byKey(const ValueKey('recording-status'))).data,
+          tester
+              .widget<Text>(find.byKey(const ValueKey('recording-status')))
+              .data,
           'Microphone is silent',
         );
         expect(find.byKey(const ValueKey('recording-elapsed')), findsOneWidget);

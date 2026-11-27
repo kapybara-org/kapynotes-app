@@ -27,6 +27,10 @@ class AppPlatform {
   static bool get isDesktop => isMacOS || isWindows || isLinux;
   static bool get isMobile => isIOS || isAndroid;
 
+  /// Where Kapy Notes has a camera window of its own: Linux has no camera
+  /// package, and phones use the full-screen camera.
+  static bool get hasDesktopCamera => isMacOS || isWindows;
+
   /// The Flatpak: a Linux build in Flatpak's sandbox, which Flatpak keeps up
   /// to date and whose own paths mean nothing outside it. Flatpak names the
   /// app in FLATPAK_ID and mounts /.flatpak-info in every sandbox it starts.

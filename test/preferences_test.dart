@@ -321,32 +321,35 @@ void main() {
     expect(prefs.writingFont, WritingFont.clean);
   });
 
-  test('the zoom steps through its levels, stays within them, and persists', () {
-    final store = _MemoryStore();
-    final prefs = LayoutPrefs(store)..load();
-    expect(prefs.zoom, 1);
+  test(
+    'the zoom steps through its levels, stays within them, and persists',
+    () {
+      final store = _MemoryStore();
+      final prefs = LayoutPrefs(store)..load();
+      expect(prefs.zoom, 1);
 
-    final seen = <double>[];
-    for (var i = 0; i < 8; i++) {
-      prefs.zoomIn();
-      seen.add(prefs.zoom);
-    }
-    expect(seen, [1.1, 1.25, 1.5, 1.75, 2, 2, 2, 2]);
-    expect(store.data['zoom.v1'], 2);
+      final seen = <double>[];
+      for (var i = 0; i < 8; i++) {
+        prefs.zoomIn();
+        seen.add(prefs.zoom);
+      }
+      expect(seen, [1.1, 1.25, 1.5, 1.75, 2, 2, 2, 2]);
+      expect(store.data['zoom.v1'], 2);
 
-    prefs.zoomOut();
-    expect((LayoutPrefs(store)..load()).zoom, 1.75);
-
-    for (var i = 0; i < 10; i++) {
       prefs.zoomOut();
-    }
-    expect(prefs.zoom, 0.8);
+      expect((LayoutPrefs(store)..load()).zoom, 1.75);
 
-    prefs.resetZoom();
-    expect(prefs.zoom, 1);
-    expect((LayoutPrefs(store)..load()).zoom, 1);
-    expect(prefs.editorTextScale, LayoutPrefs.defaultEditorTextScale);
-  });
+      for (var i = 0; i < 10; i++) {
+        prefs.zoomOut();
+      }
+      expect(prefs.zoom, 0.8);
+
+      prefs.resetZoom();
+      expect(prefs.zoom, 1);
+      expect((LayoutPrefs(store)..load()).zoom, 1);
+      expect(prefs.editorTextScale, LayoutPrefs.defaultEditorTextScale);
+    },
+  );
 
   test('a stored zoom off the steps lands on the nearest one', () {
     for (final (stored, zoom) in [
@@ -1173,8 +1176,8 @@ void main() {
     final store = _MemoryStore();
     final prefs = ShortcutPrefs(store)..load();
     final replacement = ShortcutBinding(
-      logicalKey: LogicalKeyboardKey.keyP,
-      physicalKey: PhysicalKeyboardKey.keyP,
+      logicalKey: LogicalKeyboardKey.keyU,
+      physicalKey: PhysicalKeyboardKey.keyU,
       control: true,
       shift: true,
     );
@@ -1190,6 +1193,58 @@ void main() {
 
     final restored = ShortcutPrefs(store)..load();
     expect(restored.bindingFor(ShortcutAction.findNotes)!, replacement);
+  });
+
+  test('the camera opens on Shift and P, and that chord is checked against '
+      'every other key', () {
+    for (final (platform, meta) in [
+      (TargetPlatform.macOS, true),
+      (TargetPlatform.windows, false),
+    ]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final prefs = ShortcutPrefs(_MemoryStore())..load();
+      final camera = prefs.bindingFor(ShortcutAction.openCamera)!;
+      expect(camera.logicalKey, LogicalKeyboardKey.keyP, reason: platform.name);
+      expect(camera.shift, isTrue);
+      expect(camera.meta, meta);
+      expect(camera.control, !meta);
+      expect(camera.alt, isFalse);
+      expect(ShortcutAction.openCamera.label, 'Open the camera');
+      expect(
+        ShortcutAction.openCamera.description,
+        'Take a photo or record a video for the note',
+      );
+      for (final action in ShortcutAction.values) {
+        if (action == ShortcutAction.openCamera) continue;
+        expect(
+          prefs.bindingFor(action),
+          isNot(camera),
+          reason: '${platform.name}: ${action.name}',
+        );
+      }
+      expect(
+        prefs.conflictFor(ShortcutAction.findNotes, camera),
+        ShortcutAction.openCamera,
+      );
+    }
+  });
+
+  test('a key someone already set keeps the camera off it until they '
+      'choose one', () {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final taken = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyP,
+      physicalKey: PhysicalKeyboardKey.keyP,
+      control: true,
+      shift: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'findNotes': taken.toJson()};
+    final prefs = ShortcutPrefs(store)..load();
+    expect(prefs.bindingFor(ShortcutAction.findNotes), taken);
+    expect(prefs.bindingFor(ShortcutAction.openCamera), isNull);
   });
 
   test('formatting shortcuts have distinct OS-specific defaults', () {

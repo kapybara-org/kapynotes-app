@@ -74,8 +74,10 @@ import '../data/task_folds.dart';
 import '../data/update_checker.dart';
 import '../data/writing_streak.dart';
 import '../images/camera_capture.dart';
+import '../images/desktop_camera.dart';
 import '../images/image_picker.dart';
 import '../video/video_picker.dart';
+import 'desktop_camera_window.dart';
 import 'editor/note_editor.dart';
 import 'editor/note_header.dart' show DateLineSaved, NoteFolders;
 import 'editor/image_insertion.dart';
@@ -879,6 +881,32 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     } finally {
       if (protectsHiddenSession) _hiddenSystemUiDepth--;
     }
+  }
+
+  /// The camera window on a Mac or PC. Its Choose files leaves the app for a
+  /// file dialog, as the pickers do, so a hidden note's session outlasts it.
+  Future<List<XFile>> _openDesktopCamera(BuildContext context, Note note) {
+    final camera = desktopCameraForThisComputer();
+    if (camera == null) return Future.value(const []);
+    return showDesktopCamera(
+      context,
+      camera: camera,
+      attachmentMaxBytes: _videoAttachmentMaxBytes(note),
+      chooseFiles: () async {
+        final protectsHiddenSession =
+            _hiddenMode && (widget.notes.byId(note.id)?.isHidden ?? false);
+        if (protectsHiddenSession) _hiddenSystemUiDepth++;
+        try {
+          return await chooseCameraFiles();
+        } finally {
+          if (protectsHiddenSession) _hiddenSystemUiDepth--;
+        }
+      },
+      startInVideo: widget.prefs.cameraVideo,
+      onVideoChosen: (video) => widget.prefs.cameraVideo = video,
+      cameraId: widget.prefs.cameraDevice,
+      onCameraChosen: (id) => widget.prefs.cameraDevice = id,
+    );
   }
 
   /// The file picker, which leaves the app as the photo pickers do: a hidden
@@ -6646,6 +6674,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
+          cameraAcquirer: AppPlatform.hasDesktopCamera
+              ? (context) => _openDesktopCamera(context, note)
+              : null,
           fileAcquirer: () => _acquireFiles(note.id),
           videoAttachmentMaxBytes: () => _videoAttachmentMaxBytes(note),
           onImagePrepared: (staged, prepared) =>
@@ -6744,6 +6775,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
+          cameraAcquirer: AppPlatform.hasDesktopCamera
+              ? (context) => _openDesktopCamera(context, note)
+              : null,
           fileAcquirer: () => _acquireFiles(note.id),
           videoAttachmentMaxBytes: () => _videoAttachmentMaxBytes(note),
           onImagePrepared: (staged, prepared) =>

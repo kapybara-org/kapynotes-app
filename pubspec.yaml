@@ -71,7 +71,15 @@ dependencies:
   camera: 0.12.0+2
   # The recording settings the video camera is opened with. Comes in with
   # camera; named here because the camera builds its MediaSettings directly.
-  camera_platform_interface: ^2.13.1
+  camera_platform_interface: ^2.14.0
+  # The camera on Windows: the Flutter team's implementation, which registers
+  # as the same camera platform the phone camera uses. It records video but
+  # can't pause and has no flash, which the computer's camera doesn't offer.
+  camera_windows: ^0.3.1
+  # The camera on a Mac. Third party, with an API of its own, so the camera
+  # window reaches it through lib/images/desktop_camera.dart. It is the only
+  # Mac camera package that doesn't also build a Linux camera into the app.
+  camera_macos: ^0.1.1
   # The platform photo library behind the Photos button in that camera. Its
   # lost-data API also lets Android finish a selection after recreating the
   # activity under memory pressure.

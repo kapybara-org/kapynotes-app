@@ -105,14 +105,22 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.10.3"
+  camera_macos:
+    dependency: "direct main"
+    description:
+      name: camera_macos
+      sha256: "64e199368efb0dc12c5298819df98aada4fe2cc50a5d84997f7bf7d94edaa3f8"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.1.1"
   camera_platform_interface:
     dependency: "direct main"
     description:
       name: camera_platform_interface
-      sha256: "4524ca6eb4176b066864036ad4fe02c3e4863e63b77eadc21a5bf56824f43498"
+      sha256: c22b8403d7925c6cc6a37fc0cf01f645c1400bdfb0e765f81373a3ac080d93e3
       url: "https://pub.dev"
     source: hosted
-    version: "2.13.1"
+    version: "2.15.1"
   camera_web:
     dependency: transitive
     description:
@@ -121,6 +129,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.3.5+5"
+  camera_windows:
+    dependency: "direct main"
+    description:
+      name: camera_windows
+      sha256: "3d730f64bed259328029222bc8136c9c23a1b9f33e3b8acc5a2048317cc72f22"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.3.1"
   characters:
     dependency: transitive
     description:
