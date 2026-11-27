@@ -2405,7 +2405,8 @@ void main() {
       expect(find.byType(NoteEditor), findsOneWidget);
     });
 
-    testWidgets('with the keyboard down, a drag on the text turns the day', (
+    testWidgets("a drag on the note's text never turns the day, with the "
+        'keyboard down, the caret in it or the keyboard up; the header does', (
       tester,
     ) async {
       seed();
@@ -2413,13 +2414,29 @@ void main() {
       keyboardDown();
       await tester.pumpAndSettle();
       await turn(tester, onText(tester), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      await tester.tap(find.byType(NoteEditor));
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<NoteEditorState>(find.byType(NoteEditor)).writing,
+        isTrue,
+      );
+      await turn(tester, onText(tester), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      await turn(tester, onText(tester) - const Offset(0, 120), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      await turn(tester, onHeader(tester), 200);
       expect(openNoteBody(tester), startsWith('Standup notes'));
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-    testWidgets("on Android, a drag on the text is the text's own, which "
-        'Android claims at once, and the header still turns the day', (
-      tester,
-    ) async {
+    testWidgets("on Android too, a drag on the note's text never turns the "
+        'day, and the header does', (tester) async {
       seed();
       await pump(tester);
       keyboardDown();
@@ -2429,37 +2446,6 @@ void main() {
       await turn(tester, onHeader(tester), 200);
       expect(openNoteBody(tester), startsWith('Standup notes'));
     }, variant: TargetPlatformVariant.only(TargetPlatform.android));
-
-    testWidgets('with the caret in the text, a drag on the text stays the '
-        "text's, and the header still turns the day", (tester) async {
-      seed();
-      await pump(tester);
-      await tester.tap(find.byType(NoteEditor));
-      await tester.pumpAndSettle();
-      expect(
-        tester.state<NoteEditorState>(find.byType(NoteEditor)).writing,
-        isTrue,
-      );
-      await turn(tester, onText(tester), 200);
-      expect(openNoteBody(tester), startsWith('Call with Arjun'));
-      await turn(tester, onHeader(tester), 200);
-      expect(openNoteBody(tester), startsWith('Standup notes'));
-    });
-
-    testWidgets('with the keyboard up, only the header turns the day', (
-      tester,
-    ) async {
-      seed();
-      await pump(tester);
-      keyboardDown();
-      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
-      addTearDown(tester.view.resetViewInsets);
-      await tester.pumpAndSettle();
-      await turn(tester, onText(tester) - const Offset(0, 120), 200);
-      expect(openNoteBody(tester), startsWith('Call with Arjun'));
-      await turn(tester, onHeader(tester), 200);
-      expect(openNoteBody(tester), startsWith('Standup notes'));
-    });
 
     testWidgets('a scroll down the note, drifting sideways, never turns', (
       tester,

@@ -6017,7 +6017,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       before: shown == null ? null : (_) => _phoneDayAhead(note, by(-1)),
       after: shown == null ? null : (_) => _phoneDayAhead(note, by(1)),
       onTurn: (later) => _turnPhoneDay(by(later ? 1 : -1)),
-      canStart: (at) => _phoneDayTurnsFrom(at, note, editor),
+      canStart: (at) => _phoneDayTurnsFrom(at, editor),
       child: KeyedSubtree(
         key: ObjectKey(editor),
         child: _phoneDayView(note, editor, day: day, kept: kept),
@@ -6051,32 +6051,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
   }
 
-  /// Whether a drag from [at] may turn [note]'s page to another day: from
-  /// its header always, and from the page under it only with the keyboard
-  /// down and nothing being written there, so a drag on the text, its
-  /// caret, a selection or a drawing stays theirs.
-  bool _phoneDayTurnsFrom(
-    Offset at,
-    Note note,
-    GlobalKey<NoteEditorState> editor,
-  ) {
+  /// Whether a drag from [at] may turn a note's page to another day: from
+  /// its header only, never from the note itself, so its text, caret,
+  /// selection, tables and drawing keep every drag, on both phones.
+  bool _phoneDayTurnsFrom(Offset at, GlobalKey<NoteEditorState> editor) {
     final header = _phoneHeaders[editor]?.currentContext?.findRenderObject();
-    if (header is RenderBox &&
+    return header is RenderBox &&
         header.hasSize &&
-        at.dy <= header.localToGlobal(Offset(0, header.size.height)).dy) {
-      return true;
-    }
-    return MediaQuery.viewInsetsOf(context).bottom == 0 &&
-        !_opensAsDrawing(note) &&
-        !(editor.currentState?.writing ?? false);
+        at.dy <= header.localToGlobal(Offset(0, header.size.height)).dy;
   }
 
   /// The editors a turn's page coming in was drawn with, by note, which the
   /// note keeps once the turn makes it the one open; see [_phoneEditorFor].
   final Map<String, GlobalKey<NoteEditorState>> _phoneTurnEditors = {};
 
-  /// The header over each phone page's editor, which a day's turn starts
-  /// from with the keyboard up.
+  /// The header over each phone page's editor, the only place a day's turn
+  /// starts from.
   final _phoneHeaders = Expando<GlobalKey>();
 
   /// A day turned to on a phone note's page: as its week picks it (see
