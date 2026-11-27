@@ -18,6 +18,7 @@ import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
+import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/speech/moments.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
@@ -113,6 +114,7 @@ void main() {
   Future<KapyAiController> build({
     Billing? billing,
     List<Map<String, Object?>>? notes,
+    NotesStore? noteStore,
     LocalStore? local,
     KapyChatBook? chats,
     Map<String, String> environment = const {},
@@ -123,10 +125,12 @@ void main() {
     final controller = KapyAiController(
       store: local ?? store,
       chats: chats,
-      notes: await notesWith(
-        notes ?? [noteJson('lisbon', 'Lisbon trip\nflights')],
-        store: local ?? store,
-      ),
+      notes:
+          noteStore ??
+          await notesWith(
+            notes ?? [noteJson('lisbon', 'Lisbon trip\nflights')],
+            store: local ?? store,
+          ),
       device: device,
       billing: billing,
       token: token ?? () => 'session-token',
@@ -1388,6 +1392,81 @@ void main() {
           );
         },
       );
+
+      test(
+        'Try again starts over when the recording changed after a part failed',
+        () async {
+          final noteStore = await notesWith(
+            notes(voice: _voice(minutes: 30)),
+            store: store,
+          );
+          final ai = await build(
+            noteStore: noteStore,
+            billing: await billingOn(pro: true),
+          );
+          var asked = 0;
+          server = (request) {
+            if (!request.url.path.endsWith('/ai/usage') && ++asked == 3) {
+              return http.Response(jsonEncode({'error': 'model failed'}), 502);
+            }
+            return spanish(request);
+          };
+          await ai.ask('Translate the transcript to Spanish', recording: _link);
+          await ai.proceed();
+          expect(ai.pending, isA<KapyFailed>());
+
+          final changed = _voice(minutes: 20);
+          noteStore.updateAttachment('standup', _link.hash, (_) => changed);
+          await ai.proceed();
+          expect(ai.pending, isNull);
+          final expected = translationParts(changed, TranslateScope.transcript);
+          expect(partsSent().skip(3), expected, reason: 'every part again');
+          expect(
+            stitchTranslation(ai.current!.messages.skip(1).map((m) => m.text)),
+            _inSpanish(expected.join('\n')),
+          );
+        },
+      );
+
+      test('offline or out of answers, it offers no device model', () async {
+        final ai = await pro(_voice(minutes: 2));
+        server = (_) => throw http.ClientException('no route');
+        await ai.ask('Translate the transcript to Spanish', recording: _link);
+        await ai.proceed();
+        expect((ai.pending! as KapyOffline).fallback, isNull);
+
+        server = (_) => http.Response(
+          jsonEncode({
+            'error': 'limit reached',
+            'usage': {..._usage, 'remaining': 0},
+          }),
+          429,
+        );
+        await ai.proceed();
+        expect((ai.pending! as KapyLimitReached).fallback, isNull);
+        expect(ai.current!.messages, hasLength(1));
+      });
+
+      test('a transcript with no words says so', () async {
+        final ai = await pro(
+          _voice().copyWith(
+            transcript: VoiceTranscript(
+              lang: 'en',
+              engine: 'test',
+              at: 0,
+              segments: const [TranscriptSegment(s: 0, e: 1000, t: ' ')],
+            ),
+          ),
+        );
+        server = spanish;
+        await ai.ask('Translate the transcript to Spanish', recording: _link);
+        await ai.proceed();
+        expect(
+          (ai.pending! as KapyFailed).message,
+          "This recording's transcript has no words to translate.",
+        );
+        expect(answers(), isEmpty);
+      });
 
       test('a reply that loses a time mark is a part that failed', () async {
         final ai = await pro(_voice(minutes: 2));

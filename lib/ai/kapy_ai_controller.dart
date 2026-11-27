@@ -838,10 +838,11 @@ class KapyAiController extends KapyAi {
   ) async {
     final sent = translationParts(voice.ref, asked.scope);
     if (sent.isEmpty) {
-      throw const AnswerFailed(
-        'This recording has no summary to translate.',
-        retry: false,
-      );
+      throw AnswerFailed(switch (asked.scope) {
+        TranslateScope.summary => 'This recording has no summary to translate.',
+        TranslateScope.transcript =>
+          "This recording's transcript has no words to translate.",
+      }, retry: false);
     }
     final kept = _translated;
     final done =

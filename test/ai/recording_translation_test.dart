@@ -283,6 +283,16 @@ void main() {
         reason: 'a mark that moved',
       );
       expect(translatedPart(part, '  '), isNull);
+      expect(
+        translatedPart(part, '[0:10] Arjun: योजना।\n[0:00] Sanjay: नमस्ते।'),
+        isNull,
+        reason: 'marks out of order',
+      );
+      expect(
+        translatedPart(part, '\u200F[0:00] مرحبا.\n  [0:10] الخطة.'),
+        '[0:00] مرحبا.\n[0:10] الخطة.',
+        reason: 'a direction mark or spaces before a mark',
+      );
       expect(translatedPart('Pricing call', 'Llamada'), 'Llamada');
     });
 
@@ -304,6 +314,20 @@ void main() {
         reason: 'two points made one',
       );
       expect(translatedPart(part, 'Llamada sobre precios.'), isNull);
+    });
+
+    test('a part never splits a character in two', () {
+      final emoji = '😀' * 10;
+      final parts = translationParts(
+        _voice([TranscriptSegment(s: 0, e: 1000, t: emoji, speaker: 0)]),
+        TranslateScope.transcript,
+        limit: 11,
+      );
+      for (final part in parts) {
+        final last = part.codeUnitAt(part.length - 1);
+        expect(last >= 0xD800 && last <= 0xDBFF, isFalse, reason: part);
+      }
+      expect(parts.skip(1).join(), emoji);
     });
 
     test('are stitched in order', () {

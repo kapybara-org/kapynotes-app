@@ -161,9 +161,10 @@ String translationQuestion(
 /// [translated] when it is a whole translation of [part]: something came
 /// back, it keeps every time mark the part had, in order, and no other, and
 /// it keeps one "- " line for each of the part's points. Null when it
-/// doesn't, which is how a reply cut short or summarised shows.
+/// doesn't, which is how a reply cut short or summarised shows. Spaces and
+/// direction marks a reply puts before a line's time are dropped.
 String? translatedPart(String part, String translated) {
-  final text = translated.trim();
+  final text = translated.replaceAll(_lineLead, '').trim();
   if (text.isEmpty) return null;
   if (_points.allMatches(part).length != _points.allMatches(text).length) {
     return null;
@@ -178,6 +179,11 @@ String? translatedPart(String part, String translated) {
 }
 
 final RegExp _points = RegExp(r'^- ', multiLine: true);
+
+final RegExp _lineLead = RegExp(
+  '^[ \t\u200E\u200F\u061C\u202A-\u202E\u2066-\u2069\uFEFF]+(?=\\[)',
+  multiLine: true,
+);
 
 /// The parts of a translation as one text, in order.
 String stitchTranslation(Iterable<String> parts) => parts.join('\n');
