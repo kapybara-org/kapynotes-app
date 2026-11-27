@@ -436,6 +436,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                   page: _content(palette),
                   unavailable: ask == null ? null : _askUnavailable(ask),
                   compact: widget.asSheet,
+                  summaryInView: _onSummary,
                   onPlay: (at) => unawaited(_seekTo(at)),
                   onCited: _cite,
                   onInsert: insert == null

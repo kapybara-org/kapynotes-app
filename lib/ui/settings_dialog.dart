@@ -2336,11 +2336,13 @@ class _SettingsDialogState extends State<SettingsDialog>
       builder: (context) => AlertDialog(
         title: const Text('Clear chat history?'),
         content: Text(
-          ai.chatsSync
-              ? 'Every Kapy AI chat is deleted on all your devices. This '
-                    'can’t be undone.'
-              : 'Every Kapy AI chat on this $kapyDeviceWord is deleted. This '
-                    'can’t be undone.',
+          [
+            ai.chatsSync
+                ? 'Every Kapy AI chat is deleted on all your devices.'
+                : 'Every Kapy AI chat on this $kapyDeviceWord is deleted.',
+            if (ai.hasRecaps) 'This also deletes your recaps.',
+            'This can’t be undone.',
+          ].join(' '),
         ),
         actions: [
           TextButton(

@@ -70,6 +70,7 @@ class ChatMeta {
     extra: {
       if (chat.recording case final recording?)
         recordingField: recording.toJson(),
+      recapField: ?chat.recap,
     },
   );
 
@@ -85,8 +86,16 @@ class ChatMeta {
 
   static const String recordingField = 'recording';
 
+  /// A recap's record rides here the same way, as [KapyChat.recap].
+  static const String recapField = 'recap';
+
   KapyRecordingRef? get recording =>
       KapyRecordingRef.fromJson(extra[recordingField]);
+
+  Map<String, Object?>? get recap => switch (extra[recapField]) {
+    final Map raw => raw.cast<String, Object?>(),
+    _ => null,
+  };
 
   static const _known = {'kind', 'chatId', 'title', 'model', 'createdAt'};
 

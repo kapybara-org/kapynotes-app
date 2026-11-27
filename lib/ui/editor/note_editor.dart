@@ -529,6 +529,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
 
+  /// How long a selection, or the page under it, keeps still before the
+  /// bubble comes, so a drag or a scroll never flickers it.
+  static const _selectionSettle = Duration(milliseconds: 150);
+
   /// A right-click selects the word under it on macOS, and that selection
   /// is for the menu it opens, not for the bubble.
   bool _rightClicked = false;
@@ -865,7 +869,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _handleEditorScroll() {
     LinkPopover.hide();
     _slashCommandMenu.hide();
-    _selectionBubble.hide();
+    // The bubble lifts off while the page moves, and settles back over the
+    // selection once it stops with the selection in view.
+    if (_selectionBubble.isVisible || _selectionBubble.isLifted) {
+      _selectionBubble.lift();
+      _selectionToolbarTimer?.cancel();
+      _selectionToolbarTimer = Timer(_selectionSettle, () {
+        if (mounted) _showSelectionBubble();
+      });
+    }
     if (_pasteChipShown) _placePasteChip();
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
@@ -4160,51 +4172,55 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     });
   }
 
-  /// Puts the caret on the ruled row a click landed on, below everything the
-  /// note has been written into.
+  /// A click below everything the note has been written into: the caret goes
+  /// to the end of the note, where the field's own tap puts it (see
+  /// [NoteFieldState.positionAt]), and nothing is written.
   ///
-  /// Left to itself the field answers such a click with the end of the text,
-  /// so the caret appears on the last written line rather than under the
-  /// pointer and the page reads as though it ignored the click. A caret can
-  /// only sit on a row that exists, so the rows in between are written — the
-  /// same lines a run of Returns would have made, and undone by one press of
-  /// undo.
+  /// Unless the note ends in something with no line of words to type on: a
+  /// picture or another attachment, a table, a code or formula block, or a
+  /// divider. A caret at its end is drawn inside the block, so one empty line
+  /// opens under it, the line a Return there would have made. Only the one:
+  /// the next click below lands on it.
   ///
   /// Returns whether the click was in that empty region, in which case there
   /// is nothing below it to be a checkbox, a link or a calculator word.
-  bool _caretToBlankRow(NoteFieldState field, Offset globalPosition) {
+  bool _clickedBelowWriting(NoteFieldState field, Offset globalPosition) {
     if (widget.readOnly) return false;
-    final lineHeight = field.layout.rowHeight;
     final box = field.box;
     final end = field.lineTop(field.lines.length);
-    if (lineHeight <= 0 || box == null || end == null) return false;
-
-    // Where the writing actually ends. Measured rather than counted in rows:
-    // a note holding a picture has one row as tall as the picture, and only
-    // the empty page below the text is ruled at a fixed height.
-    final textBottom = box.localToGlobal(Offset(0, end)).dy;
-    if (globalPosition.dy <= textBottom) return false;
-
-    // Below that the ruling is uniform — the field forces its strut and the
-    // paper is drawn from the same number — so which line the pointer is over
-    // is arithmetic rather than a hit test.
-    final missing = ((globalPosition.dy - textBottom) / lineHeight).floor() + 1;
-
-    final text = _controller.text + '\n' * missing;
-    final caret = TextSelection.collapsed(offset: text.length);
-    _controller.value = TextEditingValue(text: text, selection: caret);
-    _focusNode.requestFocus();
-    // The field's own tap handler runs after this one, and answers the click
-    // with the position it finds in the layout it already has — the layout
-    // from before these rows existed, which puts the caret straight back on
-    // the last written line. A microtask lands after that handler and before
-    // the frame it would be drawn in, so the caret is only ever painted where
-    // the click was aimed.
-    scheduleMicrotask(() {
-      if (!mounted || _controller.text != text) return;
-      _controller.selection = caret;
-    });
+    if (box == null || end == null) return false;
+    if (globalPosition.dy <= box.localToGlobal(Offset(0, end)).dy) return false;
+    final text = _controller.text;
+    if (_endsInBlock(text)) {
+      _controller.value = TextEditingValue(
+        text: '$text\n',
+        selection: TextSelection.collapsed(offset: text.length + 1),
+      );
+    }
     return true;
+  }
+
+  /// Whether [text]'s last line is a block rather than a line of words.
+  bool _endsInBlock(String text) {
+    final lastLine = text.lastIndexOf('\n') + 1;
+    if (lastLine == text.length) return false;
+    if (text.contains(NoteAttachmentRef.placeholder, lastLine)) return true;
+    if (!widget.markdownEnabled) return false;
+    final markdown = _controller.markdownFor(text);
+    bool endsOn(int start, int end) => start <= lastLine && end >= text.length;
+    if (markdown.tables.any((table) => endsOn(table.start, table.end)) ||
+        markdown.maths.any(
+          (math) => math.display && endsOn(math.start, math.end),
+        )) {
+      return true;
+    }
+    return markdown.blocks.any((block) {
+      if (block.kind == MarkdownBlockKind.rule) {
+        return endsOn(block.start, block.end);
+      }
+      final close = markdown.fencesOf(block)?.close;
+      return close != null && endsOn(close.start, close.end);
+    });
   }
 
   /// Moves the caret into the misspelling a right-click landed on.
@@ -4307,7 +4323,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // A press on a table's grip or "+" is the control's, not the note's.
     if (_tableControls.claims(down.position)) return;
 
-    if (_caretToBlankRow(field, event.position)) {
+    if (_clickedBelowWriting(field, event.position)) {
       _offerPasteAfterTap(down);
       return;
     }
@@ -5549,7 +5565,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (!selection.isValid || selection.isCollapsed || !_focusNode.hasFocus) {
       return;
     }
-    _selectionToolbarTimer = Timer(const Duration(milliseconds: 150), () {
+    _selectionToolbarTimer = Timer(_selectionSettle, () {
       if (!mounted ||
           !_focusNode.hasFocus ||
           _controller.selection != selection) {
@@ -5573,13 +5589,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (widget.readOnly ||
         field == null ||
         box == null ||
-        !_focusNode.hasFocus ||
+        !(_focusNode.hasFocus || _selectionBubble.editingLink) ||
         !selection.isValid ||
         selection.isCollapsed) {
       return;
     }
     final boxes = field.boxesFor(selection);
-    if (boxes.isEmpty) return;
     final transform = box.getTransformTo(null);
     Rect line(TextBox row) => MatrixUtils.transformRect(
       transform,
@@ -5588,6 +5603,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           if (box.top == row.top) box.toRect(),
       ].reduce((a, b) => a.expandToInclude(b)),
     );
+    final pane = context.findRenderObject()! as RenderBox;
+    final within = MatrixUtils.transformRect(
+      pane.getTransformTo(null),
+      Offset.zero & pane.size,
+    );
+    // A selection the pane no longer shows, scrolled away or under a window
+    // that shrank, takes the bubble with it rather than leave it over other
+    // words, until it is back in view.
+    if (boxes.isEmpty ||
+        line(boxes.last).bottom <= within.top ||
+        line(boxes.first).top >= within.bottom) {
+      _selectionBubble.lift();
+      return;
+    }
     String? key(ShortcutAction action) =>
         widget.shortcuts.hintFor(action)?.displayLabel;
     final markdown = widget.markdownEnabled
@@ -5595,15 +5624,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         : null;
     bool marked(MarkdownStyle style) =>
         markdown != null && markdownSelectionHas(markdown, selection, style);
-    final pane = context.findRenderObject()! as RenderBox;
     _selectionBubble.show(
       context,
       above: line(boxes.first),
       below: line(boxes.last),
-      within: MatrixUtils.transformRect(
-        pane.getTransformTo(null),
-        Offset.zero & pane.size,
-      ),
+      within: within,
       block: _selectionBlockLabel,
       blocks: _selectionBlocks,
       markdownEnabled: widget.markdownEnabled,
@@ -7986,6 +8011,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                // The words move with the pane, when the window is resized
+                // or the sidebar opens, and the bubble over a selection
+                // goes with them.
+                if (_selectionBubble.isVisible) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _selectionBubble.isVisible) {
+                      _showSelectionBubble();
+                    }
+                  });
+                }
                 // Results take width only from their own lines, so prose,
                 // checklists, and journals keep the full writing width.
                 final resultsVisible =
