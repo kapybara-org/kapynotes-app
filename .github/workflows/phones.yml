@@ -151,11 +151,11 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      # No gradle cache, as in the android job (KAP-325).
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - uses: ./.github/actions/flutter
         with:
