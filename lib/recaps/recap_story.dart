@@ -52,16 +52,24 @@ class RecapStory {
   /// added to it.
   ///
   /// A line can tell of a note without naming it, so where a note one of
-  /// the recap's parts may have read was hidden or deleted after it was
-  /// made, every line no part can be told from is dropped too: the title,
-  /// the topics, the line of the year and what's next. So are a year's
-  /// moments of that part's months, and the highlights and the quote of any
-  /// note that part may have read. Null when [chat] is not a recap of
-  /// [now]'s period.
+  /// the recap's parts may have read was hidden after it was made, every
+  /// line no part can be told from is dropped too: the title, the topics,
+  /// the line of the year and what's next. So are a year's moments of that
+  /// part's months, and the highlights and the quote of any note that part
+  /// may have read. Deleting or archiving a note takes nothing out this way.
+  ///
+  /// A part may have read a hidden note only on a day it covers: the day
+  /// [hiddenDays] gives for it, the day it was before it was hidden, where
+  /// whoever saw the hide knew it; else the day it was given; else any day
+  /// from the day it was made. [handled] holds the notes whose hide was
+  /// dealt with already, and they are left alone. Null when [chat] is not a
+  /// recap of [now]'s period.
   static RecapStory? read(
     KapyChat chat,
     RecapMaterial now, {
     Set<String> gone = const {},
+    Map<String, DateTime> hiddenDays = const {},
+    Set<String> handled = const {},
   }) {
     final record = recapOf(chat);
     if (record == null || record.period != now.period) return null;
@@ -97,28 +105,44 @@ class RecapStory {
     }
 
     final period = record.period;
-    final changed = [
-      for (final note in now.left)
-        if (note.at?.isAfter(record.madeAt) ?? true) note,
-    ];
-    final parts = record.read;
-    final affected = parts == null
-        ? (changed.isEmpty ? const <RecapRead>[] : null)
-        : [
-            for (final part in parts)
-              if (changed.any((note) => part.notes.mayHold(note.id))) part,
-          ];
-    bool drops(String noteId) =>
-        affected == null || affected.any((part) => part.notes.mayHold(noteId));
-    int month(int index) => DateTime(
+    DateTime dayAt(int index) => DateTime(
       period.first.year,
       period.first.month,
       period.first.day + index,
-    ).month;
+    );
+    bool covers(int first, int last, RecapHidden note) {
+      if (hiddenDays[note.id] ?? note.day case final day?) {
+        final index = period.indexOf(day);
+        return index != null && index >= first && index <= last;
+      }
+      return !dayAt(last).isBefore(note.made);
+    }
+
+    final changed = [
+      for (final note in now.hidden)
+        if (note.at.isAfter(record.madeAt) && !handled.contains(note.id)) note,
+    ];
+    final parts = record.read;
+    final affected = parts == null
+        ? (changed.any((note) => covers(0, period.days - 1, note))
+              ? null
+              : const <RecapRead>[])
+        : [
+            for (final part in parts)
+              if (changed.any(
+                (note) =>
+                    covers(part.first, part.last, note) &&
+                    part.notes.mayHold(note.id),
+              ))
+                part,
+          ];
+    bool drops(String noteId) =>
+        affected == null || affected.any((part) => part.notes.mayHold(noteId));
     bool dropsMonth(int it) =>
         affected == null ||
         affected.any(
-          (part) => it >= month(part.first) && it <= month(part.last),
+          (part) =>
+              it >= dayAt(part.first).month && it <= dayAt(part.last).month,
         );
     final kept = affected != null && affected.isEmpty
         ? lines
@@ -138,18 +162,25 @@ class RecapStory {
           );
 
     final quote = kept.quote;
-    final worded = answer
+    int worded(Iterable<String> lines) => lines
         .where(
           (line) => _worded.hasMatch(recapShown(line).replaceAll('**', '')),
         )
         .length;
+    final said = worded(answer);
     final left = kept.text.isEmpty ? 0 : kept.text.split('\n').length;
+    final before = [
+      for (final message in chat.messages)
+        if (message.role == KapyRole.assistant) message.text,
+    ]..removeLast();
     return RecapStory(
       record: record,
       lines: kept,
       chat: chat,
-      dropped: left < worded,
-      wordsGone: record.wordsGone || (worded > 0 && left == 0),
+      dropped: left < said,
+      wordsGone:
+          left == 0 &&
+          (said > 0 || before.any((text) => worded(text.split('\n')) > 0)),
       done: words(RecapSource.taskDone, record.numbers.done),
       open: words(RecapSource.taskOpen, record.numbers.open),
       voice: quote == null
@@ -174,8 +205,10 @@ class RecapStory {
   final NoteVoiceRef? voice;
 
   /// Whether every word Kapy AI wrote was left out because notes it may
-  /// have come from are hidden or gone now: the closing card says so and
-  /// offers to make it again.
+  /// have come from are hidden or gone now, here or when an earlier opening
+  /// kept the chat without them ([recapPruned]): its newest answer has no
+  /// words, but an older one did. The closing card says so and offers to
+  /// make it again, and a remake with words ends it.
   final bool wordsGone;
 
   /// The chat it was read from.
@@ -354,27 +387,18 @@ class RecapStory {
 
 /// [story]'s chat with what it shows now as its newest answer, when it left
 /// out any of its words, else null. What told it to leave them out may not
-/// last (a deleted note's tombstone goes after [Tombstone.retention]), so
+/// last (a hidden note deleted later is gone once its tombstone is), so
 /// keeping what is left makes the words stay gone on every device. It costs
-/// no call. With no words left, the record says so, so the story still
-/// tells why and offers Remake.
+/// no call, and the record stays as it was. With no words left, the older
+/// answers still show there were some, so the story still tells why and
+/// offers Remake.
 KapyChat? recapPruned(RecapStory story, {required DateTime now}) {
   final chat = story.chat;
   if (chat == null || !story.dropped) return null;
   final record = story.record;
   return recapChat(
     chat,
-    record: RecapRecord(
-      period: record.period,
-      timeZone: record.timeZone,
-      firstWeekday: record.firstWeekday,
-      madeAt: record.madeAt,
-      numbers: record.numbers,
-      fingerprint: record.fingerprint,
-      digest: record.digest,
-      read: record.read,
-      wordsGone: story.wordsGone,
-    ),
+    record: record,
     answer: story.lines.text.isEmpty
         ? recapTitle(record.period)
         : story.lines.text,

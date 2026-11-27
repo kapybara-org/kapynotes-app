@@ -1,9 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
+import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/recaps/recap_filter.dart';
 import 'package:kapy_notes/recaps/recap_lines.dart';
+import 'package:kapy_notes/recaps/recap_material.dart';
 import 'package:kapy_notes/recaps/recap_period.dart';
 import 'package:kapy_notes/recaps/recap_record.dart';
 import 'package:kapy_notes/recaps/recap_story.dart';
@@ -276,65 +278,82 @@ void main() {
       expect(story.wordsGone, isFalse);
     });
 
-    test('a deleted note and one held for deleting act like a hide', () async {
-      final chat = parted();
-      final local = MemoryStore()
-        ..data['notes.v1'] = [for (final note in world.notes) note.toJson()];
-      world.store = NotesStore(local, now: () => DateTime.utc(2026, 11, 25));
-      await world.store.load();
-      world.store.delete('trip');
-      expectAllLeftOut(RecapStory.read(chat, world.material(thursday))!);
-
-      await world.load();
-      world.store.holdDelete(['trip']);
-      expectAllLeftOut(RecapStory.read(chat, world.material(thursday))!);
-    });
-
     test(
-      'a deleted note still drops its part once its tombstone is gone',
+      'a held delete, a deleted note and an archive alone drop nothing',
       () async {
         final chat = parted();
+        void expectKept(RecapStory story, String how) {
+          expect(story.lines.next, 'Pay for it before Friday', reason: how);
+          expect(story.lines.title, 'A full day', reason: how);
+          expect(story.lines.quote, isNotNull, reason: how);
+          expect(story.wordsGone, isFalse, reason: how);
+        }
+
+        world.store.holdDelete(['trip']);
+        expectKept(RecapStory.read(chat, world.material(thursday))!, 'held');
+
         final local = MemoryStore()
           ..data['notes.v1'] = [for (final note in world.notes) note.toJson()];
         world.store = NotesStore(local, now: () => DateTime.utc(2026, 11, 25));
         await world.store.load();
         world.store.delete('trip');
-        await Future<void>.delayed(Duration.zero);
-        final saved = local.data['notes.v2']! as Map;
-        for (final stone in saved['tombstones'] as List) {
-          (stone as Map)['syncedAt'] = stone['deletedAt'];
-        }
-        final pruned = recapPruned(
-          RecapStory.read(chat, world.material(thursday))!,
-          now: DateTime.utc(2026, 11, 25),
-        )!;
-        expect(recapOf(pruned)!.wordsGone, isTrue);
-        world.store = NotesStore(local, now: () => DateTime.utc(2027, 1, 5));
-        await world.store.load();
-        expect(world.store.tombstones, isEmpty, reason: 'synced, 41 days on');
-        final story = RecapStory.read(pruned, world.material(thursday))!;
-        expectAllLeftOut(story);
-        expect(story.cards, [
-          RecapCard.cover,
-          RecapCard.numbers,
-          RecapCard.closing,
-        ]);
-        expect(recapPruned(story, now: DateTime.utc(2027, 1, 5)), isNull);
-        expect(
-          RecapStory.read(chat, world.material(thursday))!.lines.next,
-          'Pay for it before Friday',
-          reason: 'unpruned, its words come back once the tombstone goes',
-        );
+        expect(world.store.tombstones.single.deletedAt.isAfter(made), isTrue);
+        expectKept(RecapStory.read(chat, world.material(thursday))!, 'deleted');
+
+        expectKept(await reopenWith(chat, archivedAt: since), 'archived');
       },
     );
 
-    test('a note edited onto another day, then held for deleting, still '
-        'drops', () async {
+    test('a note hidden and then deleted stays dropped once its tombstone is '
+        'gone, by keeping the drop', () async {
       final chat = parted();
-      world.note('trip', '2026-11-26T08:00:00Z', body: 'Trip\n☑ Book\n☐ Pay');
-      await world.load();
-      world.store.holdDelete(['trip']);
-      expectAllLeftOut(RecapStory.read(chat, world.material(thursday))!);
+      final local = MemoryStore()
+        ..data['notes.v1'] = [for (final note in world.notes) note.toJson()];
+      world.store = NotesStore(local, now: () => DateTime.utc(2026, 11, 25));
+      await world.store.load();
+      world.store.hide('trip');
+      final pruned = recapPruned(
+        RecapStory.read(chat, world.material(thursday))!,
+        now: DateTime.utc(2026, 11, 25),
+      )!;
+      expect(pruned.recap, chat.recap, reason: 'the record stays as made');
+      world.store.delete('trip');
+      await Future<void>.delayed(Duration.zero);
+      final saved = local.data['notes.v2']! as Map;
+      for (final stone in saved['tombstones'] as List) {
+        (stone as Map)['syncedAt'] = stone['deletedAt'];
+      }
+      world.store = NotesStore(local, now: () => DateTime.utc(2027, 1, 5));
+      await world.store.load();
+      expect(world.store.tombstones, isEmpty, reason: 'synced, 41 days on');
+      expect(
+        world.store.allNotes.map((note) => note.id),
+        isNot(contains('trip')),
+      );
+      final story = RecapStory.read(pruned, world.material(thursday))!;
+      expectAllLeftOut(story);
+      expect(story.cards, [
+        RecapCard.cover,
+        RecapCard.numbers,
+        RecapCard.closing,
+      ]);
+      expect(recapPruned(story, now: DateTime.utc(2027, 1, 5)), isNull);
+
+      final remade = recapChat(
+        pruned,
+        record: recapOf(pruned)!,
+        answer: 'TITLE: A quieter day',
+        model: KapyModel.cloud,
+        now: DateTime.utc(2027, 1, 5),
+      );
+      final fresh = RecapStory.read(remade, world.material(thursday))!;
+      expect(fresh.wordsGone, isFalse, reason: 'a remake with words');
+      expect(fresh.title, 'A quieter day');
+      expect(
+        RecapStory.read(chat, world.material(thursday))!.lines.next,
+        'Pay for it before Friday',
+        reason: 'unkept, its words come back once the note is gone',
+      );
     });
 
     test('with nothing left out, there is nothing to keep', () async {
@@ -409,11 +428,137 @@ void main() {
       final pruned = recapPruned(story, now: made)!;
       expect(pruned.messages, hasLength(chat.messages.length + 1));
       expect(recapAnswer(pruned), 'HIGHLIGHT: Deck | Drafted on Monday');
-      expect(recapOf(pruned)!.wordsGone, isFalse);
       final again = RecapStory.read(pruned, world.material(week))!;
       expect(again.cards, story.cards);
       expect(again.lines.text, story.lines.text);
       expect(again.dropped, isFalse);
+    });
+
+    group('in a week, a hide takes out only the parts it could be in', () {
+      final week = periodOf(DateTime(2026, 11, 19), RecapKind.week);
+      late KapyChat chat;
+
+      setUp(() async {
+        world = RecapWorld();
+        world.note('deck', '2026-11-16T10:00:00Z', body: 'Deck\nDrafted');
+        world.note('old', '2026-11-16T11:00:00Z', body: 'Old\nSomething');
+        world.note('fri', '2026-11-20T10:00:00Z', body: 'Friday\nOff early');
+        world.note('sat', '2026-11-21T10:00:00Z', body: 'Saturday\nA walk');
+        await world.load();
+        final material = world.material(week);
+        chat = recapChat(
+          null,
+          record: RecapRecord(
+            period: week,
+            timeZone: 'UTC',
+            firstWeekday: DateTime.monday,
+            madeAt: made,
+            numbers: RecapNumbers.of(world.digest(week), material),
+            fingerprint: material.fingerprint,
+            read: [
+              (
+                first: 0,
+                last: 3,
+                notes: RecapFilter.of(['deck', 'old', 'fri']),
+              ),
+              (first: 4, last: 6, notes: RecapFilter.of(['old', 'fri', 'sat'])),
+            ],
+          ),
+          answer: [
+            'TITLE: Drafts and a walk',
+            'HIGHLIGHT: Deck | Drafted on Monday',
+            'HIGHLIGHT: Saturday | A long walk',
+            'NEXT: Take it easy again',
+          ].join('\n'),
+          model: KapyModel.cloud,
+          now: made,
+        );
+      });
+
+      Future<RecapStory> hide(
+        String id, {
+        Map<String, DateTime> hiddenDays = const {},
+        Set<String> handled = const {},
+        DateTime? Function(Note note)? ownDay,
+      }) async {
+        final note = world.notes.firstWhere((note) => note.id == id);
+        world.note(
+          id,
+          note.updatedAt.toIso8601String(),
+          body: note.body,
+          hiddenAt: since,
+        );
+        await world.load();
+        return RecapStory.read(
+          chat,
+          RecapMaterial.gather(
+            week,
+            store: world.store,
+            tasks: world.board,
+            displayTime: world.displayTime,
+            ownDay: ownDay,
+          ),
+          hiddenDays: hiddenDays,
+          handled: handled,
+        )!;
+      }
+
+      List<String> highlights(RecapStory story) =>
+          story.lines.highlights.map((it) => it.noteId).toList();
+
+      test('its day before the hide outside the week: nothing', () async {
+        final story = await hide(
+          'fri',
+          hiddenDays: {'fri': DateTime(2026, 11, 30)},
+        );
+        expect(story.lines.title, 'Drafts and a walk');
+        expect(story.lines.next, 'Take it easy again');
+        expect(highlights(story), ['deck', 'sat']);
+      });
+
+      test('its day before the hide in one part: that part only', () async {
+        var story = await hide(
+          'fri',
+          hiddenDays: {'fri': DateTime(2026, 11, 17)},
+        );
+        expect(story.lines.title, isNull);
+        expect(story.lines.next, isNull);
+        expect(highlights(story), ['sat']);
+
+        story = await hide('fri', hiddenDays: {'fri': DateTime(2026, 11, 21)});
+        expect(highlights(story), ['deck']);
+      });
+
+      test('a hide already dealt with: nothing', () async {
+        final story = await hide('fri', handled: {'fri'});
+        expect(story.lines.title, 'Drafts and a walk');
+        expect(highlights(story), ['deck', 'sat']);
+        expect(story.dropped, isFalse);
+      });
+
+      test(
+        'no day known: not a part that ended before the note was made',
+        () async {
+          final story = await hide('fri');
+          expect(story.lines.title, isNull);
+          expect(highlights(story), ['deck'], reason: 'made on Friday');
+        },
+      );
+
+      test('no day known: any part from the day it was made', () async {
+        final story = await hide('old');
+        expect(story.lines.title, isNull);
+        expect(highlights(story), isEmpty, reason: 'made on Monday');
+      });
+
+      test('the day it was given', () async {
+        final story = await hide(
+          'fri',
+          ownDay: (note) => note.id == 'fri' ? DateTime(2026, 11, 17) : null,
+        );
+        expect(story.lines.title, isNull);
+        expect(highlights(story), ['sat']);
+      });
     });
 
     test('in a year, only the months of the part that read it', () async {

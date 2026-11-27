@@ -6,6 +6,7 @@ import 'package:kapy_notes/ai/kapy_chat_book.dart';
 import 'package:kapy_notes/ai/kapy_chat_records.dart';
 import 'package:kapy_notes/recaps/recap_digest.dart';
 import 'package:kapy_notes/recaps/recap_filter.dart';
+import 'package:kapy_notes/recaps/recap_lines.dart';
 import 'package:kapy_notes/recaps/recap_period.dart';
 import 'package:kapy_notes/recaps/recap_record.dart';
 
@@ -108,24 +109,7 @@ void main() {
     expect(back.read![1].notes.mayHold('mon'), isFalse);
     expect(back.notesRead!.mayHold('mon'), isTrue);
     expect(record().toJson(), isNot(contains('read')));
-    expect(record().toJson(), isNot(contains('gone')));
     expect(RecapRecord.fromJson(record().toJson())!.read, isNull);
-  });
-
-  test('keeps that its words were left out', () {
-    final gone = RecapRecord(
-      period: week,
-      timeZone: 'UTC',
-      firstWeekday: DateTime.monday,
-      madeAt: made,
-      numbers: record().numbers,
-      fingerprint: '0123456789abcdef',
-      wordsGone: true,
-    );
-    final json = jsonDecode(jsonEncode(gone.toJson())) as Map;
-    expect(json['gone'], isTrue);
-    expect(RecapRecord.fromJson(json)!.wordsGone, isTrue);
-    expect(RecapRecord.fromJson({...json, 'gone': 'yes'})!.wordsGone, isFalse);
   });
 
   test('parts that do not hold together are read as none at all', () {
@@ -244,6 +228,28 @@ void main() {
       (KapyRole.assistant, 'TITLE: A busy week\nNEXT: Rest'),
     ]);
     expect(recapOf(made)!.period, week);
+  });
+
+  test('keeping a recap without its words loses nothing in a merge', () {
+    final made = record(read: parts);
+    final first = chat(made);
+    final pruned = recapChat(
+      first,
+      record: made,
+      answer: recapTitle(week),
+      model: KapyModel.cloud,
+      now: made.madeAt.add(const Duration(days: 40)),
+    );
+    final before = ChatMeta.of(first);
+    final after = ChatMeta.of(pruned);
+    expect(after.recap, before.recap, reason: 'the record is not changed');
+    expect(after.merge(before).recap, before.recap);
+    expect(before.merge(after).recap, before.recap);
+    expect(pruned.messages.map((m) => m.text), [
+      'Make a recap of 16–22 Nov',
+      'TITLE: A busy week\nNEXT: Rest',
+      'Recap · 16–22 Nov',
+    ], reason: 'the answer with words stays, so the story can tell');
   });
 
   test('making it again adds an answer, and the newest wins', () {

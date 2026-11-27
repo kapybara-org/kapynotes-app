@@ -40,19 +40,19 @@ class RecapItem {
   final String? taskId;
 }
 
-/// A note a recap may have read that it may no longer: hidden at [at],
-/// waiting to be deleted (no [at]: it counts whenever the recap was made),
-/// or deleted at [at]. It carries no day: hiding or editing a note moves
-/// its day, and a deleted note's is gone, so it is checked against every
-/// part of a recap.
-typedef RecapLeft = ({String id, DateTime? at});
+/// A note hidden at [at], which a recap made before then may have read.
+/// Hiding a note moves its day to when it was hidden, so [day] is only the
+/// day it was given, when it has one, and [made] the day it was made, as
+/// the list shows days: no part of a recap read a note made after its last
+/// day.
+typedef RecapHidden = ({String id, DateTime at, DateTime? day, DateTime made});
 
 /// What a period gives a recap made with Kapy AI, chosen on the device: its
 /// visible notes, each recording in them as its summary and transcript, and
 /// its tasks done and still open. Never a hidden or archived note, nor
 /// anything in one.
 class RecapMaterial {
-  RecapMaterial._(this.period, this.items, this.edited, this.left);
+  RecapMaterial._(this.period, this.items, this.edited, this.hidden);
 
   factory RecapMaterial.gather(
     RecapPeriod period, {
@@ -130,17 +130,19 @@ class RecapMaterial {
       final bySource = a.source.index.compareTo(b.source.index);
       return bySource != 0 ? bySource : a.note.edited.compareTo(b.note.edited);
     });
-    final left = <RecapLeft>[
-      for (final stone in store.tombstones) (id: stone.id, at: stone.deletedAt),
+    final hidden = <RecapHidden>[
       for (final note in store.allNotes)
-        if (store.isDeleting(note.id))
-          (id: note.id, at: null)
-        else if (note.hiddenAt case final at?)
-          (id: note.id, at: at),
+        if (note.hiddenAt case final at?)
+          (
+            id: note.id,
+            at: at,
+            day: ownDay?.call(note),
+            made: dayShown(note.createdAt, displayTime),
+          ),
     ];
     return RecapMaterial._(period, List.unmodifiable(items), {
       for (final note in held.keys) note.id: note.updatedAt,
-    }, List.unmodifiable(left));
+    }, List.unmodifiable(hidden));
   }
 
   final RecapPeriod period;
@@ -149,8 +151,9 @@ class RecapMaterial {
   /// The period's notes, and when each was last edited.
   final Map<String, DateTime> edited;
 
-  /// Every note a recap of the period may have read but may no longer.
-  final List<RecapLeft> left;
+  /// Every hidden note, which a recap of the period made before it was
+  /// hidden may have read.
+  final List<RecapHidden> hidden;
 
   List<RecapItem> within(DateTime first, DateTime last) => [
     for (final item in items)
