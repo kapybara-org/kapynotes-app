@@ -50,22 +50,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        id: flutter
+      - uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-          pub-cache: false
-
-      # flutter-action keys its own pub cache on hashFiles('**/pubspec.lock'),
-      # a walk of the whole checkout that has run past its 120 s limit on the
-      # macOS runner. The root pubspec.lock is the only one, so this keeps the
-      # same key without the walk.
-      - uses: actions/cache@v5
-        with:
-          path: ${{ steps.flutter.outputs.PUB-CACHE-PATH }}
-          key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ hashFiles('pubspec.lock') }}
 
       - run: flutter pub get
 
@@ -104,22 +91,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        id: flutter
+      - uses: ./.github/actions/flutter
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
-          pub-cache: false
-
-      # flutter-action keys its own pub cache on hashFiles('**/pubspec.lock'),
-      # a walk of the whole checkout that has run past its 120 s limit on the
-      # macOS runner. The root pubspec.lock is the only one, so this keeps the
-      # same key without the walk.
-      - uses: actions/cache@v5
-        with:
-          path: ${{ steps.flutter.outputs.PUB-CACHE-PATH }}
-          key: ${{ steps.flutter.outputs.PUB-CACHE-KEY }}-${{ hashFiles('pubspec.lock') }}
 
       - run: flutter pub get
 

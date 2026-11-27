@@ -1055,11 +1055,10 @@ Future<void> _nameFolderAt(
   MenuSpot spot, {
   String initial = '',
   required FolderRefusal? Function(String name) submit,
-}) => showGeneralDialog<void>(
+}) => showKapyPopover<void>(
   context: context,
+  barrierDismissible: false,
   barrierLabel: 'Close',
-  barrierColor: Colors.transparent,
-  transitionDuration: Duration.zero,
   pageBuilder: (context, _, _) => CustomSingleChildLayout(
     delegate: PopoverAtSpot(spot, mediaPadding: MediaQuery.paddingOf(context)),
     child: TagPopover(
@@ -1175,12 +1174,9 @@ Future<({String? folderId})?> _pickFolderAt(
   required Set<String?> current,
   String? moving,
   required FolderRefusal? Function(String? folderId) check,
-}) => showGeneralDialog<({String? folderId})>(
+}) => showKapyPopover<({String? folderId})>(
   context: context,
-  barrierDismissible: true,
   barrierLabel: 'Close folders',
-  barrierColor: Colors.transparent,
-  transitionDuration: Duration.zero,
   pageBuilder: (context, _, _) => CustomSingleChildLayout(
     delegate: PopoverAtSpot(spot, mediaPadding: MediaQuery.paddingOf(context)),
     child: _FolderPicker(
