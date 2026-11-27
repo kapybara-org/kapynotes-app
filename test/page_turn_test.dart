@@ -39,12 +39,17 @@ class _Pages extends StatefulWidget {
     this.page,
     this.canStart,
     this.onBack,
+    this.top,
   });
 
   final int start;
   final Widget Function(int index)? page;
   final bool Function(Offset)? canStart;
   final VoidCallback? onBack;
+
+  /// A part over the pages that stays put, the only place a turn starts
+  /// from, built for the page it shows.
+  final Widget Function(int index)? top;
 
   @override
   State<_Pages> createState() => _PagesState();
@@ -65,6 +70,15 @@ class _PagesState extends State<_Pages> {
     after: index < 2 ? (_) => _page(index + 1) : null,
     canStart: widget.canStart,
     onBack: widget.onBack,
+    top: switch (widget.top) {
+      final top? => (_, turning) => top(switch (turning) {
+        null => index,
+        true => index + 1,
+        false => index - 1,
+      }),
+      null => null,
+    },
+    onlyFromTop: widget.top != null,
     onTurn: (later) => setState(() {
       turns.add(later);
       index += later ? 1 : -1;
@@ -111,6 +125,9 @@ Finder _page(int i) => find.byKey(ValueKey('page-$i'));
 
 const _middle = Offset(_width / 2, 400);
 
+/// A header 100 tall over the pages, naming the page it shows.
+Widget _top(int index) => SizedBox(height: 100, child: Text('top $index'));
+
 void main() {
   group('following the finger', () {
     testWidgets('the page moves with the drag, and its neighbour slides in '
@@ -142,6 +159,58 @@ void main() {
       expect(_left(tester, 0), 80 - _width);
       await drag.up();
       await tester.pumpAndSettle();
+    });
+  });
+
+  group('a part that stays put', () {
+    testWidgets('stays put while the pages under it turn, and shows the page '
+        'turned to once the turn is let go', (tester) async {
+      await _pump(tester, const _Pages(top: _top));
+      final drag = await tester.startGesture(const Offset(_width / 2, 50));
+      await drag.moveBy(const Offset(-60, 0));
+      await drag.moveBy(const Offset(-100, 0));
+      await tester.pump();
+      expect(_left(tester, 1), -160);
+      expect(tester.getTopLeft(find.text('top 1')), Offset.zero);
+      await drag.up();
+      await tester.pump();
+      expect(find.text('top 2'), findsOneWidget);
+      expect(_left(tester, 2), greaterThan(0), reason: 'still settling');
+      await tester.pumpAndSettle();
+      expect(find.text('top 2'), findsOneWidget);
+      expect(_state(tester).turns, [true]);
+    });
+
+    testWidgets('is the only place a turn starts from', (tester) async {
+      await _pump(tester, const _Pages(top: _top));
+      await tester.timedDragFrom(
+        _middle,
+        const Offset(-200, 0),
+        const Duration(milliseconds: 300),
+      );
+      await tester.pumpAndSettle();
+      expect(_state(tester).turns, isEmpty);
+    });
+
+    testWidgets('a turn caught before it settles shows its own page again', (
+      tester,
+    ) async {
+      await _pump(tester, const _Pages(top: _top));
+      await tester.timedDragFrom(
+        const Offset(_width / 2, 50),
+        const Offset(-160, 0),
+        const Duration(milliseconds: 300),
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(find.text('top 2'), findsOneWidget);
+      final drag = await tester.startGesture(const Offset(_width / 2, 50));
+      await drag.moveBy(const Offset(100, 0));
+      await drag.moveBy(const Offset(100, 0));
+      await tester.pump();
+      expect(find.text('top 1'), findsOneWidget);
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(_state(tester).turns, isEmpty);
     });
   });
 

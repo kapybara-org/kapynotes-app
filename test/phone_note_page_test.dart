@@ -24,7 +24,7 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
-import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
+import 'package:kapy_notes/ui/day_strip.dart' show DayPicker, DayStrip;
 import 'package:kapy_notes/ui/day_tabs_row.dart' show DayTabsRow;
 import 'package:kapy_notes/ui/editor/note_editor.dart'
     show NoteEditor, NoteEditorState;
@@ -2357,18 +2357,22 @@ void main() {
       expect(find.widgetWithText(NoteRow, 'Call with Arjun'), findsOneWidget);
     });
 
-    testWidgets('the page follows the finger with the day coming in beside '
-        'it, which becomes the page as it was drawn', (tester) async {
+    testWidgets('the note follows the finger under a header that stays put, '
+        'with the day coming in beside it, which becomes the page as it was '
+        'drawn', (tester) async {
       seed();
       await pump(tester);
       keyboardDown();
       await tester.pumpAndSettle();
       final left = tester.getTopLeft(header).dx;
+      final note = tester.getTopLeft(find.byType(NoteEditor)).dx;
       final drag = await tester.startGesture(onHeader(tester));
       await drag.moveBy(const Offset(30, 0));
       await drag.moveBy(const Offset(70, 0));
       await tester.pump();
-      expect(tester.getTopLeft(header.first).dx, isNot(left));
+      expect(header, findsOneWidget);
+      expect(tester.getTopLeft(header).dx, left);
+      expect(tester.getTopLeft(find.byType(NoteEditor).first).dx, isNot(note));
       expect(
         tester
             .widgetList<NoteEditor>(find.byType(NoteEditor))
@@ -2387,6 +2391,55 @@ void main() {
         tester.state<NoteEditorState>(find.byType(NoteEditor)),
         isIn(editors),
         reason: 'the page coming in is kept, not drawn again',
+      );
+    });
+
+    testWidgets("once a turn is let go, the week's fill slides to the day "
+        'it turns to, and the week slides only into another week', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      final fill = find.byKey(const ValueKey('day-strip-fill'));
+      double x(Finder finder) => tester.getCenter(finder).dx;
+      await tester.timedDragFrom(
+        onHeader(tester),
+        const Offset(200, 0),
+        const Duration(milliseconds: 400),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(x(fill), allOf(lessThan(x(day(19))), greaterThan(x(day(18)))));
+      expect(day(22), findsOneWidget, reason: 'the same week stays put');
+      await tester.pumpAndSettle();
+      expect(x(fill), moreOrLessEquals(x(day(18)), epsilon: 0.5));
+    });
+
+    testWidgets('a turn into another week slides the week there', (
+      tester,
+    ) async {
+      seed();
+      days.setDay('arjun', DateTime(2025, 11, 16));
+      await pump(tester);
+      expect(day(16), findsOneWidget);
+      expect(day(15), findsNothing);
+      await tester.timedDragFrom(
+        onHeader(tester),
+        const Offset(200, 0),
+        const Duration(milliseconds: 400),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(day(15), findsOneWidget);
+      expect(find.byType(DayStrip), findsOneWidget);
+      expect(day(22), findsOneWidget, reason: 'both weeks show as it slides');
+      await tester.pumpAndSettle();
+      expect(day(15), findsOneWidget);
+      expect(day(22), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('page-day')),
+          matching: find.text('15'),
+        ),
+        findsOneWidget,
       );
     });
 

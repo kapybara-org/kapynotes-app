@@ -26,6 +26,9 @@ import 'package:material_ui/material_ui.dart';
 /// state, as does a page kept out of sight. A page with no page before it
 /// may still go back, with [onBack], from a drag right.
 ///
+/// A page may keep a part of itself still above the turn, its [top], such
+/// as a header, which shows the page turned to as soon as a turn is let go.
+///
 /// Under reduce motion nothing moves with the finger: a turn past the same
 /// marks crossfades to its page instead.
 class PageTurn extends StatefulWidget {
@@ -38,6 +41,8 @@ class PageTurn extends StatefulWidget {
     this.onTurn,
     this.onBack,
     this.canStart,
+    this.top,
+    this.onlyFromTop = false,
   });
 
   final Widget child;
@@ -61,6 +66,15 @@ class PageTurn extends StatefulWidget {
 
   /// Whether a drag that lands at this global position may turn the page.
   final bool Function(Offset position)? canStart;
+
+  /// The part above the pages that stays put while they turn, built with
+  /// the way a turn let go is settling, true for [after] and false for
+  /// [before], or null while none is, so it shows the page turned to from
+  /// then on.
+  final Widget Function(BuildContext context, bool? turning)? top;
+
+  /// Whether a turn starts only from a drag on [top].
+  final bool onlyFromTop;
 
   /// How far a drag goes across before it is a turn, and how far up or down
   /// it may go before that, at no steeper than [steepest] (rise over run).
@@ -109,6 +123,12 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
   );
   bool? _fadingTo;
 
+  /// The way a turn let go is settling, until it has and [PageTurn.onTurn]
+  /// has built the page turned to.
+  bool? _settlingTo;
+
+  final _top = GlobalKey();
+
   double _width = 1;
   double _pulled = 0;
   bool _dragging = false;
@@ -124,6 +144,7 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
   void didUpdateWidget(PageTurn oldWidget) {
     super.didUpdateWidget(oldWidget);
     _before = _after = null;
+    if (!_shift.isAnimating && !_fade.isAnimating) _settlingTo = null;
   }
 
   @override
@@ -141,6 +162,14 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return false;
     if (!box.size.contains(box.globalToLocal(event.position))) return false;
+    if (widget.onlyFromTop) {
+      final top = _top.currentContext?.findRenderObject();
+      if (top is! RenderBox ||
+          !top.hasSize ||
+          !top.size.contains(top.globalToLocal(event.position))) {
+        return false;
+      }
+    }
     final media = MediaQuery.of(context);
     final edges = media.systemGestureInsets;
     final x = event.position.dx;
@@ -218,10 +247,13 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
   void _settle(bool forward, double speed) {
     final to = forward ? -1.0 : 1.0;
     final left = (to - _shift.value).abs();
+    if (widget.top != null) setState(() => _settlingTo = forward);
     _shift
         .animateTo(to, duration: _left(left, speed), curve: PageTurn.curve)
         .whenCompleteOrCancel(() {
-          if (mounted && _shift.value == to) _turned(forward);
+          if (!mounted) return;
+          if (_shift.value == to) return _turned(forward);
+          if (_settlingTo != null) setState(() => _settlingTo = null);
         });
   }
 
@@ -240,7 +272,10 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
 
   Future<void> _crossfade(bool forward) async {
     _pulled = 0;
-    setState(() => _fadingTo = forward);
+    setState(() {
+      _fadingTo = forward;
+      if (widget.top != null) _settlingTo = forward;
+    });
     try {
       await _fade.forward(from: 0).orCancel;
     } on TickerCanceled {
@@ -299,53 +334,66 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
                 ..onCancel = _cancel,
             ),
     };
+    final pages = LayoutBuilder(
+      builder: (context, constraints) {
+        _width = math.max(constraints.maxWidth, 1);
+        return AnimatedBuilder(
+          animation: Listenable.merge([_shift, _fade]),
+          builder: (context, _) {
+            final shift = _shift.value;
+            final fading = _fadingTo;
+            final showsBefore = shift > 0 || fading == false;
+            final showsAfter = shift < 0 || fading == true;
+            final before = showsBefore || widget.keepBefore
+                ? _before ??= widget.before?.call(context)
+                : null;
+            final after = showsAfter
+                ? _after ??= widget.after?.call(context)
+                : null;
+            assert(
+              (before == null && after == null) ||
+                  (widget.child.key != null &&
+                      (before == null || before.key != null) &&
+                      (after == null || after.key != null)),
+              'A page that turns is told apart by its key.',
+            );
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                _slot(widget.child, at: shift),
+                if (before != null)
+                  _slot(
+                    before,
+                    at: fading == false ? 0 : (showsBefore ? shift - 1 : -1),
+                    opacity: fading == false ? _fade.value : 1,
+                  ),
+                if (after != null)
+                  _slot(
+                    after,
+                    at: fading == true ? 0 : shift + 1,
+                    opacity: fading == true ? _fade.value : 1,
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    final top = widget.top;
     final page = RawGestureDetector(
       gestures: turn(),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          _width = math.max(constraints.maxWidth, 1);
-          return AnimatedBuilder(
-            animation: Listenable.merge([_shift, _fade]),
-            builder: (context, _) {
-              final shift = _shift.value;
-              final fading = _fadingTo;
-              final showsBefore = shift > 0 || fading == false;
-              final showsAfter = shift < 0 || fading == true;
-              final before = showsBefore || widget.keepBefore
-                  ? _before ??= widget.before?.call(context)
-                  : null;
-              final after = showsAfter
-                  ? _after ??= widget.after?.call(context)
-                  : null;
-              assert(
-                (before == null && after == null) ||
-                    (widget.child.key != null &&
-                        (before == null || before.key != null) &&
-                        (after == null || after.key != null)),
-                'A page that turns is told apart by its key.',
-              );
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  _slot(widget.child, at: shift),
-                  if (before != null)
-                    _slot(
-                      before,
-                      at: fading == false ? 0 : (showsBefore ? shift - 1 : -1),
-                      opacity: fading == false ? _fade.value : 1,
-                    ),
-                  if (after != null)
-                    _slot(
-                      after,
-                      at: fading == true ? 0 : shift + 1,
-                      opacity: fading == true ? _fade.value : 1,
-                    ),
-                ],
-              );
-            },
-          );
-        },
-      ),
+      child: top == null
+          ? pages
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                KeyedSubtree(
+                  key: _top,
+                  child: top(context, _settlingTo ?? _fadingTo),
+                ),
+                Expanded(child: pages),
+              ],
+            ),
     );
     // Android's pages have no back swipe of their own, so there the left
     // edge goes back ahead of a row's swipe, outside the system's own back

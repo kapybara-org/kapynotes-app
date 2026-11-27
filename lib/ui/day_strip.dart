@@ -240,12 +240,14 @@ class _DayStripState extends State<DayStrip> {
     }
   }
 
-  /// Pages the week to the one that holds [day].
+  /// Pages the week to the one that holds [day], sliding there from the
+  /// week beside it, as a page turned to the next day does.
   void _bringIntoView(DateTime day) {
     if (_weeks case final weeks?) {
       final page = _pageOf(day);
       if (weeks.hasClients && weeks.page?.round() != page) {
-        weeks.jumpToPage(page);
+        final by = page - weeks.page!.round();
+        by.abs() == 1 ? _turn(by) : weeks.jumpToPage(page);
       }
       return;
     }
@@ -513,23 +515,56 @@ class _DayStripState extends State<DayStrip> {
             ),
           ),
         );
-    Widget week(BuildContext context, int page) => Row(
-      children: [
-        for (final day in _weekOn(page))
-          Expanded(
-            child: _Day(
-              key: ValueKey('day-strip-${_date(day)}'),
-              day: day,
-              today: day == today,
-              picked: day == picked,
-              filled: day == filled,
-              count: counts[day] ?? 0,
-              stacked: true,
-              onTap: () => _choose(day),
+    // The fill is drawn once under the week's days, so it slides from the
+    // day it left to the one picked.
+    final still = MediaQuery.disableAnimationsOf(context);
+    Widget week(BuildContext context, int page) {
+      final days = _weekOn(page);
+      final at = days.indexOf(filled);
+      return Stack(
+        children: [
+          if (at >= 0)
+            Positioned.fill(
+              child: AnimatedAlign(
+                alignment: Alignment(at / 3 - 1, 0),
+                duration: still
+                    ? Duration.zero
+                    : const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                child: FractionallySizedBox(
+                  key: const ValueKey('day-strip-fill'),
+                  widthFactor: 1 / 7,
+                  heightFactor: 1,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: context.palette.controlBackground,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
             ),
+          Row(
+            children: [
+              for (final day in days)
+                Expanded(
+                  child: _Day(
+                    key: ValueKey('day-strip-${_date(day)}'),
+                    day: day,
+                    today: day == today,
+                    picked: day == picked,
+                    filled: day == filled,
+                    count: counts[day] ?? 0,
+                    stacked: true,
+                    onTap: () => _choose(day),
+                  ),
+                ),
+            ],
           ),
-      ],
-    );
+        ],
+      );
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = ((constraints.maxWidth - 7 * 44) / 2).clamp(
@@ -686,7 +721,8 @@ class _Day extends StatefulWidget {
   final bool today;
 
   /// A phone's day: its weekday over its date, both in the day's colour,
-  /// and a quiet fill while it is the note's.
+  /// over a quiet fill while it is the note's, which its week draws, so the
+  /// fill slides to the day picked.
   final bool stacked;
 
   /// Whether the list is narrowed to this day.
@@ -738,10 +774,6 @@ class _DayState extends State<_Day> {
     final column = widget.stacked
         ? Container(
             constraints: const BoxConstraints(minHeight: _Day.phoneHeight),
-            decoration: BoxDecoration(
-              color: filled ? palette.controlBackground : null,
-              borderRadius: BorderRadius.circular(10),
-            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
