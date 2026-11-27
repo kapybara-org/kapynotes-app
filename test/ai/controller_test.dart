@@ -1565,10 +1565,7 @@ void main() {
 
             final expected = translationParts(voice, TranslateScope.transcript);
             expect(expected.length, greaterThan(5));
-            expect(engine.calls, [
-              'pairStatus en es',
-              for (final _ in expected) 'translate en es',
-            ]);
+            expect(engine.calls, [for (final _ in expected) 'translate en es']);
             expect(drafts.toSet().toList(), [
               for (var i = 0; i < expected.length; i++) i,
             ]);
@@ -1608,7 +1605,7 @@ void main() {
         });
 
         test('a pair not on the device goes to the cloud as before', () async {
-          engine.status = LivePairStatus.downloadable;
+          engine.translator = (_) => null;
           final voice = _voice(minutes: 2);
           final cloud = await build(
             notes: notes(voice: voice),
@@ -1621,7 +1618,8 @@ void main() {
             recording: _link,
           );
           expect(cloud.pending, isA<KapyCloudConsent>());
-          expect(engine.calls, ['pairStatus en es']);
+          expect(engine.calls, ['translate en es'], reason: 'asked once');
+          expect(cloud.current!.messages, hasLength(1));
           await cloud.proceed();
           final replies = cloud.current!.messages.skip(1);
           expect(replies.map((m) => m.model).toSet(), {KapyModel.cloud});
@@ -1632,6 +1630,22 @@ void main() {
             ),
           );
         });
+
+        test(
+          'the translation pair alone is enough, without the speech model',
+          () async {
+            engine.status = LivePairStatus.downloadable;
+            final ai = await build(
+              notes: notes(),
+              billing: await billingOn(pro: false),
+              translator: engine,
+            );
+            await ai.ask('Translate the summary to Spanish', recording: _link);
+            expect(engine.calls, ['translate en es']);
+            expect(ai.pending, isNull);
+            expect(ai.current!.messages.last.model, KapyModel.translator);
+          },
+        );
 
         test(
           'a translator that gives up hands the whole of it to the cloud',
@@ -1737,7 +1751,8 @@ void main() {
           );
 
           test('one already asked for is not made again', () async {
-            engine.status = LivePairStatus.downloadable;
+            final translate = engine.translator;
+            engine.translator = (_) => null;
             final ai = await build(
               notes: notes(),
               billing: await billingOn(pro: true),
@@ -1748,7 +1763,7 @@ void main() {
               recording: _link,
             );
             expect(ai.pending, isA<KapyCloudConsent>());
-            engine.status = LivePairStatus.installed;
+            engine.translator = translate;
             await ai.keepTranscriptTranslation('standup', _link.hash, 'es');
             expect(ai.chats.where((c) => c.recording == _link), hasLength(1));
             expect(given, isEmpty);
@@ -1757,17 +1772,25 @@ void main() {
           test(
             'without the pair, or with no translator, nothing is kept',
             () async {
-              engine.status = LivePairStatus.downloadable;
+              engine.translator = (_) => null;
               final ai = await build(notes: notes(), translator: engine);
               await ai.keepTranscriptTranslation('standup', _link.hash, 'es');
               expect(ai.chats, isEmpty);
-              expect(given, isEmpty);
+              expect(engine.calls, ['translate en es']);
 
               final bare = await build(notes: notes());
               await bare.keepTranscriptTranslation('standup', _link.hash, 'es');
               expect(bare.chats, isEmpty);
             },
           );
+
+          test('with Kapy AI switched off, nothing is kept', () async {
+            final ai = await build(notes: notes(), translator: engine);
+            ai.enabled = false;
+            await ai.keepTranscriptTranslation('standup', _link.hash, 'es');
+            expect(ai.chats, isEmpty);
+            expect(engine.calls, isEmpty);
+          });
         });
       });
     });

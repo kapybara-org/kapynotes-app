@@ -687,20 +687,16 @@ class KapyAiController extends KapyAi {
       return;
     }
 
-    // A translation is made by the device's own translator when it has the
-    // pair, which needs no plan, account or consent. Otherwise it is long
+    // A translation goes to the device's own translator first, which needs
+    // no plan, account or consent. When it can't, a translation is long
     // work that a device's model does poorly, so it is made in the cloud:
     // Kapy AI Cloud, or the person's own account.
     final translation = recording == null
         ? null
         : parseTranslationRequest(question.text);
-    final pair =
-        translation == null ||
-            _translator == null ||
-            _declinedOnDevice == question.id
+    final pair = translation == null || _declinedOnDevice == question.id
         ? null
-        : await _devicePair(voice!.ref, translation.language);
-    if (_answering) return;
+        : _devicePair(voice!.ref, translation.language);
     final cloudOnly = translation != null;
     final using = pair != null
         ? KapyModel.translator
@@ -971,18 +967,15 @@ class KapyAiController extends KapyAi {
     return named.isEmpty ? voice.note.title : named;
   }
 
-  /// The pair of base languages the device's translator would make a
-  /// translation of [ref] into [language] with, when it has that pair on the
-  /// device now; the recording's language is its transcript's.
-  Future<({String from, String to})?> _devicePair(
-    NoteVoiceRef ref,
-    Language language,
-  ) async {
+  /// The base languages the device's translator is asked to translate
+  /// [ref] into [language] with, from its transcript's language. Null when
+  /// there's no translator here, or nothing to translate between.
+  ({String from, String to})? _devicePair(NoteVoiceRef ref, Language language) {
     final heard = languageNamed(ref.transcript?.lang ?? '');
-    if (heard == null || heard.base == language.base) return null;
-    final pair = (from: heard.base, to: language.base);
-    final status = await _translator!.pairStatus(pair.from, pair.to);
-    return status.status == LivePairStatus.installed ? pair : null;
+    if (_translator == null || heard == null || heard.base == language.base) {
+      return null;
+    }
+    return (from: heard.base, to: language.base);
   }
 
   /// [part] of [ref] translated by the device's translator for [pair], or
@@ -1003,8 +996,8 @@ class KapyAiController extends KapyAi {
   /// Saves the transcript of the recording [hash] in the note [noteId]
   /// translated into [to], an ISO 639-1 code, by the device's translator:
   /// the same chat Translate to… keeps, under Earlier and never opened.
-  /// Nothing happens when the recording already has that translation, or
-  /// the device doesn't have the pair.
+  /// Nothing happens while Kapy AI is off, when the recording already has
+  /// that translation, or when the device can't translate it.
   Future<void> keepTranscriptTranslation(
     String noteId,
     String hash,
@@ -1013,13 +1006,13 @@ class KapyAiController extends KapyAi {
     final language = languageNamed(to);
     final link = KapyRecordingRef(noteId: noteId, hash: hash);
     final voice = _recording(link);
-    if (language == null ||
+    if (!enabled ||
+        language == null ||
         voice == null ||
-        _translator == null ||
         _hasTranslation(link, language)) {
       return;
     }
-    final pair = await _devicePair(voice.ref, language);
+    final pair = _devicePair(voice.ref, language);
     final sent = translationParts(voice.ref, TranslateScope.transcript);
     if (pair == null || sent.isEmpty) return;
     final done = <String>[];
