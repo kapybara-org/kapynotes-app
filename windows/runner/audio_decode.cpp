@@ -103,23 +103,31 @@ struct Completion {
   std::unique_ptr<flutter::MethodResult<EncodableValue>> result;
   bool ok = false;
   std::string message;
+  // Which step failed and how, for the log: never shown to anyone.
+  std::string detail;
   std::string path;
   int64_t frames = 0;
   int sample_rate = 0;
 };
+
+void FailedAt(Completion* out, const char* step, HRESULT hr) {
+  char detail[64];
+  snprintf(detail, sizeof(detail), "%s 0x%08lX", step,
+           static_cast<unsigned long>(hr));
+  out->detail = detail;
+}
 
 void Decode(const std::string& source, int sample_rate, Completion* out) {
   out->message = "This recording could not be read.";
   out->sample_rate = sample_rate;
 
   MediaFoundationSession session;
-  if (!session.ok()) return;
+  if (!session.ok()) return FailedAt(out, "startup", E_FAIL);
 
   ComPtr<IMFSourceReader> reader;
-  if (FAILED(MFCreateSourceReaderFromURL(Widen(source).c_str(), nullptr,
-                                         reader.GetAddressOf()))) {
-    return;
-  }
+  HRESULT hr = MFCreateSourceReaderFromURL(Widen(source).c_str(), nullptr,
+                                           reader.GetAddressOf());
+  if (FAILED(hr)) return FailedAt(out, "open", hr);
 
   // Only the audio, and all of it. Leaving other streams selected would make
   // the read loop step over samples it has no use for.
@@ -131,24 +139,24 @@ void Decode(const std::string& source, int sample_rate, Completion* out) {
   // Asking for uncompressed PCM at the model's rate is what makes the reader
   // build a decode-and-resample chain for us.
   ComPtr<IMFMediaType> wanted;
-  if (FAILED(MFCreateMediaType(wanted.GetAddressOf()))) return;
+  hr = MFCreateMediaType(wanted.GetAddressOf());
+  if (FAILED(hr)) return FailedAt(out, "type", hr);
   wanted->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
   wanted->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
   wanted->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, kBitsPerSample);
   wanted->SetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND,
                     static_cast<UINT32>(sample_rate));
   wanted->SetUINT32(MF_MT_AUDIO_NUM_CHANNELS, kChannels);
-  if (FAILED(reader->SetCurrentMediaType(
-          static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), nullptr,
-          wanted.Get()))) {
-    return;
-  }
+  hr = reader->SetCurrentMediaType(
+      static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), nullptr,
+      wanted.Get());
+  if (FAILED(hr)) return FailedAt(out, "format", hr);
 
   const std::wstring pcm_path = TempPcmPath();
-  if (pcm_path.empty()) return;
+  if (pcm_path.empty()) return FailedAt(out, "temp", E_FAIL);
   FILE* sink = nullptr;
   if (_wfopen_s(&sink, pcm_path.c_str(), L"wb") != 0 || sink == nullptr) {
-    return;
+    return FailedAt(out, "create", E_FAIL);
   }
 
   int64_t frames = 0;
@@ -156,9 +164,11 @@ void Decode(const std::string& source, int sample_rate, Completion* out) {
   while (true) {
     DWORD flags = 0;
     ComPtr<IMFSample> sample;
-    if (FAILED(reader->ReadSample(
-            static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), 0, nullptr,
-            &flags, nullptr, sample.GetAddressOf()))) {
+    hr = reader->ReadSample(
+        static_cast<DWORD>(MF_SOURCE_READER_FIRST_AUDIO_STREAM), 0, nullptr,
+        &flags, nullptr, sample.GetAddressOf());
+    if (FAILED(hr)) {
+      FailedAt(out, "read", hr);
       failed = true;
       break;
     }
@@ -167,6 +177,7 @@ void Decode(const std::string& source, int sample_rate, Completion* out) {
     // rate into the same file, which is a transcript that drifts rather than
     // one that fails. Stop instead.
     if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) {
+      FailedAt(out, "format-changed", S_OK);
       failed = true;
       break;
     }
@@ -408,7 +419,8 @@ LRESULT CALLBACK CompletionWndProc(HWND window, UINT message, WPARAM wparam,
           {EncodableValue("frames"), EncodableValue(done->frames)},
       }));
     } else {
-      done->result->Error("decode", done->message);
+      done->result->Error("decode", done->message,
+                          EncodableValue(done->detail));
     }
     return 0;
   }
