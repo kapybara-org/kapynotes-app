@@ -367,6 +367,33 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
+  testWidgets('in a short window a row the keyboard reaches by wrapping '
+      'round is scrolled into sight', (tester) async {
+    desktop(TargetPlatform.macOS);
+    await pumpView(tester, window: const Size(1200, 360));
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+    await tester.pump();
+    final box = tester.getRect(menu);
+    bool inSight(String key) {
+      final row = tester.getRect(find.byKey(ValueKey(key)));
+      return row.top >= box.top && row.bottom <= box.bottom;
+    }
+
+    // Up from the top wraps round to Grid, at the foot.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(inSight('notes-layout-grid'), isTrue);
+
+    // Down from Grid wraps round to All notes, at the top.
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(inSight('notes-filter-all'), isTrue);
+    debugDefaultTargetPlatformOverride = null;
+  });
+
   testWidgets("an iPad's View icon opens the touch popover, which adds "
       'Group by and Layout', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;

@@ -2757,6 +2757,9 @@ class _MenuRowFrameState extends State<_MenuRowFrame> {
       mouseCursor: SystemMouseCursors.click,
       onShowHoverHighlight: (on) => setState(() => _hovering = on),
       onShowFocusHighlight: (on) => setState(() => _focused = on),
+      onFocusChange: (focused) {
+        if (focused) unawaited(Scrollable.ensureVisible(context));
+      },
       actions: {
         ActivateIntent: CallbackAction<ActivateIntent>(
           onInvoke: (_) => widget.onTap(),
