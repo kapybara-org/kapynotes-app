@@ -2548,6 +2548,59 @@ void main() {
     expect((LayoutPrefs(store)..load()).writingFont, WritingFont.clean);
   });
 
+  testWidgets('on a 320 pt phone all five writing styles keep their letters', (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 568);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showSettings(
+                context,
+                layoutPrefs: LayoutPrefs(store)..load(),
+                shortcuts: ShortcutPrefs(store)..load(),
+                rates: RatesRepository(store),
+                notes: notes,
+                section: SettingsSection.appearance,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    for (final font in WritingFont.values) {
+      final segment = find.byKey(ValueKey('writing-font-${font.name}'));
+      await tester.ensureVisible(segment);
+      final label = find.descendant(of: segment, matching: find.byType(Text));
+      final shown = find.descendant(
+        of: segment,
+        matching: find.byType(FittedBox),
+      );
+      expect(
+        tester.getSize(shown).width / tester.getSize(label).width,
+        greaterThan(0.9),
+        reason: font.name,
+      );
+    }
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('writing-font-handwritten')),
+        matching: find.text('Hand'),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('changes app text size live and persists it', (tester) async {
     await pumpApp(tester);
     notes.create(body: 'Readable everywhere');
