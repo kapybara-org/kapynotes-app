@@ -8251,9 +8251,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                                   palette.controlBorder,
                                               codePanel: palette.codePanel,
                                               codeChip: palette.codeChip,
-                                              accent: Theme.of(
-                                                context,
-                                              ).colorScheme.primary,
+                                              accent: palette.accentFill,
                                               onAccent: Theme.of(
                                                 context,
                                               ).colorScheme.onPrimary,

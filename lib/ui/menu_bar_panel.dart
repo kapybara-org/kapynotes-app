@@ -1342,7 +1342,7 @@ class _TaskRow extends StatelessWidget {
             width: 15,
             height: 15,
             decoration: BoxDecoration(
-              color: done ? sage : null,
+              color: done ? palette.accentFill : null,
               shape: BoxShape.circle,
               border: done
                   ? null

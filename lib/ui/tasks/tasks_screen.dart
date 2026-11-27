@@ -1898,7 +1898,6 @@ class _Box extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
     return Semantics(
       checked: done,
       label: label,
@@ -1913,7 +1912,7 @@ class _Box extends StatelessWidget {
             width: 20,
             height: 20,
             decoration: BoxDecoration(
-              color: done ? accent : palette.editorBackground,
+              color: done ? palette.accentFill : palette.editorBackground,
               border: done
                   ? null
                   : Border.all(color: palette.checkboxBorder, width: 1.5),
@@ -2112,7 +2111,7 @@ class _PhoneTaskRow extends StatelessWidget {
                               width: 20,
                               height: 20,
                               decoration: BoxDecoration(
-                                color: ink.sage,
+                                color: context.palette.accentFill,
                                 borderRadius: BorderRadius.circular(5),
                               ),
                               child: KapyIcon(
@@ -2263,7 +2262,7 @@ class TasksBandActions extends StatelessWidget {
           ChecklistPie(
             done: done,
             total: total,
-            fill: ink.sage,
+            fill: context.palette.accentFill,
             check: context.palette.onAccent,
           ),
           const SizedBox(width: 6),

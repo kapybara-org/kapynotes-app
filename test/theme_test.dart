@@ -126,7 +126,10 @@ void main() {
     expect(switches.trackColor!.resolve({}), palette.switchTrackOff);
     final checkbox = theme.checkboxTheme;
     expect(checkbox.shape, const CircleBorder());
-    expect(checkbox.fillColor!.resolve({WidgetState.selected}), palette.accent);
+    expect(
+      checkbox.fillColor!.resolve({WidgetState.selected}),
+      palette.accentFill,
+    );
     expect(
       (checkbox.side! as WidgetStateProperty<BorderSide?>).resolve({})!.color,
       palette.checkboxBorder,

@@ -11715,7 +11715,7 @@ void main() {
                 find.descendant(of: close, matching: find.byType(Material)),
               )
               .color,
-          Theme.of(tester.element(plus)).colorScheme.primary,
+          tester.element(plus).palette.accentFill,
         );
         expect(
           tester.getRect(menu).bottom,

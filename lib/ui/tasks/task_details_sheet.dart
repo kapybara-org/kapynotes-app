@@ -607,7 +607,6 @@ class _PhoneTaskBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final sage = Theme.of(context).colorScheme.primary;
     final done = item.line.done;
     final tick = editable
         ? () => unawaited(tasks.setDone(item, done: !done))
@@ -630,9 +629,9 @@ class _PhoneTaskBox extends StatelessWidget {
                 width: 20,
                 height: 20,
                 decoration: BoxDecoration(
-                  color: done ? sage : null,
+                  color: done ? palette.accentFill : null,
                   border: Border.all(
-                    color: done ? sage : palette.checkboxBorder,
+                    color: done ? palette.accentFill : palette.checkboxBorder,
                     width: 1.5,
                   ),
                   shape: BoxShape.circle,

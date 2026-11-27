@@ -981,7 +981,7 @@ class _PlusButton extends StatelessWidget {
       onTap: onPressed,
       onLongPress: onLongPress,
       child: Material(
-        color: palette.accent,
+        color: palette.accentFill,
         shape: const CircleBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(

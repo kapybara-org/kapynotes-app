@@ -2178,7 +2178,7 @@ class KapyTheme {
         ),
         fillColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? accent
+              ? palette.accentFill
               : Colors.transparent,
         ),
         checkColor: WidgetStatePropertyAll(onAccent),

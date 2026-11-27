@@ -258,7 +258,7 @@ void main() {
               find.descendant(of: plus, matching: find.byType(Material)).first,
             )
             .color,
-        KapyTheme.darkPalette.accent,
+        KapyTheme.darkPalette.accentFill,
       );
       expect(tester.getRect(plus).left - tester.getRect(bar).right, 12);
       expect(tester.getCenter(plus).dy, tester.getCenter(bar).dy);

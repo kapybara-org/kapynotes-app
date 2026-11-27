@@ -1185,7 +1185,6 @@ class _CommandMenuState extends State<CommandMenu> {
     final done = item != null && _done.contains(item.id);
     final trailing = line.trailing;
     final keycap = line.keycap;
-    final sage = Theme.of(context).colorScheme.primary;
     return MouseRegion(
       onEnter: (_) => setState(() => _highlight = index),
       child: GestureDetector(
@@ -1230,9 +1229,11 @@ class _CommandMenuState extends State<CommandMenu> {
                           width: 20,
                           height: 20,
                           decoration: BoxDecoration(
-                            color: done ? sage : null,
+                            color: done ? palette.accentFill : null,
                             border: Border.all(
-                              color: done ? sage : palette.checkboxBorder,
+                              color: done
+                                  ? palette.accentFill
+                                  : palette.checkboxBorder,
                               width: 1.5,
                             ),
                             shape: BoxShape.circle,
