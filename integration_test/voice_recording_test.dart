@@ -154,17 +154,19 @@ void main() {
     await Future<void>.delayed(const Duration(seconds: 3));
     final result = await controller.stop();
     final file = result!.file;
-    debugPrint('DIAG file \${file.path} \${await file.length()} bytes');
+    debugPrint('DIAG file ${file.path} ${await file.length()} bytes');
     Future<void> attempt(String label, File source, int rate) async {
       try {
         final decoded = await const AudioDecoder().decode(
           source,
           sampleRate: rate,
         );
-        debugPrint('DIAG \$label ok frames \${decoded.frames} rate \${decoded.sampleRate}');
+        debugPrint(
+          'DIAG $label ok frames ${decoded.frames} rate ${decoded.sampleRate}',
+        );
         await decoded.dispose();
       } catch (error) {
-        debugPrint('DIAG \$label failed \$error');
+        debugPrint('DIAG $label failed $error');
       }
     }
 
@@ -172,7 +174,7 @@ void main() {
     await attempt('44k', file, 44100);
     await Future<void>.delayed(const Duration(seconds: 2));
     await attempt('16k-later', file, 16000);
-    final copy = await file.copy('\${temp.path}/copy.m4a');
+    final copy = await file.copy('${temp.path}/copy.m4a');
     await attempt('16k-copy', copy, 16000);
   });
 
