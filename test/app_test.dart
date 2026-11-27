@@ -48,6 +48,10 @@ import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/writing_streak.dart';
 import 'package:kapy_notes/images/camera_capture.dart';
 import 'package:kapy_notes/images/image_picker.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart'
+    show ImagePickerPlatform, MediaOptions, XFile;
+import 'package:plugin_platform_interface/plugin_platform_interface.dart'
+    show MockPlatformInterfaceMixin;
 import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/sync/account.dart';
@@ -7887,6 +7891,49 @@ void main() {
       expect(find.text('Sign in first to share this note'), findsOneWidget);
     },
   );
+
+  testWidgets("a phone's Photos row does not close an unlocked hidden note", (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final library = _HeldLibrary();
+    final platform = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = library;
+    addTearDown(() => ImagePickerPlatform.instance = platform);
+    await notes.load();
+    notes.create(body: 'Visible note');
+    final private = notes.create(body: 'Private note');
+    notes.hide(private.id);
+    await pumpApp(
+      tester,
+      size: const Size(390, 844),
+      hiddenNotesGate: _HiddenGate(),
+    );
+    await showNotesList(tester);
+    await showInFilter(tester, NotesShow.hidden);
+    await tester.tap(find.widgetWithText(NoteRow, 'Private note'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NoteField));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('format-attach')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('attach-photos')));
+    await tester.pump();
+    expect(library.opened, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(openNoteBody(tester), 'Private note');
+
+    library.held.complete(const []);
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
+  });
 
   testWidgets('settings does not name a hidden startup note', (tester) async {
     await notes.load();
@@ -15800,4 +15847,16 @@ class _AndroidScaler extends TextScaler {
 
   @override
   int get hashCode => name.hashCode;
+}
+
+/// A photo library that stays in front until the test closes it.
+class _HeldLibrary extends ImagePickerPlatform with MockPlatformInterfaceMixin {
+  int opened = 0;
+  final held = Completer<List<XFile>>();
+
+  @override
+  Future<List<XFile>> getMedia({required MediaOptions options}) {
+    opened++;
+    return held.future;
+  }
 }
