@@ -152,6 +152,13 @@ dependencies:
   # floor holding for direct dependencies and quietly failing one level down.
   app_links_platform_interface: 2.0.2
 
+  # Remove noise: takes the background noise out of a recording on the
+  # device. A small Rust library, prebuilt for every platform in
+  # packages/denoise/prebuilt/, so like sherpa_onnx it needs no Rust on the
+  # build machines. See packages/denoise/README.md.
+  denoise:
+    path: packages/denoise
+
   # Reading an image off the system clipboard, which Flutter's own
   # `Clipboard` cannot do — it handles text and nothing else. Chosen over
   # super_clipboard, which is more capable but needs a Rust toolchain on every
@@ -263,6 +270,9 @@ flutter:
       platforms: [android, linux, windows]
     - path: assets/speech/silero_vad-LICENSE.txt
       platforms: [android, linux, windows]
+    # The licence of the model Remove noise downloads on first use
+    # (lib/audio/noise_removal.dart).
+    - assets/audio/DPDFNet-LICENSE.txt
   fonts:
     - family: Shantell Sans
       fonts:

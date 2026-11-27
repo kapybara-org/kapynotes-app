@@ -51,9 +51,10 @@ target_link_libraries(${BINARY_NAME} PRIVATE "windowscodecs.lib")
 # SetWindowSubclass, for repairing the key messages other programs send.
 target_link_libraries(${BINARY_NAME} PRIVATE "comctl32.lib")
 # Media Foundation, for decoding a recording into the samples a speech model
-# reads. mfreadwrite is the source reader; mfplat and mfuuid carry the media
-# type GUIDs it is configured with.
-target_link_libraries(${BINARY_NAME} PRIVATE "mfplat.lib" "mfreadwrite.lib" "mfuuid.lib")
+# reads and encoding cleaned samples back into a recording. mfreadwrite is the
+# source reader and sink writer; mfplat and mfuuid carry the media type GUIDs
+# they are configured with; wmcodecdspuuid names the audio resampler.
+target_link_libraries(${BINARY_NAME} PRIVATE "mfplat.lib" "mfreadwrite.lib" "mfuuid.lib" "wmcodecdspuuid.lib")
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
 # Run the Flutter tool portions of the build. This must not be removed.
