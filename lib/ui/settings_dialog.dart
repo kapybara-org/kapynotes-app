@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -952,6 +953,23 @@ class _SettingsDialogState extends State<SettingsDialog>
     // A pane the user has not seen should start at its top, not wherever the
     // previous one was scrolled to.
     if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
+
+  /// A swipe or the mouse's Back and Forward over the dialog: to the
+  /// category above or below on the rail. Back from search results leaves
+  /// the search, for the category it was opened over.
+  bool _stepSections(BackForwardStep step) {
+    if (_searching) {
+      if (step == BackForwardStep.forward) return false;
+      _search.clear();
+      return true;
+    }
+    final sections = _sections;
+    final next =
+        sections.indexOf(_section) + (step == BackForwardStep.back ? -1 : 1);
+    if (next < 0 || next >= sections.length) return false;
+    _selectFromRail(sections[next]);
+    return true;
   }
 
   /// A category chosen from the rail while results are showing is a change
@@ -3123,107 +3141,112 @@ class _SettingsDialogState extends State<SettingsDialog>
     final title = _searching
         ? '${_count(_results.length, 'setting')} for “$_query”'
         : section.label;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        FocusTraversalGroup(
-          child: Container(
-            width: _navWidth,
-            padding: const EdgeInsets.fromLTRB(12, 16, 12, 18),
-            decoration: BoxDecoration(
-              color: palette.sidebarBackground,
-              border: Border(right: BorderSide(color: palette.paneEdge)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _searchField(autofocus: widget.section == null),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final updates = widget.updates;
-                      final sections = _sections;
-                      final labels =
-                          (sections.any(_SettingsRail.general.contains)
-                              ? 1
-                              : 0) +
-                          (sections.any(_SettingsRail.account.contains)
-                              ? 1
-                              : 0);
-                      final railNeeded = math.min(
-                        constraints.maxHeight,
-                        sections.length * _SettingsRail.itemHeight +
-                            labels * _SettingsRail.labelHeight +
-                            2,
-                      );
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          SizedBox(
-                            height: railNeeded,
-                            child: _SettingsRail(
-                              sections: sections,
-                              changed: _changedSections,
-                              selected: _searching ? null : section,
-                              onSelect: _selectFromRail,
+    return BackForwardArea(
+      onStep: _stepSections,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FocusTraversalGroup(
+            child: Container(
+              width: _navWidth,
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 18),
+              decoration: BoxDecoration(
+                color: palette.sidebarBackground,
+                border: Border(right: BorderSide(color: palette.paneEdge)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _searchField(autofocus: widget.section == null),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final updates = widget.updates;
+                        final sections = _sections;
+                        final labels =
+                            (sections.any(_SettingsRail.general.contains)
+                                ? 1
+                                : 0) +
+                            (sections.any(_SettingsRail.account.contains)
+                                ? 1
+                                : 0);
+                        final railNeeded = math.min(
+                          constraints.maxHeight,
+                          sections.length * _SettingsRail.itemHeight +
+                              labels * _SettingsRail.labelHeight +
+                              2,
+                        );
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(
+                              height: railNeeded,
+                              child: _SettingsRail(
+                                sections: sections,
+                                changed: _changedSections,
+                                selected: _searching ? null : section,
+                                onSelect: _selectFromRail,
+                              ),
                             ),
-                          ),
-                          Expanded(
-                            child: LayoutBuilder(
-                              builder: (context, box) {
-                                final foot =
-                                    28.0 + (updates == null ? 0.0 : 26.0);
-                                return Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    if (updates != null)
-                                      SettingsUpdateCard(
-                                        updates: updates,
-                                        layoutPrefs: widget.layoutPrefs,
-                                        maxHeight: box.maxHeight - foot - 6,
+                            Expanded(
+                              child: LayoutBuilder(
+                                builder: (context, box) {
+                                  final foot =
+                                      28.0 + (updates == null ? 0.0 : 26.0);
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (updates != null)
+                                        SettingsUpdateCard(
+                                          updates: updates,
+                                          layoutPrefs: widget.layoutPrefs,
+                                          maxHeight: box.maxHeight - foot - 6,
+                                        ),
+                                      const Spacer(),
+                                      _ChangedCount(
+                                        count: _changedEntries.length,
                                       ),
-                                    const Spacer(),
-                                    _ChangedCount(
-                                      count: _changedEntries.length,
-                                    ),
-                                    if (updates != null) ...[
-                                      const SizedBox(height: 10),
-                                      _VersionStatus(updates: updates),
+                                      if (updates != null) ...[
+                                        const SizedBox(height: 10),
+                                        _VersionStatus(updates: updates),
+                                      ],
                                     ],
-                                  ],
-                                );
-                              },
+                                  );
+                                },
+                              ),
                             ),
-                          ),
-                        ],
-                      );
-                    },
+                          ],
+                        );
+                      },
+                    ),
                   ),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: _paneColumn(
+              title: title,
+              pane: BackForwardSlide(
+                child: _ScrollingPane(
+                  key: _paneKey,
+                  controller: _scrollController,
+                  flashTarget: _flashTarget,
+                  flash: _flash,
+                  children: _searching ? [_searchResults()] : _paneFor(section),
                 ),
-              ],
+              ),
+              footer: _searching
+                  ? const _SearchHints()
+                  : section == SettingsSection.shortcuts
+                  ? _shortcutsFooter()
+                  : null,
             ),
           ),
-        ),
-        Expanded(
-          child: _paneColumn(
-            title: title,
-            pane: _ScrollingPane(
-              key: _paneKey,
-              controller: _scrollController,
-              flashTarget: _flashTarget,
-              flash: _flash,
-              children: _searching ? [_searchResults()] : _paneFor(section),
-            ),
-            footer: _searching
-                ? const _SearchHints()
-                : section == SettingsSection.shortcuts
-                ? _shortcutsFooter()
-                : null,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

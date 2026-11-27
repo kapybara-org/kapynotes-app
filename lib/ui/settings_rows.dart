@@ -963,20 +963,27 @@ class SettingsStepper extends StatelessWidget {
 /// How much of an allowance is gone, as a 14 px clock face filling in: the
 /// smallest mark that still reads as a proportion.
 class SettingsPie extends StatelessWidget {
-  const SettingsPie({super.key, required this.fraction});
+  const SettingsPie({super.key, required this.fraction, this.fill, this.track});
 
   /// Null while it is not known yet, which draws the empty face.
   final double? fraction;
+
+  /// The wedge and the ring, for a face drawn where the theme's own would not
+  /// show, such as over a video's picture.
+  final Color? fill;
+  final Color? track;
 
   @override
   Widget build(BuildContext context) => CustomPaint(
     size: const Size.square(14),
     painter: _PiePainter(
       fraction: (fraction ?? 0).clamp(0.0, 1.0),
-      fill: (fraction ?? 0) >= 1
-          ? Theme.of(context).colorScheme.error
-          : Theme.of(context).colorScheme.primary,
-      track: context.palette.textTertiary,
+      fill:
+          fill ??
+          ((fraction ?? 0) >= 1
+              ? Theme.of(context).colorScheme.error
+              : Theme.of(context).colorScheme.primary),
+      track: track ?? context.palette.textTertiary,
     ),
   );
 }

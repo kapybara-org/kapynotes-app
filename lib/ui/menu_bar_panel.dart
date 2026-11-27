@@ -15,6 +15,7 @@ import '../data/note.dart';
 import '../data/notes_store.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/task_board.dart';
+import 'back_forward.dart';
 import 'keycap.dart';
 import 'sidebar_timestamp.dart';
 import 'tasks/task_marks.dart';
@@ -521,64 +522,69 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
             _show(_Tab.tasks),
         const SingleActivator(LogicalKeyboardKey.escape): _escape,
       },
-      child: Material(
-        type: MaterialType.transparency,
-        child: DefaultTextStyle(
-          style: TextStyle(
-            fontFamily: AppFonts.ui,
-            fontSize: 13.5,
-            height: 18 / 13.5,
-            color: palette.textPrimary,
-          ),
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: OverflowBox(
+      child: BackForwardArea(
+        onStep: _stepTab,
+        child: Material(
+          type: MaterialType.transparency,
+          child: DefaultTextStyle(
+            style: TextStyle(
+              fontFamily: AppFonts.ui,
+              fontSize: 13.5,
+              height: 18 / 13.5,
+              color: palette.textPrimary,
+            ),
+            child: Align(
               alignment: Alignment.topCenter,
-              minHeight: 0,
-              maxHeight: MenuBarPanelController.maxHeight,
-              child: _ReportHeight(
-                onHeight: widget.controller.fitHeight,
-                child: Container(
-                  key: const ValueKey('menu-bar-panel'),
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    color: palette.editorBackground,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: dark
-                          ? palette.textPrimary.withAlpha(0x17)
-                          : palette.textPrimary.withAlpha(0x1A),
+              child: OverflowBox(
+                alignment: Alignment.topCenter,
+                minHeight: 0,
+                maxHeight: MenuBarPanelController.maxHeight,
+                child: _ReportHeight(
+                  onHeight: widget.controller.fitHeight,
+                  child: Container(
+                    key: const ValueKey('menu-bar-panel'),
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: palette.editorBackground,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: dark
+                            ? palette.textPrimary.withAlpha(0x17)
+                            : palette.textPrimary.withAlpha(0x1A),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                        child: _Tabs(tab: _tab, onTab: _show),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                        child: _captureField(context),
-                      ),
-                      _hintRow(context),
-                      Divider(height: 1, thickness: 1, color: palette.hover),
-                      Flexible(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
-                          child: Focus(
-                            focusNode: _list,
-                            onKeyEvent: _onListKey,
-                            child: _tab == _Tab.tasks
-                                ? _tasksList(context)
-                                : _notesList(context),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                          child: _Tabs(tab: _tab, onTab: _show),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                          child: _captureField(context),
+                        ),
+                        _hintRow(context),
+                        Divider(height: 1, thickness: 1, color: palette.hover),
+                        Flexible(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
+                            child: Focus(
+                              focusNode: _list,
+                              onKeyEvent: _onListKey,
+                              child: BackForwardSlide(
+                                child: _tab == _Tab.tasks
+                                    ? _tasksList(context)
+                                    : _notesList(context),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                      Divider(height: 1, thickness: 1, color: palette.hover),
-                      _footer(context),
-                    ],
+                        Divider(height: 1, thickness: 1, color: palette.hover),
+                        _footer(context),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -587,6 +593,15 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
         ),
       ),
     );
+  }
+
+  /// A swipe or the mouse's Back and Forward over the panel: Notes is the
+  /// first tab and Tasks the second.
+  bool _stepTab(BackForwardStep step) {
+    final tab = step == BackForwardStep.back ? _Tab.notes : _Tab.tasks;
+    if (tab == _tab) return false;
+    _show(tab);
+    return true;
   }
 
   Widget _captureField(BuildContext context) {
