@@ -3012,6 +3012,124 @@ void main() {
     expect(target.height, greaterThanOrEqualTo(44));
   });
 
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('a phone on ${platform.name} draws results in the desktop\'s '
+        'pills, with a total in the strong one', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      const body = 'Totals\na = 12\nb = 30\ntotal';
+      await tester.pumpWidget(
+        harness(body, keepResultRoom: true, platform: platform),
+      );
+      await tester.pumpAndSettle();
+
+      Finder pill(String text) => find.descendant(
+        of: chipWithText(text),
+        matching: find.byType(AnimatedContainer),
+      );
+      BoxDecoration decorationOf(String text) =>
+          tester.widget<AnimatedContainer>(pill(text)).decoration!
+              as BoxDecoration;
+      TextStyle styleOf(String text) =>
+          tester.widget<Text>(find.text(text)).style!;
+      const palette = KapyTheme.darkPalette;
+
+      expect(find.byType(ResultLeader), findsNothing);
+      expect(decorationOf('42').color, palette.totalPillBackground);
+      expect(styleOf('42').color, palette.totalPillText);
+      expect(styleOf('42').fontWeight, FontWeight.w600);
+      for (final text in ['12', '30']) {
+        expect(decorationOf(text).color, palette.resultPillBackground);
+        expect(styleOf(text).color, palette.resultPillText);
+        expect(styleOf(text).fontWeight, FontWeight.w500);
+      }
+      for (final (line, text) in [(1, '12'), (2, '30'), (3, '42')]) {
+        final style = styleOf(text);
+        expect(style.fontSize, AppTypeScale.result);
+        expect(style.fontSize, greaterThan(13), reason: "the phone's size");
+        expect(style.fontFeatures, const [FontFeature.tabularFigures()]);
+        final rect = tester.getRect(pill(text));
+        final radius =
+            (decorationOf(text).borderRadius! as BorderRadius).topLeft.x;
+        expect(radius, closeTo(rect.height / 2, 0.5), reason: 'round ends');
+        final row = lineRect(tester, body, line);
+        expect(rect.top, greaterThanOrEqualTo(row.top - 0.5));
+        expect(rect.bottom, lessThanOrEqualTo(row.bottom + 0.5));
+      }
+    });
+  }
+
+  for (final width in [320.0, 390.0]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('a phone ${width.round()} pt wide at $scale× text keeps '
+          'every pill on screen and clear of its writing', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        // Tall enough that every line is laid out at the larger size.
+        tester.view.physicalSize = Size(width, 2400);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.reset);
+        tester.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        const body =
+            'Trip\n'
+            'Flights for the two of us to Lisbon in October = 2 * 1147.50 eur\n'
+            'hotel = 9 * 128 eur\n'
+            'week 44 2026\n'
+            'total';
+        await tester.pumpWidget(
+          harness(body, keepResultRoom: true, platform: TargetPlatform.iOS),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        final editable = NoteDriver(tester);
+        final writing = [
+          for (final box in editable.boxesFor(
+            TextSelection(
+              baseOffset: body.indexOf('\n') + 1,
+              extentOffset: body.length,
+            ),
+          ))
+            if (box.right > box.left)
+              Rect.fromPoints(
+                editable.toGlobal(Offset(box.left, box.top)),
+                editable.toGlobal(Offset(box.right, box.bottom)),
+              ),
+        ];
+        final pills = find.descendant(
+          of: find.byType(ResultChip),
+          matching: find.byType(AnimatedContainer),
+        );
+        expect(pills, findsNWidgets(4));
+        for (final element in pills.evaluate()) {
+          final rect = tester.getRect(find.byWidget(element.widget));
+          expect(rect.left, greaterThanOrEqualTo(0));
+          expect(rect.right, lessThanOrEqualTo(width));
+          for (final words in writing) {
+            final beside =
+                words.bottom > rect.top + 1 && words.top < rect.bottom - 1;
+            if (beside) {
+              expect(
+                words.right,
+                lessThanOrEqualTo(rect.left),
+                reason: 'a pill covers the writing at $words',
+              );
+            }
+          }
+        }
+        for (final paragraph in tester.renderObjectList<RenderParagraph>(
+          find.descendant(
+            of: find.byType(ResultChip),
+            matching: find.byType(RichText),
+          ),
+        )) {
+          expect(paragraph.didExceedMaxLines, isFalse);
+        }
+      });
+    }
+  }
+
   testWidgets('a phone result takes a tap only inside its own line', (
     tester,
   ) async {
