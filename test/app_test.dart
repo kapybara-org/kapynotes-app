@@ -4079,6 +4079,66 @@ void main() {
     }
   });
 
+  group('with a silent microphone (KAP-424)', () {
+    for (final platform in [
+      TargetPlatform.linux,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+    ]) {
+      testWidgets('on ${platform.name} the bar says so, and the shortcut that '
+          'stops it saves nothing', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final temp = Directory.systemTemp.createTempSync('kapy-silent-mic');
+        addTearDown(() => temp.deleteSync(recursive: true));
+        final recorder = FakeVoiceRecorder(writesFile: false);
+        final recording = VoiceRecordingController(
+          recorder: recorder,
+          tempDirectory: temp,
+        );
+        addTearDown(recording.dispose);
+        final note = notes.create(body: 'Standup');
+        await pumpApp(
+          tester,
+          size: const Size(1400, 800),
+          recording: recording,
+        );
+        final shortcut = shortcuts.bindingFor(ShortcutAction.recordVoiceNote)!;
+
+        await sendShortcut(tester, shortcut);
+        await tester.pump();
+        expect(recording.isRecording, isTrue);
+        // A muted microphone: a level every tenth of a second, all silence.
+        for (var tenth = 0; tenth < 35; tenth++) {
+          recorder.amplitudes.add(-160);
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(
+          tester.widget<Text>(find.byKey(const ValueKey('recording-status'))).data,
+          'Microphone is silent',
+        );
+        expect(find.byKey(const ValueKey('recording-elapsed')), findsOneWidget);
+        expect(find.text('0:03'), findsOneWidget);
+
+        await sendShortcut(tester, shortcut);
+        final told = find.text('Nothing saved: the microphone was silent');
+        for (var wait = 0; wait < 100 && told.evaluate().isEmpty; wait++) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 20)),
+          );
+          await tester.pump();
+        }
+
+        expect(recording.isRecording, isFalse);
+        expect(told, findsOneWidget);
+        expect(find.text('Recording stopped'), findsNothing);
+        expect(notes.byId(note.id)!.attachments, isEmpty);
+        expect(temp.listSync(), isEmpty, reason: 'no clip and no marker left');
+        await tester.pump(const Duration(seconds: 5));
+      });
+    }
+  });
+
   group('notes list', () {
     setUp(() => AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS);
     tearDown(() => AppPlatform.debugTargetPlatformOverride = null);

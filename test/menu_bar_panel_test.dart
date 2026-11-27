@@ -389,6 +389,32 @@ void main() {
       expect(find.text('No microphone found'), findsOneWidget);
     });
 
+    testWidgets('a silent microphone is told, and Stop keeps neither clip nor '
+        'note (KAP-424)', (tester) async {
+      await pumpPanel(tester);
+      await tester.tap(find.byKey(const ValueKey('menu-bar-mic')));
+      await tester.pump();
+      for (var tenth = 0; tenth < 35; tenth++) {
+        recorder._amplitude.add(-160);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(find.text('Microphone is silent'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('menu-bar-stop')));
+      final told = find.text('Nothing saved: the microphone was silent');
+      for (var wait = 0; wait < 100 && told.evaluate().isEmpty; wait++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump();
+      }
+
+      expect(told, findsOneWidget);
+      expect(find.text('Saved to Notes'), findsNothing);
+      expect(recording.isRecording, isFalse);
+      expect(notes.notes, isEmpty);
+    });
+
     testWidgets('on the Free plan at its limit, no note is made', (
       tester,
     ) async {

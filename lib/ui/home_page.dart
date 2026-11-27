@@ -1020,11 +1020,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     );
     try {
       if (stopping) {
-        await recording.finishRecordingAndFlush();
-        if (mounted) {
-          progress.success('Recording stopped');
-        } else {
+        final silent = await recording.finishRecordingAndFlush(
+          discardSilent: true,
+        );
+        if (!mounted) {
           progress.dismiss();
+        } else if (silent) {
+          progress.error('Nothing saved: the microphone was silent');
+        } else {
+          progress.success('Recording stopped');
         }
         return;
       }

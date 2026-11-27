@@ -113,6 +113,10 @@ final class _NoMicrophone extends _Notice {
   const _NoMicrophone();
 }
 
+final class _SilentMicrophone extends _Notice {
+  const _SilentMicrophone();
+}
+
 /// Two tabs, each with its own capture field and its own list, opening on the
 /// one used last. See handoffs/KAPY-14/menubar-spec.md.
 class MenuBarPanel extends StatefulWidget {
@@ -411,10 +415,14 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     if (mounted) _say(const _MicrophoneRefused());
   }
 
+  /// A microphone that never gave a sound leaves nothing to save, so the note
+  /// made for the recording goes with it.
   Future<void> _stopRecording() async {
     final id = _recordingNoteId;
-    await widget.recording?.finishRecordingAndFlush();
-    if (mounted && id != null) _say(_Saved(id));
+    final silent = await widget.recording?.finishRecordingAndFlush(discardSilent: true) ?? false;
+    if (id == null) return;
+    if (silent) widget.notes.delete(id);
+    if (mounted) _say(silent ? const _SilentMicrophone() : _Saved(id));
   }
 
   Future<void> _discardRecording() async {
@@ -642,8 +650,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
 
   Widget _recordingBar(BuildContext context) {
     final palette = context.palette;
-    final elapsed = widget.recording?.session?.elapsed ?? Duration.zero;
-    final seconds = elapsed.inSeconds;
+    final session = widget.recording?.session;
+    final seconds = (session?.elapsed ?? Duration.zero).inSeconds;
     return Container(
       key: const ValueKey('menu-bar-recording'),
       height: 37,
@@ -668,6 +676,14 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
               color: palette.textPrimary,
             ),
           ),
+          if (session?.silent ?? false) ...[
+            const SizedBox(width: 10),
+            Text(
+              'Microphone is silent',
+              key: const ValueKey('menu-bar-silent'),
+              style: TextStyle(fontSize: 13, color: palette.textSecondary),
+            ),
+          ],
           const Spacer(),
           _TextButton(
             key: const ValueKey('menu-bar-stop'),
@@ -798,6 +814,9 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
       ]),
       _NoMicrophone() => _Hint(children: [
         Text('No microphone found', style: style),
+      ]),
+      _SilentMicrophone() => _Hint(children: [
+        Text('Nothing saved: the microphone was silent', style: style),
       ]),
       null when _draft.text.trim().isNotEmpty && !_isRecording => _Hint(children: [
         const Keycap('↵'),
