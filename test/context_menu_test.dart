@@ -36,16 +36,24 @@ void main() {
     expect(place(const Offset(700, 500)).bottomRight, const Offset(700, 500));
   });
 
-  test('too tall for either side, it opens on the side with more room, as '
-      'tall as that room, and scrolls the rest', () {
-    const tall = Size(200, 700);
+  test('too tall for either side but not for the window, it stays whole '
+      'beside the pointer, with no item under it', () {
+    const size = Size(200, 400);
     expect(
-      place(const Offset(100, 250), size: tall),
-      const Rect.fromLTRB(100, 250, 300, 592),
+      place(const Offset(100, 300), size: size),
+      const Rect.fromLTWH(101, 192, 200, 400),
     );
     expect(
-      place(const Offset(100, 350), size: tall),
-      const Rect.fromLTRB(100, 8, 300, 350),
+      place(const Offset(700, 300), size: size),
+      const Rect.fromLTWH(500, 192, 200, 400),
+    );
+  });
+
+  test('taller than the window, it fills the window beside the pointer and '
+      'scrolls', () {
+    expect(
+      place(const Offset(100, 250), size: const Size(200, 700)),
+      const Rect.fromLTRB(101, 8, 301, 592),
     );
   });
 

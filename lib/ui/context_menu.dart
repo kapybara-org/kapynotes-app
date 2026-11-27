@@ -197,15 +197,18 @@ class _KapyContextMenuRoute<T> extends PopupRoute<T> {
   );
 }
 
-/// Lays a menu out with a corner at [position], where it opened, so the
-/// pointer rests on none of its items and a stray release chooses nothing.
+/// Lays a menu out so the pointer rests on none of its items and a stray
+/// release chooses nothing.
 ///
-/// It opens down and right, flipping to the side that fits. When neither
-/// side fits, it opens on the side with more room and shrinks to that room,
-/// so it scrolls rather than sliding back over the pointer. A note row's
-/// menu hangs left from the click while the notes list, [preferredBounds],
-/// holds it, from the right when it doesn't fit on the left, and inside the
-/// list when it fits on neither.
+/// It opens down from [position], or up when only that fits, with a corner
+/// at the pointer. When it fits neither below nor above, it stays whole
+/// inside the window and opens beside the pointer, its left or right edge
+/// there, and scrolls only when it is taller than the window. Sideways it
+/// opens right, or left when that doesn't fit. A note row's menu hangs left
+/// from the click while the notes list, [preferredBounds], holds it, from
+/// the right when it doesn't fit on the left, and inside the list when it
+/// fits on neither, unless it is beside the pointer, where it keeps clear of
+/// the pointer even if that is outside the list.
 class KapyMenuLayout extends SingleChildLayoutDelegate {
   const KapyMenuLayout({
     required this.position,
@@ -214,6 +217,7 @@ class KapyMenuLayout extends SingleChildLayoutDelegate {
   });
 
   static const _preferredGap = 4.0;
+  static const _pointerGap = 1.0;
 
   final Offset position;
   final Rect? preferredBounds;
@@ -224,21 +228,16 @@ class KapyMenuLayout extends SingleChildLayoutDelegate {
     final safe = _clear(
       mediaPadding,
     ).deflateRect(Offset.zero & constraints.biggest);
-    final below = safe.bottom - position.dy;
-    final above = position.dy - safe.top;
     final right = safe.right - position.dx;
     final left = position.dx - safe.left;
     final loose = BoxConstraints.loose(
       constraints.biggest,
     ).deflate(_clear(mediaPadding));
-    // Cap to the side with more room, so a corner can stay at the pointer
-    // instead of the menu sliding back over it.
+    // Narrower than the room on the side with more, so it can open beside
+    // the pointer instead of sliding back over it.
     return loose.copyWith(
       maxWidth: (left > right ? left : right)
           .clamp(0.0, loose.maxWidth)
-          .toDouble(),
-      maxHeight: (below > above ? below : above)
-          .clamp(0.0, loose.maxHeight)
           .toDouble(),
     );
   }
@@ -250,30 +249,36 @@ class KapyMenuLayout extends SingleChildLayoutDelegate {
     final list = preferredBounds?.intersect(safe);
     final holds =
         list != null && list.width >= childSize.width + _preferredGap * 2;
-    final fitsLeft =
-        dx - childSize.width >= (holds ? list.left + _preferredGap : safe.left);
-    final fitsRight =
-        dx + childSize.width <=
-        (holds ? list.right - _preferredGap : safe.right);
-    final below = safe.bottom - dy;
-    final openDown = childSize.height <= below || below >= dy - safe.top;
+    final fitsBelow = childSize.height <= safe.bottom - dy;
+    final fitsAbove = childSize.height <= dy - safe.top;
+    final beside = !fitsBelow && !fitsAbove;
+    final right = beside ? dx + _pointerGap : dx;
     final left = dx - childSize.width;
+    final inList =
+        holds &&
+        (!beside ||
+            left >= list.left + _preferredGap ||
+            right + childSize.width <= list.right - _preferredGap);
+    final fitsLeft = left >= (inList ? list.left + _preferredGap : safe.left);
+    final fitsRight =
+        right + childSize.width <=
+        (inList ? list.right - _preferredGap : safe.right);
     final double x;
-    if (holds) {
+    if (inList) {
       x = fitsLeft
           ? left
           : fitsRight
-          ? dx
+          ? right
           : left.clamp(
               list.left + _preferredGap,
               list.right - childSize.width - _preferredGap,
             );
     } else {
-      x = fitsRight ? dx : left;
+      x = fitsRight ? right : left;
     }
     return Offset(
       x.clamp(safe.left, safe.right - childSize.width).toDouble(),
-      (openDown ? dy : dy - childSize.height)
+      (fitsBelow || !fitsAbove ? dy : dy - childSize.height)
           .clamp(safe.top, safe.bottom - childSize.height)
           .toDouble(),
     );

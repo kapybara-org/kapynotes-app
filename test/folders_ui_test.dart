@@ -999,46 +999,47 @@ void main() {
       expect(find.byKey(const ValueKey('tag-picker-field')), findsOneWidget);
     });
 
-    testWidgets("a note's menu, opened mid-list in a short window, has the "
-        'pointer on its top or bottom edge and no item under it', (
-      tester,
-    ) async {
-      await pumpWindow(tester);
-      final notes = [
-        for (var i = 1; i <= 3; i++) goldenNotes.create(body: 'Note $i'),
-      ];
-      tester.view.physicalSize = const Size(1440, 360);
-      await tester.pumpAndSettle();
-      final rows = [for (final note in notes) tester.getRect(rowOf(note.id))]
-        ..sort((a, b) => a.top.compareTo(b.top));
-      final at = rows[1].centerRight - const Offset(16, 0);
-      await tester.tapAt(
-        at,
-        buttons: kSecondaryButton,
-        kind: PointerDeviceKind.mouse,
-      );
-      await tester.pumpAndSettle();
+    testWidgets(
+      "a note's menu, opened mid-list in a short window, stays inside "
+      'it with no item under the pointer',
+      (tester) async {
+        await pumpWindow(tester);
+        final notes = [
+          for (var i = 1; i <= 3; i++) goldenNotes.create(body: 'Note $i'),
+        ];
+        tester.view.physicalSize = const Size(1440, 360);
+        await tester.pumpAndSettle();
+        final rows = [for (final note in notes) tester.getRect(rowOf(note.id))]
+          ..sort((a, b) => a.top.compareTo(b.top));
+        final at = rows[1].centerRight - const Offset(16, 0);
+        await tester.tapAt(
+          at,
+          buttons: kSecondaryButton,
+          kind: PointerDeviceKind.mouse,
+        );
+        await tester.pumpAndSettle();
 
-      final menu = tester.getRect(
-        find.byKey(const ValueKey('kapy-context-menu')),
-      );
-      expect(
-        at.dy == menu.top || at.dy == menu.bottom,
-        isTrue,
-        reason: '$menu has no edge at $at',
-      );
-      expect(at.dx, inInclusiveRange(menu.left, menu.right));
-      final underPointer = {
-        for (final entry in tester.hitTestOnBinding(at).path) entry.target,
-      };
-      expect(
-        find
-            .byType(PopupMenuItem<String>)
-            .evaluate()
-            .where((item) => underPointer.contains(item.renderObject)),
-        isEmpty,
-      );
-    });
+        final menu = tester.getRect(
+          find.byKey(const ValueKey('kapy-context-menu')),
+        );
+        expect(const Rect.fromLTWH(0, 0, 1440, 360).intersect(menu), menu);
+        expect(
+          !menu.contains(at) || at.dy == menu.top || at.dy == menu.bottom,
+          isTrue,
+          reason: '$menu holds the pointer at $at',
+        );
+        final underPointer = {
+          for (final entry in tester.hitTestOnBinding(at).path) entry.target,
+        };
+        expect(
+          find
+              .byType(PopupMenuItem<String>)
+              .evaluate()
+              .where((item) => underPointer.contains(item.renderObject)),
+          isEmpty,
+        );
+      },
+    );
 
     testWidgets('Move to folder… works from the keyboard: ↓ in More reaches '
         'it, ↵ opens the list on the menu with its field ready, and ↓ there '
