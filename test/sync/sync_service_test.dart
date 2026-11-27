@@ -551,7 +551,11 @@ void main() {
 
       await two.goLive();
       await settle(server);
-      expect(two.bodyOf(note.id), 'Start, edited later', reason: 'the stale delete won');
+      expect(
+        two.bodyOf(note.id),
+        'Start, edited later',
+        reason: 'the stale delete won',
+      );
       expect(one.bodyOf(note.id), 'Start, edited later');
       expect(two.notes.tombstones.where((s) => s.id == note.id), isEmpty);
       one.dispose();
@@ -636,77 +640,83 @@ void main() {
       two.dispose();
     });
 
-    test('typing after a lost ack is not folded into the resent push', () async {
-      final one = Device(server, name: 'one');
-      final two = Device(server, name: 'two');
-      await one.boot();
-      await two.boot();
-      await one.goLive();
-      await two.goLive();
-      final note = one.notes.create(body: 'Start');
-      await until(() => two.bodyOf(note.id) == 'Start');
+    test(
+      'typing after a lost ack is not folded into the resent push',
+      () async {
+        final one = Device(server, name: 'one');
+        final two = Device(server, name: 'two');
+        await one.boot();
+        await two.boot();
+        await one.goLive();
+        await two.goLive();
+        final note = one.notes.create(body: 'Start');
+        await until(() => two.bodyOf(note.id) == 'Start');
 
-      // One's push lands and its answer is lost with the socket, which stays
-      // down; the pass the drop starts finds no network either.
-      server.socketsAllowed = false;
-      server.dropBeforeAck = true;
-      one.api.failNext = const SyncTransientException('no route to host');
-      one.notes.updateBody(note.id, 'Start, sent');
-      await until(() => two.bodyOf(note.id) == 'Start, sent');
-      await until(() => one.sync.status == SyncStatus.offline);
+        // One's push lands and its answer is lost with the socket, which stays
+        // down; the pass the drop starts finds no network either.
+        server.socketsAllowed = false;
+        server.dropBeforeAck = true;
+        one.api.failNext = const SyncTransientException('no route to host');
+        one.notes.updateBody(note.id, 'Start, sent');
+        await until(() => two.bodyOf(note.id) == 'Start, sent');
+        await until(() => one.sync.status == SyncStatus.offline);
 
-      // Typed while the first push is still unanswered. The server already
-      // holds that push, so what follows has to travel as a push of its own.
-      one.notes.updateBody(note.id, 'Start, sent, then more');
-      await settle(server);
-      server.socketsAllowed = true;
-      await until(() => one.sync.isLive);
-      await settle(server);
-
-      await until(
-        () => two.bodyOf(note.id) == 'Start, sent, then more',
-        reason: 'the words typed after the lost ack never reached two',
-      );
-      expect(one.sync.pendingCount, 0);
-      one.dispose();
-      two.dispose();
-    });
-
-    test('a catch-up page is not overtaken by a live batch behind it', () async {
-      final one = Device(server, name: 'one');
-      final two = Device(server, name: 'two');
-      await one.boot();
-      await two.boot();
-      await one.goLive();
-      await two.goLive();
-      final note = one.notes.create(body: 'Start');
-      await until(() => two.bodyOf(note.id) == 'Start');
-
-      // Two's network sleeps while one keeps writing.
-      server.socketsAllowed = false;
-      two.socket.drop();
-      await settle(server);
-      for (final word in [' one', ' two', ' three']) {
-        one.notes.updateBody(note.id, '${one.bodyOf(note.id)}$word');
+        // Typed while the first push is still unanswered. The server already
+        // holds that push, so what follows has to travel as a push of its own.
+        one.notes.updateBody(note.id, 'Start, sent, then more');
         await settle(server);
-      }
+        server.socketsAllowed = true;
+        await until(() => one.sync.isLive);
+        await settle(server);
 
-      // It wakes: the catch-up page, and a word one typed meanwhile, reach it
-      // in a single read.
-      server.holdFramesFor.add(two.api.device);
-      server.socketsAllowed = true;
-      await until(() => two.isConnected);
-      await settle(server);
-      one.notes.updateBody(note.id, '${one.bodyOf(note.id)} four');
-      await settle(server);
-      server.releaseFrames(two.api.device);
-      await settle(server);
+        await until(
+          () => two.bodyOf(note.id) == 'Start, sent, then more',
+          reason: 'the words typed after the lost ack never reached two',
+        );
+        expect(one.sync.pendingCount, 0);
+        one.dispose();
+        two.dispose();
+      },
+    );
 
-      expect(one.bodyOf(note.id), 'Start one two three four');
-      expect(two.bodyOf(note.id), one.bodyOf(note.id));
-      one.dispose();
-      two.dispose();
-    });
+    test(
+      'a catch-up page is not overtaken by a live batch behind it',
+      () async {
+        final one = Device(server, name: 'one');
+        final two = Device(server, name: 'two');
+        await one.boot();
+        await two.boot();
+        await one.goLive();
+        await two.goLive();
+        final note = one.notes.create(body: 'Start');
+        await until(() => two.bodyOf(note.id) == 'Start');
+
+        // Two's network sleeps while one keeps writing.
+        server.socketsAllowed = false;
+        two.socket.drop();
+        await settle(server);
+        for (final word in [' one', ' two', ' three']) {
+          one.notes.updateBody(note.id, '${one.bodyOf(note.id)}$word');
+          await settle(server);
+        }
+
+        // It wakes: the catch-up page, and a word one typed meanwhile, reach it
+        // in a single read.
+        server.holdFramesFor.add(two.api.device);
+        server.socketsAllowed = true;
+        await until(() => two.isConnected);
+        await settle(server);
+        one.notes.updateBody(note.id, '${one.bodyOf(note.id)} four');
+        await settle(server);
+        server.releaseFrames(two.api.device);
+        await settle(server);
+
+        expect(one.bodyOf(note.id), 'Start one two three four');
+        expect(two.bodyOf(note.id), one.bodyOf(note.id));
+        one.dispose();
+        two.dispose();
+      },
+    );
 
     test('a record read back behind what it sent does not lose the next '
         'edit', () async {
@@ -990,26 +1000,37 @@ void main() {
   });
 
   group('two devices holding the same note', () {
-    test('a delete from a device whose clock runs slow still takes the note', () async {
-      server.now = () => DateTime.utc(2026, 9, 1);
-      final fast = Device(server, name: 'fast', startAt: DateTime.utc(2026, 9, 1, 6));
-      final slow = Device(server, name: 'slow', startAt: DateTime.utc(2026, 8, 31, 18));
-      await fast.boot();
-      await slow.boot();
-      await fast.goLive();
-      await slow.goLive();
-      final note = fast.notes.create(body: 'Delete me');
-      await until(() => slow.bodyOf(note.id) == 'Delete me');
+    test(
+      'a delete from a device whose clock runs slow still takes the note',
+      () async {
+        server.now = () => DateTime.utc(2026, 9, 1);
+        final fast = Device(
+          server,
+          name: 'fast',
+          startAt: DateTime.utc(2026, 9, 1, 6),
+        );
+        final slow = Device(
+          server,
+          name: 'slow',
+          startAt: DateTime.utc(2026, 8, 31, 18),
+        );
+        await fast.boot();
+        await slow.boot();
+        await fast.goLive();
+        await slow.goLive();
+        final note = fast.notes.create(body: 'Delete me');
+        await until(() => slow.bodyOf(note.id) == 'Delete me');
 
-      slow.notes.delete(note.id);
-      await settle(server);
-      await until(
-        () => fast.notes.byId(note.id) == null,
-        reason: 'the fast clock kept a note deleted elsewhere',
-      );
-      fast.dispose();
-      slow.dispose();
-    });
+        slow.notes.delete(note.id);
+        await settle(server);
+        await until(
+          () => fast.notes.byId(note.id) == null,
+          reason: 'the fast clock kept a note deleted elsewhere',
+        );
+        fast.dispose();
+        slow.dispose();
+      },
+    );
 
     /// A note both devices already have — restored from a backup, or from
     /// the store as it was before sync existed.
@@ -1198,26 +1219,29 @@ void main() {
       other.dispose();
     });
 
-    test('the server saying the spaces changed is enough to ask again', () async {
-      final device = Device(server, name: 'a');
-      await device.boot();
-      await device.goLive();
-      device.notes.create(body: 'Held');
-      await settle(server);
-      server.needsPro.add(device.personalId);
-      server.announceUsers([device.api.userId]);
-      await settle(server);
-      expect(device.sync.personalNeedsPro, isTrue);
+    test(
+      'the server saying the spaces changed is enough to ask again',
+      () async {
+        final device = Device(server, name: 'a');
+        await device.boot();
+        await device.goLive();
+        device.notes.create(body: 'Held');
+        await settle(server);
+        server.needsPro.add(device.personalId);
+        server.announceUsers([device.api.userId]);
+        await settle(server);
+        expect(device.sync.personalNeedsPro, isTrue);
 
-      // Bought on another device: the server announces it.
-      server.needsPro.clear();
-      server.announceUsers([device.api.userId]);
-      await settle(server);
+        // Bought on another device: the server announces it.
+        server.needsPro.clear();
+        server.announceUsers([device.api.userId]);
+        await settle(server);
 
-      expect(device.sync.personalNeedsPro, isFalse);
-      expect(device.notes.notes.single.isDirty, isFalse);
-      device.dispose();
-    });
+        expect(device.sync.personalNeedsPro, isFalse);
+        expect(device.notes.notes.single.isDirty, isFalse);
+        device.dispose();
+      },
+    );
 
     test('over HTTP it is refused once per pass it is asked in', () async {
       final device = Device(server, name: 'a');
@@ -1233,7 +1257,10 @@ void main() {
       final pulls = server.calls.where((c) => c.startsWith('pullOps')).length;
       await device.sync.syncNow();
       await device.sync.syncNow();
-      expect(server.calls.where((c) => c.startsWith('pullOps')), hasLength(pulls));
+      expect(
+        server.calls.where((c) => c.startsWith('pullOps')),
+        hasLength(pulls),
+      );
 
       server.needsPro.clear();
       device.sync.recheckCoverage();
@@ -1328,30 +1355,33 @@ void main() {
       device.dispose();
     });
 
-    test('a refused push shows as failed and waits for the next edit', () async {
-      final device = Device(server, name: 'a');
-      await device.boot();
-      await device.sync.syncNow();
-      final note = device.notes.create(body: 'Too big to go');
-      server.refusePushes = 'snapshot too large';
+    test(
+      'a refused push shows as failed and waits for the next edit',
+      () async {
+        final device = Device(server, name: 'a');
+        await device.boot();
+        await device.sync.syncNow();
+        final note = device.notes.create(body: 'Too big to go');
+        server.refusePushes = 'snapshot too large';
 
-      await device.sync.syncNow();
-      expect(device.sync.status, SyncStatus.failed, reason: 'not "synced"');
-      expect(device.sync.lastError, contains('too large to sync'));
-      final refused = server.refusals.length;
+        await device.sync.syncNow();
+        expect(device.sync.status, SyncStatus.failed, reason: 'not "synced"');
+        expect(device.sync.lastError, contains('too large to sync'));
+        final refused = server.refusals.length;
 
-      await device.sync.syncNow();
-      expect(server.refusals, hasLength(refused), reason: 'not sent again');
-      expect(device.sync.status, SyncStatus.failed);
+        await device.sync.syncNow();
+        expect(server.refusals, hasLength(refused), reason: 'not sent again');
+        expect(device.sync.status, SyncStatus.failed);
 
-      server.refusePushes = null;
-      device.notes.updateBody(note.id, 'Short now');
-      await device.sync.syncNow();
-      expect(device.sync.status, SyncStatus.idle);
-      expect(device.sync.lastError, isNull);
-      expect(server.rows, hasLength(1));
-      device.dispose();
-    });
+        server.refusePushes = null;
+        device.notes.updateBody(note.id, 'Short now');
+        await device.sync.syncNow();
+        expect(device.sync.status, SyncStatus.idle);
+        expect(device.sync.lastError, isNull);
+        expect(server.rows, hasLength(1));
+        device.dispose();
+      },
+    );
 
     test('a network failure goes offline and retries later', () async {
       final device = Device(server, name: 'a');
@@ -1663,6 +1693,118 @@ void main() {
         expect(opsOf(device, draft.id), isEmpty);
         expect(device.notes.dirtyTombstones, isEmpty);
         device.dispose();
+      },
+    );
+  });
+  group('a delete held for Undo', () {
+    test('sends nothing until it is let go, and then the tombstone', () async {
+      final one = Device(server, name: 'one');
+      final two = Device(server, name: 'two');
+      await one.boot();
+      await two.boot();
+      await one.goLive();
+      await two.goLive();
+      final note = one.notes.create(body: 'Groceries');
+      await until(() => two.notes.byId(note.id) != null);
+      final ops = server.opsIn(one.personalId).length;
+
+      one.notes.holdDelete([note.id]);
+      await one.sync.syncNow();
+      await settle(server);
+
+      expect(server.rows[note.id]!.isTombstone, isFalse);
+      expect(server.opsIn(one.personalId), hasLength(ops));
+      expect(two.bodyOf(note.id), 'Groceries');
+
+      one.notes.deleteAll([note.id]);
+      await until(
+        () => two.notes.byId(note.id) == null,
+        reason: 'the delete never reached two',
+      );
+      expect(server.rows[note.id]!.isTombstone, isTrue);
+      one.dispose();
+      two.dispose();
+    });
+
+    test(
+      'Undo sends nothing, and the note stays as it was everywhere',
+      () async {
+        final one = Device(server, name: 'one');
+        final two = Device(server, name: 'two');
+        await one.boot();
+        await two.boot();
+        await one.goLive();
+        await two.goLive();
+        final note = one.notes.create(body: 'Groceries');
+        await until(() => two.notes.byId(note.id) != null);
+        await settle(server);
+        final row = server.rows[note.id]!;
+        final ops = server.opsIn(one.personalId).length;
+        final before = one.notes.byId(note.id);
+
+        one.notes.holdDelete([note.id]);
+        await one.sync.syncNow();
+        one.notes.undoDelete([note.id]);
+        await one.sync.syncNow();
+        await settle(server);
+
+        expect(server.opsIn(one.personalId), hasLength(ops));
+        expect(server.rows[note.id]!.updatedAt, row.updatedAt);
+        expect(server.rows[note.id]!.isTombstone, isFalse);
+        expect(one.notes.notes.single, same(before));
+        expect(two.bodyOf(note.id), 'Groceries');
+        one.dispose();
+        two.dispose();
+      },
+    );
+
+    test(
+      "another device's edit reaches the held note, and Undo shows it",
+      () async {
+        final one = Device(server, name: 'one');
+        final two = Device(server, name: 'two');
+        await one.boot();
+        await two.boot();
+        await one.goLive();
+        await two.goLive();
+        final note = one.notes.create(body: 'Groceries');
+        await until(() => two.notes.byId(note.id) != null);
+
+        one.notes.holdDelete([note.id]);
+        two.notes.updateBody(note.id, 'Groceries\nMilk');
+        await until(
+          () => one.bodyOf(note.id) == 'Groceries\nMilk',
+          reason: "two's edit never reached the held note",
+        );
+        expect(one.notes.notes, isEmpty);
+
+        one.notes.undoDelete([note.id]);
+        expect(one.notes.notes.single.body, 'Groceries\nMilk');
+        one.dispose();
+        two.dispose();
+      },
+    );
+
+    test(
+      'a quit while it is held keeps the note, here and everywhere',
+      () async {
+        final one = Device(server, name: 'one');
+        await one.boot();
+        await one.goLive();
+        final note = one.notes.create(body: 'Groceries');
+        await one.sync.syncNow();
+        await settle(server);
+
+        one.notes.holdDelete([note.id]);
+        await one.relaunch(notesFromDisk: true);
+        await one.goLive();
+        await one.sync.syncNow();
+        await settle(server);
+
+        expect(one.notes.notes.single.id, note.id);
+        expect(one.notes.tombstones, isEmpty);
+        expect(server.rows[note.id]!.isTombstone, isFalse);
+        one.dispose();
       },
     );
   });

@@ -635,4 +635,32 @@ class KapyIcons {
     0xE0E2,
     HugeIcons.strokeRoundedWifiOff01,
   );
+  static const moreHorizontalRounded = KapyIconData(
+    0xE0ED,
+    HugeIcons.strokeRoundedMoreHorizontal,
+  );
+  static const forwardRounded = KapyIconData(
+    0xE0EE,
+    HugeIcons.strokeRoundedForward01,
+  );
+  static const pencilEditRounded = KapyIconData(
+    0xE0EF,
+    HugeIcons.strokeRoundedPencilEdit01,
+  );
+  static const slidersRounded = KapyIconData(
+    0xE0F0,
+    HugeIcons.strokeRoundedSlidersHorizontal,
+  );
+  static const messageQuestionRounded = KapyIconData(
+    0xE0F1,
+    HugeIcons.strokeRoundedMessageQuestion,
+  );
+  static const newTwitter = KapyIconData(
+    0xE0F2,
+    HugeIcons.strokeRoundedNewTwitter,
+  );
+  static const linkedin = KapyIconData(
+    0xE0F3,
+    HugeIcons.strokeRoundedLinkedin01,
+  );
 }

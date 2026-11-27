@@ -64,13 +64,26 @@ void main() {
     expect(await hasMicrophone(TargetPlatform.macOS, fake), isTrue);
   });
 
-  test('Windows and the phones are not asked, and record as before', () async {
+  test('a Windows PC with no input device has no microphone', () async {
+    expect(
+      await hasMicrophone(TargetPlatform.windows, _FakeRecordPlatform([])),
+      isFalse,
+    );
+  });
+
+  test('a Windows PC with one has a microphone', () async {
+    final fake = _FakeRecordPlatform([
+      const InputDevice(
+        id: r'{0.0.1.00000000}.{8a0b6c3e-0d2b-4c3a-9f61-2b7c1e5d4a90}',
+        label: 'Microphone Array (Realtek(R) Audio)',
+      ),
+    ]);
+    expect(await hasMicrophone(TargetPlatform.windows, fake), isTrue);
+  });
+
+  test('the phones are not asked, and record as before', () async {
     final fake = _FakeRecordPlatform([]);
-    for (final platform in [
-      TargetPlatform.windows,
-      TargetPlatform.android,
-      TargetPlatform.iOS,
-    ]) {
+    for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
       expect(
         await hasMicrophone(platform, fake),
         isTrue,

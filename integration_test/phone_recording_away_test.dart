@@ -1,6 +1,7 @@
 // A voice recording carries on with the phone locked, under its
 // notification on Android and its Live Activity on the iPhone, and comes back
-// whole, two minutes and more of it.
+// whole, two minutes and more of it. Killed outright instead, it would come
+// back on the next launch with all but its last few seconds.
 //
 // Run by tool/ci/phone_screenshots.sh under flutter drive, whose host does
 // to the phone what nobody in the app can: locks it, wakes it, unfolds the
@@ -17,6 +18,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/app.dart';
+import 'package:kapy_notes/audio/audio_decode.dart';
+import 'package:kapy_notes/audio/recording_controls.dart';
+import 'package:kapy_notes/audio/voice_player.dart';
 import 'package:kapy_notes/audio/voice_recording_controller.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/data/blob_store.dart';
@@ -42,6 +46,26 @@ class _MemoryStore extends LocalStore {
 
   @override
   void put(String key, Object? value) => data[key] = value;
+}
+
+/// The next launch's controller, which shows nothing: the one recording is
+/// the app's own, and keeps its notification and Live Activity to itself.
+class _NoControls implements RecordingControls {
+  @override
+  set onCommand(Future<bool> Function(RecordingCommand command)? handler) {}
+
+  @override
+  Future<void> prepare() async {}
+
+  @override
+  Future<void> show({
+    required Duration elapsed,
+    required bool paused,
+    required bool interrupted,
+  }) async {}
+
+  @override
+  Future<void> hide() async {}
 }
 
 /// At least this much of the recording is made with the app out of sight.
@@ -239,6 +263,23 @@ void main() {
 
     expect(refusals, isEmpty, reason: 'the phone would not show the recording');
 
+    // What a hard kill would leave now, over two minutes in: the recording's
+    // file as it stands on disk, still being written and never closed, and
+    // its marker. A kill takes nothing back from the disk, so a copy taken
+    // mid-write is exactly that, and the next launch's recovery runs on it.
+    final killed = await Directory.systemTemp.createTemp('kapy-killed');
+    addTearDown(() => killed.delete(recursive: true));
+    final inProgress = temp.listSync().whereType<File>().singleWhere(
+      (file) => file.path.endsWith('.aac'),
+    );
+    final recordedBeforeKill = recording.session!.elapsed;
+    final killedAudio = await inProgress.copy(
+      '${killed.path}/${inProgress.uri.pathSegments.last}',
+    );
+    File(
+      killedAudio.path.replaceFirst(RegExp(r'\.aac$'), '.json'),
+    ).writeAsStringSync('{"noteId":"standup"}');
+
     await recording.finishRecordingAndFlush();
     await tester.pumpAndSettle(const Duration(seconds: 1));
     final voice = notes.byId('standup')!.attachments.whereType<NoteVoiceRef>();
@@ -249,5 +290,41 @@ void main() {
       greaterThanOrEqualTo(const Duration(minutes: 2).inMilliseconds),
     );
     await screenshot('recording-away-delivered', device: true);
+
+    final recovered = <VoiceRecordingResult>[];
+    final nextLaunch = VoiceRecordingController(
+      tempDirectory: killed,
+      controls: _NoControls(),
+      onFinished: (result, noteId) async => recovered.add(result),
+    );
+    addTearDown(nextLaunch.dispose);
+    await nextLaunch.recoverInterrupted();
+    expect(recovered, hasLength(1), reason: 'the killed recording was lost');
+    final back = recovered.single;
+    debugPrint(
+      'Killed at ${recordedBeforeKill.inSeconds} s, '
+      'came back with ${back.duration.inMilliseconds} ms.',
+    );
+    expect(
+      back.duration,
+      greaterThan(recordedBeforeKill - const Duration(seconds: 3)),
+      reason: 'more than the last few seconds were lost',
+    );
+    // The phone's own decoder reads every frame the index points at, which
+    // is what the waveform and the transcript start from, and its player
+    // plays it.
+    final decoded = await const AudioDecoder().decode(back.file);
+    final decodedMs = decoded.frames * 1000 ~/ decoded.sampleRate;
+    await decoded.dispose();
+    expect(decodedMs, closeTo(back.duration.inMilliseconds, 500));
+    final player = VoicePlayer(files: (_) async => back.file);
+    addTearDown(player.dispose);
+    await player.play('killed');
+    expect(player.duration, isNotNull, reason: 'the player could not read it');
+    expect(
+      player.duration!.inMilliseconds,
+      closeTo(back.duration.inMilliseconds, 500),
+    );
+    await player.stop();
   });
 }

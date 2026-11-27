@@ -205,6 +205,33 @@ class KapyNoteRef {
   final DateTime edited;
 }
 
+/// The recording a chat asks about: the note it is in and its hash. Kept in
+/// the chat's sealed record, which builds that do not know it keep as is.
+@immutable
+class KapyRecordingRef {
+  const KapyRecordingRef({required this.noteId, required this.hash});
+
+  final String noteId;
+  final String hash;
+
+  Map<String, Object?> toJson() => {'noteId': noteId, 'hash': hash};
+
+  static KapyRecordingRef? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final noteId = raw['noteId'];
+    final hash = raw['hash'];
+    if (noteId is! String || hash is! String) return null;
+    return KapyRecordingRef(noteId: noteId, hash: hash);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is KapyRecordingRef && other.noteId == noteId && other.hash == hash;
+
+  @override
+  int get hashCode => Object.hash(noteId, hash);
+}
+
 enum KapyRole { user, assistant }
 
 @immutable
@@ -217,6 +244,7 @@ class KapyMessage {
     this.read = const [],
     this.matching = 0,
     this.model,
+    this.readTo,
   });
 
   final String id;
@@ -230,6 +258,10 @@ class KapyMessage {
 
   /// For an answer: what wrote it, for its source line.
   final KapyModel? model;
+
+  /// For an answer about a recording too long to read whole: how far into
+  /// it the answer read ("Read the first 12 minutes of 48").
+  final Duration? readTo;
 }
 
 @immutable
@@ -243,6 +275,7 @@ class KapyChat {
     this.messages = const [],
     DateTime? titleAt,
     DateTime? modelAt,
+    this.recording,
   }) : titleAt = titleAt ?? createdAt,
        modelAt = modelAt ?? createdAt;
 
@@ -260,6 +293,10 @@ class KapyChat {
   /// answer moves it too.
   final DateTime titleAt;
   final DateTime modelAt;
+
+  /// The recording this chat asks about, which it reads instead of the
+  /// notes. Null for a chat about the notes.
+  final KapyRecordingRef? recording;
 }
 
 /// What holds up the last question, drawn inline under it (kapy-ai-7/8).
@@ -269,8 +306,12 @@ sealed class KapyPending {
 }
 
 /// "Before the first answer": once per device. Go ahead · Use this device.
+/// A [recording] chat's is worded for its transcript, and agreeing to it
+/// covers recording chats alone; the panel's covers both.
 class KapyCloudConsent extends KapyPending {
-  const KapyCloudConsent();
+  const KapyCloudConsent({this.recording = false});
+
+  final bool recording;
 }
 
 /// "Goes to OpenAI / Anthropic / OpenRouter" (Codex / Claude Code / key):
@@ -401,7 +442,16 @@ abstract class KapyAi extends ChangeNotifier {
 
   /// Asks [question]. [noteId] is the "This note" chip's note, searched
   /// first; null searches all notes. Hidden notes are never read.
-  Future<void> ask(String question, {String? noteId});
+  ///
+  /// With [recording], the question is about that recording alone: it goes
+  /// on the current chat when that chat is about the same recording, and
+  /// starts one that is otherwise. Its answers read the recording's
+  /// transcript, with times and speakers, rather than the notes.
+  Future<void> ask(
+    String question, {
+    String? noteId,
+    KapyRecordingRef? recording,
+  });
 
   /// The empty chat's third suggestion when opened from [noteId], drawn from
   /// that note ("Draft the weekly report email"). Null shows only the two
@@ -413,6 +463,12 @@ abstract class KapyAi extends ChangeNotifier {
   /// live.
   String linkSources(KapyChat chat, KapyMessage answer) => '';
 
+  /// Whether [answer], in [chat] about a recording, read its transcript to
+  /// the end. One that does not say where it stopped did only when the
+  /// transcript fits what its model reads: a build older than recording
+  /// chats drops that mark from an answer it sends again, after signing in.
+  bool readWhole(KapyChat chat, KapyMessage answer) => answer.readTo == null;
+
   /// True while an answer is being written.
   bool get answering;
   KapyPending? get pending;
@@ -421,7 +477,10 @@ abstract class KapyAi extends ChangeNotifier {
   /// Try again.
   Future<void> proceed();
 
-  /// Use [model] for this chat and answer the held question with it.
+  /// Use [model] for this chat and answer the held question with it. When
+  /// nothing is held and the last question has its answer, [model] answers
+  /// that question again: it joins the chat once more, since a message is
+  /// never taken back from the other devices.
   Future<void> answerWith(KapyModel model);
 
   /// Cancel / Not now: drops the pending state and keeps the question.
