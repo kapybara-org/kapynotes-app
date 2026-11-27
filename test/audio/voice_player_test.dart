@@ -451,4 +451,38 @@ void main() {
       expect(player.failureFor('a'), isNull);
     });
   });
+
+  test('reopen carries on in the new file from the same moment', () async {
+    var clean = false;
+    final cleanCopy = File('/tmp/a-clean.m4a');
+    final switching = VoicePlayer(
+      backend: backend,
+      files: (hash) async => clean ? cleanCopy : fileA,
+    );
+    addTearDown(switching.dispose);
+
+    await switching.play('a');
+    backend.positionController.add(const Duration(seconds: 4));
+    await Future<void>.delayed(Duration.zero);
+    clean = true;
+    await switching.reopen('a');
+    expect(backend.loaded.last, cleanCopy.path);
+    expect(backend.seekedTo, const Duration(seconds: 4));
+    expect(switching.isPlaying('a'), isTrue);
+
+    // Paused stays paused, still loaded and still in its place.
+    await switching.pause();
+    final plays = backend.plays;
+    clean = false;
+    await switching.reopen('a');
+    expect(backend.loaded.last, fileA.path);
+    expect(backend.seekedTo, const Duration(seconds: 4));
+    expect(switching.activeHash, 'a');
+    expect(switching.isPlaying('a'), isFalse);
+    expect(backend.plays, plays);
+
+    // Anything but the recording loaded is left alone.
+    await switching.reopen('b');
+    expect(backend.loaded.last, fileA.path);
+  });
 }

@@ -335,6 +335,10 @@ class KapyIcons {
     HugeIcons.strokeRoundedSidebarLeft,
   );
   static const micRounded = KapyIconData(0xE03D, HugeIcons.strokeRoundedMic01);
+  static const voiceIdRounded = KapyIconData(
+    0xE0F4,
+    HugeIcons.strokeRoundedVoiceId,
+  );
   static const moreVerticalRounded = KapyIconData(
     0xE069,
     HugeIcons.strokeRoundedMoreVertical,

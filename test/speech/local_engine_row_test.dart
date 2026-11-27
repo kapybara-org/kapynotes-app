@@ -7,8 +7,10 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:kapy_notes/audio/noise_removals.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/clean_copies.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -43,6 +45,7 @@ Future<void> _openVoicePane(
   WidgetTester tester, {
   LocalModelStore? models,
   VoicePrefs? voicePrefs,
+  NoiseRemovals? noise,
   Size size = const Size(1000, 1400),
 }) async {
   tester.view.physicalSize = size;
@@ -52,6 +55,10 @@ Future<void> _openVoicePane(
   await tester.pumpWidget(
     MaterialApp(
       theme: KapyTheme.dark(),
+      builder: noise == null
+          ? null
+          : (context, child) =>
+                NoiseRemovalScope(notifier: noise, child: child!),
       home: Scaffold(
         body: Builder(
           builder: (context) => TextButton(
@@ -286,6 +293,39 @@ void main() {
     );
     expect(find.textContaining('503'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
+  });
+
+  testWidgets('noise removal for new recordings is a setting, off to start', (
+    tester,
+  ) async {
+    final voicePrefs = VoicePrefs(store)..load();
+    final noise = NoiseRemovals(
+      models: LocalModelStore(directory: Directory('/tmp/kapy-no-such-dir')),
+      prefs: voicePrefs,
+      copies: CleanCopies(directory: Directory('/tmp/kapy-no-such-dir')),
+      originals: (_) async => null,
+      switched: (_) {},
+    );
+    addTearDown(noise.dispose);
+    await _openVoicePane(tester, voicePrefs: voicePrefs, noise: noise);
+
+    expect(find.text('Always remove noise from recordings'), findsOneWidget);
+    expect(
+      find.text('From each new recording. Your original is kept'),
+      findsOneWidget,
+    );
+    expect(voicePrefs.removeNoise, isFalse);
+
+    await tester.tap(find.byKey(const ValueKey('voice-remove-noise-toggle')));
+    await tester.pump();
+    expect(voicePrefs.removeNoise, isTrue);
+  });
+
+  testWidgets('a build that cannot remove noise does not offer it', (
+    tester,
+  ) async {
+    await _openVoicePane(tester);
+    expect(find.text('Always remove noise from recordings'), findsNothing);
   });
 }
 

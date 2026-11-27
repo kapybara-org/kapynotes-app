@@ -459,3 +459,52 @@ const LocalSummaryModel gemma4E2bIt = LocalSummaryModel(
     ),
   ],
 );
+
+/// What Remove noise runs: Ceva's DPDFNet-2, fetched the first time somebody
+/// asks for it rather than carried by every copy of the app.
+///
+/// It has no card in Settings, so most of what a card would draw is left
+/// plain. Served from the pinned Hugging Face revision only, and checked
+/// against the hash compiled in here like every other model.
+class NoiseRemovalModel implements DownloadableModel {
+  const NoiseRemovalModel();
+
+  @override
+  String get id => 'dpdfnet2';
+  @override
+  String get name => 'Noise removal';
+  @override
+  String get vendor => 'Ceva';
+  @override
+  String get subtitle => 'Removes background noise from recordings';
+  @override
+  String get summary => subtitle;
+  @override
+  List<ModelStat> get stats => const [];
+  @override
+  String get detail => 'Runs on this device. Nothing is uploaded.';
+  @override
+  String get credit => 'Removes background noise on this device · ';
+  @override
+  String get license => 'Apache-2.0';
+  @override
+  String get licenseUrl => 'https://www.apache.org/licenses/LICENSE-2.0';
+  @override
+  ModelTerms? get terms => null;
+  @override
+  List<LocalModelFile> get files => const [
+    LocalModelFile(
+      name: 'dpdfnet2.onnx',
+      urls: [
+        'https://huggingface.co/Ceva-IP/DPDFNet/resolve/dd6818d00f50c836fed43a6243ebe49116de5964/onnx/dpdfnet2.onnx',
+      ],
+      bytes: 10178747,
+      sha256:
+          '4f0ee28935b4a32abecc717d745416976565834d839601acf43031094b4dc94c',
+    ),
+  ];
+  @override
+  int get bytes => files.single.bytes;
+}
+
+const NoiseRemovalModel noiseRemovalModel = NoiseRemovalModel();
