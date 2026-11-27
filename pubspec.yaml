@@ -155,6 +155,13 @@ dependencies:
   # floor holding for direct dependencies and quietly failing one level down.
   app_links_platform_interface: 2.0.2
 
+  # Remove noise: takes the background noise out of a recording on the
+  # device. A small Rust library, prebuilt for every platform in
+  # packages/denoise/prebuilt/, so like sherpa_onnx it needs no Rust on the
+  # build machines. See packages/denoise/README.md.
+  denoise:
+    path: packages/denoise
+
   # Reading an image off the system clipboard, which Flutter's own
   # `Clipboard` cannot do — it handles text and nothing else. Chosen over
   # super_clipboard, which is more capable but needs a Rust toolchain on every
@@ -223,6 +230,10 @@ dev_dependencies:
   # video_player; named here because a test uses it directly.
   video_player_platform_interface: ^6.9.0
   plugin_platform_interface: ^2.1.8
+  # Lets a test stand in for the video player, so a video in a note can be
+  # played, paused and scrolled away from without a platform. It comes in
+  # with video_player; named here because a test uses it directly.
+  video_player_platform_interface: ^6.9.0
   # Drives the real app on a real device or simulator, with the real plugins
   # behind it. `flutter test` runs against fakes by design; this is the only
   # way to find out whether the microphone actually works on a platform.
@@ -265,6 +276,9 @@ flutter:
       platforms: [android, linux, windows]
     - path: assets/speech/silero_vad-LICENSE.txt
       platforms: [android, linux, windows]
+    # The licence of the model Remove noise downloads on first use
+    # (lib/audio/noise_removal.dart).
+    - assets/audio/DPDFNet-LICENSE.txt
   fonts:
     - family: Shantell Sans
       fonts:
