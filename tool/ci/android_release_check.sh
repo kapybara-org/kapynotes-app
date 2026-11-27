@@ -152,6 +152,8 @@ cat "$out/probe.txt"
 grep -q 'LIVE_PROBE done' "$out/probe.txt" || fail "the probe didn't finish within $probe_minutes minutes"
 adb logcat -d > "$out/b-logcat.txt"
 adb exec-out screencap -p > "$out/b-probe.png"
+echo "the app's own log lines:"
+grep -E ' (KapyNotes|SplitCompat|SplitInstall[A-Za-z]*|PlayCore)[ :]' "$out/b-logcat.txt"
 
 value() { sed -n "s/^LIVE_PROBE $1=\([^ ]*\).*/\1/p" "$out/probe.txt" | head -1; }
 spoken=$(value spoken)

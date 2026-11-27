@@ -943,8 +943,15 @@ class LiveTranslation private constructor(
                 object : ModelDownloadListener {
                     override fun onProgress(completedPercent: Int) {}
                     override fun onSuccess() = answer(true)
-                    override fun onScheduled() = answer(false)
-                    override fun onError(error: Int) = answer(false)
+                    override fun onScheduled() {
+                        Log.i(TAG, "The recogniser's language download was only scheduled")
+                        answer(false)
+                    }
+
+                    override fun onError(error: Int) {
+                        Log.w(TAG, "The recogniser's language download failed: error $error")
+                        answer(false)
+                    }
                 },
             )
             return

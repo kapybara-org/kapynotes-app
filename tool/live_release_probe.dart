@@ -16,9 +16,9 @@ import 'package:flutter/widgets.dart';
 import 'package:kapy_notes/speech/live_translation.dart';
 import 'package:path_provider/path_provider.dart';
 
-// Spanish to English first, as a person would turn it on. A phone whose
-// recogniser can't hear Spanish answers unsupported before the translator is
-// asked for, so English to Spanish follows then, to reach translation_runtime.
+// Spanish to English first, as a person would turn it on. Where that isn't
+// ready, English to Spanish follows, to show whether translation_runtime
+// arrives for a pair whose recogniser language the phone has.
 const _pairs = [
   (from: 'es', to: 'en', phrase: 'Hola, ¿cómo estás?'),
   (from: 'en', to: 'es', phrase: 'Hello, how are you?'),
@@ -86,7 +86,7 @@ Future<void> main() async {
     } on PlatformException catch (error) {
       _mark('$tag translate=error:${error.code}');
     }
-    if (prepared != LivePrepareResult.unsupported) break;
+    if (prepared == LivePrepareResult.ready) break;
   }
 
   final path =
