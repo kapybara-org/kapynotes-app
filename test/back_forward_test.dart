@@ -258,4 +258,58 @@ void main() {
     await tester.pumpAndSettle();
     expect(steps, isEmpty);
   }, variant: TargetPlatformVariant.desktop());
+
+  testWidgets('at rest the slide draws only its child, and the child keeps its '
+      'state across a step', (tester) async {
+    asDesktop();
+    await tester.pumpWidget(
+      app(
+        BackForwardArea(
+          onStep: record('page'),
+          child: BackForwardSlide(child: const _Counter()),
+        ),
+      ),
+    );
+    final slide = find.byType(BackForwardSlide);
+    Finder inside(Type type) =>
+        find.descendant(of: slide, matching: find.byType(type));
+    expect(inside(Opacity), findsNothing);
+    expect(inside(Transform), findsNothing);
+
+    await tester.tap(find.byType(_Counter));
+    await tester.pump();
+    expect(find.text('1'), findsOneWidget);
+
+    final at = tester.getCenter(slide);
+    await tester.tapAt(
+      at,
+      buttons: kForwardMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(inside(Transform), findsOneWidget);
+    expect(find.text('1'), findsOneWidget, reason: 'state moves with it');
+    await tester.pumpAndSettle();
+    expect(inside(Transform), findsNothing);
+    expect(find.text('1'), findsOneWidget);
+  }, variant: TargetPlatformVariant.desktop());
+}
+
+class _Counter extends StatefulWidget {
+  const _Counter();
+
+  @override
+  State<_Counter> createState() => _CounterState();
+}
+
+class _CounterState extends State<_Counter> {
+  int _taps = 0;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTap: () => setState(() => _taps++),
+    child: SizedBox.expand(child: Text('$_taps')),
+  );
 }

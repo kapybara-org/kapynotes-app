@@ -132,6 +132,7 @@ class _BackForwardSlideState extends State<BackForwardSlide>
     duration: const Duration(milliseconds: 180),
     value: 1,
   );
+  final GlobalKey _child = GlobalKey();
   BackForwardSteps? _steps;
   double _from = 0;
 
@@ -160,17 +161,22 @@ class _BackForwardSlideState extends State<BackForwardSlide>
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: _slide,
-    child: widget.child,
-    builder: (context, child) {
-      final shown = Curves.easeOutCubic.transform(_slide.value);
-      return Transform.translate(
-        offset: Offset(_from * _distance * (1 - shown), 0),
-        child: Opacity(opacity: 0.4 + 0.6 * shown, child: child),
-      );
-    },
-  );
+  Widget build(BuildContext context) {
+    final child = KeyedSubtree(key: _child, child: widget.child);
+    return AnimatedBuilder(
+      animation: _slide,
+      builder: (context, _) {
+        // At rest it is the child alone, so a place that never steps draws
+        // exactly as it would without a slide around it.
+        if (_slide.isCompleted) return child;
+        final shown = Curves.easeOutCubic.transform(_slide.value);
+        return Transform.translate(
+          offset: Offset(_from * _distance * (1 - shown), 0),
+          child: Opacity(opacity: 0.4 + 0.6 * shown, child: child),
+        );
+      },
+    );
+  }
 }
 
 class _BackForwardScope extends InheritedWidget {
