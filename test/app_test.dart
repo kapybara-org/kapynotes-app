@@ -2645,7 +2645,7 @@ void main() {
           }
 
           await openSettings(tester);
-          final done = find.text('Done');
+          final done = find.byKey(const ValueKey('settings-done'));
           expect(done, findsOneWidget, reason: reason);
           final doneRect = tester.getRect(done);
           expect(screen.intersect(doneRect), doneRect, reason: reason);
