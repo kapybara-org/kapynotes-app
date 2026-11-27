@@ -68,9 +68,9 @@ List<TaskFilterChoice> taskFilterChoices({
       final byCount = counts[b]!.compareTo(counts[a]!);
       return byCount != 0
           ? byCount
-          : labelOf(notes[a]!)
-                .toLowerCase()
-                .compareTo(labelOf(notes[b]!).toLowerCase());
+          : labelOf(
+              notes[a]!,
+            ).toLowerCase().compareTo(labelOf(notes[b]!).toLowerCase());
     });
   return [
     TaskFilterChoice(const TaskFilter.all(), 'Today', today.length),
@@ -404,8 +404,8 @@ class HowTasksWorksCard extends StatelessWidget {
 
   static const _lines = [
     'Today has one list. New tasks join the end.',
-    'To choose, Tasks shows two at a time. Pick one with ← or →, and the '
-        'next pair follows.',
+    'To choose, Tasks shows two at a time. Pick the more important one with '
+        '← or →, and the next one comes in.',
     'Your last pick becomes Do now, and earlier picks wait in Up next. Not '
         'finished sends a task to the end of the list.',
     'A task left alone for two weeks asks if you still want it.',
