@@ -226,9 +226,6 @@ dev_dependencies:
   # Lets a test stand in for the camera and Android's lost-result store. It
   # comes in with image_picker; named here because a test uses it directly.
   image_picker_platform_interface: ^2.11.1
-  # Lets the camera's review play a video in a test. It comes in with
-  # video_player; named here because a test uses it directly.
-  video_player_platform_interface: ^6.9.0
   plugin_platform_interface: ^2.1.8
   # Lets a test stand in for the video player, so a video in a note can be
   # played, paused and scrolled away from without a platform. It comes in
