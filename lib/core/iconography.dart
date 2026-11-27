@@ -667,4 +667,8 @@ class KapyIcons {
     0xE0F3,
     HugeIcons.strokeRoundedLinkedin01,
   );
+  static const translateRounded = KapyIconData(
+    0xE0F4,
+    HugeIcons.strokeRoundedTranslate,
+  );
 }

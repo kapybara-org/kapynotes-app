@@ -309,9 +309,13 @@ sealed class KapyPending {
 /// A [recording] chat's is worded for its transcript, and agreeing to it
 /// covers recording chats alone; the panel's covers both.
 class KapyCloudConsent extends KapyPending {
-  const KapyCloudConsent({this.recording = false});
+  const KapyCloudConsent({this.recording = false, this.device = true});
 
   final bool recording;
+
+  /// Whether this device's model may answer instead. Not for a translation,
+  /// which is only made in the cloud.
+  final bool device;
 }
 
 /// "Goes to OpenAI / Anthropic / OpenRouter" (Codex / Claude Code / key):
@@ -385,6 +389,22 @@ class KapyFailed extends KapyPending {
   final String message;
   final List<KapyModel> fallbacks;
   final bool retry;
+}
+
+/// A translation being written: the parts that have come back, stitched in
+/// order, and how many there are in all. Never a whole translation: that
+/// joins the chat once every part is in.
+@immutable
+class KapyTranslationDraft {
+  const KapyTranslationDraft({
+    required this.text,
+    required this.done,
+    required this.parts,
+  });
+
+  final String text;
+  final int done;
+  final int parts;
 }
 
 /// Kapy AI: chats, models, accounts and answers.
@@ -471,6 +491,10 @@ abstract class KapyAi extends ChangeNotifier {
 
   /// True while an answer is being written.
   bool get answering;
+
+  /// While the current chat's answer is a translation being written in
+  /// parts, the parts so far; null otherwise.
+  KapyTranslationDraft? get draft => null;
   KapyPending? get pending;
 
   /// The pending state's primary action: Go ahead (remembered), Download,
