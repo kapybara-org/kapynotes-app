@@ -4,6 +4,7 @@ import 'dart:math';
 import '../ai/kapy_ai.dart';
 import '../data/notes_store.dart';
 import 'recap_digest.dart';
+import 'recap_filter.dart';
 import 'recap_lines.dart';
 import 'recap_material.dart';
 import 'recap_period.dart';
@@ -64,6 +65,11 @@ class RecapNumbers {
   final List<String> open;
 }
 
+/// One part of a recap, as its call read: the days it covered, as days from
+/// its period's first, and the notes that call could read, the notes of its
+/// tasks and voice notes among them.
+typedef RecapRead = ({int first, int last, RecapFilter notes});
+
 /// What a recap's chat carries beside its messages, in its chat record's
 /// `recap` field: what it covers and how it was worked out, its numbers, a
 /// fingerprint of what it read, and for a month that was over, the digest
@@ -77,6 +83,7 @@ class RecapRecord {
     required this.numbers,
     required this.fingerprint,
     this.digest,
+    this.read,
   });
 
   final RecapPeriod period;
@@ -89,6 +96,16 @@ class RecapRecord {
   final String fingerprint;
   final String? digest;
 
+  /// Each part that went into the recap. Null where a record has none, and
+  /// then any part may have read any note.
+  final List<RecapRead>? read;
+
+  /// Every note any part may have read, where the record says.
+  RecapFilter? get notesRead => read?.fold<RecapFilter>(
+    RecapFilter.of(const []),
+    (all, part) => all | part.notes,
+  );
+
   /// How many of the period's notes changed since it was made: "2 notes
   /// changed since then". [now] is what the period holds now.
   int changesSince(RecapMaterial now) {
@@ -99,6 +116,7 @@ class RecapRecord {
   }
 
   /// Within [recapRecordMax]: the digest is cut first, then the task lists.
+  /// [read] is never cut.
   /// `at` goes first, so where two devices each made one, the later is the
   /// greater JSON and every device keeps it (mergeExtra).
   Map<String, Object?> toJson() {
@@ -130,6 +148,9 @@ class RecapRecord {
       'doneTasks': numbers.done.take(tasks).toList(),
       'openTasks': numbers.open.take(tasks).toList(),
       'material': fingerprint,
+      'read': ?read
+          ?.map((part) => [part.first, part.last, part.notes.toBase64()])
+          .toList(),
       'digest': ?digest,
     };
     int size(Map<String, Object?> value) =>
@@ -222,7 +243,29 @@ class RecapRecord {
       ),
       fingerprint: fingerprint,
       digest: digest is String && digest.isNotEmpty ? digest : null,
+      read: _reads(raw['read'], period.days),
     );
+  }
+
+  /// The parts [raw] holds, or null when any of them does not hold together,
+  /// which leaves every part to have read anything.
+  static List<RecapRead>? _reads(Object? raw, int days) {
+    if (raw is! List) return null;
+    final parts = <RecapRead>[];
+    for (final part in raw) {
+      if (part case [
+        final int first,
+        final int last,
+        final bits,
+      ] when first >= 0 && first <= last && last < days) {
+        final notes = RecapFilter.fromBase64(bits);
+        if (notes == null) return null;
+        parts.add((first: first, last: last, notes: notes));
+      } else {
+        return null;
+      }
+    }
+    return parts;
   }
 }
 

@@ -74,6 +74,8 @@ class RecapWorld {
     String body = 'Note\nWords',
     List<NoteAttachmentRef> attachments = const [],
     bool hidden = false,
+    String? hiddenAt,
+    String? archivedAt,
   }) {
     final at = DateTime.parse(edited);
     final made = Note(
@@ -82,7 +84,12 @@ class RecapWorld {
       attachments: attachments,
       createdAt: at.subtract(const Duration(hours: 1)),
       updatedAt: at,
-      hiddenAt: hidden ? at : null,
+      hiddenAt: hiddenAt != null
+          ? DateTime.parse(hiddenAt)
+          : hidden
+          ? at
+          : null,
+      archivedAt: archivedAt == null ? null : DateTime.parse(archivedAt),
     );
     final doc = docs[id] ??= NoteDoc(replica: 'aaaaaaaaaaaa');
     doc.reconcile(

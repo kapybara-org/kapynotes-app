@@ -38,19 +38,53 @@ class RecapStory {
     this.done = const [],
     this.open = const [],
     this.voice,
+    this.wordsGone = false,
   });
 
   /// The recap [chat] holds, its newest answer read again against [now], the
   /// period's material as it is today: a highlight or a quote of a note that
   /// has been hidden, archived or deleted since is dropped, and so is a task
-  /// in one. Null when [chat] is not a recap of [now]'s period.
-  static RecapStory? read(KapyChat chat, RecapMaterial now) {
+  /// in one, and so is every other line of Kapy AI's that names one: [gone] holds
+  /// the titles of the period's notes hidden or archived since, and the
+  /// titles its highlights and quote name that [now] no longer holds are
+  /// added to it.
+  ///
+  /// A line can tell of a note without naming it, so where a note one of
+  /// the recap's parts may have read was hidden or deleted after it was
+  /// made, every line no part can be told from is dropped too: the title,
+  /// the topics, the line of the year and what's next. So are a year's
+  /// moments of that part's months, and the highlights and the quote of any
+  /// note that part may have read. Null when [chat] is not a recap of
+  /// [now]'s period.
+  static RecapStory? read(
+    KapyChat chat,
+    RecapMaterial now, {
+    Set<String> gone = const {},
+  }) {
     final record = recapOf(chat);
     if (record == null || record.period != now.period) return null;
+    final readable = now.readable;
+    final answer = (recapAnswer(chat) ?? '').split('\n');
+    final titles = {
+      for (final title in gone) title.trim().toLowerCase(),
+      for (final line in answer)
+        if (_named.firstMatch(recapShown(line).replaceAll('**', ''))
+            case final match?)
+          if (match[1]!.trim().replaceAll(_quotes, '').toLowerCase()
+              case final title
+              when !readable.notes.containsKey(title) &&
+                  !readable.voices.containsKey(title))
+            title,
+    }..remove('');
     final lines = readRecapLines(
-      recapAnswer(chat) ?? '',
+      [
+        for (final line in answer)
+          if (_named.hasMatch(recapShown(line).replaceAll('**', '')) ||
+              !_mentions(line, titles))
+            line,
+      ].join('\n'),
       period: record.period,
-      sent: now.readable,
+      sent: readable,
     );
     List<String> words(RecapSource source, List<String> ids) {
       final held = {
@@ -60,10 +94,62 @@ class RecapStory {
       return [for (final id in ids) ?held[id]];
     }
 
-    final quote = lines.quote;
+    final period = record.period;
+    final changed = [
+      for (final note in now.left)
+        if (note.at?.isAfter(record.madeAt) ?? true) note,
+    ];
+    final parts = record.read;
+    final affected = parts == null
+        ? (changed.isEmpty ? const <RecapRead>[] : null)
+        : [
+            for (final part in parts)
+              if (changed.any((note) => _touches(part, note, period))) part,
+          ];
+    bool drops(String noteId) =>
+        affected == null || affected.any((part) => part.notes.mayHold(noteId));
+    int month(int index) => DateTime(
+      period.first.year,
+      period.first.month,
+      period.first.day + index,
+    ).month;
+    bool dropsMonth(int it) =>
+        affected == null ||
+        affected.any(
+          (part) => it >= month(part.first) && it <= month(part.last),
+        );
+    final kept = affected != null && affected.isEmpty
+        ? lines
+        : RecapLines(
+            highlights: [
+              for (final it in lines.highlights)
+                if (!drops(it.noteId)) it,
+            ],
+            quote: switch (lines.quote) {
+              final quote? when !drops(quote.noteId) => quote,
+              _ => null,
+            },
+            moments: [
+              for (final moment in lines.moments)
+                if (!dropsMonth(moment.month)) moment,
+            ],
+          );
+
+    final quote = kept.quote;
     return RecapStory(
       record: record,
-      lines: lines,
+      lines: kept,
+      wordsGone:
+          answer.any(
+            (line) => _worded.hasMatch(recapShown(line).replaceAll('**', '')),
+          ) &&
+          kept.title == null &&
+          kept.highlights.isEmpty &&
+          kept.quote == null &&
+          kept.topics.isEmpty &&
+          kept.moments.isEmpty &&
+          kept.line == null &&
+          kept.next == null,
       done: words(RecapSource.taskDone, record.numbers.done),
       open: words(RecapSource.taskOpen, record.numbers.open),
       voice: quote == null
@@ -87,12 +173,18 @@ class RecapStory {
   /// The recording [RecapLines.quote] is from.
   final NoteVoiceRef? voice;
 
+  /// Whether every word Kapy AI wrote was left out because notes it may
+  /// have come from are hidden or gone now: the closing card says so and
+  /// offers to make it again.
+  final bool wordsGone;
+
   RecapPeriod get period => record.period;
   RecapNumbers get numbers => record.numbers;
   RecapKind get kind => period.kind;
 
-  /// "Wed 19 recap", "17–23 Nov recap", "November recap", "2026 recap".
-  String get name => '${period.label} recap';
+  /// "Recap · Wed 19", "Recap · 17–23 Nov", "Recap · November", "Recap ·
+  /// 2026".
+  String get name => recapTitle(period);
 
   /// The cover's title: Kapy AI's, or a plain one where it gave none.
   String get title =>
@@ -269,6 +361,40 @@ String recapDuration(int minutes) {
   final rest = minutes % 60;
   if (rest == 0) return _count(hours, 'hour', 'hours');
   return '$hours h $rest';
+}
+
+final RegExp _named = RegExp(
+  r'^(?:[-*•]|\d+[.)])?\s*(?:HIGHLIGHT|QUOTE)\s*:([^|]*)\|',
+  caseSensitive: false,
+);
+
+final RegExp _worded = RegExp(
+  r'^(?:[-*•]|\d+[.)])?\s*(?:TITLE|HIGHLIGHT|QUOTE|TOPIC|MOMENT|LINE|NEXT)\s*:',
+  caseSensitive: false,
+);
+
+/// Whether [part] may have read [note]: on a day of its own, when the note
+/// still has one.
+bool _touches(RecapRead part, RecapLeft note, RecapPeriod period) {
+  if (note.day case final day?) {
+    final index = period.indexOf(day);
+    if (index == null || index < part.first || index > part.last) return false;
+  }
+  return part.notes.mayHold(note.id);
+}
+
+final RegExp _quotes = RegExp('^["“”\'‘’`_]+|["“”\'‘’`_]+\$');
+
+/// Whether [line] names any of [titles], each in lower case, as words of
+/// their own.
+bool _mentions(String line, Set<String> titles) {
+  final lower = line.toLowerCase();
+  return titles.any(
+    (title) => RegExp(
+      '(?<![\\p{L}\\p{N}])${RegExp.escape(title)}(?![\\p{L}\\p{N}])',
+      unicode: true,
+    ).hasMatch(lower),
+  );
 }
 
 String _count(int n, String one, String many) =>

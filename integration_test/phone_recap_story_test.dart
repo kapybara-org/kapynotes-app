@@ -51,6 +51,8 @@ void main() {
                       play: (_) {},
                       saveAsNote: (_) {},
                       shareImage: (_, _) async {},
+                      onRemake: () {},
+                      remakeCredits: 0,
                     ),
                   ),
                   child: const Text('Open recap'),

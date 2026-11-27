@@ -11,7 +11,11 @@ import 'recap_story_samples.dart';
 
 /// What the viewer handed the app.
 class _Calls {
+  _Calls(this.credits);
+
+  final int credits;
   final List<String> opened = [];
+  var remade = 0;
   final List<RecapQuote> played = [];
   final List<RecapNote> saved = [];
   final List<(Uint8List, String)> shared = [];
@@ -21,6 +25,8 @@ class _Calls {
     play: played.add,
     saveAsNote: saved.add,
     shareImage: (png, name) async => shared.add((png, name)),
+    onRemake: () => remade++,
+    remakeCredits: credits,
   );
 }
 
@@ -72,6 +78,7 @@ void main() {
     bool desktop = false,
     Size size = const Size(393, 852),
     double text = 1,
+    int credits = 0,
   }) async {
     AppPlatform.debugTargetPlatformOverride = desktop
         ? TargetPlatform.macOS
@@ -87,7 +94,7 @@ void main() {
       tester.view.reset();
       tester.platformDispatcher.clearTextScaleFactorTestValue();
     });
-    final calls = _Calls();
+    final calls = _Calls(credits);
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),
@@ -404,10 +411,64 @@ void main() {
       await tester.tap(find.text('Save as note'));
       await tester.pump();
       final note = calls.saved.single;
-      expect(note.body, startsWith('Thu 19 recap\nA full day'));
+      expect(note.body, startsWith('Recap · Thu 19\nA full day'));
       expect(note.body, contains('- Call with Arjun: Pricing page is due'));
       expect(note.body, contains('- Send the deck'));
       expect(note.names, ['arjun', 'quote', 'morning']);
+    });
+
+    for (final (credits, label) in [
+      (0, 'Remake'),
+      (1, 'Remake · 1 credit'),
+      (3, 'Remake · 3 credits'),
+    ]) {
+      testWidgets('with no words left, $label in place of Save as note', (
+        tester,
+      ) async {
+        final day = sampleDay();
+        final story = RecapStory(
+          record: day.record,
+          lines: const RecapLines(),
+          done: day.done,
+          open: day.open,
+          wordsGone: true,
+        );
+        final calls = await open(
+          tester,
+          story,
+          credits: credits,
+          text: credits == 3 ? 3.0 : 1,
+        );
+        while (!showing('What’s next')) {
+          expect(tester.takeException(), isNull);
+          await next(tester);
+        }
+        expect(tester.takeException(), isNull, reason: 'nothing clips');
+        expect(
+          showing(
+            'Some notes in this recap are hidden or gone now, so its words '
+            'were left out.',
+          ),
+          isTrue,
+        );
+        expect(showing('Save as note'), isFalse);
+        expect(showing('Share as image'), isTrue);
+        await tester.tap(find.text(label));
+        await settle(tester);
+        expect(calls.remade, 1);
+        expect(find.byType(RecapStoryView), findsNothing);
+      });
+    }
+
+    testWidgets('with words left, no Remake', (tester) async {
+      await open(tester, sampleDay());
+      for (var i = 0; i < 5; i++) {
+        await next(tester);
+      }
+      expect(showing('What’s next'), isTrue);
+      expect(showing('Save as note'), isTrue);
+      expect(find.textContaining('Remake'), findsNothing);
+      expect(find.textContaining('hidden or gone'), findsNothing);
     });
 
     testWidgets('Share as image draws the card on the device as a PNG', (
@@ -423,7 +484,7 @@ void main() {
       );
       await tester.pump();
       final (png, name) = calls.shared.single;
-      expect(name, 'Thu 19 recap.png');
+      expect(name, 'Recap · Thu 19.png');
       expect(png.take(4), [0x89, 0x50, 0x4E, 0x47]);
     });
   });

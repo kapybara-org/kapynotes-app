@@ -12,13 +12,16 @@ import '../../recaps/recap_story.dart';
 import 'recap_cards.dart';
 
 /// What the viewer hands to the app: opening a note, playing a recording
-/// from a moment, saving the recap as a note and sharing a card's image.
+/// from a moment, saving the recap as a note, sharing a card's image and
+/// making the recap again.
 class RecapStoryActions {
   const RecapStoryActions({
     required this.openNote,
     required this.play,
     required this.saveAsNote,
     required this.shareImage,
+    required this.onRemake,
+    required this.remakeCredits,
   });
 
   /// Opens the note a highlight is about, once the viewer has closed.
@@ -33,6 +36,13 @@ class RecapStoryActions {
   /// Hands a card drawn on the device, as a PNG called [name], to the share
   /// sheet.
   final Future<void> Function(Uint8List png, String name) shareImage;
+
+  /// Makes the recap again, once the viewer has closed. It is offered only
+  /// when none of its words are left ([RecapStory.wordsGone]).
+  final VoidCallback onRemake;
+
+  /// What making it again costs, as the drawer quotes it.
+  final int remakeCredits;
 }
 
 /// What dims the app behind the desktop's frame.
@@ -192,6 +202,11 @@ class _RecapStoryViewState extends State<RecapStoryView>
   void _openNote(RecapHighlight highlight) {
     _close();
     widget.actions.openNote(highlight.noteId);
+  }
+
+  void _remake() {
+    _close();
+    widget.actions.onRemake();
   }
 
   void _play(RecapQuote quote) {
@@ -426,6 +441,16 @@ class _RecapStoryViewState extends State<RecapStoryView>
               child: _Actions(
                 tones: tones,
                 save: () => widget.actions.saveAsNote(widget.story.note),
+                remake: widget.story.wordsGone
+                    ? (
+                        label: switch (widget.actions.remakeCredits) {
+                          0 => 'Remake',
+                          1 => 'Remake · 1 credit',
+                          final n => 'Remake · $n credits',
+                        },
+                        onTap: _remake,
+                      )
+                    : null,
                 share: _share,
               ),
             ),
@@ -527,11 +552,15 @@ class _Actions extends StatelessWidget {
   const _Actions({
     required this.tones,
     required this.save,
+    required this.remake,
     required this.share,
   });
 
   final RecapTones tones;
   final VoidCallback save;
+
+  /// In place of [save] when there are no words left to save.
+  final ({String label, VoidCallback onTap})? remake;
   final VoidCallback share;
 
   @override
@@ -539,13 +568,22 @@ class _Actions extends StatelessWidget {
     spacing: 10,
     runSpacing: 10,
     children: [
-      _pill(
-        'Save as note',
-        KapyIcons.noteAddRounded,
-        tones.quietButton,
-        tones.onQuietButton,
-        save,
-      ),
+      if (remake case final remake?)
+        _pill(
+          remake.label,
+          KapyIcons.refreshRounded,
+          tones.quietButton,
+          tones.onQuietButton,
+          remake.onTap,
+        )
+      else
+        _pill(
+          'Save as note',
+          KapyIcons.noteAddRounded,
+          tones.quietButton,
+          tones.onQuietButton,
+          save,
+        ),
       _pill(
         'Share as image',
         KapyIcons.shareRounded,

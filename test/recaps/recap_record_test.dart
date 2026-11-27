@@ -5,6 +5,7 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/ai/kapy_chat_book.dart';
 import 'package:kapy_notes/ai/kapy_chat_records.dart';
 import 'package:kapy_notes/recaps/recap_digest.dart';
+import 'package:kapy_notes/recaps/recap_filter.dart';
 import 'package:kapy_notes/recaps/recap_period.dart';
 import 'package:kapy_notes/recaps/recap_record.dart';
 
@@ -22,6 +23,7 @@ void main() {
     String zone = 'Asia/Kolkata',
     List<String> done = const ['a:1', 'a:2'],
     List<RecapTopic> topics = const [(name: 'Work', notes: 4)],
+    List<RecapRead>? read,
   }) => RecapRecord(
     period: period ?? week,
     timeZone: zone,
@@ -44,7 +46,18 @@ void main() {
     ),
     fingerprint: '0123456789abcdef',
     digest: digest,
+    read: read,
   );
+
+  final parts = <RecapRead>[
+    (first: 0, last: 3, notes: RecapFilter.of(['mon', 'tue'])),
+    (first: 4, last: 6, notes: RecapFilter.of(['fri'])),
+  ];
+
+  List<Object> partsOf(RecapRecord record) => [
+    for (final part in record.read!)
+      [part.first, part.last, part.notes.toBase64()],
+  ];
 
   KapyChat chat(RecapRecord record) => recapChat(
     null,
@@ -85,6 +98,48 @@ void main() {
     expect(back.digest, 'Notes: plans');
   });
 
+  test('keeps which notes each part read', () {
+    final back = RecapRecord.fromJson(
+      jsonDecode(jsonEncode(record(read: parts).toJson())),
+    )!;
+    expect(partsOf(back), partsOf(record(read: parts)));
+    expect(back.read![0].notes.mayHold('tue'), isTrue);
+    expect(back.read![1].notes.mayHold('fri'), isTrue);
+    expect(back.read![1].notes.mayHold('mon'), isFalse);
+    expect(back.notesRead!.mayHold('mon'), isTrue);
+    expect(record().toJson(), isNot(contains('read')));
+    expect(RecapRecord.fromJson(record().toJson())!.read, isNull);
+  });
+
+  test('parts that do not hold together are read as none at all', () {
+    final json = record(read: parts).toJson();
+    final good = (json['read']! as List).first;
+    for (final broken in [
+      'parts',
+      [good, 'part'],
+      [
+        good,
+        [0, 7, (good as List).last],
+      ],
+      [
+        good,
+        [3, 1, good.last],
+      ],
+      [
+        good,
+        [0, 3, 'AAAA'],
+      ],
+      [
+        good,
+        [0, 3, 'not base64!'],
+      ],
+    ]) {
+      final back = RecapRecord.fromJson({...json, 'read': broken});
+      expect(back, isNotNull, reason: '$broken');
+      expect(back!.read, isNull, reason: '$broken');
+    }
+  });
+
   test('a record that does not hold together is not read', () {
     final json = record().toJson();
     for (final broken in [
@@ -117,6 +172,51 @@ void main() {
     );
     expect(chatRecordBytes(chat(long)), lessThanOrEqualTo(chatPayloadMax));
     expect(RecapRecord.fromJson(jsonDecode(jsonEncode(json))), isNotNull);
+  });
+
+  test('a year of 13 parts fits, its parts never cut', () {
+    final year = periodOf(DateTime(2026, 11, 19), RecapKind.year);
+    final read = <RecapRead>[
+      for (var month = 1; month <= 12; month++)
+        (
+          first: year.indexOf(DateTime(2026, month))!,
+          last: year.indexOf(DateTime(2026, month + 1, 0))!,
+          notes: RecapFilter.of([for (var i = 0; i < 200; i++) '$month-$i']),
+        ),
+      (first: 0, last: 364, notes: RecapFilter.of(['rest'])),
+    ];
+    final long = RecapRecord(
+      period: year,
+      timeZone: 'Z' * 500,
+      firstWeekday: DateTime.monday,
+      madeAt: made,
+      numbers: RecapNumbers(
+        counts: const RecapCounts(
+          notes: 1086,
+          tasksDone: 412,
+          voiceNotes: 96,
+          voiceMinutes: 1890,
+        ),
+        tasksOpen: 37,
+        chart: const [88, 91, 102, 77, 95, 120, 64, 70, 99, 93, 101, 86],
+        longestRun: 41,
+        topics: [for (var i = 0; i < 3; i++) (name: '話' * 200, notes: i)],
+        previous: const RecapCounts(notes: 900, tasksDone: 300),
+        done: [for (var i = 0; i < 40; i++) 'task-NaN-$i'],
+        open: [for (var i = 0; i < 40; i++) 'task-NaN-$i'],
+      ),
+      fingerprint: '0123456789abcdef',
+      digest: 'A busy year. ' * 200,
+      read: read,
+    );
+    final json = long.toJson();
+    expect(
+      utf8.encode(jsonEncode(json)).length,
+      lessThanOrEqualTo(recapRecordMax),
+    );
+    final back = RecapRecord.fromJson(jsonDecode(jsonEncode(json)))!;
+    expect(partsOf(back), partsOf(long));
+    expect(chatRecordBytes(chat(long)), lessThanOrEqualTo(chatPayloadMax));
   });
 
   test('a recap chat is a question and its answer, readable anywhere', () {
@@ -181,6 +281,29 @@ void main() {
       expect(RecapRecord.fromJson(renamed['recap'])!.digest, 'Plans');
     },
   );
+
+  test('keeps which notes each part read through a build that does not '
+      'know them', () {
+    final recap = chat(record(read: parts));
+    final pulled = ChatMeta.fromPayload(
+      jsonDecode(jsonEncode(ChatMeta.of(recap).toPayload())),
+    )!;
+    final theirs = KapyChat(
+      id: recap.id,
+      title: 'Our week',
+      createdAt: recap.createdAt,
+      updatedAt: made.add(const Duration(hours: 1)),
+      titleAt: made.add(const Duration(hours: 1)),
+      modelAt: recap.modelAt,
+      model: recap.model,
+    );
+    final renamed = ChatMeta.of(theirs).merge(pulled).toPayload();
+    expect(renamed['recap'], jsonDecode(jsonEncode(recap.recap)));
+    expect(
+      partsOf(RecapRecord.fromJson(renamed['recap'])!),
+      partsOf(record(read: parts)),
+    );
+  });
 
   test('the chat book keeps it on the device and from the account', () async {
     final store = MemoryStore();

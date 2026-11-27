@@ -40,12 +40,20 @@ class RecapItem {
   final String? taskId;
 }
 
+/// A note a recap may have read that it may no longer: hidden at [at],
+/// waiting to be deleted (no [at]: it counts whenever the recap was made),
+/// or deleted at [at]. [day] is the period's day it sits under, or null when
+/// that is no longer known: a deleted note's is gone, and hiding a note
+/// moves its edit, and so its day, to when it was hidden, unless it was
+/// given a day of its own.
+typedef RecapLeft = ({String id, DateTime? at, DateTime? day});
+
 /// What a period gives a recap made with Kapy AI, chosen on the device: its
 /// visible notes, each recording in them as its summary and transcript, and
 /// its tasks done and still open. Never a hidden or archived note, nor
 /// anything in one.
 class RecapMaterial {
-  RecapMaterial._(this.period, this.items, this.edited);
+  RecapMaterial._(this.period, this.items, this.edited, this.left);
 
   factory RecapMaterial.gather(
     RecapPeriod period, {
@@ -123,9 +131,24 @@ class RecapMaterial {
       final bySource = a.source.index.compareTo(b.source.index);
       return bySource != 0 ? bySource : a.note.edited.compareTo(b.note.edited);
     });
+    final left = <RecapLeft>[
+      for (final stone in store.tombstones)
+        (id: stone.id, at: stone.deletedAt, day: null),
+    ];
+    for (final note in store.allNotes) {
+      final own = ownDay?.call(note);
+      if (store.isDeleting(note.id)) {
+        final day = noteDay(note, displayTime, ownDay: own);
+        if (period.contains(day)) left.add((id: note.id, at: null, day: day));
+      } else if (note.hiddenAt case final at?) {
+        if (own == null || period.contains(own)) {
+          left.add((id: note.id, at: at, day: own));
+        }
+      }
+    }
     return RecapMaterial._(period, List.unmodifiable(items), {
       for (final note in held.keys) note.id: note.updatedAt,
-    });
+    }, List.unmodifiable(left));
   }
 
   final RecapPeriod period;
@@ -133,6 +156,9 @@ class RecapMaterial {
 
   /// The period's notes, and when each was last edited.
   final Map<String, DateTime> edited;
+
+  /// Every note a recap of the period may have read but may no longer.
+  final List<RecapLeft> left;
 
   List<RecapItem> within(DateTime first, DateTime last) => [
     for (final item in items)

@@ -5,6 +5,7 @@ import 'package:kapy_notes/ai/kapy_chat_book.dart';
 import 'package:kapy_notes/ai/retrieval.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/recaps/recap_engine.dart';
+import 'package:kapy_notes/recaps/recap_filter.dart';
 import 'package:kapy_notes/recaps/recap_period.dart';
 import 'package:kapy_notes/recaps/recap_plan.dart';
 import 'package:kapy_notes/recaps/recap_record.dart';
@@ -305,6 +306,98 @@ void main() {
         final made = await make(week, ai) as RecapMade;
         expect(made.lines.highlights.map((it) => it.noteId), ['fri']);
         expect(made.lines.text, isNot(contains('Monday plans')));
+      },
+    );
+  });
+
+  group('which notes each part read', () {
+    final week = periodOf(DateTime(2026, 11, 19), RecapKind.week);
+
+    test('a part a slice, and one for what the last call read', () async {
+      world.note('mon', '2026-11-16T10:00:00Z', body: 'Monday plans\nShip it');
+      world.note('thu', '2026-11-19T10:00:00Z', body: 'Thursday\nDemo');
+      world.note('fri', '2026-11-20T10:00:00Z', body: 'Friday review\nShipped');
+      await notesOn(2025, const []);
+      await make(week, ScriptedEngine()..reply = (_) => 'TITLE: Shipped');
+      final read = recapOf(book.chats.single)!.read!;
+      expect(read.map((part) => (part.first, part.last)), [(0, 3), (4, 6)]);
+      expect(read[0].notes.mayHold('mon'), isTrue);
+      expect(read[0].notes.mayHold('thu'), isTrue);
+      expect(read[0].notes.mayHold('fri'), isFalse);
+      expect(read[1].notes.mayHold('fri'), isTrue);
+      expect(read[1].notes.mayHold('mon'), isFalse);
+    });
+
+    test('a part left out meanwhile gets none', () async {
+      world.note('mon', '2026-11-16T10:00:00Z', body: 'Monday plans\nShip it');
+      world.note('secret', '2026-11-17T10:00:00Z', body: 'Secret plan\nQuit');
+      world.note('fri', '2026-11-20T10:00:00Z', body: 'Friday review\nShipped');
+      await notesOn(2025, const []);
+      final ai = ScriptedEngine();
+      ai.reply = (request) {
+        if (ai.asked.length == 1) world.store.hide('secret');
+        return 'TITLE: Shipped';
+      };
+      await make(week, ai);
+      final read = recapOf(book.chats.single)!.read!;
+      expect(read.map((part) => (part.first, part.last)), [(4, 6)]);
+    });
+
+    test(
+      "a year's month from its own recap takes what that recap read",
+      () async {
+        await notesOn(2026, [1, 15]);
+        for (var month = 1; month <= 12; month++) {
+          now = DateTime(2026, month + 1, 2);
+          await make(
+            periodOf(DateTime(2026, month), RecapKind.month),
+            ScriptedEngine()
+              ..reply = (request) =>
+                  request.question.startsWith('These are digests')
+                  ? 'TITLE: Month $month'
+                  : 'Digest.',
+          );
+        }
+        final march = engine.recaps.firstWhere(
+          (chat) => recapOf(chat)!.period.first.month == 3,
+        );
+        final record = recapOf(march)!;
+        expect(record.read!.map((part) => (part.first, part.last)), [
+          (0, 6),
+          (14, 20),
+        ]);
+        book.put(
+          recapChat(
+            march,
+            record: RecapRecord(
+              period: record.period,
+              timeZone: record.timeZone,
+              firstWeekday: record.firstWeekday,
+              madeAt: record.madeAt,
+              numbers: record.numbers,
+              fingerprint: record.fingerprint,
+              digest: record.digest,
+              read: [
+                ...record.read!,
+                (first: 30, last: 30, notes: RecapFilter.of(['from-march'])),
+              ],
+            ),
+            answer: recapAnswer(march)!,
+            model: KapyModel.cloud,
+            now: record.madeAt,
+          ),
+        );
+        final year = periodOf(DateTime(2026, 1, 1), RecapKind.year);
+        expect(plan(year).calls, 1);
+        now = DateTime(2027, 1, 5);
+        await make(year, ScriptedEngine()..reply = (_) => 'TITLE: 2026');
+        final made = recapOf(recapChatOf(engine.recaps, year)!)!.read!;
+        expect(made, hasLength(12));
+        expect(made[2].first, year.indexOf(DateTime(2026, 3, 1)));
+        expect(made[2].last, year.indexOf(DateTime(2026, 3, 31)));
+        expect(made[2].notes.mayHold('from-march'), isTrue);
+        expect(made[2].notes.mayHold('n-2026-3-15'), isTrue);
+        expect(made[3].notes.mayHold('from-march'), isFalse);
       },
     );
   });

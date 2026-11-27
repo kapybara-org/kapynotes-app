@@ -1500,7 +1500,16 @@ class _Closing extends StatelessWidget {
         _Column(
           top: [
             _eyebrow(story.closingLabel, t),
-            if (next != null)
+            if (story.wordsGone)
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: Text(
+                  'Some notes in this recap are hidden or gone now, so its '
+                  'words were left out.',
+                  style: recapText(22, 30, 500, t.text),
+                ),
+              )
+            else if (next != null)
               Padding(
                 padding: const EdgeInsets.only(top: 14),
                 child: Text(

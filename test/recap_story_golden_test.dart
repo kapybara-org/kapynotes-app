@@ -27,6 +27,8 @@ void main() {
     play: (_) {},
     saveAsNote: (_) {},
     shareImage: (_, _) async {},
+    onRemake: () {},
+    remakeCredits: 0,
   );
 
   ThemeData theme(Brightness brightness) =>
