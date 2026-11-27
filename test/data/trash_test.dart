@@ -218,8 +218,8 @@ void main() {
       expect(back.archivedAt, isNull);
     });
 
-    test('an older build passes the delete on, and cannot take a note out '
-        'of the trash', () {
+    test('an older build passes the delete on, and taking the note out of '
+        'Archive puts it back', () {
       final at = start.add(const Duration(hours: 1));
       final doc = NoteDoc(replica: 'new');
       trash(doc, archivedAt: at, trashedAt: at);
@@ -242,7 +242,38 @@ void main() {
       ];
       expect(doc.apply(restore), isTrue);
       expect(doc.view.archivedAt, isNull);
-      expect(doc.view.trashedAt, at);
+      expect(doc.view.trashedAt, isNull);
+    });
+
+    test('a note an older build took out of Archive is back among the '
+        "person's notes, and never deleted for good", () {
+      final at = start.add(const Duration(hours: 1));
+      final doc = NoteDoc(replica: 'new');
+      trash(doc, archivedAt: at, trashedAt: at);
+      final restoredAt = at.add(const Duration(minutes: 1));
+      doc.apply([
+        ['r', 'archived', null, restoredAt.millisecondsSinceEpoch, 'old'],
+      ]);
+
+      final view = doc.view;
+      notes.applyDoc(
+        Note(
+          id: 'n',
+          body: view.body,
+          createdAt: start,
+          updatedAt: restoredAt,
+          archivedAt: view.archivedAt,
+          hiddenAt: view.hiddenAt,
+          trashedAt: view.trashedAt,
+          syncedAt: restoredAt,
+        ),
+      );
+      expect(notes.notes.map((note) => note.id), contains('n'));
+      expect(notes.trashedNotes, isEmpty);
+
+      now = restoredAt.add(const Duration(days: 31));
+      expect(notes.emptyExpiredTrash(), 0);
+      expect(notes.byId('n'), isNotNull);
     });
   });
 

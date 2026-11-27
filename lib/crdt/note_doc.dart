@@ -170,16 +170,22 @@ class NoteDoc {
 
   DateTime? get createdAt => _createdAt();
 
-  DocView get view => DocView(
-    body: text,
-    formats: _renderFormats(),
-    attachments: _renderAttachments(),
-    drawing: _renderDrawing(),
-    createdAt: _createdAt(),
-    archivedAt: _archivedAt(),
-    hiddenAt: _hiddenAt(),
-    trashedAt: _trashedAt(),
-  );
+  /// A build that knows the trash files every deleted note in Archive too,
+  /// so a deleted note out of Archive was put back by a build from before
+  /// the trash, and is back among the person's notes.
+  DocView get view {
+    final archivedAt = _archivedAt();
+    return DocView(
+      body: text,
+      formats: _renderFormats(),
+      attachments: _renderAttachments(),
+      drawing: _renderDrawing(),
+      createdAt: _createdAt(),
+      archivedAt: archivedAt,
+      hiddenAt: _hiddenAt(),
+      trashedAt: archivedAt == null ? null : _trashedAt(),
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Local edits

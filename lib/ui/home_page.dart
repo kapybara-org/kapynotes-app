@@ -2846,25 +2846,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Deletes notes in Recently deleted for good: one from its row or page,
   /// every picked one, or, [emptying], all of them. It always asks first.
   Future<void> _deleteNow(List<String> ids, {bool emptying = false}) async {
-    final going = [
-      for (final id in ids)
-        if (widget.notes.byId(id) case final note?
-            when note.isTrashed &&
-                _canEditNote(note) &&
-                _sharedBy(note) == null)
-          note,
-    ];
+    final going = _goingNow(ids, emptying: emptying);
     if (going.isEmpty) return;
+    final theirs = going.where((note) => _sharedBy(note) != null).length;
+    const shared =
+        'Notes shared with you are only removed from your notes. Their '
+        'owners keep them.';
+    final own = going.length - theirs;
     final title = going.first.title.trim();
     final confirmed = await _confirmDelete(
-      title: going.length == 1
+      title: own == 0
+          ? 'Remove from your notes?'
+          : going.length == 1
           ? 'Delete note for good?'
           : 'Delete ${going.length} notes for good?',
-      body: going.length == 1
-          ? 'Deletes ${title.isEmpty ? 'this note' : '"$title"'} from every '
-                'synced device, with its pictures and recordings.'
-          : 'Deletes them from every synced device, with their pictures and '
-                'recordings.',
+      body: own == 0
+          ? shared
+          : [
+              going.length == 1
+                  ? 'Deletes ${title.isEmpty ? 'this note' : '"$title"'} from '
+                        'every synced device, with its pictures and '
+                        'recordings.'
+                  : 'Deletes them from every synced device, with their '
+                        'pictures and recordings.',
+              if (theirs > 0) shared,
+            ].join(' '),
       action: emptying ? 'Empty' : 'Delete',
     );
     if (!confirmed || !mounted) return;
@@ -2872,10 +2878,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _picks.clear();
   }
 
+  /// Which of [ids] Delete now takes: the reader's own deleted notes and,
+  /// [emptying], the ones an owner deleted from a space shared with the
+  /// reader, which only leave the reader's notes.
+  List<Note> _goingNow(Iterable<String> ids, {required bool emptying}) => [
+    for (final id in ids)
+      if (widget.notes.byId(id) case final note?
+          when note.isTrashed &&
+              (_sharedBy(note) == null
+                  ? _canEditNote(note)
+                  : emptying && _canRemoveNote(note)))
+        note,
+  ];
+
+  /// What Empty takes out of Recently deleted. Empty is off while it is
+  /// nothing.
+  List<String> get _emptiable => [
+    for (final note in _goingNow(
+      widget.notes.trashedNotes.map((note) => note.id),
+      emptying: true,
+    ))
+      note.id,
+  ];
+
   /// Empties Recently deleted.
-  Future<void> _emptyTrash() => _deleteNow([
-    for (final note in widget.notes.trashedNotes) note.id,
-  ], emptying: true);
+  Future<void> _emptyTrash() => _deleteNow(_emptiable, emptying: true);
 
   /// How many of [ids] somebody else shares with this account.
   int _sharedByOthers(List<String> ids) =>
@@ -2930,13 +2957,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     final inItsPlace = _selectedId;
     final emptied = forGood.length - removed;
+    final gone = emptied == 1 ? 'Note deleted' : '$emptied notes deleted';
     Toast.show(
       context,
       emptied == 0
           ? forgottenMessage(deleted: trashing.length, removed: removed)
-          : emptied == 1
-          ? 'Note deleted'
-          : '$emptied notes deleted',
+          : removed == 0
+          ? gone
+          : '$gone, and $removed removed from your notes',
       icon: trashing.isEmpty ? deleteIcon : trashIcon,
       action: 'Undo',
       onAction: () {
@@ -4539,9 +4567,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               trashMode: _trashMode,
               onDelete: _deleteNote,
               asksBeforeDeleting: widget.prefs.askBeforeDeleting,
-              onDeleteAll: _trashMode
-                  ? () => unawaited(_emptyTrash())
-                  : () => unawaited(_deleteAllArchived()),
+              onDeleteAll: !_trashMode
+                  ? () => unawaited(_deleteAllArchived())
+                  : _emptiable.isEmpty
+                  ? null
+                  : () => unawaited(_emptyTrash()),
               picks: _picks,
               onPicked: _actOnPicked,
               onShare: widget.account == null ? null : _shareNote,
@@ -6026,9 +6056,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       trashMode: _trashMode,
       onDelete: _deleteNote,
       asksBeforeDeleting: widget.prefs.askBeforeDeleting,
-      onDeleteAll: _trashMode
-          ? () => unawaited(_emptyTrash())
-          : () => unawaited(_deleteAllArchived()),
+      onDeleteAll: !_trashMode
+          ? () => unawaited(_deleteAllArchived())
+          : _emptiable.isEmpty
+          ? null
+          : () => unawaited(_emptyTrash()),
       picks: _picks,
       onPicked: _actOnPicked,
       onShare: widget.account == null ? null : _shareNote,

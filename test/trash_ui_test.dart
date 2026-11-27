@@ -323,6 +323,7 @@ void main() {
       expect(notes.allNotes, isEmpty);
       expect(notes.tombstones, hasLength(3));
       expect(find.text('Recently deleted is empty'), findsOneWidget);
+      expect(find.byKey(const ValueKey('trash-empty')), findsNothing);
     });
   });
 
