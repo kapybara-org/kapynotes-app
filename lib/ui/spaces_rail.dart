@@ -805,10 +805,11 @@ class _PhoneSpacesState extends State<PhoneSpaces>
       // build skips the fade on the rare tap that lands mid-repaint.
       if (page is RenderRepaintBoundary &&
           !(kDebugMode && page.debugNeedsPaint)) {
-        _leaving?.dispose();
-        _leaving = page.toImageSync(
+        final leaving = page.toImageSync(
           pixelRatio: View.of(context).devicePixelRatio,
         );
+        _leaving?.dispose();
+        setState(() => _leaving = leaving);
         _fade.forward(from: 0);
       }
     }
