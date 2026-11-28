@@ -30,6 +30,7 @@ import 'package:kapy_notes/images/image_ingest.dart';
 import 'package:kapy_notes/images/image_picker.dart';
 import 'package:kapy_notes/paste/clipboard_snapshot.dart';
 import 'package:kapy_notes/data/blob_store.dart';
+import 'package:kapy_notes/ui/desktop_camera_window.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
@@ -41,6 +42,9 @@ import 'package:kapy_notes/files/file_opener.dart';
 import 'package:kapy_notes/video/video_ingest.dart';
 import 'package:kapy_notes/video/video_picker.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:video_player_platform_interface/video_player_platform_interface.dart';
+
+import 'fake_camera.dart';
 
 import '../support/note_driver.dart';
 import '../test_fonts.dart';
@@ -229,6 +233,7 @@ Widget harness(
   imageFinalizer,
   ImagePrepared? onImagePrepared,
   VideoFileAcquirer? videoAcquirer,
+  Future<List<XFile>> Function(BuildContext context)? cameraAcquirer,
   VideoBatchIngestor? videoIngestor,
   int Function()? videoAttachmentMaxBytes,
   FileBatchIngestor? fileIngestor,
@@ -256,6 +261,7 @@ Widget harness(
       imageFinalizer: imageFinalizer,
       onImagePrepared: onImagePrepared,
       videoAcquirer: videoAcquirer,
+      cameraAcquirer: cameraAcquirer,
       videoIngestor: videoIngestor,
       videoAttachmentMaxBytes: videoAttachmentMaxBytes,
       fileIngestor: fileIngestor,
@@ -882,6 +888,64 @@ void main() {
 
     expect(opened, 1);
     expect(find.byType(NoteVideoView), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+  });
+
+  testWidgets('a video from the camera window lands in the note where the '
+      'caret was, as a playable video', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    VideoPlayerPlatform.instance = FakeVideoPlayerPlatform();
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final captures = Directory.systemTemp.createTempSync('kapy-camera-note-');
+    addTearDown(() => captures.deleteSync(recursive: true));
+    final camera = FakeDesktopCamera();
+    final ingested = <XFile>[];
+    final placed = <int>[];
+    final editorKey = GlobalKey<NoteEditorState>();
+    await tester.pumpWidget(
+      harness(
+        'Tile samples:',
+        attachments: const [],
+        editorKey: editorKey,
+        startAtEnd: true,
+        cameraAcquirer: (context) => showDesktopCamera(
+          context,
+          camera: camera,
+          attachmentMaxBytes: freeAttachmentMaxBytes,
+          chooseFiles: () async => const [],
+          startInVideo: true,
+          captureDirectory: () async => captures,
+        ),
+        videoIngestor: (files, _) async {
+          ingested.addAll(files);
+          return VideoBatch(videos: [videoAt(0)], rejections: const []);
+        },
+        onAttachmentsChanged: (refs) => placed
+          ..clear()
+          ..addAll([for (final ref in refs) ref.offset]),
+      ),
+    );
+    await tester.pump();
+
+    unawaited(editorKey.currentState!.openCameraAndInsert());
+    await tester.pumpAndSettle();
+    expect(camera.calls, ['open built-in video sound']);
+    await tester.tap(find.byKey(const ValueKey('camera-shutter')));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 4));
+    await tester.tap(find.byKey(const ValueKey('camera-shutter')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('camera-use')));
+    await tester.pumpAndSettle();
+
+    expect(ingested.single.path, startsWith(captures.path));
+    expect(ingested.single.path, endsWith('.mp4'));
+    expect(find.byType(NoteVideoView), findsOneWidget);
+    expect(placed, isNotEmpty);
+    expect(placed.single, greaterThanOrEqualTo('Tile samples:'.length));
     await tester.pump(const Duration(seconds: 2));
   });
 

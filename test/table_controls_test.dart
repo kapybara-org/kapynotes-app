@@ -858,6 +858,52 @@ void main() {
     }, variant: _phone);
   });
 
+  testWidgets('a cell menu in a 760 by 520 window shows every command whole, '
+      'with no item under the pointer', (tester) async {
+    final (_, frame) = await open(
+      tester,
+      dark: true,
+      window: const Size(760, 520),
+    );
+    final at = cell(frame, 1, 1);
+    await hover(tester, at);
+    await tester.tapAt(
+      at,
+      buttons: kSecondaryButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+
+    final menu = find.byKey(const ValueKey('kapy-context-menu'));
+    expect(
+      const Rect.fromLTWH(0, 0, 760, 520).intersect(tester.getRect(menu)),
+      tester.getRect(menu),
+    );
+    expect(
+      find.byKey(const ValueKey('table-menu-deleteColumn')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .state<ScrollableState>(
+            find.descendant(of: menu, matching: find.byType(Scrollable)),
+          )
+          .position
+          .maxScrollExtent,
+      0,
+    );
+    final under = {
+      for (final entry in tester.hitTestOnBinding(at).path) entry.target,
+    };
+    expect(
+      find
+          .byType(PopupMenuItem<TableCommand>)
+          .evaluate()
+          .where((item) => under.contains(item.renderObject)),
+      isEmpty,
+    );
+  }, variant: _mac);
+
   group('goldens', () {
     for (final dark in [false, true]) {
       final mode = dark ? 'dark' : 'light';

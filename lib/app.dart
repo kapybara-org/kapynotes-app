@@ -74,6 +74,8 @@ import 'ui/instant_capture.dart';
 import 'ui/mcp_pane.dart';
 import 'ui/menu_bar_panel.dart';
 import 'ui/tasks/tasks_controller.dart';
+import 'speech/live_translation.dart';
+import 'audio/live_text.dart';
 
 /// Flutter's own actions, with a finger outside a text field putting a
 /// phone's keyboard away.
@@ -353,6 +355,14 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         _recording.finishRecordingAndFlush;
     _recording.onFlush = _flushAfterHydration;
     _voicePrefs = VoicePrefs(widget.store);
+    // Only where the OS has its own engines. Nothing behind it is created
+    // until live translation is turned on in Settings.
+    if (PlatformLiveTranslation.isPossibleHere) {
+      _recording.live ??= LiveTranslationLauncher(
+        engine: PlatformLiveTranslation(),
+        prefs: _voicePrefs!,
+      );
+    }
     if (NoiseRemover.isPossibleHere) {
       _noise = NoiseRemovals(
         models: LocalModelStore(catalogue: const [noiseRemovalModel]),
@@ -382,10 +392,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _deviceSummarizer = DeviceSummarizer([apple, _gemma!]);
     // Kapy AI answers with the same two models, through the same objects, so
     // the weights are in memory once whichever feature asked for them.
+    KapyAiController? kapyAi;
     if (widget.kapyAi != null) {
       _kapyAi = widget.kapyAi;
     } else if (kapyAiAvailable) {
-      _kapyAi = KapyAiController(
+      _kapyAi = kapyAi = KapyAiController(
         store: widget.store,
         notes: widget.notes,
         device: PlatformDeviceModel(
@@ -393,6 +404,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           gemma: _gemma!,
           models: _localModels!,
         ),
+        translator: _recording.live?.engine,
         billing: widget.account?.billing,
         chats: widget.chats,
         token: () => widget.account?.token,
@@ -434,6 +446,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       api: () => widget.account?.speech,
       summarizer: () => _summarizer,
       transcriber: () => _transcriber,
+      keepTranslation: kapyAi?.keepTranscriptTranslation,
     );
     if (widget.notes.isLoaded) {
       _activateLoadedApp();
@@ -909,6 +922,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
                   localModels: _localModels,
                   deviceSummarizer: _deviceSummarizer,
                   deviceTranscriber: _deviceTranscriber,
+                  liveTranslation: _recording.live,
                   summarizer: _summarizer,
                   transcriber: _transcriber,
                   imageAcquirer: widget.imageAcquirer,

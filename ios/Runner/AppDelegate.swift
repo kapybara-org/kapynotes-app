@@ -6,6 +6,7 @@ import UIKit
   private var richClipboardChannel: FlutterMethodChannel?
   private var summariesChannel: FlutterMethodChannel?
   private var transcriptionChannel: FlutterMethodChannel?
+  private var liveTranslationChannel: FlutterMethodChannel?
   private var audioDecodeChannel: FlutterMethodChannel?
   private var systemRegionChannel: FlutterMethodChannel?
   private var fileExportChannel: FlutterMethodChannel?
@@ -28,6 +29,9 @@ import UIKit
       with: engineBridge.applicationRegistrar.messenger()
     )
     transcriptionChannel = Transcription.register(
+      with: engineBridge.applicationRegistrar.messenger()
+    )
+    liveTranslationChannel = LiveTranslation.register(
       with: engineBridge.applicationRegistrar.messenger()
     )
     audioDecodeChannel = AudioDecode.register(
