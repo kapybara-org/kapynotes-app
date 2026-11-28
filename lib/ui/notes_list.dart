@@ -22,7 +22,7 @@ import 'context_menu.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
 import 'notes_grouping.dart';
-import 'sidebar.dart' show archiveIcon, hiddenIcon;
+import 'sidebar.dart' show archiveIcon, hiddenIcon, trashIcon;
 import 'tag_colours.dart';
 import 'tag_ui.dart';
 import 'tasks/task_marks.dart' show metaStyle, uiStyle;
@@ -1599,12 +1599,14 @@ BoxDecoration _menuSurface(CalcPalette palette) => BoxDecoration(
 enum NotesShow {
   all,
   hidden,
-  archive;
+  archive,
+  trash;
 
   String get label => switch (this) {
     NotesShow.all => 'All notes',
     NotesShow.hidden => 'Hidden',
     NotesShow.archive => 'Archive',
+    NotesShow.trash => 'Recently deleted',
   };
 }
 
@@ -1634,6 +1636,7 @@ class NotesListControls extends StatelessWidget {
     required this.hiddenListed,
     this.hiddenShortcut,
     required this.archivedCount,
+    required this.trashedCount,
     this.media,
     this.onMediaChanged,
     this.cards = false,
@@ -1666,6 +1669,7 @@ class NotesListControls extends StatelessWidget {
   /// The chord that opens Hidden, named on its row.
   final String? hiddenShortcut;
   final int archivedCount;
+  final int trashedCount;
 
   /// The kinds the list is narrowed to, every kind when it is not. Null
   /// leaves the media group out, as in Drawings, where every item is a
@@ -1703,6 +1707,7 @@ class NotesListControls extends StatelessWidget {
       hiddenListed: hiddenListed,
       hiddenShortcut: hiddenShortcut,
       archivedCount: archivedCount,
+      trashedCount: trashedCount,
       media: media,
       onMediaChanged: onMediaChanged,
       tags: this.tags,
@@ -1901,6 +1906,7 @@ class _NotesFilter extends StatefulWidget {
     required this.hiddenListed,
     required this.hiddenShortcut,
     required this.archivedCount,
+    required this.trashedCount,
     required this.media,
     required this.onMediaChanged,
     required this.tags,
@@ -1923,6 +1929,7 @@ class _NotesFilter extends StatefulWidget {
   final bool hiddenListed;
   final String? hiddenShortcut;
   final int archivedCount;
+  final int trashedCount;
   final Set<NoteMedia>? media;
   final ValueChanged<Set<NoteMedia>>? onMediaChanged;
   final TagFilter? tags;
@@ -2145,6 +2152,7 @@ class _NotesFilterState extends State<_NotesFilter> {
                   onShowChanged: widget.onShowChanged,
                   hiddenListed: widget.hiddenListed,
                   archivedCount: widget.archivedCount,
+                  trashedCount: widget.trashedCount,
                   everything: widget.everything,
                   media: widget.media,
                   onMediaChanged: widget.onMediaChanged,
@@ -2308,6 +2316,7 @@ class _NotesFilterState extends State<_NotesFilter> {
             hiddenListed: widget.hiddenListed,
             hiddenShortcut: widget.hiddenShortcut,
             archivedCount: widget.archivedCount,
+            trashedCount: widget.trashedCount,
             everything: widget.everything,
             media: widget.media,
             onTick: _tick,
@@ -2512,6 +2521,7 @@ class _FilterMenu extends StatelessWidget {
     required this.hiddenListed,
     required this.hiddenShortcut,
     required this.archivedCount,
+    required this.trashedCount,
     required this.everything,
     required this.media,
     required this.onTick,
@@ -2534,6 +2544,7 @@ class _FilterMenu extends StatelessWidget {
   final bool hiddenListed;
   final String? hiddenShortcut;
   final int archivedCount;
+  final int trashedCount;
   final String everything;
   final Set<NoteMedia>? media;
 
@@ -2645,6 +2656,11 @@ class _FilterMenu extends StatelessWidget {
             choice(
               NotesShow.archive,
               trailing: Text('$archivedCount', style: quiet),
+            ),
+            const SizedBox(height: 1),
+            choice(
+              NotesShow.trash,
+              trailing: Text('$trashedCount', style: quiet),
             ),
           ],
           if (when != null) ...[
@@ -3372,6 +3388,7 @@ class _FilterPopover extends StatefulWidget {
     required this.onShowChanged,
     required this.hiddenListed,
     required this.archivedCount,
+    required this.trashedCount,
     required this.everything,
     required this.media,
     required this.onMediaChanged,
@@ -3391,6 +3408,7 @@ class _FilterPopover extends StatefulWidget {
   final ValueChanged<NotesShow> onShowChanged;
   final bool hiddenListed;
   final int archivedCount;
+  final int trashedCount;
   final String everything;
   final Set<NoteMedia>? media;
   final ValueChanged<Set<NoteMedia>>? onMediaChanged;
@@ -3602,6 +3620,11 @@ class _FilterPopoverState extends State<_FilterPopover> {
             NotesShow.archive,
             archiveIcon,
             trailing: _quiet('${widget.archivedCount}'),
+          ),
+          _showRow(
+            NotesShow.trash,
+            trashIcon,
+            trailing: _quiet('${widget.trashedCount}'),
           ),
         ],
         if (media != null) ...[

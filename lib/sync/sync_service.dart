@@ -1317,6 +1317,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       createdAt: note.createdAt,
       archivedAt: note.archivedAt,
       hiddenAt: note.hiddenAt,
+      trashedAt: note.trashedAt,
       now: _now(),
       near: _notes.takeEdit(note.id),
     );
@@ -1341,6 +1342,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       createdAt: note.createdAt,
       archivedAt: note.archivedAt,
       hiddenAt: note.hiddenAt,
+      trashedAt: note.trashedAt,
       now: _now(),
       near: _notes.takeEdit(note.id),
     );
@@ -2450,6 +2452,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
       updatedAt: at,
       archivedAt: view.archivedAt,
       hiddenAt: view.hiddenAt,
+      trashedAt: view.trashedAt,
       syncedAt: at,
       spaceId: storedSpaceId,
       contentKey: contentKey,
@@ -2825,6 +2828,7 @@ class SyncService extends ChangeNotifier implements RemoteCaretSource {
           updatedAt: at,
           archivedAt: view.archivedAt,
           hiddenAt: view.hiddenAt,
+          trashedAt: view.trashedAt,
         );
         _seed(note, personal.id, created);
         arrived.add(note);

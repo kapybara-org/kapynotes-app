@@ -271,7 +271,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Delete note?'), findsOneWidget);
       expect(
-        find.text('Deletes "Budget" from every synced device.'),
+        find.text(
+          'Moves "Budget" to Recently deleted. You can put it back for 30 '
+          'days.',
+        ),
         findsOneWidget,
       );
       await tester.tap(find.text('Cancel'));
@@ -285,10 +288,11 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
       await tester.pumpAndSettle();
       expect(_row('Budget'), findsNothing);
-      expect(find.text('Note deleted'), findsOneWidget);
+      expect(find.text('Moved to Recently deleted'), findsOneWidget);
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.byId('budget'), isNull);
+      expect(notes.byId('budget')!.isTrashed, isTrue);
+      expect(notes.tombstones, isEmpty);
     });
 
     testWidgets('goes straight through once the question is turned off', (
@@ -300,10 +304,11 @@ void main() {
       await tester.tap(_button('delete', 'budget'));
       await tester.pumpAndSettle();
       expect(find.text('Delete note?'), findsNothing);
-      expect(find.text('Note deleted'), findsOneWidget);
+      expect(find.text('Moved to Recently deleted'), findsOneWidget);
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.byId('budget'), isNull);
+      expect(notes.byId('budget')!.isTrashed, isTrue);
+      expect(notes.tombstones, isEmpty);
     });
 
     testWidgets("its notice's Undo puts the note back where it was, filed "
@@ -315,7 +320,6 @@ void main() {
       notes.togglePinned('offsite');
       await tester.pumpAndSettle();
       final before = _titles(tester);
-      final budget = notes.byId('budget');
       final count = find.descendant(
         of: find.byKey(const ValueKey('home-title-notes')),
         matching: find.byType(Text),
@@ -327,14 +331,15 @@ void main() {
       await tester.pumpAndSettle();
       expect(_row('Budget'), findsNothing);
       expect(tester.widgetList<Text>(count).map((t) => t.data), contains('3'));
-      expect(find.text('Note deleted'), findsOneWidget);
+      expect(find.text('Moved to Recently deleted'), findsOneWidget);
 
       await tester.tap(find.text('Undo'));
       await tester.pumpAndSettle();
       expect(_titles(tester), before);
       expect(tester.getTopLeft(_row('Budget')).dx, _rest);
       expect(tester.widgetList<Text>(count).map((t) => t.data), contains('4'));
-      expect(notes.byId('budget'), same(budget));
+      expect(notes.byId('budget')!.isTrashed, isFalse);
+      expect(notes.byId('budget')!.archivedAt, isNull);
       expect(notes.isPinned('offsite'), isTrue);
       expect(folders.tree.folderOf('budget'), work.id);
       expect(notes.tombstones, isEmpty);
@@ -352,12 +357,12 @@ void main() {
       await tester.tap(find.text('Delete note'));
       await tester.pumpAndSettle();
       expect(_row('Budget'), findsNothing);
-      expect(find.text('Note deleted'), findsOneWidget);
+      expect(find.text('Moved to Recently deleted'), findsOneWidget);
 
       await tester.tap(find.text('Undo'));
       await tester.pumpAndSettle();
       expect(_titles(tester), before);
-      expect(notes.byId('budget'), isNotNull);
+      expect(notes.byId('budget')!.isTrashed, isFalse);
     });
   });
 
@@ -638,7 +643,8 @@ void main() {
       await tester.pumpAndSettle();
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
-      expect(notes.byId('standup'), isNull);
+      expect(notes.byId('standup')!.isTrashed, isTrue);
+      expect(notes.tombstones, isEmpty);
       semantics.dispose();
     });
 

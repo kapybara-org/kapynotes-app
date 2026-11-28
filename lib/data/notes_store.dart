@@ -52,6 +52,8 @@ class NotesStore extends ChangeNotifier {
   List<Note> _activeNotes = const [];
   List<Note> _archivedNotes = const [];
   List<Note> _hiddenNotes = const [];
+  List<Note> _trashedNotes = const [];
+  List<Note> _hiddenTrashedNotes = const [];
   List<Tombstone> _tombstones = const [];
   Set<String> _pinnedNoteIds = const {};
 
@@ -108,6 +110,13 @@ class NotesStore extends ChangeNotifier {
 
   /// Notes kept behind the device-local Hidden Notes credential.
   List<Note> get hiddenNotes => _hiddenNotes;
+
+  /// Notes in Recently deleted, the latest deleted first. A hidden note is
+  /// not among them: it waits in [hiddenTrashedNotes], behind Hidden's lock.
+  List<Note> get trashedNotes => _trashedNotes;
+
+  /// Hidden notes in Recently deleted, shown only while Hidden is open.
+  List<Note> get hiddenTrashedNotes => _hiddenTrashedNotes;
 
   /// Every recoverable note, for sync, export, and attachment retention.
   List<Note> get allNotes => _notes;
@@ -192,7 +201,8 @@ class NotesStore extends ChangeNotifier {
           note.syncedAt == null &&
           note.updatedAt == note.createdAt &&
           !note.isShared &&
-          !note.isArchived)
+          !note.isArchived &&
+          !note.isTrashed)
         note.id,
   ]);
 
@@ -245,7 +255,9 @@ class NotesStore extends ChangeNotifier {
   /// collaborator sees in a shared note.
   bool? togglePinned(String id) {
     final note = byId(id);
-    if (note == null || note.isArchived || note.isHidden) return null;
+    if (note == null || note.isArchived || note.isHidden || note.isTrashed) {
+      return null;
+    }
     final pinned = !_pinnedNoteIds.contains(id);
     pinAll([id], pinned: pinned);
     return pinned;
@@ -258,7 +270,10 @@ class NotesStore extends ChangeNotifier {
     final updated = Set<String>.of(_pinnedNoteIds);
     var changed = 0;
     for (final note in _notes) {
-      if (!wanted.contains(note.id) || note.isArchived || note.isHidden) {
+      if (!wanted.contains(note.id) ||
+          note.isArchived ||
+          note.isHidden ||
+          note.isTrashed) {
         continue;
       }
       if (pinned ? updated.add(note.id) : updated.remove(note.id)) changed++;
@@ -654,7 +669,7 @@ class NotesStore extends ChangeNotifier {
     final at = _now();
     _replaceAll(
       ids,
-      (note) => note.isArchived || note.isHidden
+      (note) => note.isArchived || note.isHidden || note.isTrashed
           ? null
           : note.copyWith(archivedAt: at, updatedAt: at),
     );
@@ -670,7 +685,7 @@ class NotesStore extends ChangeNotifier {
     final at = indexOf(before.id);
     if (at < 0) return;
     final note = _notes[at];
-    if (!note.isArchived || note.isHidden) return;
+    if (!note.isArchived || note.isHidden || note.isTrashed) return;
     final back = before.updatedAt;
     final rest = [..._notes]..removeAt(at);
     _notes = [
@@ -695,7 +710,7 @@ class NotesStore extends ChangeNotifier {
     final at = _now();
     _replaceAll(
       ids,
-      (note) => !note.isArchived || note.isHidden
+      (note) => !note.isArchived || note.isHidden || note.isTrashed
           ? null
           : note.copyWith(archivedAt: null, updatedAt: at),
     );
@@ -713,7 +728,8 @@ class NotesStore extends ChangeNotifier {
     final at = _now();
     _replaceAll(
       ids,
-      (note) => note.isHidden || note.isArchived || note.isShared
+      (note) =>
+          note.isHidden || note.isArchived || note.isShared || note.isTrashed
           ? null
           : note.copyWith(hiddenAt: at, updatedAt: at),
     );
@@ -727,9 +743,108 @@ class NotesStore extends ChangeNotifier {
     final at = _now();
     _replaceAll(
       ids,
-      (note) =>
-          note.isHidden ? note.copyWith(hiddenAt: null, updatedAt: at) : null,
+      (note) => note.isHidden && !note.isTrashed
+          ? note.copyWith(hiddenAt: null, updatedAt: at)
+          : null,
     );
+  }
+
+  /// Moves notes to Recently deleted as one change, where they wait
+  /// [Note.trashKept] before they go for good; see [emptyExpiredTrash].
+  ///
+  /// Each note also goes into Archive, at the same time, unless it is there
+  /// already: a build from before the trash then keeps it out of the
+  /// person's notes, and [putBackAll] knows the archive was only the trash's.
+  ///
+  /// Returns the notes as they were, each with where it stood among every
+  /// note, for [undoTrash].
+  List<({Note note, int index})> trashAll(Iterable<String> ids) {
+    final wanted = ids.toSet();
+    final before = [
+      for (var index = 0; index < _notes.length; index++)
+        if (wanted.contains(_notes[index].id) && !_notes[index].isTrashed)
+          (note: _notes[index], index: index),
+    ];
+    final at = _now();
+    _replaceAll(
+      wanted,
+      (note) => note.isTrashed
+          ? null
+          : note.copyWith(
+              trashedAt: at,
+              archivedAt: note.archivedAt ?? at,
+              updatedAt: at,
+            ),
+    );
+    return before;
+  }
+
+  /// Takes a [trashAll] straight back, as [undoArchive] takes back an
+  /// archive: each note returns to its place in the list, as it was before,
+  /// with whatever else reached it since. It goes back unsent, a millisecond
+  /// on if its old time is the one the server confirmed, so the server hears
+  /// the delete taken back.
+  void undoTrash(List<({Note note, int index})> before) {
+    final wanted = {for (final entry in before) entry.note.id};
+    final rest = [
+      for (final note in _notes)
+        if (!wanted.contains(note.id)) note,
+    ];
+    final back = [...before]..sort((a, b) => a.index.compareTo(b.index));
+    var changed = false;
+    for (final (:note, :index) in back) {
+      final current = byId(note.id);
+      if (current == null) continue;
+      final undone = current.isTrashed
+          ? current.copyWith(
+              trashedAt: null,
+              archivedAt: note.archivedAt,
+              updatedAt:
+                  current.syncedAt?.millisecondsSinceEpoch ==
+                      note.updatedAt.millisecondsSinceEpoch
+                  ? note.updatedAt.add(const Duration(milliseconds: 1))
+                  : note.updatedAt,
+            )
+          : current;
+      changed = changed || current.isTrashed;
+      rest.insert(index.clamp(0, rest.length), undone);
+    }
+    if (!changed) return;
+    _notes = rest;
+    _persist();
+  }
+
+  /// Puts notes in Recently deleted back where they were, as the most recent
+  /// change: among the person's notes, or in Archive if they were archived
+  /// before they were deleted.
+  void putBackAll(Iterable<String> ids) {
+    final at = _now();
+    _replaceAll(
+      ids,
+      (note) => !note.isTrashed
+          ? null
+          : note.copyWith(
+              trashedAt: null,
+              archivedAt:
+                  note.archivedAt?.millisecondsSinceEpoch ==
+                      note.trashedAt!.millisecondsSinceEpoch
+                  ? null
+                  : note.archivedAt,
+              updatedAt: at,
+            ),
+    );
+  }
+
+  /// Deletes for good the notes whose time in Recently deleted is up; see
+  /// [Note.trashEndsAt]. Returns how many went.
+  int emptyExpiredTrash() {
+    final now = _now();
+    return deleteAll([
+      for (final note in _notes)
+        if (!_deleting.contains(note.id) &&
+            !(note.trashEndsAt?.isAfter(now) ?? true))
+          note.id,
+    ]);
   }
 
   /// The active note to select after the one at [removedIndex] leaves the
@@ -951,6 +1066,7 @@ class NotesStore extends ChangeNotifier {
                 updatedAt: at,
                 archivedAt: note.archivedAt,
                 hiddenAt: note.hiddenAt,
+                trashedAt: note.trashedAt,
               );
             }()
           else
@@ -1278,6 +1394,7 @@ class NotesStore extends ChangeNotifier {
             updatedAt: now,
             archivedAt: local.archivedAt,
             hiddenAt: local.hiddenAt,
+            trashedAt: local.trashedAt,
           ),
         );
       }
@@ -1390,6 +1507,7 @@ class NotesStore extends ChangeNotifier {
       updatedAt: _now(),
       archivedAt: local.archivedAt,
       hiddenAt: local.hiddenAt,
+      trashedAt: local.trashedAt,
     );
     _notes = List.unmodifiable([copy, ..._notes]);
     _persist();
@@ -1609,12 +1727,24 @@ class NotesStore extends ChangeNotifier {
   void _refreshViews() {
     final shown = _notes.where((note) => !_deleting.contains(note.id));
     _activeNotes = List.unmodifiable(
-      shown.where((note) => !note.isArchived && !note.isHidden),
+      shown.where(
+        (note) => !note.isArchived && !note.isHidden && !note.isTrashed,
+      ),
     );
     _archivedNotes = List.unmodifiable(
-      shown.where((note) => note.isArchived && !note.isHidden),
+      shown.where(
+        (note) => note.isArchived && !note.isHidden && !note.isTrashed,
+      ),
     );
-    _hiddenNotes = List.unmodifiable(shown.where((note) => note.isHidden));
+    _hiddenNotes = List.unmodifiable(
+      shown.where((note) => note.isHidden && !note.isTrashed),
+    );
+    _trashedNotes = List.unmodifiable(
+      shown.where((note) => note.isTrashed && !note.isHidden),
+    );
+    _hiddenTrashedNotes = List.unmodifiable(
+      shown.where((note) => note.isTrashed && note.isHidden),
+    );
   }
 
   List<Object?> _encodeNotes() {

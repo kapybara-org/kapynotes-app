@@ -65,6 +65,10 @@ const KapyIconData restoreIcon = KapyIcons.restoreRounded;
 /// Gone for good, from here and from every device that syncs.
 const KapyIconData deleteIcon = KapyIcons.deleteForeverOutlined;
 
+/// Recently deleted, and the delete that moves a note there: the plain bin,
+/// beside [deleteIcon]'s crossed-out one for the delete that can't be undone.
+const KapyIconData trashIcon = KapyIcons.deleteOutlined;
+
 /// The protected folder and the action that moves a note into it.
 const KapyIconData hiddenIcon = KapyIcons.lockRounded;
 
@@ -135,7 +139,9 @@ enum PickedAction {
   unhide,
   archive,
   restore,
+  putBack,
   delete,
+  deleteNow,
 }
 
 KapyIconData _pickedIcon(PickedAction action) => switch (action) {
@@ -146,7 +152,9 @@ KapyIconData _pickedIcon(PickedAction action) => switch (action) {
   PickedAction.unhide => unhideIcon,
   PickedAction.archive => archiveIcon,
   PickedAction.restore => restoreIcon,
-  PickedAction.delete => deleteIcon,
+  PickedAction.putBack => restoreIcon,
+  PickedAction.delete => trashIcon,
+  PickedAction.deleteNow => deleteIcon,
 };
 
 /// The note list, under the field that opens search.
@@ -172,6 +180,7 @@ class Sidebar extends StatelessWidget {
     this.tabbedIds = const {},
     this.onArchive,
     this.onRestore,
+    this.onPutBack,
     this.onHide,
     this.onUnhide,
     this.onTogglePin,
@@ -182,6 +191,7 @@ class Sidebar extends StatelessWidget {
     this.archiveShortcut,
     this.archiveMode = false,
     this.hiddenMode = false,
+    this.trashMode = false,
     this.onDelete,
     this.asksBeforeDeleting = true,
     this.onDeleteAll,
@@ -273,6 +283,9 @@ class Sidebar extends StatelessWidget {
   final Set<String> tabbedIds;
   final ValueChanged<String>? onArchive;
   final ValueChanged<String>? onRestore;
+
+  /// Takes a note out of Recently deleted, back where it was.
+  final ValueChanged<String>? onPutBack;
   final ValueChanged<String>? onHide;
   final ValueChanged<String>? onUnhide;
   final ValueChanged<String>? onTogglePin;
@@ -300,6 +313,9 @@ class Sidebar extends StatelessWidget {
 
   final bool archiveMode;
   final bool hiddenMode;
+
+  /// Whether the list is Recently deleted.
+  final bool trashMode;
 
   /// Throws one note away for good, or takes one somebody else shares out of
   /// the reader's notes.
@@ -524,7 +540,7 @@ class Sidebar extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 2),
                     child: controls,
                   ),
-              if (_picking || (archiveMode && notes.isNotEmpty))
+              if (_picking || ((archiveMode || trashMode) && notes.isNotEmpty))
                 _pickBar(context),
               Expanded(
                 child: _BelowInvitations(
@@ -594,7 +610,7 @@ class Sidebar extends StatelessWidget {
 }
 
 extension on Sidebar {
-  bool get _specialMode => archiveMode || hiddenMode;
+  bool get _specialMode => archiveMode || hiddenMode || trashMode;
 
   /// The tabs split the ordinary list only. The archive and Hidden Notes
   /// are folders of their own, and a build without an account has nobody
@@ -660,6 +676,8 @@ extension on Sidebar {
       message: query.trim().isEmpty
           ? archiveMode
                 ? 'Archived Notes is empty'
+                : trashMode
+                ? 'Recently deleted is empty'
                 : hiddenMode
                 ? 'Hidden Notes is empty'
                 : _onSharedTab
@@ -671,6 +689,8 @@ extension on Sidebar {
       detail: nothingShared
           ? 'Pick notes and someone to share them with. Only the people you '
                 'add, or anyone with a link you turn on, can see them.'
+          : trashMode && query.trim().isEmpty
+          ? 'Deleted notes wait here for 30 days.'
           : null,
       action: nothingShared && onStartSharing != null
           ? TonalButton(
@@ -693,16 +713,17 @@ extension on Sidebar {
 
   /// What a row's delete says it does. A note somebody else owns only leaves
   /// the reader's notes, as the question that follows says; their own goes
-  /// for good, which the archive spells out beside Restore. The ellipsis is
-  /// the question, and goes with it.
+  /// to Recently deleted, and from there for good, which always asks. The
+  /// ellipsis is the question, and goes with it.
   String _deleteLabel(Note note) {
-    final label = _theirs(note)
-        ? 'Remove note'
-        : _specialMode
-        ? 'Delete permanently'
-        : 'Delete note';
+    if (_deletesNow(note)) return 'Delete now…';
+    final label = _theirs(note) ? 'Remove note' : 'Delete note';
     return asksBeforeDeleting ? '$label…' : label;
   }
+
+  /// Whether deleting [note] is for good: one of the reader's own, already
+  /// in Recently deleted.
+  bool _deletesNow(Note note) => note.isTrashed && !_theirs(note);
 
   /// Whether [note] is somebody else's, shared with the reader: a delete only
   /// takes it out of their notes.
@@ -748,10 +769,27 @@ extension on Sidebar {
       if (archiveMode && onRestore != null)
         (PickedAction.restore, those(_mayEdit)),
       if (hiddenMode && onUnhide != null)
-        (PickedAction.unhide, those(_mayEdit)),
+        (
+          PickedAction.unhide,
+          those((note) => !note.isTrashed && _mayEdit(note)),
+        ),
+      if (onPutBack != null)
+        (
+          PickedAction.putBack,
+          those((note) => note.isTrashed && _mayEdit(note)),
+        ),
       if (!_specialMode && onArchive != null)
         (PickedAction.archive, those(_mayEdit)),
-      if (onDelete != null) (PickedAction.delete, those(_mayRemove)),
+      if (onDelete != null) ...[
+        (
+          PickedAction.delete,
+          those((note) => _mayRemove(note) && !_deletesNow(note)),
+        ),
+        (
+          PickedAction.deleteNow,
+          those((note) => _mayRemove(note) && _deletesNow(note)),
+        ),
+      ],
     ];
   }
 
@@ -769,12 +807,17 @@ extension on Sidebar {
       PickedAction.unhide => 'Move$some to Notes',
       PickedAction.archive => 'Archive$some',
       PickedAction.restore => 'Restore$some',
+      PickedAction.putBack => 'Put back$some',
       PickedAction.delete =>
         notes.length == 1
             ? _deleteLabel(notes.single)
             : notes.every(_theirs)
             ? 'Remove ${_count(notes.length)}…'
             : 'Delete ${_count(notes.length)}…',
+      PickedAction.deleteNow =>
+        notes.length == 1
+            ? _deleteLabel(notes.single)
+            : 'Delete ${_count(notes.length)} now…',
     };
   }
 
@@ -830,7 +873,9 @@ extension on Sidebar {
             value: 'picked-${action.name}',
             label: _pickedLabel(action, notes, picked),
             icon: _pickedIcon(action),
-            destructive: action == PickedAction.delete,
+            destructive:
+                action == PickedAction.delete ||
+                action == PickedAction.deleteNow,
           ),
     ];
     return (
@@ -855,9 +900,14 @@ extension on Sidebar {
             PickedAction.hide,
             PickedAction.unhide,
             PickedAction.restore,
+            PickedAction.putBack,
           ]),
         ],
-        those(const [PickedAction.archive, PickedAction.delete]),
+        those(const [
+          PickedAction.archive,
+          PickedAction.delete,
+          PickedAction.deleteNow,
+        ]),
       ],
     );
   }
@@ -894,7 +944,8 @@ extension on Sidebar {
   }
 
   /// Over the list while notes are picked: how many, what can be done to
-  /// them, and Done. Over the archive at rest, its Select and Delete all.
+  /// them, and Done. Over the archive at rest, its Select and Delete all, and
+  /// over Recently deleted its Select and Empty.
   ///
   /// With a pointer the bar holds the picked notes' menu, minus Open in tabs,
   /// where the list is wide enough for it; a narrower list keeps what most
@@ -906,18 +957,20 @@ extension on Sidebar {
     final picks = this.picks;
     if (picks == null || !picks.on) {
       return _PickActions(
-        label: 'Archived Notes',
+        label: trashMode ? 'Recently deleted' : 'Archived Notes',
         buttons: [
           _IconButton(
-            key: const ValueKey('archive-start-selecting'),
+            key: ValueKey(
+              trashMode ? 'trash-start-selecting' : 'archive-start-selecting',
+            ),
             icon: KapyIcons.checklistRounded,
             tooltip: 'Select notes',
             onPressed: picks?.start,
           ),
           _IconButton(
-            key: const ValueKey('archive-delete-all'),
+            key: ValueKey(trashMode ? 'trash-empty' : 'archive-delete-all'),
             icon: KapyIcons.deleteSweepOutlined,
-            tooltip: 'Delete all',
+            tooltip: trashMode ? 'Empty' : 'Delete all',
             onPressed: onDeleteAll,
           ),
         ],
@@ -928,6 +981,8 @@ extension on Sidebar {
     final label = picked == 0 ? 'Select notes' : '$picked selected';
     final primary = archiveMode
         ? PickedAction.restore
+        : trashMode
+        ? PickedAction.putBack
         : hiddenMode
         ? PickedAction.unhide
         : PickedAction.archive;
@@ -955,7 +1010,10 @@ extension on Sidebar {
       tooltip: 'Select all',
       onPressed: () => picks.all(order),
     );
-    final short = those([primary, PickedAction.delete]);
+    final short = those([
+      primary,
+      trashMode ? PickedAction.deleteNow : PickedAction.delete,
+    ]);
     if (!AppPlatform.hasPointer) {
       return _PickActions(
         label: label,
@@ -985,8 +1043,10 @@ extension on Sidebar {
         PickedAction.hide,
         PickedAction.unhide,
         PickedAction.restore,
+        PickedAction.putBack,
         PickedAction.archive,
         PickedAction.delete,
+        PickedAction.deleteNow,
       ]),
     ];
     final done = TonalButton(
@@ -1103,12 +1163,17 @@ extension on Sidebar {
     return () => onArchive!(note.id);
   }
 
-  /// Throws it away for good, or every picked note while there are picks.
-  /// Archive and Hidden Notes only: in the list the key files the note away
-  /// instead, which keeps it.
+  /// Deletes it, or every picked note while there are picks: in Recently
+  /// deleted for good, behind the question that always asks. Archive, Hidden
+  /// Notes and Recently deleted only: in the list the key files the note
+  /// away instead, which keeps it.
   VoidCallback? get _deleteSelected {
     if (!_specialMode) return null;
-    if (_picking) return _pickedAction(PickedAction.delete);
+    if (_picking) {
+      return _pickedAction(
+        trashMode ? PickedAction.deleteNow : PickedAction.delete,
+      );
+    }
     if (onDelete == null) return null;
     final note = _highlighted;
     if (note == null || !_mayRemove(note)) return null;
@@ -1162,7 +1227,7 @@ extension on Sidebar {
     inset: inset,
     clockOnly: clockOnly,
     laterDay: clockOnly ? null : _laterDay(note),
-    folders: _files(note) ? folders?.store : null,
+    folders: _files(note) && !note.isTrashed ? folders?.store : null,
     engine: engine,
     now: now,
     query: query,
@@ -1194,13 +1259,18 @@ extension on Sidebar {
     onArchive: _specialMode || onArchive == null || !_mayEdit(note)
         ? null
         : () => onArchive!(note.id),
-    onRestore: !archiveMode || onRestore == null || !_mayEdit(note)
+    onRestore:
+        !archiveMode || note.isTrashed || onRestore == null || !_mayEdit(note)
         ? null
         : () => onRestore!(note.id),
+    onPutBack: !note.isTrashed || onPutBack == null || !_mayEdit(note)
+        ? null
+        : () => onPutBack!(note.id),
     onHide: _specialMode || note.isShared || onHide == null || !_mayEdit(note)
         ? null
         : () => onHide!(note.id),
-    onUnhide: !hiddenMode || onUnhide == null || !_mayEdit(note)
+    onUnhide:
+        !hiddenMode || note.isTrashed || onUnhide == null || !_mayEdit(note)
         ? null
         : () => onUnhide!(note.id),
     onDelete: onDelete == null || !_mayRemove(note)
@@ -1209,10 +1279,13 @@ extension on Sidebar {
     deleteLabel: _deleteLabel(note),
     theirs: _theirs(note),
     // A phone's list rows only: cards scroll sideways or sit in a grid, and
-    // keep their menu. So do Archived and Hidden notes, whose way out is
-    // Restore or a delete that can't be undone, which no swipe should be a
-    // slip away from.
-    swipe: phone && !_specialMode && style == NoteRowStyle.touch,
+    // keep their menu. So do Archived and Hidden notes, whose ways out are
+    // menu choices. A note in Recently deleted swipes to Put back, or to
+    // Delete now, which asks first.
+    swipe:
+        phone &&
+        (!_specialMode || note.isTrashed) &&
+        style == NoteRowStyle.touch,
     selecting: _picking,
     checked: picks?.contains(note.id) ?? false,
     onToggleChecked: picks == null ? null : () => picks!.toggle(note.id),
@@ -2982,6 +3055,7 @@ class NoteRow extends StatefulWidget {
     this.onShare,
     this.onArchive,
     this.onRestore,
+    this.onPutBack,
     this.onHide,
     this.onUnhide,
     this.onDelete,
@@ -3069,6 +3143,7 @@ class NoteRow extends StatefulWidget {
   final VoidCallback? onShare;
   final VoidCallback? onArchive;
   final VoidCallback? onRestore;
+  final VoidCallback? onPutBack;
   final VoidCallback? onHide;
   final VoidCallback? onUnhide;
 
@@ -3275,6 +3350,12 @@ class _NoteRowState extends State<NoteRow> {
               label: 'Restore note',
               icon: restoreIcon,
             ),
+          if (widget.onPutBack != null)
+            const KapyMenuAction(
+              value: 'put-back',
+              label: 'Put back',
+              icon: restoreIcon,
+            ),
           if (widget.onUnhide != null)
             const KapyMenuAction(
               value: 'unhide',
@@ -3299,7 +3380,9 @@ class _NoteRowState extends State<NoteRow> {
             KapyMenuAction(
               value: 'delete',
               label: widget.deleteLabel,
-              icon: deleteIcon,
+              icon: widget.note.isTrashed || widget.theirs
+                  ? deleteIcon
+                  : trashIcon,
               hint: widget.onArchive == null
                   ? archiveShortcut?.keycapLabel
                   : null,
@@ -3451,6 +3534,7 @@ class _NoteRowState extends State<NoteRow> {
     if (choice == 'select') widget.onToggleChecked?.call();
     if (choice == 'archive') widget.onArchive?.call();
     if (choice == 'restore') widget.onRestore?.call();
+    if (choice == 'put-back') widget.onPutBack?.call();
     if (choice == 'hide') widget.onHide?.call();
     if (choice == 'unhide') widget.onUnhide?.call();
     if (choice == 'delete') widget.onDelete?.call();
@@ -3489,7 +3573,9 @@ class _NoteRowState extends State<NoteRow> {
         clock: clock,
       ),
     };
-    final day = card && people.isEmpty && widget.laterDay == null
+    final ends = note.trashEndsAt;
+    final day =
+        card && people.isEmpty && widget.laterDay == null && ends == null
         ? stamp(clock: false)
         : null;
     final live = people.isEmpty
@@ -3503,6 +3589,8 @@ class _NoteRowState extends State<NoteRow> {
     final touch = widget.style == NoteRowStyle.touch;
     final date = live != null && !touch
         ? live
+        : ends != null
+        ? SidebarTimestamp.daysLeft(ends, now: widget.now())
         : widget.clockOnly
         ? SidebarTimestamp.clock(widget.displayTime(note.updatedAt))
         : stamp();
@@ -3645,6 +3733,7 @@ class _NoteRowState extends State<NoteRow> {
               _canOpenToSide ||
               widget.onArchive != null ||
               widget.onRestore != null ||
+              widget.onPutBack != null ||
               widget.onHide != null ||
               widget.onUnhide != null ||
               widget.onDelete != null ||
@@ -3702,6 +3791,7 @@ class _NoteRowState extends State<NoteRow> {
       final onTogglePin = widget.onTogglePin;
       final onDelete = widget.onDelete;
       final onArchive = widget.onArchive;
+      final onPutBack = widget.onPutBack;
       final danger = Theme.of(context).colorScheme.error;
       return NoteRowSwipe(
         id: widget.note.id,
@@ -3718,8 +3808,14 @@ class _NoteRowState extends State<NoteRow> {
           if (onDelete != null)
             (
               key: 'delete',
-              label: widget.theirs ? 'Remove' : 'Delete',
-              icon: deleteIcon,
+              label: widget.theirs
+                  ? 'Remove'
+                  : widget.note.isTrashed
+                  ? 'Delete now'
+                  : 'Delete',
+              icon: widget.note.isTrashed || widget.theirs
+                  ? deleteIcon
+                  : trashIcon,
               background: Color.alphaBlend(
                 danger.withValues(alpha: 0.16),
                 palette.paperColor,
@@ -3728,16 +3824,25 @@ class _NoteRowState extends State<NoteRow> {
               onPressed: onDelete,
             ),
         ],
-        full: onArchive == null
-            ? null
-            : (
+        full: onArchive != null
+            ? (
                 key: 'archive',
                 label: 'Archive',
                 icon: archiveIcon,
                 background: palette.controlBackground,
                 foreground: palette.textPrimary,
                 onPressed: onArchive,
-              ),
+              )
+            : onPutBack != null
+            ? (
+                key: 'put-back',
+                label: 'Put back',
+                icon: restoreIcon,
+                background: palette.controlBackground,
+                foreground: palette.textPrimary,
+                onPressed: onPutBack,
+              )
+            : null,
         child: row,
       );
     }

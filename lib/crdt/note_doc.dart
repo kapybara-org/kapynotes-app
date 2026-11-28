@@ -24,6 +24,7 @@ class DocView {
     required this.createdAt,
     required this.archivedAt,
     required this.hiddenAt,
+    this.trashedAt,
   });
 
   final String body;
@@ -33,6 +34,7 @@ class DocView {
   final DateTime? createdAt;
   final DateTime? archivedAt;
   final DateTime? hiddenAt;
+  final DateTime? trashedAt;
 }
 
 /// A last-writer-wins cell. Ties on [ts] break on [replica] so every client
@@ -127,6 +129,7 @@ class NoteDoc {
   static const String _createdKey = 'created';
   static const String _archivedKey = 'archived';
   static const String _hiddenKey = 'hidden';
+  static const String _trashedKey = 'trashed';
   static const String _drawKey = 'draw';
   static const String _elementPrefix = 'e:';
 
@@ -167,15 +170,22 @@ class NoteDoc {
 
   DateTime? get createdAt => _createdAt();
 
-  DocView get view => DocView(
-    body: text,
-    formats: _renderFormats(),
-    attachments: _renderAttachments(),
-    drawing: _renderDrawing(),
-    createdAt: _createdAt(),
-    archivedAt: _archivedAt(),
-    hiddenAt: _hiddenAt(),
-  );
+  /// A build that knows the trash files every deleted note in Archive too,
+  /// so a deleted note out of Archive was put back by a build from before
+  /// the trash, and is back among the person's notes.
+  DocView get view {
+    final archivedAt = _archivedAt();
+    return DocView(
+      body: text,
+      formats: _renderFormats(),
+      attachments: _renderAttachments(),
+      drawing: _renderDrawing(),
+      createdAt: _createdAt(),
+      archivedAt: archivedAt,
+      hiddenAt: _hiddenAt(),
+      trashedAt: archivedAt == null ? null : _trashedAt(),
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Local edits
@@ -201,6 +211,7 @@ class NoteDoc {
     required DateTime createdAt,
     DateTime? archivedAt,
     DateTime? hiddenAt,
+    DateTime? trashedAt,
     DateTime? now,
     TextEdit? near,
   }) {
@@ -286,6 +297,12 @@ class NoteDoc {
     if ((hiddenMs != null || _regs.containsKey(_hiddenKey)) &&
         _regs[_hiddenKey]?.value != hiddenMs) {
       ops.add(_setLocal(_hiddenKey, hiddenMs, nowMs));
+    }
+
+    final trashedMs = trashedAt?.millisecondsSinceEpoch;
+    if ((trashedMs != null || _regs.containsKey(_trashedKey)) &&
+        _regs[_trashedKey]?.value != trashedMs) {
+      ops.add(_setLocal(_trashedKey, trashedMs, nowMs));
     }
 
     _drain();
@@ -765,6 +782,13 @@ class NoteDoc {
 
   DateTime? _hiddenAt() {
     final ms = _asInt(_regs[_hiddenKey]?.value);
+    return ms == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);
+  }
+
+  DateTime? _trashedAt() {
+    final ms = _asInt(_regs[_trashedKey]?.value);
     return ms == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(ms, isUtc: true);

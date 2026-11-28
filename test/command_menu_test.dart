@@ -191,6 +191,7 @@ void main() {
     expect(keycapOn(tester, 'Archive'), '⌥⌘5');
     expect(keycapOn(tester, 'Settings'), '⌘,');
     expect(row('Hidden'), findsOneWidget);
+    expect(row('Recently deleted'), findsOneWidget);
     expect(find.text('Search…'), findsOneWidget);
     expect(find.text('Ask AI'), findsNothing);
   });

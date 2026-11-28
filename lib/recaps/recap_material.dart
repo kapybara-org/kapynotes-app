@@ -79,7 +79,7 @@ class RecapMaterial {
     final days = {for (final entry in held.entries) entry.key.id: entry.value};
     final visible = {
       for (final note in notes)
-        if (!note.isHidden && !note.isArchived) note.id,
+        if (!note.isHidden && !note.isArchived && !note.isTrashed) note.id,
     };
     final items = <RecapItem>[];
     for (final MapEntry(key: note, value: day) in held.entries) {
@@ -232,7 +232,8 @@ List<ReadNote> recapNotesFor(
 }) {
   final archived = {
     for (final note in store.allNotes)
-      if (note.isArchived || store.isDeleting(note.id)) note.id,
+      if (note.isArchived || note.isTrashed || store.isDeleting(note.id))
+        note.id,
   };
   final readable = readableNotes(store, [
     for (final item in items)

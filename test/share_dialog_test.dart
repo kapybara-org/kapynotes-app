@@ -3904,17 +3904,23 @@ void main() {
     );
   });
 
-  test('the toast after a mixed delete says which notes are gone for good', () {
-    expect(forgottenMessage(deleted: 1, removed: 0), 'Note deleted');
-    expect(forgottenMessage(deleted: 3, removed: 0), '3 notes deleted');
+  test('the toast after a mixed delete says where each note went', () {
+    expect(
+      forgottenMessage(deleted: 1, removed: 0),
+      'Moved to Recently deleted',
+    );
+    expect(
+      forgottenMessage(deleted: 3, removed: 0),
+      'Moved 3 notes to Recently deleted',
+    );
     expect(forgottenMessage(deleted: 0, removed: 2), 'Removed from your notes');
     expect(
       forgottenMessage(deleted: 1, removed: 2),
-      'Note deleted, and 2 removed from your notes',
+      'Moved to Recently deleted, and 2 removed from your notes',
     );
     expect(
       forgottenMessage(deleted: 2, removed: 1),
-      '2 notes deleted, and 1 removed from your notes',
+      'Moved 2 notes to Recently deleted, and 1 removed from your notes',
     );
   });
 

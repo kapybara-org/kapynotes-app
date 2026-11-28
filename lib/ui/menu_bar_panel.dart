@@ -395,6 +395,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     if (note == null ||
         note.isHidden ||
         note.isArchived ||
+        note.isTrashed ||
         !widget.canEdit(note)) {
       return null;
     }

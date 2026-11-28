@@ -550,7 +550,11 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('confirm-delete')));
     await tester.pumpAndSettle();
     expect(notes.notes.map((n) => n.title), ['Second']);
-    expect(find.text('3 notes deleted'), findsOneWidget);
+    expect(find.text('Moved 3 notes to Recently deleted'), findsOneWidget);
+    expect(
+      notes.trashedNotes.map((n) => n.title),
+      unorderedEquals(['Fourth', 'Third', 'First']),
+    );
   });
 
   testWidgets('on a picked row, VoiceOver gets what a right click on it '
@@ -670,11 +674,15 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('confirm-delete')));
     await tester.pumpAndSettle();
     expect(notes.notes.map((n) => n.title), ['Second', 'First']);
-    expect(find.text('2 notes deleted'), findsOneWidget);
+    expect(find.text('Moved 2 notes to Recently deleted'), findsOneWidget);
     expect(_picked(tester), isEmpty);
     Toast.debugTimeUp();
     await tester.pumpAndSettle();
-    expect(notes.tombstones, hasLength(2));
+    expect(
+      notes.trashedNotes.map((n) => n.title),
+      unorderedEquals(['Fourth', 'Third']),
+    );
+    expect(notes.tombstones, isEmpty);
 
     await _click(tester, 'First', holding: LogicalKeyboardKey.shiftLeft);
     await _click(tester, 'Second');
@@ -780,9 +788,14 @@ void main() {
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
       expect(
-        notes.allNotes.map((note) => note.title),
+        notes.notes.map((note) => note.title),
         unorderedEquals(['First', 'Fourth']),
       );
+      expect(
+        notes.trashedNotes.map((note) => note.title),
+        unorderedEquals(['Second', 'Third']),
+      );
+      expect(notes.tombstones, isEmpty);
     });
   }
 

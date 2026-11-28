@@ -1092,7 +1092,9 @@ class McpTools {
     final done = <String>[];
     final undos = <McpUndo>[];
     bool live() =>
-        library.notes.byId(id) != null && !library.notes.byId(id)!.isHidden;
+        library.notes.byId(id) != null &&
+        !library.notes.byId(id)!.isHidden &&
+        !library.notes.byId(id)!.isTrashed;
     if (title != null) {
       final after = library.rename(id, title);
       if (after.title != oldTitle) {
@@ -1199,7 +1201,7 @@ class McpTools {
           : (
               possible: () {
                 final now = library.notes.byId(id);
-                if (now == null || now.isHidden) return false;
+                if (now == null || now.isHidden || now.isTrashed) return false;
                 final on = {for (final tag in store.tagsOf(id)) tag.id};
                 return added.every(on.contains) &&
                     removed.every(

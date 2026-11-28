@@ -158,9 +158,9 @@ void main() {
     expect(notes.byId('quote')!.isArchived, isFalse);
     expect(quote, findsOneWidget);
 
-    // Delete asks, then takes the row out at once with Undo on its notice,
-    // and the note goes for good once the notice does.
-    final deleted = find.text('Note deleted');
+    // Delete asks, then moves the note to Recently deleted with Undo on its
+    // notice, and it stays there once the notice has gone.
+    final deleted = find.text('Moved to Recently deleted');
     List<String> listed() => [
       for (final row in tester.widgetList<NoteRow>(find.byType(NoteRow)))
         row.note.id,
@@ -181,19 +181,19 @@ void main() {
     await delete(arjun, 'arjun');
     expect(tester.takeException(), isNull);
     await screenshot('swipe-deleted-notice', device: true);
-    // The note goes for good once its notice does, on the device's own clock,
-    // and Undo is checked on a second delete.
+    // The note stays in Recently deleted once its notice has gone, on the
+    // device's own clock, and Undo is checked on a second delete.
     await pumpUntil(tester, () => deleted.evaluate().isEmpty);
     expect(deleted, findsNothing);
-    expect(notes.byId('arjun'), isNull);
+    expect(notes.byId('arjun')!.isTrashed, isTrue);
 
     final before = listed();
     await delete(quote, 'quote');
     await tester.tap(undo.last);
     await pumpUntil(tester, () => quote.evaluate().isNotEmpty);
     expect(listed(), before);
-    expect(notes.byId('quote'), isNotNull);
-    expect(notes.tombstones.map((stone) => stone.id), ['arjun']);
+    expect(notes.byId('quote')!.isTrashed, isFalse);
+    expect(notes.tombstones, isEmpty);
     expect(tester.takeException(), isNull);
   });
 }

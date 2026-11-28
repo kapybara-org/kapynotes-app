@@ -358,7 +358,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('confirm-delete')), kind: mouse);
     // The toast goes after 1.8 s, so it is looked for as it arrives rather
     // than once everything has settled.
-    final toast = find.text('4 notes deleted');
+    final toast = find.text('Moved 4 notes to Recently deleted');
     for (var tries = 0; toast.evaluate().isEmpty && tries < 40; tries++) {
       await Future<void>.delayed(const Duration(milliseconds: 50));
       await tester.pump();

@@ -137,7 +137,7 @@ List<ReadNote> readableNotes(NotesStore store, List<ReadNote> notes) => [
 
 Note? _visible(NotesStore store, String id) {
   for (final note in store.allNotes) {
-    if (note.id == id) return note.isHidden ? null : note;
+    if (note.id == id) return note.isHidden || note.isTrashed ? null : note;
   }
   return null;
 }

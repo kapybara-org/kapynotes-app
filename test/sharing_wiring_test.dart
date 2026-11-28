@@ -19,7 +19,7 @@ import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/spaces.dart';
 import 'package:kapy_notes/sync/sync_api.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
-import 'package:kapy_notes/ui/notes_list.dart' show NoteCardFace;
+import 'package:kapy_notes/ui/notes_list.dart' show NoteCardFace, NotesShow;
 import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings/sharing_section.dart';
@@ -1017,15 +1017,58 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Delete note?'), findsOneWidget);
       expect(
-        find.text('Deletes "Trip budget" from every synced device.'),
+        find.text(
+          'Moves "Trip budget" to Recently deleted. You can put it back for '
+          '30 days.',
+        ),
         findsOneWidget,
       );
       await tester.tap(find.byKey(const ValueKey('confirm-delete')));
       await tester.pumpAndSettle();
-      expect(find.text('Note deleted'), findsOneWidget);
+      expect(find.text('Moved to Recently deleted'), findsOneWidget);
+      Toast.debugTimeUp();
+      await tester.pumpAndSettle();
+      expect(notes.byId(id)!.isTrashed, isTrue);
+    });
+
+    testWidgets("a guest's Empty takes out a note its owner deleted, from "
+        'their own notes only', (tester) async {
+      await openShared(tester);
+      final id = notes.allNotes
+          .firstWhere((note) => note.title == 'Packing list')
+          .id;
+      await tester.runAsync(() async {
+        priya.notes.trashAll([id]);
+        await priya.sync.syncNow();
+        await account.sync!.syncNow();
+        for (var i = 0; i < 200 && !(notes.byId(id)?.isTrashed ?? false); i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 25));
+        }
+      });
+      await tester.pumpAndSettle();
+      expect(notes.byId(id)!.isTrashed, isTrue);
+
+      await openTab(tester, SidebarTab.mine, phone: true);
+      await tester.tap(find.byKey(const ValueKey('phone-filters')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(ValueKey('notes-filter-${NotesShow.trash.name}')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(NoteRow, 'Packing list'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('trash-empty')));
+      await tester.pumpAndSettle();
+      expect(find.text('Remove from your notes?'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('confirm-delete')));
+      await tester.pumpAndSettle();
+      expect(find.text('Removed from your notes'), findsOneWidget);
       Toast.debugTimeUp();
       await tester.pumpAndSettle();
       expect(notes.byId(id), isNull);
+      expect(priya.notes.byId(id)!.isTrashed, isTrue);
     });
 
     testWidgets("a guest's row offers Remove, which only takes the note out "

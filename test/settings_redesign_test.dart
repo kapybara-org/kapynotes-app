@@ -269,7 +269,10 @@ void main() {
     expect(
       find.descendant(
         of: toggle,
-        matching: find.text('Deleting several notes at once always asks'),
+        matching: find.text(
+          'Deleted notes wait 30 days in Recently deleted. Deleting several '
+          'at once always asks.',
+        ),
       ),
       findsOneWidget,
     );

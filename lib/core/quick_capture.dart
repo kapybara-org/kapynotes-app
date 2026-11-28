@@ -168,7 +168,7 @@ class QuickCapture {
     LaunchIntent intent, {
     Note? target,
   }) {
-    final last = target != null && !target.isArchived
+    final last = target != null && !target.isArchived && !target.isTrashed
         ? target
         : notes.lastEditedNote;
     // A drawing's body is its title, and words added there would be too.

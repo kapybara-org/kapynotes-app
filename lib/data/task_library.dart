@@ -194,6 +194,7 @@ class TaskLibrary extends ChangeNotifier {
       createdAt: note.createdAt,
       archivedAt: note.archivedAt,
       hiddenAt: note.hiddenAt,
+      trashedAt: note.trashedAt,
       near: _notes.takeEdit(note.id),
     );
     if (ops.isEmpty) return;

@@ -1770,7 +1770,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   String get _defaultNoteLabel {
     final id = widget.layoutPrefs.defaultNoteId;
     final note = id == null ? null : widget.notes.byId(id);
-    return note == null || note.isArchived || note.isHidden
+    return note == null || note.isArchived || note.isHidden || note.isTrashed
         ? 'Last opened note'
         : note.title;
   }
@@ -2360,7 +2360,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         _toggle(
           'ask-before-deleting-toggle',
           'Ask before deleting notes',
-          'Deleting several notes at once always asks',
+          'Deleted notes wait 30 days in Recently deleted. Deleting several '
+          'at once always asks.',
           value: prefs.askBeforeDeleting,
           onChanged: (value) => prefs.askBeforeDeleting = value,
           byDefault: true,
