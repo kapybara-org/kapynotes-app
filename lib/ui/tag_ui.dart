@@ -9,6 +9,7 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../data/tags.dart';
 import 'context_menu.dart';
+import 'editor/editor_context_menu.dart';
 import 'settings_rows.dart';
 import 'tag_colours.dart';
 
@@ -465,6 +466,7 @@ class _TagPickerState extends State<TagPicker> {
                     Expanded(
                       child: TextField(
                         key: const ValueKey('tag-picker-field'),
+                        contextMenuBuilder: kapyTextFieldMenu,
                         controller: _picker.query,
                         autofocus: true,
                         inputFormatters: [
@@ -836,6 +838,7 @@ class _TagNameFieldState extends State<TagNameField> {
               Expanded(
                 child: TextField(
                   key: const ValueKey('tag-name-field'),
+                  contextMenuBuilder: kapyTextFieldMenu,
                   controller: _name,
                   autofocus: true,
                   inputFormatters: [

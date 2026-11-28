@@ -11,6 +11,7 @@ import '../../data/note_drawing.dart';
 import '../../data/notes_store.dart';
 import '../back_forward.dart';
 import '../compact_icon_button.dart';
+import '../editor/editor_context_menu.dart';
 import '../editor/editor_formatting.dart';
 import '../focus_ring.dart';
 import 'drawing_geometry.dart';
@@ -920,6 +921,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
     final shapes = _drawing.elements.length;
     final title = TextField(
       key: const ValueKey('drawing-title'),
+      contextMenuBuilder: kapyTextFieldMenu,
       controller: _titleController,
       focusNode: _titleFocus,
       readOnly: widget.readOnly,
@@ -992,6 +994,7 @@ class DrawingCanvasState extends State<DrawingCanvas> {
         child: IntrinsicWidth(
           child: TextField(
             key: const ValueKey('drawing-text-field'),
+            contextMenuBuilder: kapyTextFieldMenu,
             controller: _textController,
             focusNode: _textFocus,
             maxLines: null,

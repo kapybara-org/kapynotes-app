@@ -16,6 +16,7 @@ import '../data/voice_prefs.dart' show speechLanguages;
 import '../speech/moments.dart';
 import '../speech/summary_instructions.dart';
 import 'context_menu.dart';
+import 'editor/editor_context_menu.dart';
 import 'editor/voice_chip.dart';
 import 'settings_rows.dart' show SettingsPie, SettingsSegmented;
 import 'tag_colours.dart';
@@ -629,6 +630,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: SelectableText(
+                    contextMenuBuilder: kapyTextFieldMenu,
                     point,
                     style: _reading.copyWith(color: palette.textPrimary),
                   ),
@@ -1955,6 +1957,7 @@ class _SearchBar extends StatelessWidget {
           children: [
             Expanded(
               child: TextField(
+                contextMenuBuilder: kapyTextFieldMenu,
                 controller: controller,
                 autofocus: true,
                 onChanged: onChanged,
@@ -2303,6 +2306,7 @@ Future<String?> showSpeakerNameDialog(
     builder: (context) => AlertDialog(
       title: const Text('Who is this?'),
       content: TextField(
+        contextMenuBuilder: kapyTextFieldMenu,
         controller: controller,
         autofocus: true,
         maxLength: 40,
@@ -2365,6 +2369,7 @@ Future<String?> showInstructionSheet(
               ),
               const SizedBox(height: 12),
               TextField(
+                contextMenuBuilder: kapyTextFieldMenu,
                 controller: controller,
                 autofocus: true,
                 minLines: 4,
@@ -2411,6 +2416,7 @@ Future<String?> showRenameDialog(
     builder: (context) => AlertDialog(
       title: const Text('Rename recording'),
       content: TextField(
+        contextMenuBuilder: kapyTextFieldMenu,
         controller: controller,
         autofocus: true,
         maxLength: 80,

@@ -11,6 +11,7 @@ import '../data/folders.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
 import 'context_menu.dart';
+import 'editor/editor_context_menu.dart';
 import 'editor_panes.dart' show NoteDragData, NoteDraggable;
 import 'note_tabs.dart' show clickOpensTabBehind;
 import 'notes_grouping.dart' show NoteGroup;
@@ -783,6 +784,7 @@ class _FolderNameFieldState extends State<_FolderNameField> {
                     Expanded(
                       child: TextField(
                         key: const ValueKey('folder-name-field'),
+                        contextMenuBuilder: kapyTextFieldMenu,
                         controller: _name,
                         autofocus: true,
                         inputFormatters: [
@@ -1493,6 +1495,7 @@ class _FolderPickerState extends State<_FolderPicker> {
                     Expanded(
                       child: TextField(
                         key: const ValueKey('folder-picker-field'),
+                        contextMenuBuilder: kapyTextFieldMenu,
                         controller: _query,
                         autofocus: true,
                         inputFormatters: [
@@ -2341,6 +2344,7 @@ class _AddNotesPanelState extends State<_AddNotesPanel> {
           Expanded(
             child: TextField(
               key: const ValueKey('add-notes-field'),
+              contextMenuBuilder: kapyTextFieldMenu,
               controller: _query,
               onChanged: (_) => setState(() {}),
               style: words,

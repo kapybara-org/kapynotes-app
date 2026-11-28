@@ -15,6 +15,7 @@ import '../../sync/sharing.dart';
 import '../../sync/spaces.dart';
 import '../../sync/sync_api.dart' show SyncRefusedException;
 import '../context_menu.dart';
+import '../editor/editor_context_menu.dart';
 import '../join/join_link_sheet.dart';
 import '../join/joining_ui.dart';
 import '../profile_avatar.dart';
@@ -1812,6 +1813,7 @@ class _Field extends StatelessWidget {
     );
     final onSubmitted = this.onSubmitted;
     final field = TextField(
+      contextMenuBuilder: kapyTextFieldMenu,
       controller: controller,
       enabled: enabled,
       autofocus: autofocus,

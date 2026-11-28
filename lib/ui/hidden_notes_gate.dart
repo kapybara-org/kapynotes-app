@@ -12,6 +12,7 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../sync/aead.dart' show randomBytes;
 import '../sync/key_store.dart';
+import 'editor/editor_context_menu.dart';
 
 const int _hiddenCredentialVersion = 1;
 
@@ -721,6 +722,7 @@ class _PinField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => TextField(
+    contextMenuBuilder: kapyTextFieldMenu,
     controller: controller,
     autofocus: autofocus,
     enabled: enabled,

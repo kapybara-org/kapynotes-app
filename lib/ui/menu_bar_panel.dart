@@ -16,6 +16,7 @@ import '../data/notes_store.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/task_board.dart';
 import 'back_forward.dart';
+import 'editor/editor_context_menu.dart';
 import 'keycap.dart';
 import 'sidebar_timestamp.dart';
 import 'tasks/task_marks.dart';
@@ -652,6 +653,7 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
             Expanded(
               child: TextField(
                 key: const ValueKey('menu-bar-field'),
+                contextMenuBuilder: kapyTextFieldMenu,
                 controller: _draft,
                 focusNode: _field,
                 onTap: () => setState(() => _cursor = null),
@@ -1433,6 +1435,7 @@ class _NotePickerState extends State<_NotePicker> {
             padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
             child: TextField(
               key: const ValueKey('menu-bar-pick-find'),
+              contextMenuBuilder: kapyTextFieldMenu,
               controller: _find,
               autofocus: true,
               onChanged: (_) => setState(() {}),

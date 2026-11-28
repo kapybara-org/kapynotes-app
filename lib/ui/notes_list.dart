@@ -22,6 +22,7 @@ import 'compact_icon_button.dart';
 import 'context_menu.dart';
 import 'draw/drawing_geometry.dart';
 import 'draw/drawing_painter.dart';
+import 'editor/editor_context_menu.dart';
 import 'notes_grouping.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'tag_colours.dart';
@@ -3166,6 +3167,7 @@ class _TagsMenuState extends State<_TagsMenu> {
                   Expanded(
                     child: TextField(
                       key: const ValueKey('tag-filter-find'),
+                      contextMenuBuilder: kapyTextFieldMenu,
                       controller: _query,
                       onChanged: (_) => setState(() {}),
                       style: _figtree(

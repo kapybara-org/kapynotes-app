@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../sync/account.dart';
 import '../control_surface.dart';
+import '../editor/editor_context_menu.dart';
 
 /// Shows the recovery key once, and does not let it be dismissed casually.
 ///
@@ -118,6 +119,7 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
                   vertical: 14,
                 ),
                 child: SelectableText(
+                  contextMenuBuilder: kapyTextFieldMenu,
                   widget.recoveryKey.formatted,
                   key: const ValueKey('recovery-key-value'),
                   textAlign: TextAlign.center,

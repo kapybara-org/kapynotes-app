@@ -15,6 +15,7 @@ import '../speech/speech_errors.dart';
 import '../speech/summarizer.dart';
 import '../speech/summary_instructions.dart';
 import '../sync/sync_api.dart';
+import 'editor/editor_context_menu.dart';
 import 'kapy_ai/kapy_ai_conversation.dart' show KapyAiNotice;
 import 'kapy_ai/kapy_ai_markdown.dart';
 import 'kapy_ai/kapy_ai_parts.dart';
@@ -615,6 +616,7 @@ class _VoiceAskState extends State<VoiceAsk> {
           Expanded(
             child: TextField(
               key: const ValueKey('voice-ask-field'),
+              contextMenuBuilder: kapyTextFieldMenu,
               controller: _field,
               focusNode: _focus,
               enabled: enabled,
@@ -1065,6 +1067,7 @@ class _VoiceAskState extends State<VoiceAsk> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SelectableText(
+            contextMenuBuilder: kapyTextFieldMenu,
             take.text,
             style: kapyText(14, 21, palette.textPrimary),
           ),
@@ -1691,7 +1694,11 @@ class _TranslatedTranscript extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: switch (timeMarkPattern.matchAsPrefix(line)) {
-                null => SelectableText(line.trim(), style: style),
+                null => SelectableText(
+                  contextMenuBuilder: kapyTextFieldMenu,
+                  line.trim(),
+                  style: style,
+                ),
                 final mark => Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1704,6 +1711,7 @@ class _TranslatedTranscript extends StatelessWidget {
                       child: Padding(
                         padding: const EdgeInsets.only(top: 3),
                         child: SelectableText(
+                          contextMenuBuilder: kapyTextFieldMenu,
                           line.substring(mark.end).trim(),
                           style: style,
                         ),

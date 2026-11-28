@@ -4,6 +4,15 @@ import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../context_menu.dart';
 
+/// The right-click menu of a plain text field (search, rename, settings and
+/// the rest): hand it to the field as its `contextMenuBuilder`, so the stock
+/// menu never slides over the pointer near the window's edge.
+Widget kapyTextFieldMenu(BuildContext context, EditableTextState state) =>
+    NoteEditorContextMenu(
+      anchors: state.contextMenuAnchors,
+      buttonItems: state.contextMenuButtonItems,
+    );
+
 /// The editor's ordinary Cut, Copy, Paste and custom actions.
 ///
 /// Touch keeps the platform toolbar people already know. Pointer platforms

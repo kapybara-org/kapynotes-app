@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../ai/recording_translation.dart';
 import '../core/theme.dart';
 import '../speech/languages.dart';
+import 'editor/editor_context_menu.dart';
 import 'kapy_ai/kapy_ai_parts.dart';
 import 'settings_rows.dart' show SettingsSegmented;
 import 'sharing_sheet.dart' show SharingSheetFrame;
@@ -168,6 +169,7 @@ class _TranslatePickerState extends State<TranslatePicker> {
                 Expanded(
                   child: TextField(
                     key: const ValueKey('voice-translate-search'),
+                    contextMenuBuilder: kapyTextFieldMenu,
                     controller: _query,
                     cursorColor: palette.selectedBorder,
                     style: kapyText(13.5, 20, palette.textPrimary),
