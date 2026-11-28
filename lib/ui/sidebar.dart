@@ -4403,11 +4403,17 @@ class PhoneDayHeading extends StatelessWidget {
           textBaseline: TextBaseline.alphabetic,
           spacing: 6,
           children: [
+            // Centred on the label's line, which large text makes taller.
             if (pin)
-              KapyIcon(
-                KapyIcons.pinOutlined,
-                size: 18,
-                color: palette.textPrimary,
+              SizedBox(
+                height: MediaQuery.textScalerOf(context).scale(17) * 22 / 17,
+                child: Center(
+                  child: KapyIcon(
+                    KapyIcons.pinOutlined,
+                    size: 18,
+                    color: palette.textPrimary,
+                  ),
+                ),
               ),
             if (lead case final lead?)
               Flexible(

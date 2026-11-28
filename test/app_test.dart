@@ -10154,6 +10154,20 @@ void main() {
         });
       }
 
+      testWidgets("at 2× text Pinned's pin stays centred on its word", (
+        tester,
+      ) async {
+        await pumpPinned(tester, 3, textScaler: const TextScaler.linear(2));
+        final heading = find.byKey(const ValueKey('sidebar-pinned-heading'));
+        final word = tester.getRect(
+          find.descendant(of: heading, matching: find.text('Pinned')),
+        );
+        final pin = tester.getRect(
+          find.descendant(of: heading, matching: find.byType(KapyIcon)).first,
+        );
+        expect(pin.center.dy, moreOrLessEquals(word.center.dy, epsilon: 0.5));
+      });
+
       for (final scale in [1.5, 2.0]) {
         testWidgets('at $scale× text a pinned card takes the room of two and '
             'keeps its title whole (KAP-468)', (tester) async {
