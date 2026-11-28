@@ -4159,6 +4159,8 @@ total to usd''';
     ) async {
       final node = await pumpFocused(tester);
       await setKeyboard(tester, 300);
+      // Up and still: a keyboard that is still moving is still coming up.
+      await tester.pump(const Duration(seconds: 1));
       expect(node.hasFocus, isTrue);
 
       // Android's Back is swallowed by the IME: the keyboard goes, and all the
@@ -4199,6 +4201,36 @@ total to usd''';
       );
     });
 
+    // A slow phone (CI, Android, runs 45992261717 and 46042569829): Android
+    // started the keyboard's slide, called it off and started it again from
+    // the bottom, and the second slide reached the app only after more than
+    // half a second. Read as a dismissal, the zero in between took the focus,
+    // and that put the keyboard away just after it opened (KAP-324).
+    testWidgets('a keyboard that slides in slowly keeps the note', (
+      tester,
+    ) async {
+      final node = await pumpFocused(tester);
+      tester.testTextInput.log.clear();
+      for (final height in [40.0, 120.0]) {
+        await setKeyboard(tester, height);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await setKeyboard(tester, 0);
+      await tester.pump(const Duration(milliseconds: 800));
+      for (final height in [60.0, 300.0, 600.0, 883.0]) {
+        await setKeyboard(tester, height);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pump(const Duration(seconds: 4));
+
+      expect(node.hasFocus, isTrue);
+      expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
+      expect(
+        tester.testTextInput.log.map((call) => call.method),
+        isNot(contains('TextInput.hide')),
+      );
+    });
+
     // The editor lets go only once the keyboard has stayed down, so by then
     // the reader may have moved on to another field. That one keeps it.
     testWidgets('a field that takes the focus after Back keeps it', (
@@ -4206,6 +4238,7 @@ total to usd''';
     ) async {
       final node = await pumpFocused(tester);
       await setKeyboard(tester, 300);
+      await tester.pump(const Duration(seconds: 1));
       await setKeyboard(tester, 0);
       await tester.pump(const Duration(milliseconds: 200));
 
@@ -4327,6 +4360,7 @@ total to usd''';
     ) async {
       final node = await pumpFocused(tester);
       await setKeyboard(tester, 300);
+      await tester.pump(const Duration(seconds: 1));
 
       // Backgrounding takes the keyboard with it. The note is still open and
       // still the one being written in, so the caret belongs where it is.

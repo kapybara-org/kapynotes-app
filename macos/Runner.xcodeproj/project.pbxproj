@@ -43,6 +43,7 @@
 		C1A0B0040000000000000002 /* Summaries.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0040000000000000001 /* Summaries.swift */; };
 		C1A0B0050000000000000002 /* AccessibilityTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0050000000000000001 /* AccessibilityTree.swift */; };
 		C1A0B0060000000000000002 /* Transcription.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0060000000000000001 /* Transcription.swift */; };
+		C1A0B0490000000000000002 /* LiveTranslation.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0490000000000000001 /* LiveTranslation.swift */; };
 		C1A0B0080000000000000002 /* AudioDecode.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0080000000000000001 /* AudioDecode.swift */; };
 		C1A0B0090000000000000002 /* WindowPin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0090000000000000001 /* WindowPin.swift */; };
 		C1A0B0320000000000000002 /* MenuBarPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0320000000000000001 /* MenuBarPanel.swift */; };
@@ -144,6 +145,7 @@
 		C1A0B0040000000000000001 /* Summaries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Summaries.swift; sourceTree = "<group>"; };
 		C1A0B0050000000000000001 /* AccessibilityTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityTree.swift; sourceTree = "<group>"; };
 		C1A0B0060000000000000001 /* Transcription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcription.swift; sourceTree = "<group>"; };
+		C1A0B0490000000000000001 /* LiveTranslation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranslation.swift; sourceTree = "<group>"; };
 		C1A0B0080000000000000001 /* AudioDecode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDecode.swift; sourceTree = "<group>"; };
 		C1A0B0090000000000000001 /* WindowPin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPin.swift; sourceTree = "<group>"; };
 		C1A0B0320000000000000001 /* MenuBarPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarPanel.swift; sourceTree = "<group>"; };
@@ -298,6 +300,7 @@
 				C1A0B0030000000000000001 /* SpellCheck.swift */,
 				C1A0B0040000000000000001 /* Summaries.swift */,
 				C1A0B0060000000000000001 /* Transcription.swift */,
+				C1A0B0490000000000000001 /* LiveTranslation.swift */,
 				C1A0B0080000000000000001 /* AudioDecode.swift */,
 				C1A0B0050000000000000001 /* AccessibilityTree.swift */,
 				C1A0B00B0000000000000001 /* AccessibilityText.swift */,
@@ -709,6 +712,7 @@
 				C1A0B0030000000000000002 /* SpellCheck.swift in Sources */,
 				C1A0B0040000000000000002 /* Summaries.swift in Sources */,
 				C1A0B0060000000000000002 /* Transcription.swift in Sources */,
+				C1A0B0490000000000000002 /* LiveTranslation.swift in Sources */,
 				C1A0B0080000000000000002 /* AudioDecode.swift in Sources */,
 				C1A0B0050000000000000002 /* AccessibilityTree.swift in Sources */,
 				C1A0B00B0000000000000002 /* AccessibilityText.swift in Sources */,

@@ -20,6 +20,7 @@ import 'keycap.dart';
 import 'sidebar_timestamp.dart';
 import 'tasks/task_marks.dart';
 import 'tasks/tasks_controller.dart';
+import 'editor/live_text_card.dart';
 
 /// Whether the panel may check [note]'s tasks or add one to it: not while the
 /// plan holds the note read-only, and not in a note shared view-only.
@@ -601,7 +602,34 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final dark = theme.brightness == Brightness.dark;
     final sage = theme.colorScheme.primary;
     final notes = _tab == _Tab.notes;
-    if (_isRecording) return _recordingBar(context);
+    if (_isRecording) {
+      final text = widget.recording?.liveText;
+      if (text == null) return _recordingBar(context);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            key: const ValueKey('menu-bar-live-text'),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: palette.wellBackground,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: palette.controlBorder),
+            ),
+            child: ListenableBuilder(
+              listenable: text,
+              builder: (context, _) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: LiveTextLines.of(context, text, most: 2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _recordingBar(context),
+        ],
+      );
+    }
     return ListenableBuilder(
       listenable: _field,
       builder: (context, _) {

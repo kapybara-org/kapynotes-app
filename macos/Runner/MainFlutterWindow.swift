@@ -10,6 +10,7 @@ class MainFlutterWindow: NSWindow {
   private var spellCheckChannel: FlutterMethodChannel?
   private var summariesChannel: FlutterMethodChannel?
   private var transcriptionChannel: FlutterMethodChannel?
+  private var liveTranslationChannel: FlutterMethodChannel?
   private var audioDecodeChannel: FlutterMethodChannel?
   private var windowMaterialChannel: FlutterMethodChannel?
   private var windowPinChannel: FlutterMethodChannel?
@@ -72,6 +73,9 @@ class MainFlutterWindow: NSWindow {
       with: flutterViewController.engine.binaryMessenger
     )
     transcriptionChannel = Transcription.register(
+      with: flutterViewController.engine.binaryMessenger
+    )
+    liveTranslationChannel = LiveTranslation.register(
       with: flutterViewController.engine.binaryMessenger
     )
     audioDecodeChannel = AudioDecode.register(

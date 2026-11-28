@@ -302,6 +302,10 @@ class KapyIcons {
     0xE031,
     HugeIcons.strokeRoundedImage01,
   );
+  static const mediaOutlined = KapyIconData(
+    0xE0F5,
+    HugeIcons.strokeRoundedImagePlay,
+  );
   static const infoOutlined = KapyIconData(
     0xE032,
     HugeIcons.strokeRoundedInformationCircle,

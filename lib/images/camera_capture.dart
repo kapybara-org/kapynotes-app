@@ -32,6 +32,15 @@ const MediaSettings noteVideoSettings = MediaSettings(
 /// The longest video the camera records, on every plan.
 const Duration noteVideoMaxLength = Duration(minutes: 1);
 
+/// How far under the largest video a recording stops: what the encoder still
+/// holds, and the index written as it closes, land after the last look.
+const noteVideoSizeMargin = 2 * 1024 * 1024;
+
+/// What review says after a recording stopped at the plan's largest video.
+String recordingStoppedAtSize(int attachmentMaxBytes) =>
+    'Recording stopped at ${attachmentMaxBytes ~/ (1024 * 1024)} MB, the '
+    'largest video your plan allows. You can keep what was recorded.';
+
 /// What the camera asks of the phone around it: free space, whether a call
 /// is on, the app's page in Settings, and how big the recording has grown.
 class CameraPhone {
@@ -180,10 +189,6 @@ const _tick = Duration(milliseconds: 100);
 
 /// Ticks between two looks at the recording's size and at calls.
 const _ticksPerCheck = 5;
-
-/// How far under the largest video a recording stops: what the encoder still
-/// holds, and the index written as it closes, land after the last look.
-const _sizeMargin = 2 * 1024 * 1024;
 
 class _CameraCapturePageState extends State<CameraCapturePage>
     with WidgetsBindingObserver {
@@ -490,12 +495,9 @@ class _CameraCapturePageState extends State<CameraCapturePage>
     if (since == null) return;
     final bytes = await widget.phone.recordingBytes(since);
     if (!mounted || !_recording || _stopping) return;
-    if (bytes != null && bytes >= _largestVideo - _sizeMargin) {
-      final megabytes = widget.attachmentMaxBytes ~/ (1024 * 1024);
+    if (bytes != null && bytes >= _largestVideo - noteVideoSizeMargin) {
       return _stopRecording(
-        note:
-            'Recording stopped at $megabytes MB, the largest video your plan '
-            'allows. You can keep what was recorded.',
+        note: recordingStoppedAtSize(widget.attachmentMaxBytes),
       );
     }
     final call = await widget.phone.inCall();
@@ -1211,7 +1213,7 @@ class _VideoReviewState extends State<_VideoReview> {
           padding: const EdgeInsets.fromLTRB(24, 10, 24, 0),
           child: Row(
             children: [
-              Text(_clock(position), style: time),
+              Text(cameraClock(position), style: time),
               Expanded(
                 child: SliderTheme(
                   data: SliderTheme.of(context).copyWith(
@@ -1234,7 +1236,7 @@ class _VideoReviewState extends State<_VideoReview> {
                   ),
                 ),
               ),
-              Text(_clock(length), style: time),
+              Text(cameraClock(length), style: time),
             ],
           ),
         ),
@@ -1311,7 +1313,7 @@ class _RecordingTime extends StatelessWidget {
             children: [
               if (paused) const TextSpan(text: 'Paused '),
               TextSpan(
-                text: _clock(elapsed),
+                text: cameraClock(elapsed),
                 style: TextStyle(
                   fontWeight: AppWeight.font(AppWeight.button),
                   fontVariations: AppWeight.wght(AppWeight.button),
@@ -1319,7 +1321,7 @@ class _RecordingTime extends StatelessWidget {
                 ),
               ),
               TextSpan(
-                text: ' / ${_clock(noteVideoMaxLength)}',
+                text: ' / ${cameraClock(noteVideoMaxLength)}',
                 style: const TextStyle(color: Colors.white60),
               ),
             ],
@@ -1614,7 +1616,8 @@ class _CameraNotice extends StatelessWidget {
   );
 }
 
-String _clock(Duration duration) {
+/// "0:42": minutes and seconds, as the camera shows a video's time.
+String cameraClock(Duration duration) {
   final seconds = duration.inSeconds;
   return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
 }

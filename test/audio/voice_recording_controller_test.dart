@@ -102,6 +102,9 @@ class FakeVoiceRecorder implements VoiceRecorderBackend {
 class FakeRecordingControls implements RecordingControls {
   final calls = <String>[];
   Duration? elapsed;
+  bool live = false;
+  String? phrase;
+  String? heard;
   Future<bool> Function(RecordingCommand command)? _onCommand;
 
   @override
@@ -120,8 +123,14 @@ class FakeRecordingControls implements RecordingControls {
     required Duration elapsed,
     required bool paused,
     required bool interrupted,
+    bool live = false,
+    String? phrase,
+    String? heard,
   }) async {
     this.elapsed = elapsed;
+    this.live = live;
+    this.phrase = phrase;
+    this.heard = heard;
     calls.add(
       paused
           ? 'show paused'

@@ -17,16 +17,26 @@
 # Every test file runs even when one fails, and the script exits 1 if any did.
 # A test that hangs is stopped after 10 minutes, with a screenshot of where.
 # A file that is still running after PHONE_FILE_MINUTES (20 by default; the
-# first file, which pays for the cold build, PHONE_FIRST_FILE_MINUTES, 35), such
-# as an app that hangs at launch, where that 10 minutes never starts, is
+# first file, which pays for the cold build, PHONE_FIRST_FILE_MINUTES, 35) is
 # stopped with everything it started, counts as failed, and the next file runs.
+# When PHONE_APP is set, a file that hangs is stopped sooner, with a
+# screenshot of where, and runs once more:
+# - its app hasn't connected PHONE_LAUNCH_SECONDS (150) after flutter drive
+#   started, since the slowest healthy iOS launch took 96;
+# - or its app connected and then nothing new reached the log for
+#   PHONE_STALL_SECONDS (240), since phone_recording_away's locked recording
+#   is quiet for up to 163.
+# Without PHONE_APP both are off unless set, so a file whose app never
+# connected (flutter drive ends with "Error waiting for a debug connection")
+# runs once more only after flutter drive gives up or the file's limit stops
+# it. A file that hangs on both runs fails the run with a FAIL line saying
+# which way it hung.
 # PHONE_TESTS, when set, names the only tests to run, such as
 # `phone_recording_away`, for a run that checks one test. A name that isn't
 # one of the phone tests below fails the run, so a typo, or a desktop test
 # this script never drives, can't run nothing and pass.
-# A file whose app never connected, so that no test ran (flutter drive ends
-# with "Error waiting for a debug connection"), runs once more and is listed in
-# the job summary; a test that ran and failed is never run again.
+# Every file run again is listed in the job summary; a test that ran and
+# failed is never run again.
 # PHONE_APP, when set, names an app already built from
 # integration_test/phones.dart, as Phones' iOS job builds it: each file then
 # runs on that build instead of building one of its own, after the script
@@ -53,13 +63,17 @@ if [[ $device == emulator-* ]]; then android=true; fi
 retry_until=$(( SECONDS + ${PHONE_RETRY_MINUTES:-0} * 60 ))
 log=$(mktemp)
 limit=$(( ${PHONE_FIRST_FILE_MINUTES:-35} * 60 ))
+launch=${PHONE_LAUNCH_SECONDS:-${PHONE_APP:+150}}
+launch=${launch:-0}
+stall=${PHONE_STALL_SECONDS:-${PHONE_APP:+240}}
+stall=${stall:-0}
 mkdir -p build/screenshots
 
 wanted() {
   [[ -z ${PHONE_TESTS:-} || " $PHONE_TESTS " == *" $1 "* ]]
 }
 
-tests=(phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet kapy_ai_notice phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_voice_window phone_time_line phone_video phone_camera)
+tests=(phone_v2 phone_format_bar phone_sharing phone_home kapy_ai_page kapy_ai_sheet kapy_ai_notice phone_keyboard phone_tasks phone_note_page phone_about phone_note_swipe phone_voice_chip phone_voice_window phone_time_line phone_video phone_camera phone_page_turn)
 phone_tests=" ${tests[*]} phone_remove_noise phone_recording_away phone_bar_android "
 picked=
 set -f
@@ -100,8 +114,20 @@ stop() {
   local shot=$!
   set +m
   kill -TERM -- "-$2" 2>/dev/null
-  sleep 15
+  local waited
+  for (( waited = 0; waited < 15; waited++ )); do
+    kill -0 -- "-$2" 2>/dev/null || kill -0 -- "-$shot" 2>/dev/null || break
+    sleep 1
+  done
   kill -KILL -- "-$2" "-$shot" 2>/dev/null
+}
+
+# What a hang of kind $1 was, for the warning and FAIL lines.
+hang_said() {
+  case $1 in
+    launch) echo "the app never connected" ;;
+    stall) echo "the app connected, then stalled with nothing new in the log for $stall seconds" ;;
+  esac
 }
 
 # Restarts adb and waits up to 4 minutes for the emulator to be booted again,
@@ -128,7 +154,7 @@ spoiled() {
 
 drive() {
   wanted "$1" || return 0
-  local tries=0 code target=integration_test/$1_test.dart built=()
+  local tries=0 code target=integration_test/$1_test.dart built=() first_hang=
   if [[ -n ${PHONE_APP:-} ]]; then
     target=integration_test/phones.dart
     built=(--use-application-binary "$PHONE_APP")
@@ -146,39 +172,64 @@ drive() {
       --timeout=600 --screenshot=build/screenshots)
     : > "$log"
     if [[ -n ${PHONE_APP:-} ]]; then echo "$1" > "$PHONE_TEST_FILE"; fi
-    local hung=false
+    local stopped=false hang= connected=false size=0 now
     set -m
     flutter "${args[@]}" > >(tee "$log") 2>&1 &
-    local pid=$! waited=0
+    local pid=$! started=$SECONDS quiet=$SECONDS
     set +m
     while kill -0 "$pid" 2>/dev/null; do
-      if (( waited >= limit )); then
-        echo "::error::$1_test.dart was still running after $(( limit / 60 )) minutes and was stopped"
-        stop "$1" "$pid"
-        hung=true
-        break
+      if (( launch || stall )); then
+        now=$(wc -c < "$log")
+        if (( now != size )); then size=$now quiet=$SECONDS; fi
+        if ! $connected && grep -qE 'Connected to Flutter application|[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
+          connected=true
+        fi
       fi
-      if $android && { grep -q 'Exception attempting to connect to the VM Service' "$log" ||
+      if ! $connected && (( launch && SECONDS - started >= launch )); then
+        echo "$1_test.dart's app hadn't connected $launch seconds after flutter drive started, so it was stopped"
+        hang=launch
+      elif $connected && (( stall && SECONDS - quiet >= stall )); then
+        echo "$1_test.dart's app connected, then nothing new reached the log for $stall seconds, so it was stopped"
+        hang=stall
+      elif (( SECONDS - started >= limit )); then
+        echo "::error::$1_test.dart was still running after $(( limit / 60 )) minutes and was stopped"
+      elif $android && { grep -q 'Exception attempting to connect to the VM Service' "$log" ||
         (( $(grep -c 'unusually long time to connect' "$log") >= 30 )); }; then
         echo "::warning::$1_test.dart could not reach the app's VM Service and was stopped"
         stop "$1" "$pid"
         break
+      else
+        sleep 5
+        continue
       fi
-      sleep 5
-      waited=$(( waited + 5 ))
+      stop "$1" "$pid"
+      stopped=true
+      break
     done
     wait "$pid"
     code=$?
-    if $hung && (( code == 0 )); then code=1; fi
+    if $stopped && (( code == 0 )); then code=1; fi
     limit=$(( ${PHONE_FILE_MINUTES:-20} * 60 ))
     if (( code == 0 )); then return 0; fi
     sleep 1
-    if (( tries == 0 )) && { ! $android || (( SECONDS < retry_until )); } &&
-      grep -q 'Error waiting for a debug connection' "$log" && ! grep -qE '[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
-      tries=1
-      echo "::warning::$1_test.dart never connected to the app, so no test ran; running it again"
-      echo "- $1_test.dart: the app never connected and no test ran, so it ran again" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
-      continue
+    if [[ -z $hang ]] && grep -q 'Error waiting for a debug connection' "$log" &&
+      ! grep -qE '[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
+      hang=launch
+    fi
+    if [[ -n $hang ]]; then
+      if (( tries == 0 )) && { ! $android || (( SECONDS < retry_until )); }; then
+        tries=1 first_hang=$hang
+        echo "::warning::$1_test.dart hung: $(hang_said "$hang"). Running it again"
+        echo "- $1_test.dart hung: $(hang_said "$hang"). It ran again" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+        continue
+      fi
+      if [[ -n $first_hang ]]; then
+        echo "::error::FAIL $1_test.dart hung twice. First run: $(hang_said "$first_hang"). Second run: $(hang_said "$hang")"
+      else
+        echo "::error::FAIL $1_test.dart hung: $(hang_said "$hang")"
+      fi
+      status=1
+      return
     fi
     if $android && spoiled && grep -q 'All tests passed!' "$log"; then
       echo "::warning::$1_test.dart passed, but the emulator dropped before its results came back, so its Flutter screenshots are missing; restarting adb"
