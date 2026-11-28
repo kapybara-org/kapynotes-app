@@ -252,7 +252,7 @@ class _HomeButton extends StatelessWidget {
               style: chromeStyle(
                 size: AppTypeScale.control,
                 line: 20,
-                weight: AppWeight.button,
+                weight: AppWeight.regular,
                 color: palette.textPrimary,
               ),
             ),
@@ -310,7 +310,7 @@ class _DayButton extends StatelessWidget {
                 style: chromeStyle(
                   size: AppTypeScale.control,
                   line: 20,
-                  weight: AppWeight.rowTitle,
+                  weight: AppWeight.regular,
                   color: today ? palette.accentText : palette.textPrimary,
                   tabular: true,
                 ),
@@ -349,7 +349,7 @@ class _TasksLine extends StatelessWidget {
                 style: chromeStyle(
                   size: AppTypeScale.control,
                   line: 20,
-                  weight: AppWeight.body,
+                  weight: AppWeight.regular,
                   color: palette.textSecondary,
                 ),
               ),

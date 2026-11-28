@@ -1049,7 +1049,7 @@ void main() {
       )) {
         expect(
           tester.getRect(find.byWidget(text)).bottom,
-          lessThanOrEqualTo(card.bottom - 14 + 0.5),
+          lessThanOrEqualTo(card.bottom - 12 + 0.5),
           reason: text.data,
         );
       }
@@ -1900,8 +1900,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('settings-section-about')));
     await tester.pumpAndSettle();
     expect(
-      find.text('The version you have, updates and what changed'),
-      findsOneWidget,
+      tester
+          .widget<Text>(find.byKey(const ValueKey('settings-pane-title')))
+          .data,
+      'About & updates',
       reason: 'the tap reached About, so the golden shows its pane',
     );
     await expectLater(

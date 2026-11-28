@@ -57,7 +57,7 @@ struct QuickActionTile: View {
         fill: primary ? widgetPrimary : widgetTonal,
         ink: primary ? widgetOnPrimary : widgetOnTonal)
       Text(action.title)
-        .font(Figtree.semibold(15))
+        .font(WidgetFace.semibold(15))
         .foregroundStyle(widgetText)
         .lineLimit(1)
         .minimumScaleFactor(0.8)

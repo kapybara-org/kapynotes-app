@@ -7,7 +7,6 @@ import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:material_ui/material_ui.dart';
 
-import '../core/editor_font.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
@@ -153,7 +152,7 @@ class _DayTabsRowState extends State<DayTabsRow>
     return chromeStyle(
       size: AppTypeScale.control,
       line: 20,
-      weight: open ? AppWeight.button : AppWeight.body,
+      weight: open ? AppWeight.regular : AppWeight.regular,
       color: open ? palette.textPrimary : palette.textSecondary,
     );
   }
@@ -666,7 +665,7 @@ class _DayTabsRowState extends State<DayTabsRow>
                     style: chromeStyle(
                       size: AppTypeScale.small,
                       line: 18,
-                      weight: AppWeight.button,
+                      weight: AppWeight.regular,
                       color: palette.textPrimary,
                       tabular: true,
                     ),
@@ -761,7 +760,6 @@ Future<String?> showDayNotes(
       maxChildSize: most,
       builder: (sheet, scroll) {
         final palette = sheet.palette;
-        const handwritten = WritingFont.handwritten;
         final index = notes.indexWhere((note) => note.id == open);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (index < 0 || !scroll.hasClients || scroll.offset > 0) return;
@@ -804,9 +802,9 @@ Future<String?> showDayNotes(
                         style: chromeStyle(
                           size: 19,
                           line: 24,
-                          weight: AppWeight.body,
+                          weight: AppWeight.regular,
                           color: palette.textPrimary,
-                          family: AppFonts.title,
+                          family: AppFonts.ui,
                         ),
                       ),
                     ),
@@ -816,7 +814,7 @@ Future<String?> showDayNotes(
                       style: chromeStyle(
                         size: AppTypeScale.caption,
                         line: 16,
-                        weight: AppWeight.body,
+                        weight: AppWeight.regular,
                         color: palette.textTertiary,
                         tabular: true,
                       ),
@@ -860,13 +858,10 @@ Future<String?> showDayNotes(
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: chromeStyle(
-                                    size: 16,
+                                    size: AppTypeScale.row,
                                     line: 22,
-                                    weight: AppWeight.body,
+                                    weight: AppWeight.regular,
                                     color: palette.textPrimary,
-                                    family: handwritten.fontFamily,
-                                    fallback: handwritten.fontFamilyFallback,
-                                    extra: handwritten.faceVariations,
                                   ),
                                 ),
                               ),
@@ -878,7 +873,7 @@ Future<String?> showDayNotes(
                                 style: chromeStyle(
                                   size: AppTypeScale.caption,
                                   line: 16,
-                                  weight: AppWeight.body,
+                                  weight: AppWeight.regular,
                                   color: palette.textTertiary,
                                   tabular: true,
                                 ),

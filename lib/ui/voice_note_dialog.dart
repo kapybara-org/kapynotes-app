@@ -580,7 +580,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
         busy: true,
       ),
       VoiceChipState.waiting => const _Empty(
-        message: 'Waiting for connection…',
+        message: 'Waiting to connect…',
       ),
       VoiceChipState.retrying => const _Empty(
         message: 'Transcription failed. Retrying soon…',
@@ -818,10 +818,10 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                         height: 20 / AppTypeScale.caption,
                         fontFeatures: const [FontFeature.tabularFigures()],
                         fontWeight: AppWeight.font(
-                          lit ? AppWeight.page : AppWeight.body,
+                          lit ? AppWeight.semibold : AppWeight.regular,
                         ),
                         fontVariations: AppWeight.wght(
-                          lit ? AppWeight.page : AppWeight.body,
+                          lit ? AppWeight.semibold : AppWeight.regular,
                         ),
                         color: lit || cited
                             ? palette.accentText
@@ -1057,7 +1057,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
           borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(AppRadii.dialog),
+            top: Radius.circular(AppRadii.surface),
           ),
         ),
         child: SafeArea(
@@ -1076,8 +1076,8 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: AppTypeScale.body,
-                      fontWeight: AppWeight.font(AppWeight.button),
-                      fontVariations: AppWeight.wght(AppWeight.button),
+                      fontWeight: AppWeight.font(AppWeight.regular),
+                      fontVariations: AppWeight.wght(AppWeight.regular),
                       color: palette.textPrimary,
                     ),
                   ),
@@ -1218,8 +1218,8 @@ class _Header extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 17,
                     height: 22 / 17,
-                    fontWeight: AppWeight.font(AppWeight.page),
-                    fontVariations: AppWeight.wght(AppWeight.page),
+                    fontWeight: AppWeight.font(AppWeight.semibold),
+                    fontVariations: AppWeight.wght(AppWeight.semibold),
                     color: palette.textPrimary,
                   ),
                 ),
@@ -1567,8 +1567,8 @@ class _NoisePill extends StatelessWidget {
             words,
             style: TextStyle(
               fontSize: AppTypeScale.caption,
-              fontWeight: AppWeight.font(AppWeight.button),
-              fontVariations: AppWeight.wght(AppWeight.button),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               color: color,
             ),
           ),
@@ -1759,8 +1759,8 @@ class _SpeedPill extends StatelessWidget {
               '$label×',
               style: TextStyle(
                 fontSize: AppTypeScale.caption,
-                fontWeight: AppWeight.font(AppWeight.button),
-                fontVariations: AppWeight.wght(AppWeight.button),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: palette.textSecondary,
               ),
             ),
@@ -1861,9 +1861,9 @@ class _SwitchRow extends StatelessWidget {
                                 insertLabel,
                                 style: TextStyle(
                                   fontSize: 12.5,
-                                  fontWeight: AppWeight.font(AppWeight.button),
+                                  fontWeight: AppWeight.font(AppWeight.regular),
                                   fontVariations: AppWeight.wght(
-                                    AppWeight.button,
+                                    AppWeight.regular,
                                   ),
                                   color: colour,
                                 ),
@@ -2220,15 +2220,15 @@ class _SpeakerLabel extends StatelessWidget {
           name,
           style: TextStyle(
             fontSize: AppTypeScale.caption,
-            fontWeight: AppWeight.font(AppWeight.button),
-            fontVariations: AppWeight.wght(AppWeight.button),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
             color: palette.textSecondary,
           ),
         ),
       ],
     );
     final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(boxed ? 6 : AppRadii.compact),
+      borderRadius: BorderRadius.circular(boxed ? 6 : AppRadii.control),
       side: boxed ? BorderSide(color: palette.controlBorder) : BorderSide.none,
     );
     final padded = Container(
@@ -2262,7 +2262,7 @@ class _QuietButton extends StatelessWidget {
     final palette = context.palette;
     return InkWell(
       onTap: onPressed,
-      borderRadius: BorderRadius.circular(AppRadii.compact),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
         child: Row(
@@ -2276,8 +2276,8 @@ class _QuietButton extends StatelessWidget {
               label,
               style: TextStyle(
                 fontSize: AppTypeScale.caption,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: palette.textSecondary,
               ),
             ),

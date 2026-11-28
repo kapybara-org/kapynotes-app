@@ -289,7 +289,7 @@ void main() {
           matching: find.text('Work'),
         ),
       );
-      expect(name.style!.fontWeight, FontWeight.w500);
+      expect(name.style!.fontWeight, FontWeight.w400);
 
       await tapKey(tester, 'folder-card-${clients.id}');
       expect(pageTitle(tester), 'Clients');

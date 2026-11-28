@@ -99,16 +99,12 @@ class NoteTabRow extends StatelessWidget {
       chromeStyle(
         size: 13,
         line: 16,
-        weight: active ? AppWeight.button : AppWeight.body,
+        weight: active ? AppWeight.regular : AppWeight.regular,
         color: color,
       );
 
-  static TextStyle _moreStyle(Color color) => chromeStyle(
-    size: 12,
-    line: 16,
-    weight: AppWeight.body,
-    color: color,
-  );
+  static TextStyle _moreStyle(Color color) =>
+      chromeStyle(size: 12, line: 16, weight: AppWeight.regular, color: color);
 
   @override
   Widget build(BuildContext context) {

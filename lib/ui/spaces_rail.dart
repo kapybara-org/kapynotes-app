@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
@@ -15,7 +18,9 @@ import '../sync/sync_service.dart';
 import 'context_menu.dart';
 import 'focus_ring.dart';
 import 'installed_version.dart';
+import 'phone_home_header.dart' show PhoneTitleBar;
 import 'profile_avatar.dart';
+import 'sidebar.dart' show SidebarSearchField;
 import 'window_drag_area.dart';
 
 /// What the notes list beside the spaces rail can show.
@@ -136,7 +141,12 @@ class SpacesRail extends StatelessWidget {
           width: width + MediaQuery.paddingOf(context).left,
           decoration: BoxDecoration(
             color: palette.railBackground,
-            border: Border(right: BorderSide(color: palette.railBorder)),
+            border: Border(
+              right: BorderSide(
+                color: palette.paneEdge,
+                width: AppHairline.of(context),
+              ),
+            ),
           ),
           child: SafeArea(
             right: false,
@@ -168,21 +178,21 @@ class SpacesRail extends StatelessWidget {
                                 label: 'Notes',
                               ),
                               if (tasks) ...[
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 8),
                                 destination(
                                   LibrarySpace.tasks,
                                   icon: KapyIcons.tasksOutlined,
                                   label: 'Tasks',
                                 ),
                               ],
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 8),
                               destination(
                                 LibrarySpace.drawings,
                                 icon: KapyIcons.penRounded,
                                 label: 'Drawings',
                               ),
                               if (invitations != null) ...[
-                                const SizedBox(height: 16),
+                                const SizedBox(height: 8),
                                 destination(
                                   LibrarySpace.shared,
                                   icon: KapyIcons.groupOutlined,
@@ -238,15 +248,14 @@ class SpacesRail extends StatelessWidget {
   }
 }
 
-/// The words on the rail: a space's name under its tile, and the streak's
-/// run of days under its flame.
-TextStyle _railLabel(Color color, {required bool strong}) => TextStyle(
-  fontSize: AppTypeScale.caption,
-  height: 16 / 12,
-  fontWeight: AppWeight.font(strong ? AppWeight.button : AppWeight.body),
-  fontVariations: AppWeight.wght(strong ? AppWeight.button : AppWeight.body),
+/// The words on the rail: a space's name under its icon, and the streak's
+/// run of days under its flame. 11 on a Mac, a floor above that elsewhere.
+TextStyle _railLabel(Color color) => chromeStyle(
+  size: 11.5,
+  line: 14,
+  weight: AppWeight.regular,
   color: color,
-  fontFeatures: const [FontFeature.tabularFigures()],
+  tabular: true,
 );
 
 /// One space on the rail: an icon on a tile with its name under it, the tile
@@ -283,29 +292,39 @@ class _RailItemState extends State<_RailItem> {
     final palette = context.palette;
     final selected = widget.selected;
     final lit = _hovered;
-    final ink = selected
-        ? palette.tonalForeground
-        : lit
-        ? palette.textPrimary
-        : palette.textSecondary;
-    final touch = !AppPlatform.hasPointer;
+    final ink = selected || lit ? palette.textPrimary : palette.textSecondary;
 
     final tile = AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOutCubic,
-      width: touch ? 48 : 44,
-      height: touch ? 44 : 40,
+      width: 60,
+      height: 60,
       decoration: BoxDecoration(
         color: selected
-            ? palette.tonalBackground
-            : palette.hover.withValues(alpha: lit ? 1 : 0),
-        borderRadius: BorderRadius.circular(AppRadii.surface),
+            ? palette.selectedBackground
+            : lit
+            ? palette.hover
+            : null,
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          KapyIcon(widget.icon, size: 20, color: ink),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              KapyIcon(widget.icon, size: 22, color: ink),
+              const SizedBox(height: 5),
+              Text(
+                widget.label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.fade,
+                style: _railLabel(ink),
+              ),
+            ],
+          ),
           if (widget.badge > 0)
             Positioned(
               top: 2,
@@ -335,24 +354,8 @@ class _RailItemState extends State<_RailItem> {
         child: ExcludeSemantics(
           child: SizedBox(
             width: SpacesRail.width,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                FocusRingTarget(radius: AppRadii.surface, child: tile),
-                const SizedBox(height: 4),
-                Text(
-                  widget.label,
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.fade,
-                  style: _railLabel(
-                    selected || lit
-                        ? palette.textPrimary
-                        : palette.textSecondary,
-                    strong: selected,
-                  ),
-                ),
-              ],
+            child: Center(
+              child: FocusRingTarget(radius: AppRadii.control, child: tile),
             ),
           ),
         ),
@@ -369,29 +372,27 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     return Container(
-      height: 16,
-      constraints: const BoxConstraints(minWidth: 16),
-      // Inside the ring, which the decoration adds to it.
+      height: 18,
+      constraints: const BoxConstraints(minWidth: 18),
       padding: const EdgeInsets.symmetric(horizontal: 5),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: palette.clay,
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        // The rail's own colour, so the badge reads as cut out of the tile.
-        border: Border.all(color: palette.railBackground, width: 2),
+        color: waitingMarker,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        boxShadow: [
+          BoxShadow(color: context.palette.railBackground, spreadRadius: 2),
+        ],
       ),
       child: Text(
         count > 99 ? '99+' : '$count',
         textScaler: TextScaler.noScaling,
-        style: TextStyle(
-          fontSize: AppTypeScale.micro,
-          height: 12 / 11,
-          fontWeight: AppWeight.font(AppWeight.button),
-          fontVariations: AppWeight.wght(AppWeight.button),
-          color: palette.sidebarBackground,
-          fontFeatures: const [FontFeature.tabularFigures()],
+        style: chromeStyle(
+          size: 11,
+          line: 18,
+          weight: AppWeight.semibold,
+          color: const Color(0xFFFFFFFF),
+          tabular: true,
         ),
       ),
     );
@@ -433,18 +434,14 @@ class StreakMark extends StatelessWidget {
             duration: still ? Duration.zero : const Duration(milliseconds: 600),
             curve: Curves.easeOutCubic,
             builder: (context, t, _) {
-              final ink = Color.lerp(
-                palette.textTertiary,
-                palette.textPrimary,
-                t,
-              )!;
+              final ink = palette.textTertiary;
               final flame = Transform.scale(
                 scale: streak.wroteToday ? 1 + 0.3 * math.sin(math.pi * t) : 1,
                 alignment: Alignment.bottomCenter,
                 child: KapyIcon(
                   KapyIcons.fireOutlined,
-                  size: 16,
-                  color: Color.lerp(palette.textTertiary, palette.clay, t),
+                  size: inline ? 14 : 16,
+                  color: Color.lerp(palette.textTertiary, palette.accent, t),
                 ),
               );
               final label = Text(
@@ -452,16 +449,14 @@ class StreakMark extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 style: inline
-                    ? TextStyle(
-                        fontFamily: AppFonts.ui,
-                        fontSize: 13,
-                        height: 16 / 13,
-                        fontWeight: AppWeight.font(AppWeight.button),
-                        fontVariations: AppWeight.wght(AppWeight.button),
+                    ? chromeStyle(
+                        size: 13,
+                        line: 16,
+                        weight: AppWeight.regular,
                         color: ink,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                        tabular: true,
                       )
-                    : _railLabel(ink, strong: true),
+                    : _railLabel(ink),
               );
               return inline
                   ? Row(
@@ -519,7 +514,7 @@ class _RailSettings extends StatelessWidget {
                 children: [
                   KapyIcon(
                     KapyIcons.settingsGearOutlined,
-                    size: 20,
+                    size: 18,
                     color: palette.textSecondary,
                   ),
                   if (updateWaiting)
@@ -528,7 +523,7 @@ class _RailSettings extends StatelessWidget {
                       right: 4,
                       child: _Dot(
                         key: const ValueKey('rail-update-badge'),
-                        color: palette.clay,
+                        color: Theme.of(context).colorScheme.error,
                       ),
                     ),
                 ],
@@ -604,16 +599,13 @@ class AccountAvatar extends StatelessWidget {
     if (user != null && photo != null && photo.startsWith('data:image/')) {
       face = ProfileAvatar(name: name, extent: _extent, image: photo);
     } else {
-      final line = palette.raisedBorder;
       face = Container(
         width: _extent,
         height: _extent,
         alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: palette.raisedBackground ?? palette.controlBackground,
-          border: line == null ? null : Border.all(color: line),
+        decoration: const BoxDecoration(
           shape: BoxShape.circle,
-        ),
+        ).copyWith(color: palette.controlBackground),
         child: user == null
             ? KapyIcon(
                 KapyIcons.accountCircleOutlined,
@@ -626,8 +618,8 @@ class AccountAvatar extends StatelessWidget {
                 style: TextStyle(
                   fontSize: AppTypeScale.control,
                   height: 1,
-                  fontWeight: AppWeight.font(AppWeight.button),
-                  fontVariations: AppWeight.wght(AppWeight.button),
+                  fontWeight: AppWeight.font(AppWeight.regular),
+                  fontVariations: AppWeight.wght(AppWeight.regular),
                   color: palette.textPrimary,
                 ),
               ),
@@ -759,9 +751,9 @@ class PhoneSpaces extends StatefulWidget {
   /// its icon from every tab, as Shared's tile counts it.
   final bool foldersDot;
 
-  static const double _barHeight = 56;
+  static const double _barHeight = 58;
   static const double _barLift = 30;
-  static const double _plusExtent = 56;
+  static const double _plusExtent = 58;
 
   /// From the bottom of the screen to the pill: M01's 30 on an iPhone, over
   /// its home indicator, and on Android 8 above the system's navigation,
@@ -774,8 +766,55 @@ class PhoneSpaces extends StatefulWidget {
   State<PhoneSpaces> createState() => _PhoneSpacesState();
 }
 
-class _PhoneSpacesState extends State<PhoneSpaces> {
+class _PhoneSpacesState extends State<PhoneSpaces>
+    with SingleTickerProviderStateMixin {
   final _bar = GlobalKey();
+  final _page = GlobalKey();
+
+  /// The tab left, as it was last drawn, fading out over the one chosen
+  /// below its header and search well. Those are the same frame on every
+  /// tab, so their words change at once rather than showing both tabs' at
+  /// half strength, and only the page under them crossfades (KAP-462).
+  ui.Image? _leaving;
+  late final _fade =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 150),
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) _dropLeaving();
+      });
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    _leaving?.dispose();
+    super.dispose();
+  }
+
+  void _dropLeaving() {
+    final leaving = _leaving;
+    if (leaving == null) return;
+    setState(() => _leaving = null);
+    leaving.dispose();
+  }
+
+  void _select(PhoneTab tab) {
+    if (tab != widget.tab && !MediaQuery.disableAnimationsOf(context)) {
+      final page = _page.currentContext?.findRenderObject();
+      // Taken between frames, so the page is as it was last drawn; a debug
+      // build skips the fade on the rare tap that lands mid-repaint.
+      if (page is RenderRepaintBoundary &&
+          !(kDebugMode && page.debugNeedsPaint)) {
+        final leaving = page.toImageSync(
+          pixelRatio: View.of(context).devicePixelRatio,
+        );
+        _leaving?.dispose();
+        setState(() => _leaving = leaving);
+        _fade.forward(from: 0);
+      }
+    }
+    widget.onSelected(tab);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -805,7 +844,32 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
-      body: widget.child,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          RepaintBoundary(key: _page, child: widget.child),
+          if (_leaving case final leaving?)
+            IgnorePointer(
+              child: ClipRect(
+                clipper: _Below(
+                  MediaQuery.paddingOf(context).top +
+                      PhoneTitleBar.height +
+                      SidebarSearchField.phoneExtent(
+                        MediaQuery.textScalerOf(context),
+                      ),
+                ),
+                child: FadeTransition(
+                  opacity: ReverseAnimation(_fade),
+                  child: RawImage(
+                    image: leaving,
+                    scale: View.of(context).devicePixelRatio,
+                    fit: BoxFit.fill,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.fromLTRB(16, 0, 16, PhoneSpaces._lift(context)),
         child: Row(
@@ -816,18 +880,11 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
               child: Container(
                 key: const ValueKey('phone-bar'),
                 height: PhoneSpaces._barHeight,
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.all(5),
                 decoration: BoxDecoration(
-                  color: Color.alphaBlend(
-                    palette.fillRest,
-                    palette.sidebarBackground,
-                  ),
+                  color: palette.cardBackground,
                   borderRadius: BorderRadius.circular(
                     PhoneSpaces._barHeight / 2,
-                  ),
-                  border: Border.all(
-                    color: palette.edge,
-                    width: AppHairline.of(context),
                   ),
                 ),
                 child: Row(
@@ -840,7 +897,7 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
                           label: item.label,
                           selected: item.to == widget.tab,
                           dot: item.to == PhoneTab.folders && widget.foldersDot,
-                          onPressed: () => widget.onSelected(item.to),
+                          onPressed: () => _select(item.to),
                         ),
                       ),
                   ],
@@ -883,6 +940,19 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
   }
 }
 
+/// What lies below [top]: the page under a tab's header and search well.
+class _Below extends CustomClipper<Rect> {
+  const _Below(this.top);
+
+  final double top;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(0, top, size.width, size.height);
+
+  @override
+  bool shouldReclip(_Below oldClipper) => oldClipper.top != top;
+}
+
 /// One of the bar's destinations: its icon over its name in a 46 pt pill,
 /// lifted a step while it is the one on screen, and a 7 pt clay dot on the
 /// icon's corner while something new waits there.
@@ -905,7 +975,7 @@ class _BarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final ink = selected ? palette.textPrimary : palette.textTertiary;
+    final ink = selected ? palette.textPrimary : palette.textSecondary;
     return Semantics(
       container: true,
       button: true,
@@ -916,10 +986,10 @@ class _BarItem extends StatelessWidget {
         onTap: onPressed,
         child: ExcludeSemantics(
           child: Container(
-            height: 46,
+            height: 48,
             decoration: BoxDecoration(
-              color: selected ? palette.fillSelected : null,
-              borderRadius: BorderRadius.circular(23),
+              color: selected ? palette.controlBackground : null,
+              borderRadius: BorderRadius.circular(24),
             ),
             alignment: Alignment.center,
             child: Column(
@@ -928,17 +998,17 @@ class _BarItem extends StatelessWidget {
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    KapyIcon(icon, size: 20, color: ink),
+                    KapyIcon(icon, size: 22, color: ink),
                     if (dot)
                       Positioned(
                         top: -1,
                         right: -2,
                         child: Container(
                           key: const ValueKey('bar-folders-dot'),
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
-                            color: palette.clay,
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: waitingMarker,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -958,14 +1028,10 @@ class _BarItem extends StatelessWidget {
                     context,
                   ).clamp(maxScaleFactor: 1.3),
                   style: TextStyle(
-                    fontSize: 10.5,
-                    height: 13 / 10.5,
-                    fontWeight: AppWeight.font(
-                      selected ? AppWeight.section : AppWeight.button,
-                    ),
-                    fontVariations: AppWeight.wght(
-                      selected ? AppWeight.section : AppWeight.button,
-                    ),
+                    fontSize: 11.5,
+                    height: 14 / 11.5,
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                     color: ink,
                   ),
                 ),
@@ -996,7 +1062,7 @@ class _PlusButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final palette = context.palette;
     return Semantics(
       button: true,
       label: label,
@@ -1005,7 +1071,7 @@ class _PlusButton extends StatelessWidget {
       onTap: onPressed,
       onLongPress: onLongPress,
       child: Material(
-        color: scheme.primary,
+        color: palette.accentFill,
         shape: const CircleBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
@@ -1015,7 +1081,7 @@ class _PlusButton extends StatelessWidget {
           child: SizedBox.square(
             dimension: PhoneSpaces._plusExtent,
             child: Center(
-              child: KapyIcon(icon, size: 22, color: scheme.onPrimary),
+              child: KapyIcon(icon, size: 24, color: palette.onAccent),
             ),
           ),
         ),
@@ -1078,9 +1144,7 @@ class _CreateMenuRoute extends PopupRoute<String> {
               onTap: close,
               child: CustomPaint(
                 painter: _DimPainter(
-                  color: Theme.of(context).brightness == Brightness.dark
-                      ? const Color(0xA30C0B09)
-                      : const Color(0x402A2620),
+                  color: palette.scrim,
                   hole: RRect.fromRectAndRadius(
                     bar,
                     const Radius.circular(PhoneSpaces._barHeight / 2),
@@ -1101,16 +1165,9 @@ class _CreateMenuRoute extends PopupRoute<String> {
             child: IntrinsicWidth(
               child: Material(
                 key: const ValueKey('phone-new-menu'),
-                color: Color.alphaBlend(
-                  palette.fillRest,
-                  palette.sidebarBackground,
-                ),
+                color: palette.cardBackground,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(
-                    color: palette.edge,
-                    width: AppHairline.of(context),
-                  ),
+                  borderRadius: BorderRadius.circular(AppRadii.surface),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(4),
@@ -1129,7 +1186,9 @@ class _CreateMenuRoute extends PopupRoute<String> {
                               : null,
                           child: InkWell(
                             key: ValueKey('phone-new-${action.value}'),
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(
+                              AppRadii.control,
+                            ),
                             onTap: action.enabled
                                 ? () => Navigator.of(context).pop(action.value)
                                 : null,

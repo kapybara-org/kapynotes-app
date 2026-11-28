@@ -411,10 +411,8 @@ void main() {
       harness('first line\nsecond line', autofocus: true),
     );
     await tester.pumpAndSettle();
-    final topLeft = tester.getTopLeft(noteField);
-
     await tester.pump(const Duration(seconds: 4));
-    await tester.tapAt(topLeft + const Offset(40, 43));
+    await tester.tapAt(lineRect(tester, 'first line\nsecond line', 0).center);
     await tester.pump();
 
     await tester.pump(const Duration(seconds: 4));
@@ -1317,11 +1315,12 @@ void main() {
     final address = runs.firstWhere(
       (span) => span.text == 'example.com/docs?q=notes',
     );
-    expect(address.style!.fontFamily, AppFonts.mono);
+    expect(address.style!.fontFamily, AppFonts.ui);
+    expect(address.style!.fontSize, 12.5);
     expect(address.style!.decoration, TextDecoration.none);
     // The full stop after it is the sentence's, not the address's.
     final period = runs.firstWhere((span) => span.text == '.');
-    expect(period.style?.fontFamily, isNot(AppFonts.mono));
+    expect(period.style?.fontSize, isNot(12.5));
     expect(
       period.style?.decoration?.contains(TextDecoration.underline) ?? false,
       isFalse,
@@ -1374,7 +1373,7 @@ void main() {
       'https://example.com/docs',
     ]) {
       for (final run in runsOf(link)) {
-        expect(run.style!.fontFamily, AppFonts.mono, reason: link);
+        expect(run.style!.fontFamily, AppFonts.ui, reason: link);
       }
     }
 
@@ -2821,15 +2820,15 @@ void main() {
             .color!;
     TextStyle styleOf(String text) =>
         tester.widget<Text>(find.text(text)).style!;
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
 
     expect(fillOf('42'), palette.totalPillBackground);
     expect(styleOf('42').color, palette.totalPillText);
-    expect(styleOf('42').fontWeight, FontWeight.w600);
+    expect(styleOf('42').fontWeight, AppWeight.font(AppWeight.regular));
     for (final text in ['12', '30']) {
       expect(fillOf(text), palette.resultPillBackground);
       expect(styleOf(text).color, palette.resultPillText);
-      expect(styleOf(text).fontWeight, FontWeight.w500);
+      expect(styleOf(text).fontWeight, AppWeight.font(AppWeight.regular));
     }
   });
 
@@ -3039,16 +3038,17 @@ void main() {
               as BoxDecoration;
       TextStyle styleOf(String text) =>
           tester.widget<Text>(find.text(text)).style!;
-      const palette = KapyTheme.darkPalette;
+      final palette = KapyTheme.darkPalette;
 
       expect(find.byType(ResultLeader), findsNothing);
       expect(decorationOf('42').color, palette.totalPillBackground);
       expect(styleOf('42').color, palette.totalPillText);
-      expect(styleOf('42').fontWeight, FontWeight.w600);
       for (final text in ['12', '30']) {
         expect(decorationOf(text).color, palette.resultPillBackground);
         expect(styleOf(text).color, palette.resultPillText);
-        expect(styleOf(text).fontWeight, FontWeight.w500);
+      }
+      for (final text in ['12', '30', '42']) {
+        expect(styleOf(text).fontWeight, FontWeight.w400);
       }
       for (final (line, text) in [(1, '12'), (2, '30'), (3, '42')]) {
         final style = styleOf(text);

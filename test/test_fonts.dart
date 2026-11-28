@@ -31,12 +31,12 @@ Future<void> loadTestFonts() async {
     'assets/fonts/ShantellSans-Variable.ttf',
     'assets/fonts/ShantellSans-Italic-Variable.ttf',
   ]);
-  await _loadAll('Figtree', [
-    'assets/fonts/Figtree-Variable.ttf',
-    'assets/fonts/Figtree-Italic-Variable.ttf',
+  await _loadAll('Geist', [
+    'assets/fonts/Geist-Variable.ttf',
+    'assets/fonts/Geist-Italic-Variable.ttf',
   ]);
+  await _loadAll('Geist Pixel', ['assets/fonts/GeistPixel-Square.ttf']);
   await _loadAll('Geist Mono', ['assets/fonts/GeistMono-Variable.ttf']);
-  await _loadAll('Newsreader', ['assets/fonts/Newsreader-Title.ttf']);
 
   // KaTeX's faces, which flutter_math_fork draws formulas in. They are in the
   // test's asset bundle like every package font, and like every one of them

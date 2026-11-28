@@ -2500,8 +2500,8 @@ void main() {
   );
 
   testWidgets(
-    'a list open over a narrow page draws the one hairline, and the page '
-    'behind it leaves its own out',
+    "a list open over a narrow page draws no hairline of its own, so the "
+    "page's band keeps the one line",
     (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -2518,17 +2518,17 @@ void main() {
         find.byKey(const ValueKey('sidebar-overlay-barrier')),
         findsOneWidget,
       );
-      expect(line(band), isNull);
+      expect(line(band), isNotNull);
       expect(
-        line(
-          find
-              .descendant(
+        tester
+            .widgetList<Container>(
+              find.descendant(
                 of: find.byType(SidebarWindowBar),
                 matching: find.byType(Container),
-              )
-              .first,
-        ),
-        isNotNull,
+              ),
+            )
+            .where((box) => box.foregroundDecoration != null),
+        isEmpty,
       );
 
       await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
@@ -2847,6 +2847,19 @@ void main() {
     );
   });
 
+  testWidgets("the notes list's name is handwritten, Shantell 22/28 at 500", (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    final title = tester
+        .widget<Text>(find.byKey(const ValueKey('sidebar-space-title')))
+        .style!;
+    expect(title.fontFamily, AppFonts.hand);
+    expect(title.fontSize, 22);
+    expect(title.height, 28 / 22);
+    expect(title.fontVariations, contains(const FontVariation('wght', 500)));
+  });
+
   testWidgets('opens footer settings and resets desktop panel widths', (
     tester,
   ) async {
@@ -2857,15 +2870,14 @@ void main() {
 
     await openSettings(tester, section: SettingsSection.notes);
 
-    // Twice over now: the sidebar row that opened it, and the dialog's title.
-    expect(find.text('Settings'), findsWidgets);
+    expect(find.byType(SettingsDialog), findsOneWidget);
     final dailyToggle = find.byKey(const ValueKey('daily-separators-toggle'));
     final compactSwitch = find.descendant(
       of: dailyToggle,
       matching: find.byKey(const ValueKey('compact-switch-indicator')),
     );
     expect(prefs.dailySeparatorsEnabled, isTrue);
-    expect(tester.getSize(compactSwitch), const Size(38, 22));
+    expect(tester.getSize(compactSwitch), const Size(36, 16));
 
     final readyToType = find.byKey(
       const ValueKey('ready-to-type-on-open-toggle'),
@@ -2948,7 +2960,7 @@ void main() {
     expect(styleOf('Opening').fontFamily, isNot('Shantell Sans'));
     expect(
       styleOf('Opening').fontVariations,
-      AppWeight.variations(AppWeight.section),
+      AppWeight.variations(AppWeight.regular),
     );
     expect(styleOf('Daily separators').fontFamily, isNot('Shantell Sans'));
     expect(
@@ -3151,8 +3163,8 @@ void main() {
     );
     expect(
       labelOf(WritingFont.mixed).style?.fontFamily,
-      WritingFont.monospace.fontFamily,
-      reason: 'Mixed is named in the type its numbers are set in',
+      WritingFont.handwritten.fontFamily,
+      reason: 'Mixed is named in the hand its titles are written in',
     );
 
     final monospace = find.byKey(const ValueKey('writing-font-monospace'));
@@ -3165,6 +3177,124 @@ void main() {
 
     final restored = LayoutPrefs(store)..load();
     expect(restored.writingFont, WritingFont.monospace);
+  });
+
+  test('Pixel is kept, and a writing style from a later version reads as '
+      'Clean', () {
+    store.data['writingFont.v1'] = 'pixel';
+    expect((LayoutPrefs(store)..load()).writingFont, WritingFont.pixel);
+    store.data['writingFont.v1'] = 'a style from a later version';
+    expect((LayoutPrefs(store)..load()).writingFont, WritingFont.clean);
+  });
+
+  Future<void> openPhoneSettings(
+    WidgetTester tester,
+    double width, {
+    SettingsSection section = SettingsSection.appearance,
+  }) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = Size(width, 700);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showSettings(
+                context,
+                layoutPrefs: LayoutPrefs(store)..load(),
+                shortcuts: ShortcutPrefs(store)..load(),
+                rates: RatesRepository(store),
+                notes: notes,
+                section: section,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    if (section != SettingsSection.appearance) return;
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('writing-font-pixel')),
+    );
+  }
+
+  testWidgets('a phone shares a choice equally when its labels fit, each '
+      'label measured in the face it is drawn in', (tester) async {
+    double width(String key) => tester.getSize(find.byKey(ValueKey(key))).width;
+
+    await openPhoneSettings(tester, 320);
+    expect({
+      for (final paper in PaperStyle.values) width('paper-style-${paper.name}'),
+    }, hasLength(1));
+
+    tester.view.physicalSize = const Size(390, 700);
+    await tester.pumpAndSettle();
+    expect({
+      for (final font in WritingFont.values) width('writing-font-${font.name}'),
+    }, hasLength(1));
+  });
+
+  testWidgets('a phone puts the time zone under its name, so neither line is '
+      'cut', (tester) async {
+    for (final width in [320.0, 390.0]) {
+      await openPhoneSettings(tester, width, section: SettingsSection.notes);
+      final row = find.byKey(const ValueKey('time-zone-setting'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      for (final words in ['Time zone for dates', 'Used by separators']) {
+        final text = find.descendant(
+          of: row,
+          matching: find.textContaining(words),
+        );
+        expect(
+          tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+          isFalse,
+          reason: '$words at $width',
+        );
+      }
+      final menu = find.descendant(
+        of: row,
+        matching: find.byType(SettingsMenuButton),
+      );
+      expect(
+        tester.getRect(menu).top,
+        greaterThan(tester.getRect(find.text('Time zone for dates')).bottom),
+      );
+      await tester.pumpWidget(const SizedBox());
+    }
+  });
+
+  testWidgets('on a 320 pt phone all five writing styles keep their letters', (
+    tester,
+  ) async {
+    await openPhoneSettings(tester, 320);
+    for (final font in WritingFont.values) {
+      final segment = find.byKey(ValueKey('writing-font-${font.name}'));
+      final label = find.descendant(of: segment, matching: find.byType(Text));
+      final shown = find.descendant(
+        of: segment,
+        matching: find.byType(FittedBox),
+      );
+      expect(
+        tester.getSize(shown).width / tester.getSize(label).width,
+        greaterThan(0.9),
+        reason: font.name,
+      );
+    }
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('writing-font-handwritten')),
+        matching: find.text('Hand'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('changes app text size live and persists it', (tester) async {
@@ -3293,7 +3423,7 @@ void main() {
           }
 
           await openSettings(tester);
-          final done = find.text('Done');
+          final done = find.byKey(const ValueKey('settings-done'));
           expect(done, findsOneWidget, reason: reason);
           final doneRect = tester.getRect(done);
           expect(screen.intersect(doneRect), doneRect, reason: reason);
@@ -4524,7 +4654,9 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
         }
         expect(
-          tester.widget<Text>(find.byKey(const ValueKey('recording-status'))).data,
+          tester
+              .widget<Text>(find.byKey(const ValueKey('recording-status')))
+              .data,
           'Microphone is silent',
         );
         expect(find.byKey(const ValueKey('recording-elapsed')), findsOneWidget);
@@ -6451,8 +6583,8 @@ void main() {
   });
 
   testWidgets(
-    'the search field is a 4% fill with no border, and under the pointer its '
-    'shortcut is plain Geist Mono in T3 that leaves the placeholder room',
+    'the search field is a control fill with no border, and under the pointer '
+    'its shortcut sits at its end, plain Geist in T3',
     (tester) async {
       await pumpApp(tester);
       final searchKeycap = find.byKey(
@@ -6469,10 +6601,9 @@ void main() {
 
       final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
       final search = find.byKey(const ValueKey('sidebar-search-box'));
-      final field = tester.getRect(search);
       final palette = tester.element(search).palette;
       final box = tester.widget<Container>(search).decoration! as BoxDecoration;
-      expect(box.color, palette.fillRest);
+      expect(box.color, palette.controlBackground);
       expect(box.border, isNull);
       expect(box.boxShadow, isNull);
       expect(box.borderRadius, BorderRadius.circular(AppRadii.control));
@@ -6480,10 +6611,11 @@ void main() {
         find.descendant(of: search, matching: find.byType(Keycap)),
         findsNothing,
       );
+      final field = tester.getRect(search);
       final keycap = tester.getRect(searchKeycap);
       final hint = tester.widget<Text>(searchKeycap);
       expect(hint.data, binding.keycapLabel);
-      expect(hint.style!.fontFamily, AppFonts.mono);
+      expect(hint.style!.fontFamily, AppFonts.ui);
       expect(hint.style!.fontSize, 11);
       expect(hint.style!.height, 14 / 11);
       expect(hint.style!.fontWeight, FontWeight.w400);
@@ -6605,8 +6737,8 @@ void main() {
       TextStyle title() => tester
           .widget<TextField>(find.byKey(const ValueKey('drawing-title')))
           .style!;
-      expect(title().fontFamily, AppFonts.title);
-      expect(title().fontWeight, FontWeight.w400);
+      expect(title().fontFamily, AppFonts.ui);
+      expect(title().fontWeight, EditorMetrics.titleWeight);
 
       prefs.writingFont = WritingFont.handwritten;
       await tester.pumpAndSettle();
@@ -9777,7 +9909,7 @@ void main() {
       }
       expect(
         tester.getSize(find.byKey(const ValueKey('phone-new'))),
-        const Size(56, 56),
+        const Size(58, 58),
       );
 
       await openPhoneDrawings(tester);
@@ -9939,9 +10071,9 @@ void main() {
         expect(shown[1].right, lessThanOrEqualTo(390));
         expect(shown[2].left, lessThan(390));
         expect(shown[2].right, greaterThan(390));
-        expect(shown[0].width, 160);
-        expect(shown[1].width, 160);
-        expect(shown[1].left - shown[0].right, 8);
+        expect(shown[0].width, 158);
+        expect(shown[1].width, 158);
+        expect(shown[1].left - shown[0].right, PhonePinnedCards.gap);
         expect(390 - shown[2].left, 34);
       });
 
@@ -9989,8 +10121,8 @@ void main() {
           ], titles.reversed.take(rows.length).toList());
           final first = tester.getRect(find.byWidget(rows[0]));
           final second = tester.getRect(find.byWidget(rows[1]));
-          expect(first.left, 0);
-          expect(first.width, 390);
+          expect(first.left, 20, reason: 'inside the list card');
+          expect(first.width, 390 - 2 * 20);
           expect(second.top, greaterThan(first.bottom - 0.5));
           final divider = tester.widget<Divider>(
             find
@@ -10000,8 +10132,8 @@ void main() {
                 )
                 .first,
           );
-          expect(divider.indent, 20);
-          expect(divider.endIndent, 20);
+          expect(divider.indent, NoteListRowFace.textStart(touch: true));
+          expect(divider.endIndent, 0);
           await tester.scrollUntilVisible(
             find.widgetWithText(NoteRow, titles[0]),
             200,
@@ -10073,7 +10205,7 @@ void main() {
           )) {
             expect(
               tester.getRect(find.byWidget(text)).bottom,
-              lessThanOrEqualTo(card.bottom - 14 + 0.5),
+              lessThanOrEqualTo(card.bottom - 12 + 0.5),
               reason: text.data,
             );
           }
@@ -10129,7 +10261,7 @@ void main() {
           final first = tester.getSize(card('Pinned 1')).height;
           expect(
             first,
-            greaterThanOrEqualTo((22 + 18 + 16) * scale + 14 * 2 + 2 + 12),
+            greaterThanOrEqualTo((20 + 18 + 16) * scale + 12 + 3 + 12 + 12),
             reason: 'the card grows with its three lines',
           );
           fits(scroller, 'Home');
@@ -10287,8 +10419,12 @@ void main() {
         await showNotesList(tester);
       }
 
-      Finder underlineOf(Finder title) =>
-          find.descendant(of: title, matching: find.byType(NoteTitleUnderline));
+      Finder selectedOf(Finder title) => find.descendant(
+        of: title,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Semantics && widget.properties.selected == true,
+        ),
+      );
 
       testWidgets('the search field reads "Search notes and tasks" because '
           'Quick find, which it opens, finds tasks too', (tester) async {
@@ -10327,34 +10463,64 @@ void main() {
         );
       });
 
+      testWidgets('Notes and Tasks are handwritten, Shantell 30/36 at 500, '
+          'each a 44 pt target, with the count in the system face', (
+        tester,
+      ) async {
+        await pumpHome(tester);
+        for (final title in [notesTitle, tasksTitle]) {
+          final words = tester
+              .widgetList<Text>(
+                find.descendant(of: title, matching: find.byType(Text)),
+              )
+              .first
+              .style!;
+          expect(words.fontFamily, AppFonts.hand);
+          expect(words.fontSize, 30);
+          expect(words.height, 36 / 30);
+          expect(
+            words.fontVariations,
+            contains(const FontVariation('wght', 500)),
+          );
+          expect(tester.getSize(title).height, greaterThanOrEqualTo(44));
+        }
+        final count = tester
+            .widgetList<Text>(
+              find.descendant(of: notesTitle, matching: find.byType(Text)),
+            )
+            .last
+            .style!;
+        expect(count.fontFamily, AppFonts.ui);
+      });
+
       testWidgets('a tap on Tasks shows Tasks under the same header, and a '
           'tap on Notes comes back', (tester) async {
         await pumpHome(tester);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
 
         await tester.tap(tasksTitle);
         await tester.pumpAndSettle();
         expect(tasksPage, findsOneWidget);
         expect(groceries, findsNothing);
-        expect(underlineOf(tasksTitle), findsOneWidget);
-        expect(underlineOf(notesTitle), findsNothing);
+        expect(selectedOf(tasksTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsNothing);
         expect(find.byKey(const ValueKey('phone-account')), findsOneWidget);
 
         await tester.tap(notesTitle);
         await tester.pumpAndSettle();
         expect(tasksPage, findsNothing);
         expect(groceries, findsOneWidget);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       });
 
-      testWidgets("Tasks carries one clay underline, the header's, over "
-          'Today as a plain label', (tester) async {
+      testWidgets("Tasks marks only the header's title, over Today as a "
+          'plain label', (tester) async {
         await pumpHome(tester);
         await tester.tap(tasksTitle);
         await tester.pumpAndSettle();
 
-        expect(find.byType(NoteTitleUnderline), findsOneWidget);
-        expect(underlineOf(tasksTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsNothing);
+        expect(selectedOf(tasksTitle), findsOneWidget);
         final clay = tester.element(tasksPage).palette.clay;
         expect(
           find.descendant(
@@ -10387,12 +10553,12 @@ void main() {
         await tester.drag(header, const Offset(-120, 0));
         await tester.pumpAndSettle();
         expect(tasksPage, findsOneWidget);
-        expect(underlineOf(tasksTitle), findsOneWidget);
+        expect(selectedOf(tasksTitle), findsOneWidget);
 
         await tester.drag(header, const Offset(120, 0));
         await tester.pumpAndSettle();
         expect(tasksPage, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       });
 
       Future<String> filterByTag(WidgetTester tester, TagStore tags) async {
@@ -10413,7 +10579,7 @@ void main() {
         expect(dot, findsOneWidget);
         expect(trip, findsOneWidget);
         expect(groceries, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       }
 
       Future<void> swipeTo(WidgetTester tester, {required bool tasks}) async {
@@ -10668,7 +10834,7 @@ void main() {
         expect(header, findsOneWidget);
         expect(tester.getTopLeft(header), at);
         expect(ownShown(), isTrue);
-        expect(underlineOf(tasksTitle), findsOneWidget);
+        expect(selectedOf(tasksTitle), findsOneWidget);
       });
 
       testWidgets("Home's header fades back to Notes' copy as Tasks turns back "
@@ -10723,7 +10889,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tasksPage, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
 
         await tester.fling(header, const Offset(-60, 0), 1000);
         await tester.pumpAndSettle();
@@ -10776,7 +10942,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byKey(ValueKey('swipe-pin-$groceriesId')), findsOneWidget);
         expect(tasksPage, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       });
 
       // Plain Home has no level to go back to, so its left edge keeps the
@@ -10822,7 +10988,11 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(pin.hitTestable(), findsNothing);
-        expect(tester.getTopLeft(groceries).dx, 0);
+        expect(
+          tester.getTopLeft(groceries).dx,
+          20,
+          reason: 'at rest in its card',
+        );
       });
 
       testWidgets('on plain Home, a left drag from the left edge over a row '
@@ -10832,13 +11002,16 @@ void main() {
         await pumpHome(tester);
 
         await tester.dragFrom(
-          Offset(10, tester.getCenter(groceries).dy),
+          Offset(
+            tester.getTopLeft(groceries).dx + 10,
+            tester.getCenter(groceries).dy,
+          ),
           const Offset(-200, 0),
         );
         await tester.pumpAndSettle();
         expect(find.byKey(ValueKey('swipe-pin-$groceriesId')), findsOneWidget);
         expect(tasksPage, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       });
 
       testWidgets('Back from Tasks goes to Notes rather than leaving', (
@@ -11109,43 +11282,44 @@ void main() {
         expect(lit(tester), PhoneTab.folders);
       }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-      testWidgets("Drawings' title is in the hand face, its count small beside "
-          'it, and its Pinned and Recent labels 13 pt in muted grey (M03)', (
-        tester,
-      ) async {
-        await pumpFolders(tester);
-        final shelf = notes.create(drawing: true);
-        notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
-        notes.togglePinned(shelf.id);
-        await tap(tester, barFolders);
-        await tap(tester, tile);
-        final palette = tester.element(title).palette;
+      testWidgets(
+        "Drawings' title is in the hand face, its count small beside "
+        'it, and its Pinned and Recent labels are D\'s 17 pt section headings (M03)',
+        (tester) async {
+          await pumpFolders(tester);
+          final shelf = notes.create(drawing: true);
+          notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+          notes.togglePinned(shelf.id);
+          await tap(tester, barFolders);
+          await tap(tester, tile);
+          final palette = tester.element(title).palette;
 
-        final heading = tester.widget<Text>(title).style!;
-        expect(heading.fontFamily, WritingFont.handwritten.fontFamily);
-        expect(heading.fontSize, 26);
-        expect(heading.height, 32 / 26);
-        expect(heading.color, palette.textPrimary);
-        final count = tester
-            .widget<Text>(
-              find.descendant(
-                of: find.byType(PhoneListTitle),
-                matching: find.text('2'),
-              ),
-            )
-            .style!;
-        expect(count.fontFamily, AppFonts.ui);
-        expect(count.fontSize, 13);
-        expect(count.color, palette.textTertiary);
+          final heading = tester.widget<Text>(title).style!;
+          expect(heading.fontFamily, AppFonts.ui);
+          expect(heading.fontSize, 26);
+          expect(heading.height, 32 / 26);
+          expect(heading.color, palette.textHeading);
+          final count = tester
+              .widget<Text>(
+                find.descendant(
+                  of: find.byType(PhoneListTitle),
+                  matching: find.text('2'),
+                ),
+              )
+              .style!;
+          expect(count.fontFamily, AppFonts.ui);
+          expect(count.fontSize, 13);
+          expect(count.color, palette.textQuiet);
 
-        for (final label in ['Pinned', 'Recent']) {
-          final style = tester.widget<Text>(find.text(label)).style!;
-          expect(style.fontFamily, AppFonts.ui, reason: label);
-          expect(style.fontSize, 13, reason: label);
-          expect(style.height, 18 / 13, reason: label);
-          expect(style.color, palette.textTertiary, reason: label);
-        }
-      });
+          for (final label in ['Pinned', 'Recent']) {
+            final style = tester.widget<Text>(find.text(label)).style!;
+            expect(style.fontFamily, AppFonts.ui, reason: label);
+            expect(style.fontSize, 17, reason: label);
+            expect(style.height, 22 / 17, reason: label);
+            expect(style.color, palette.textPrimary, reason: label);
+          }
+        },
+      );
 
       double iconLeft(WidgetTester tester, Finder row, KapyIconData data) =>
           tester
@@ -11499,7 +11673,7 @@ void main() {
         );
         expect(
           tester.widget<KapyIcon>(glass).color,
-          tester.element(glass).palette.textTertiary,
+          tester.element(glass).palette.textSecondary,
         );
 
         await tap(tester, button);
@@ -11759,7 +11933,11 @@ void main() {
           final page = find.byKey(ValueKey('phone-folder-${folder.id}'));
           expect(page, findsOneWidget);
           expect(tester.widget<NoteRow>(brief).style, NoteRowStyle.touch);
-          expect(tester.getSize(brief).width, 393, reason: 'a full-width row');
+          expect(
+            tester.getSize(brief).width,
+            393 - 2 * 20,
+            reason: 'a row across the list card',
+          );
           expect(find.byType(NoteCardFace), findsNothing);
           expect(find.byType(NoteListRowFace), findsOneWidget);
           expect(
@@ -12066,7 +12244,7 @@ void main() {
                 find.descendant(of: close, matching: find.byType(Material)),
               )
               .color,
-          Theme.of(tester.element(plus)).colorScheme.primary,
+          tester.element(plus).palette.accentFill,
         );
         expect(
           tester.getRect(menu).bottom,
@@ -12619,7 +12797,7 @@ void main() {
       expect(top(older), lessThan(top(row('Renewal notes'))));
 
       final title = tester.widget<Text>(find.text('Call with Arjun'));
-      expect(title.style?.fontFamily, WritingFont.handwritten.fontFamily);
+      expect(title.style?.fontFamily, AppFonts.ui);
       final dots = find.descendant(
         of: row('Call with Arjun'),
         matching: find.byType(TagDots),
@@ -12692,8 +12870,8 @@ void main() {
       }
     });
 
-    testWidgets("a day's heading is the serif name, then its date 8 after "
-        'it in small quiet sans, as Tasks draws Today', (tester) async {
+    testWidgets("a day's heading is the section label, then its date 6 after "
+        'it a grey quieter', (tester) async {
       final nine = DateTime(2026, 11, 19, 9).millisecondsSinceEpoch;
       store.data['notes.v1'] = [
         {
@@ -12713,13 +12891,13 @@ void main() {
         find.descendant(of: heading, matching: find.text('Today')),
       );
       final date = find.descendant(of: heading, matching: find.text('Thu 19'));
-      expect(today.style?.fontFamily, AppFonts.title);
-      expect(today.style?.fontSize, 19);
+      expect(today.style?.fontFamily, AppFonts.ui);
+      expect(today.style?.fontSize, 17);
       expect(today.style?.color, palette.textPrimary);
       final style = tester.widget<Text>(date).style;
       expect(style?.fontFamily, AppFonts.ui);
-      expect(style?.fontSize, 13);
-      expect(style?.height, 16 / 13);
+      expect(style?.fontSize, 15);
+      expect(style?.height, 22 / 15);
       expect(style?.color, palette.textTertiary);
       expect(
         tester.getTopLeft(date).dx -
@@ -12728,7 +12906,7 @@ void main() {
                   find.descendant(of: heading, matching: find.text('Today')),
                 )
                 .dx,
-        8,
+        6,
       );
     });
 
@@ -12763,18 +12941,18 @@ void main() {
       final rects = [for (var i = 0; i < 2; i++) tester.getRect(lines.at(i))];
       for (var i = 0; i < 2; i++) {
         final line = tester.widget<Divider>(lines.at(i));
-        expect(rects[i].left + line.indent!, 20);
-        expect(rects[i].width - line.indent! - line.endIndent!, 393 - 40);
+        expect(rects[i].left + line.indent!, 36);
+        expect(rects[i].right - line.endIndent!, 393 - 20);
       }
       expect(rects[0].top, tester.getRect(row('Morning pages')).bottom);
       expect(rects[1].top, tester.getRect(row('Call with Arjun')).bottom);
       expect(
         tester.widget<Divider>(lines.first).color,
-        tester.element(lines.first).palette.separator,
+        tester.element(lines.first).palette.pageBorder,
       );
     });
 
-    testWidgets('a row with a preview and what it holds is 91 from hairline '
+    testWidgets('a row with a preview and what it holds is 92 from hairline '
         'to hairline, and one with words alone keeps two lines', (
       tester,
     ) async {
@@ -12807,7 +12985,7 @@ void main() {
       expect(lines, findsNWidgets(2));
       expect(
         tester.getTopLeft(lines.at(1)).dy - tester.getTopLeft(lines.at(0)).dy,
-        91,
+        92,
       );
       Finder holdsOf(String title) => find.descendant(
         of: find.widgetWithText(NoteRow, title),
@@ -12934,8 +13112,8 @@ void main() {
         expect(rows, findsNWidgets(3));
         final first = tester.getRect(rows.at(0));
         final second = tester.getRect(rows.at(1));
-        expect(first.left, 0);
-        expect(first.width, 393);
+        expect(first.left, 20, reason: 'inside the list card');
+        expect(first.width, 393 - 2 * 20);
         expect(second.top, greaterThan(first.bottom - 0.5));
         final thumbnail = find.descendant(
           of: rows.first,
@@ -12956,14 +13134,20 @@ void main() {
           ),
           reason: 'a darker inset than the list',
         );
-        expect(tester.getTopLeft(thumbnail).dx, 20);
+        expect(
+          tester.getTopLeft(thumbnail).dx,
+          first.left + NoteListRowFace.textStart(touch: true),
+        );
         expect(tester.getCenter(thumbnail).dy, closeTo(first.center.dy, 0.5));
         final title = find.descendant(
           of: rows.first,
           matching: find.text('App wireframe'),
         );
-        expect(tester.getTopLeft(title).dx, 20 + 64 + 12);
-        expect(tester.widget<Text>(title).style?.fontSize, 17);
+        expect(
+          tester.getTopLeft(title).dx,
+          tester.getTopLeft(thumbnail).dx + 64 + 12,
+        );
+        expect(tester.widget<Text>(title).style?.fontSize, AppTypeScale.row);
         final date = find.descendant(
           of: rows.first,
           matching: find.textContaining(RegExp(r'^Today, ')),
@@ -13147,14 +13331,16 @@ void main() {
         ),
         findsOneWidget,
       );
-      // Drawn the way r3 draws it: 32pt square, at radius 8.
+      // Drawn the way r3 draws it: 32pt square, at the control radius.
       expect(tester.getSize(hide), const Size.square(32));
       final button = tester.widget<IconButton>(
         find.descendant(of: hide, matching: find.byType(IconButton)),
       );
       expect(
         button.style!.shape!.resolve({}),
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
       );
 
       await tester.tap(hide);
@@ -15826,7 +16012,7 @@ void main() {
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
         // At 1x no result is longer than the column, so a larger text size
         // makes one wrap even on a row of its own, under its writing.
-        tester.platformDispatcher.textScaleFactorTestValue = 1.75;
+        tester.platformDispatcher.textScaleFactorTestValue = 2.0;
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
         final semantics = tester.ensureSemantics();
         await notes.load();

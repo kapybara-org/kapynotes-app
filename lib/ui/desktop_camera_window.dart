@@ -578,8 +578,8 @@ class _DesktopCameraWindowState extends State<DesktopCameraWindow>
               style: TextStyle(
                 color: palette.textPrimary,
                 fontSize: 17,
-                fontWeight: AppWeight.font(AppWeight.page),
-                fontVariations: AppWeight.wght(AppWeight.page),
+                fontWeight: AppWeight.font(AppWeight.semibold),
+                fontVariations: AppWeight.wght(AppWeight.semibold),
               ),
             ),
             const SizedBox(height: 6),
@@ -730,8 +730,8 @@ class _Header extends StatelessWidget {
             style: TextStyle(
               fontSize: 17,
               height: 22 / 17,
-              fontWeight: AppWeight.font(AppWeight.page),
-              fontVariations: AppWeight.wght(AppWeight.page),
+              fontWeight: AppWeight.font(AppWeight.semibold),
+              fontVariations: AppWeight.wght(AppWeight.semibold),
               color: palette.textPrimary,
             ),
           ),
@@ -805,8 +805,8 @@ class _RecordingTime extends StatelessWidget {
               TextSpan(
                 text: cameraClock(elapsed),
                 style: TextStyle(
-                  fontWeight: AppWeight.font(AppWeight.button),
-                  fontVariations: AppWeight.wght(AppWeight.button),
+                  fontWeight: AppWeight.font(AppWeight.regular),
+                  fontVariations: AppWeight.wght(AppWeight.regular),
                 ),
               ),
               TextSpan(
@@ -1078,7 +1078,7 @@ class _ModeSwitch extends StatelessWidget {
     final palette = context.palette;
     Widget segment(String label, bool value) {
       final selected = value == video;
-      final weight = selected ? AppWeight.button : AppWeight.body;
+      final weight = selected ? AppWeight.regular : AppWeight.regular;
       return Semantics(
         button: true,
         selected: selected,
@@ -1095,7 +1095,7 @@ class _ModeSwitch extends StatelessWidget {
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: selected ? palette.surfaceBackground : null,
-                borderRadius: BorderRadius.circular(AppRadii.compact),
+                borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               child: Text(
                 label,

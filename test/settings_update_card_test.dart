@@ -230,7 +230,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(_card), findsOneWidget);
-    expect(find.text('Changed from default'), findsNothing);
+    expect(find.text('Changed from default'), findsOneWidget);
     expect(find.byKey(const ValueKey('settings-changed')), findsNothing);
   });
 
@@ -336,7 +336,9 @@ void main() {
       }
       expect(error, findsOneWidget);
       expect(tester.widget<Text>(error).maxLines, 2);
-      expect(tester.getSize(card).height, lessThanOrEqualTo(122));
+      // The rail is 172 wide, so the title wraps and the card is a line
+      // taller than it was in the wider rail.
+      expect(tester.getSize(card).height, lessThanOrEqualTo(148));
     });
   }
 

@@ -167,7 +167,9 @@ class MigratingSecureStore implements SecureStore {
         try {
           await _legacy.delete(key);
         } catch (error) {
-          debugPrint('KapyNotes: old keystore entry not cleared ($key): $error');
+          debugPrint(
+            'KapyNotes: old keystore entry not cleared ($key): $error',
+          );
         }
       }
       return current;
@@ -384,7 +386,11 @@ class KeyStore {
   static const String _pendingKeyEntry = 'kapynotes.pendingMasterKey';
 
   /// Every entry this store keeps.
-  static const List<String> entries = [_masterKeyEntry, _tokenEntry, _userEntry];
+  static const List<String> entries = [
+    _masterKeyEntry,
+    _tokenEntry,
+    _userEntry,
+  ];
 
   Uint8List? _masterKey;
   String? _token;

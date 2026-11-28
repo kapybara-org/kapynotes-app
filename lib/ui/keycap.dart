@@ -19,7 +19,7 @@ class Keycap extends StatelessWidget {
   /// second control beside it.
   final bool tonal;
 
-  /// The legend alone, Geist Mono 11/14 in T3 with no chip round it: the
+  /// The legend alone, Geist 11/14 in T3 with no chip round it: the
   /// way the / menu (D06) and ⌘K (D11) print their keys, the key beside a
   /// neutral button's label, as Settings' Done esc is drawn, and inside a
   /// filled field such as its search.
@@ -54,11 +54,13 @@ class Keycap extends StatelessWidget {
     bool plain = false,
     Color? color,
   }) => TextStyle(
-    fontFamily: AppFonts.mono,
-    fontFamilyFallback: AppFonts.monoFallback,
+    fontFamily: AppFonts.ui,
+    fontFamilyFallback: AppFonts.uiFallback,
     fontSize: tonal ? AppTypeScale.micro : AppTypeScale.keycap,
-    fontWeight: AppWeight.font(plain ? AppWeight.body : AppWeight.rowTitle),
-    fontVariations: AppWeight.wght(plain ? AppWeight.body : AppWeight.rowTitle),
+    fontWeight: AppWeight.font(plain ? AppWeight.regular : AppWeight.regular),
+    fontVariations: AppWeight.wght(
+      plain ? AppWeight.regular : AppWeight.regular,
+    ),
     height: plain ? 14 / 11 : 1.1,
     leadingDistribution: TextLeadingDistribution.even,
     letterSpacing: 0,

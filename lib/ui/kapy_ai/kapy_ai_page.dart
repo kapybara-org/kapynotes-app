@@ -84,7 +84,11 @@ class _KapyAiPageState extends State<KapyAiPage> {
           builder: (context, _) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              PhoneListTitle(title: 'Kapy AI', trailing: widget.account),
+              PhoneListTitle(
+                title: 'Kapy AI',
+                trailing: widget.account,
+                handwritten: true,
+              ),
               SidebarSearchField(
                 phone: true,
                 placeholder: 'Search chats',
@@ -97,12 +101,13 @@ class _KapyAiPageState extends State<KapyAiPage> {
                   focusNode: _searchFocus,
                   textInputAction: TextInputAction.search,
                   onTapOutside: (_) => _searchFocus.unfocus(),
-                  style: TextStyle(fontSize: 16, color: palette.textPrimary),
+                  // The well's own placeholder line, so it is the height
+                  // and grey Notes' and Folders' are (KAP-462).
+                  style: SidebarSearchField.phoneLine(palette.textPrimary),
                   decoration: InputDecoration.collapsed(
                     hintText: 'Search chats',
-                    hintStyle: TextStyle(
-                      fontSize: 16,
-                      color: palette.textTertiary,
+                    hintStyle: SidebarSearchField.phoneLine(
+                      palette.textSecondary,
                     ),
                   ),
                 ),

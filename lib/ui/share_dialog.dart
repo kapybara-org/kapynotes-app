@@ -1433,7 +1433,7 @@ class _SheetScaffold extends StatelessWidget {
           textStyle: chromeStyle(
             size: phone ? 15 : 13,
             line: phone ? 20 : 18,
-            weight: AppWeight.button,
+            weight: AppWeight.regular,
             color: color,
           ),
         );
@@ -1566,7 +1566,7 @@ class _Header extends StatelessWidget {
                       style: chromeStyle(
                         size: phone ? 17 : 15,
                         line: phone ? 22 : 20,
-                        weight: AppWeight.page,
+                        weight: AppWeight.semibold,
                         color: palette.textPrimary,
                       ),
                     ),
@@ -1581,7 +1581,7 @@ class _Header extends StatelessWidget {
                     style: chromeStyle(
                       size: phone ? 13 : 12,
                       line: 16,
-                      weight: AppWeight.body,
+                      weight: AppWeight.regular,
                       color: palette.textSecondary,
                     ),
                   ),
@@ -1908,7 +1908,7 @@ class _PersonRow extends StatelessWidget {
                     style: chromeStyle(
                       size: phone ? 15 : 13,
                       line: phone ? 20 : 18,
-                      weight: AppWeight.button,
+                      weight: AppWeight.regular,
                       color: palette.textPrimary,
                     ),
                   ),
@@ -1920,7 +1920,7 @@ class _PersonRow extends StatelessWidget {
                     style: chromeStyle(
                       size: phone ? 13 : 12,
                       line: 16,
-                      weight: AppWeight.body,
+                      weight: AppWeight.regular,
                       color: live
                           ? palette.textSecondary
                           : palette.textTertiary,
@@ -1980,7 +1980,7 @@ class _RoleText extends StatelessWidget {
       style: chromeStyle(
         size: phone ? 15 : 13,
         line: phone ? 20 : 18,
-        weight: AppWeight.body,
+        weight: AppWeight.regular,
         color: context.palette.textTertiary,
       ),
     );
@@ -2161,7 +2161,7 @@ class _AccessButton extends StatelessWidget {
               style: chromeStyle(
                 size: phone ? 15 : 13,
                 line: phone ? 20 : 18,
-                weight: AppWeight.button,
+                weight: AppWeight.regular,
                 color: palette.textSecondary,
               ),
             ),
@@ -2206,7 +2206,7 @@ class _EmailField extends StatelessWidget {
     final text = chromeStyle(
       size: phone ? 15 : 13,
       line: phone ? 20 : 18,
-      weight: AppWeight.body,
+      weight: AppWeight.regular,
       color: palette.textPrimary,
     );
     OutlineInputBorder border([BorderSide side = BorderSide.none]) =>
@@ -2316,7 +2316,7 @@ class _AccessSegments extends StatelessWidget {
                   textStyle: chromeStyle(
                     size: phone ? 14 : 13,
                     line: 18,
-                    weight: AppWeight.button,
+                    weight: AppWeight.regular,
                     color: palette.textPrimary,
                   ),
                 ),
@@ -2618,7 +2618,7 @@ class _AccessAndShare extends StatelessWidget {
             textStyle: chromeStyle(
               size: phone ? 15 : 13,
               line: phone ? 20 : 18,
-              weight: AppWeight.page,
+              weight: AppWeight.semibold,
               color: palette.accentText,
             ),
           ),
@@ -2697,7 +2697,7 @@ class _LinkRow extends StatelessWidget {
                         style: chromeStyle(
                           size: phone ? 15 : 13,
                           line: phone ? 20 : 18,
-                          weight: AppWeight.button,
+                          weight: AppWeight.regular,
                           color: palette.textPrimary,
                         ),
                       ),
@@ -2708,7 +2708,7 @@ class _LinkRow extends StatelessWidget {
                         style: chromeStyle(
                           size: phone ? 13 : 12,
                           line: 16,
-                          weight: AppWeight.body,
+                          weight: AppWeight.regular,
                           color: palette.textTertiary,
                         ),
                       ),
@@ -2757,7 +2757,7 @@ class _LinkRow extends StatelessWidget {
                     style: chromeStyle(
                       size: phone ? 13 : 12,
                       line: phone ? 18 : 16,
-                      weight: AppWeight.body,
+                      weight: AppWeight.regular,
                       color: palette.textSecondary,
                     ),
                   ),
@@ -2912,7 +2912,7 @@ class _Label extends StatelessWidget {
         style: chromeStyle(
           size: phone ? 13 : 12,
           line: phone ? 18 : 16,
-          weight: AppWeight.section,
+          weight: AppWeight.regular,
           color: context.palette.textTertiary,
         ),
       ),

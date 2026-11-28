@@ -114,8 +114,8 @@ class _Panel extends StatelessWidget {
           title,
           style: TextStyle(
             fontSize: AppTypeScale.title,
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+            fontWeight: AppWeight.font(AppWeight.regular),
+            fontVariations: AppWeight.wght(AppWeight.regular),
             color: palette.textPrimary,
           ),
         ),
@@ -180,13 +180,6 @@ class _Field extends StatelessWidget {
           ),
           filled: true,
           fillColor: palette.controlBackground,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(AppRadii.control),
-            borderSide: BorderSide(
-              color: palette.controlBorder,
-              width: AppHairline.of(context),
-            ),
-          ),
         ),
       ),
     );
@@ -326,7 +319,8 @@ class _SignInFormState extends State<_SignInForm> {
           'Enter the 6-digit code sent to $_address. It expires in 10 minutes.',
         _SignInStep.resetCode =>
           'Enter the code sent to $_address and choose a new password.',
-        _SignInStep.resetRequest => 'We will email a reset code. Your passphrase and notes will not change.',
+        _SignInStep.resetRequest =>
+          'We will email a reset code. Your passphrase and notes will not change.',
         _ =>
           widget.account.signedOutReason ??
               'Sync encrypted notes across your devices.',
@@ -644,9 +638,6 @@ class _ProfileEditorState extends State<_ProfileEditor> {
             helperText: 'Shown to people you share notes with',
             filled: true,
             fillColor: palette.controlBackground,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(AppRadii.control),
-            ),
           ),
           onSubmitted: (_) => _save(),
         ),

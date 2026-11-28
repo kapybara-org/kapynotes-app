@@ -91,12 +91,11 @@ func dynamicColor(light: UInt32, dark: UInt32) -> Color {
     })
 }
 
-/// Figtree, the app's own face. The extension carries its own two weights,
-/// listed under UIAppFonts. Fixed sizes, because every line is drawn to fit
-/// the widget's own size.
-enum Figtree {
-  static func semibold(_ size: CGFloat) -> Font { .custom("Figtree-SemiBold", fixedSize: size) }
-  static func regular(_ size: CGFloat) -> Font { .custom("Figtree-Regular", fixedSize: size) }
+/// The system face, at a fixed size. The widgets draw to their own size, so
+/// they do not follow the phone's text size, and they bundle no face of their own.
+enum WidgetFace {
+  static func semibold(_ size: CGFloat) -> Font { .system(size: size, weight: .semibold) }
+  static func regular(_ size: CGFloat) -> Font { .system(size: size, weight: .regular) }
 }
 
 /// One action's round button: one disc per tap, with nothing boxed around it.

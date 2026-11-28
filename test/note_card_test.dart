@@ -14,7 +14,7 @@ import 'test_fonts.dart';
 void main() {
   setUpAll(loadTestFonts);
 
-  const palette = KapyTheme.darkPalette;
+  final palette = KapyTheme.darkPalette;
   const travel = (name: 'Travel', colour: TagColour.sage);
   const money = (name: 'Money', colour: TagColour.rust);
 
@@ -115,7 +115,7 @@ void main() {
   });
 
   testWidgets("a card sits on its theme's own card colour, a step up under "
-      'the pointer and another when open', (tester) async {
+      "the pointer and the selected row's fill when open", (tester) async {
     Future<int> fill(
       ThemeData theme, {
       bool selected = false,
@@ -133,19 +133,23 @@ void main() {
       return card(tester).color!.toARGB32();
     }
 
-    const light = KapyTheme.lightPalette;
-    expect(await fill(KapyTheme.light()), light.cardBackground.toARGB32());
-    expect(await fill(KapyTheme.light()), 0xFFF6F2E8);
-    expect(await fill(KapyTheme.light(), hovering: true), 0xFFEEEAE0);
-    expect(await fill(KapyTheme.light(), selected: true), 0xFFEAE6DC);
-    // Riverbank dark: the spec's rest card, and its open card (10% over the
-    // surface, which is 6% over the card) to within one step of rounding.
-    expect(await fill(KapyTheme.dark()), 0xFF24221E);
-    expect(await fill(KapyTheme.dark(), hovering: true), 0xFF2C2925);
-    expect(await fill(KapyTheme.dark(), selected: true), 0xFF2F2D29);
+    for (final (theme, palette) in [
+      (KapyTheme.light(), KapyTheme.lightPalette),
+      (KapyTheme.dark(), KapyTheme.darkPalette),
+    ]) {
+      expect(await fill(theme), palette.cardBackground.toARGB32());
+      expect(
+        await fill(theme, hovering: true),
+        Color.alphaBlend(palette.fillRest, palette.cardBackground).toARGB32(),
+      );
+      expect(
+        await fill(theme, selected: true),
+        palette.selectedBackground.toARGB32(),
+      );
+    }
   });
 
-  testWidgets('a card at rest has no outline, its title in Figtree 13/18 at '
+  testWidgets('a card at rest has no outline, its title 14/18 at '
       '500', (tester) async {
     await pumpCard(tester, note('Reading list\nDeep Work, Dune'));
 
@@ -154,9 +158,9 @@ void main() {
     expect(find.byType(TagDots), findsNothing);
     final title = styleOf(tester, 'Reading list');
     expect(title.fontFamily, AppFonts.ui);
-    expect(title.fontSize, 13);
-    expect(title.height, 18 / 13);
-    expect(title.fontVariations, AppWeight.variations(AppWeight.button));
+    expect(title.fontSize, AppTypeScale.row);
+    expect(title.height, 18 / AppTypeScale.row);
+    expect(title.fontVariations, AppWeight.variations(AppWeight.medium));
     expect(title.color, palette.textPrimary);
     expect(styleOf(tester, 'Today, 11:15').color, palette.textTertiary);
   });
@@ -209,7 +213,7 @@ void main() {
     }
   });
 
-  testWidgets("a phone's note row titles are 17/24", (tester) async {
+  testWidgets("a phone's note row titles are 16/22", (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     final row = note('Reading list\nDeep Work, Dune');
@@ -230,8 +234,8 @@ void main() {
     );
 
     final title = styleOf(tester, 'Reading list');
-    expect(title.fontSize, 17);
-    expect(title.height, 24 / 17);
+    expect(title.fontSize, AppTypeScale.row);
+    expect(title.height, 22 / AppTypeScale.row);
   });
 
   testWidgets('on a phone the dots stay 8 px and 4 apart', (tester) async {
@@ -292,7 +296,7 @@ void main() {
     expect(preview.fontFamily, AppFonts.ui);
     expect(preview.fontSize, 12);
     expect(preview.height, 16 / 12);
-    expect(preview.fontVariations, AppWeight.variations(AppWeight.body));
+    expect(preview.fontVariations, AppWeight.variations(AppWeight.regular));
     expect(preview.color, palette.textSecondary);
   });
 
@@ -312,17 +316,14 @@ void main() {
       ),
       findsNothing,
     );
-    expect(
-      card(tester).color,
-      Color.alphaBlend(palette.fillControl, palette.cardBackground),
-    );
+    expect(card(tester).color, palette.selectedBackground);
     expect(card(tester).border, isNull);
     expect(styleOf(tester, 'Today, 11:15').color, palette.textSecondary);
     expect(styleOf(tester, 'Travel').color, palette.textSecondary);
   });
 
-  testWidgets('a section label is 12/16 at 520 in T3, its count at 400, '
-      'with no rule after it', (tester) async {
+  testWidgets('a section label is 12/16 at 400 in T2, its count in the '
+      'quiet grey, with no rule after it', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),
@@ -336,14 +337,14 @@ void main() {
     );
 
     final label = styleOf(tester, 'Yesterday');
-    expect(label.fontSize, 12);
-    expect(label.height, 16 / 12);
-    expect(label.fontVariations, AppWeight.variations(AppWeight.section));
-    expect(label.color, palette.textTertiary);
+    expect(label.fontSize, 13);
+    expect(label.height, 16 / 13);
+    expect(label.fontVariations, AppWeight.variations(AppWeight.semibold));
+    expect(label.color, palette.textPrimary);
     final count = styleOf(tester, '2');
     expect(count.fontSize, 12);
-    expect(count.fontVariations, AppWeight.variations(AppWeight.body));
-    expect(count.color, palette.textTertiary);
+    expect(count.fontVariations, AppWeight.variations(AppWeight.regular));
+    expect(count.color, palette.textQuiet);
     expect(
       find.descendant(
         of: find.byType(NotesGroupHeading),
@@ -405,7 +406,7 @@ void main() {
           .color;
     }
 
-    expect(await square(const []), const Color(0xFF3A3530));
+    expect(await square(const []), palette.switchTrackOff);
     expect(await square(const [travel]), TagColour.sage.dot(palette));
   });
 

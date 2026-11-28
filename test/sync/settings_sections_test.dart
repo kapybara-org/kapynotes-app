@@ -284,12 +284,7 @@ void main() {
 
     await tester.tap(sharing);
     await tester.pumpAndSettle();
-    expect(
-      find.text(
-        'The people you share notes with, and what each of them can see',
-      ),
-      findsOneWidget,
-    );
+    expect(find.text('Sharing'), findsWidgets);
     expect(find.byKey(const ValueKey('sharing-people')), findsOneWidget);
     expect(find.byKey(const ValueKey('join-row')), findsOneWidget);
     expect(find.byKey(const ValueKey('blocked-people')), findsOneWidget);
@@ -411,7 +406,7 @@ void main() {
     await tester.tap(sharing);
     await tester.pumpAndSettle();
 
-    expect(find.text('PEOPLE'), findsOneWidget);
+    expect(find.text('People'), findsOneWidget);
     expect(find.byKey(const ValueKey('share-with-someone')), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('join-row')));
     await tester.pumpAndSettle();
@@ -466,28 +461,20 @@ void main() {
         increaseContrast ? Border.all(color: edge) : isNull,
       );
 
-      BorderSide outline(String theme) {
-        final card = tester.widget<Material>(
+      BoxDecoration ring(String theme) {
+        final mark = tester.widget<Container>(
           find
-              .ancestor(
+              .descendant(
                 of: find.byKey(ValueKey('theme-$theme')),
-                matching: find.byType(Material),
+                matching: find.byType(Container),
               )
               .first,
         );
-        return (card.shape! as RoundedRectangleBorder).side;
+        return mark.decoration! as BoxDecoration;
       }
 
-      expect(
-        outline('riverbank'),
-        increaseContrast
-            ? BorderSide(color: palette.accent, width: 2)
-            : BorderSide.none,
-      );
-      expect(
-        outline('graphite'),
-        increaseContrast ? BorderSide(color: edge) : BorderSide.none,
-      );
+      expect(ring('riverbank').border!.top.color, palette.accent);
+      expect(ring('graphite').border!.top.color, Colors.transparent);
     });
   }
 

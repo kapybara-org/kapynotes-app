@@ -61,7 +61,6 @@ import 'settings_update_card.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart';
 import 'tasks/task_marks.dart';
-import 'tonal_button.dart';
 import 'voice_consent_sheet.dart';
 import 'voice_note_dialog.dart';
 import '../audio/live_text.dart';
@@ -108,7 +107,7 @@ extension SettingsSectionCopy on SettingsSection {
     SettingsSection.window => KapyIcons.computerOutlined,
     SettingsSection.shortcuts => KapyIcons.commandOutlined,
     SettingsSection.account => KapyIcons.accountCircleOutlined,
-    SettingsSection.sharing => KapyIcons.groupOutlined,
+    SettingsSection.sharing => KapyIcons.shareRounded,
     SettingsSection.about => KapyIcons.infoOutlined,
   };
 
@@ -378,6 +377,8 @@ class _Setting {
     this.below,
     this.onTap,
     this.row,
+    this.icon,
+    this.iconSlot = false,
   });
 
   /// The row's key, and how a search result finds it.
@@ -397,6 +398,10 @@ class _Setting {
   final bool wide;
   final Widget? below;
   final VoidCallback? onTap;
+  final KapyIconData? icon;
+
+  /// Keeps the icon column even when [icon] is null, so a sub-row lines up.
+  final bool iconSlot;
 
   /// A row of its own making, for the few that are more than words and a
   /// control: a switch, which flips from anywhere on it, or an update.
@@ -418,6 +423,8 @@ class _Setting {
           onReset: onReset,
           onTap: onTap,
           flush: bare,
+          icon: icon,
+          iconSlot: iconSlot,
         ),
   );
 }
@@ -430,8 +437,6 @@ class _Group {
     this.detail,
     this.caption,
     this.lead,
-    this.bare = false,
-    this.apart = false,
     this.after = const [],
   });
 
@@ -445,14 +450,6 @@ class _Group {
 
   /// What sits between the heading and the card: the appearance preview.
   final Widget? lead;
-
-  /// Rows straight on the pane with no card round them, for the two that
-  /// head Appearance: its mode and its themes.
-  final bool bare;
-
-  /// Twice the gap above it: a new part of a page with no heading to say so,
-  /// as Appearance's themes and its night theme are.
-  final bool apart;
 
   /// What is said under the card: a note, an error.
   final List<Widget> after;
@@ -474,7 +471,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   static const double _railBreakpoint = 560;
   static const double _dialogWidth = 940;
   static const double _dialogHeight = 860;
-  static const double _navWidth = 232;
+  static const double _navWidth = 172;
 
   /// What this device can hear and translate into; null hides the card.
   LiveLanguages? _liveLanguages;
@@ -1796,6 +1793,8 @@ class _SettingsDialogState extends State<SettingsDialog>
     bool? byDefault,
     String? tag,
     List<String> keywords = const [],
+    KapyIconData? icon,
+    bool iconSlot = false,
   }) {
     final changed = byDefault != null && value != byDefault;
     final reset = onChanged == null || byDefault == null
@@ -1818,6 +1817,8 @@ class _SettingsDialogState extends State<SettingsDialog>
         onChanged: onChanged,
         changed: changed,
         onReset: reset,
+        icon: icon,
+        iconSlot: iconSlot,
       ),
     );
   }
@@ -1893,51 +1894,43 @@ class _SettingsDialogState extends State<SettingsDialog>
     final zoomPercent = '${(zoom * 100).round()}%';
     return [
       _Group(null, [
-        _choice<AppearanceMode>(
+        _Setting(
           'mode-setting',
           'Mode',
-          touch
-              ? 'Follow your device, or choose one.'
-              : 'Follow your computer, or choose one.',
-          options: AppearanceMode.values,
-          selected: prefs.appearance,
-          label: (mode) => mode.label,
-          onSelected: (mode) => prefs.appearance = mode,
-          byDefault: AppearanceMode.system,
-          width: 300,
-          keyPrefix: 'appearance',
+          icon: KapyIcons.sunOutlined,
+          iconSlot: true,
           keywords: ['dark mode', 'light mode', 'night', 'colour', 'color'],
-        ),
-      ], bare: true),
-      _Group(
-        null,
-        [
-          _Setting(
-            'theme-setting',
-            'Theme',
-            subtitle:
-                'Changes apply right away. Each theme has a dark and a light '
-                'side; Midnight is dark only.',
-            keywords: [
-              'colour',
-              'color',
-              'palette',
-              'scheme',
-              for (final theme in AppTheme.values) theme.label,
-            ],
-            value: prefs.theme.label,
-            changed: prefs.theme != AppTheme.riverbank,
-            onReset: () => prefs.theme = AppTheme.riverbank,
-            below: ThemeCards(
-              selected: prefs.theme,
-              onSelected: (theme) => prefs.theme = theme,
-            ),
+          value: prefs.appearance.label,
+          changed: prefs.appearance != AppearanceMode.system,
+          onReset: () => prefs.appearance = AppearanceMode.system,
+          wide: true,
+          control: AppearanceModes(
+            theme: prefs.theme,
+            selected: prefs.appearance,
+            onSelected: (mode) => prefs.appearance = mode,
           ),
-        ],
-        bare: true,
-        apart: true,
-      ),
-      _Group(null, [
+        ),
+        _Setting(
+          'theme-setting',
+          'Theme',
+          icon: KapyIcons.paintBoardOutlined,
+          iconSlot: true,
+          keywords: [
+            'colour',
+            'color',
+            'palette',
+            'scheme',
+            for (final theme in AppTheme.values) theme.label,
+          ],
+          value: prefs.theme.label,
+          changed: prefs.theme != AppTheme.riverbank,
+          onReset: () => prefs.theme = AppTheme.riverbank,
+          wide: true,
+          control: ThemeSwatches(
+            selected: prefs.theme,
+            onSelected: (theme) => prefs.theme = theme,
+          ),
+        ),
         _toggle(
           'increase-contrast-setting',
           'Increase contrast',
@@ -1945,6 +1938,8 @@ class _SettingsDialogState extends State<SettingsDialog>
               ? 'Stronger text and borders in any theme.'
               : 'Stronger text, borders and tag labels in any theme. Turns '
                     'on with your system setting.',
+          icon: KapyIcons.visibilityOutlined,
+          iconSlot: true,
           value: prefs.increaseContrast ?? systemAsks,
           onChanged: (on) => prefs.setIncreaseContrast(on, asks: systemAsks),
           byDefault: systemAsks,
@@ -1957,13 +1952,15 @@ class _SettingsDialogState extends State<SettingsDialog>
           ],
         ),
       ]),
-      _Group(null, [
+      _Group('At night', [
         _toggle(
           'night-theme-setting',
-          'At night, use a different theme',
+          'Use a different theme at night',
           touch
               ? 'Switches back in the morning.'
               : 'It switches by itself, and back again in the morning.',
+          icon: KapyIcons.moonOutlined,
+          iconSlot: true,
           value: night.enabled,
           onChanged: (on) => prefs.nightTheme = night.copyWith(enabled: on),
           byDefault: false,
@@ -1973,6 +1970,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           _Setting(
             'night-theme-choice-setting',
             'Night theme',
+            iconSlot: true,
             keywords: ['bedtime', 'evening'],
             value: night.theme.label,
             changed: night.theme != const NightTheme().theme,
@@ -1981,9 +1979,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             ),
             control: SettingsMenuButton(
               key: const ValueKey('night-theme-button'),
-              leading: _AccentRing(
-                KapyTheme.palette(night.theme, Brightness.dark).accent,
-              ),
+              leading: ThemeSwatch(night.theme, size: 8),
               label: night.theme.label,
               onPressed: _chooseNightTheme,
             ),
@@ -1991,6 +1987,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           _Setting(
             'night-hours-setting',
             'From',
+            iconSlot: true,
             keywords: ['bedtime', 'hours', 'time', 'until'],
             value:
                 '${NightTheme.clock(night.from)} to '
@@ -2016,7 +2013,7 @@ class _SettingsDialogState extends State<SettingsDialog>
                   child: Text(
                     'to',
                     style: TextStyle(
-                      color: context.palette.textTertiary,
+                      color: context.palette.textSecondary,
                       fontSize: SettingsMetrics.buttonLabelSize,
                     ),
                   ),
@@ -2031,7 +2028,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             ),
           ),
         ],
-      ], apart: true),
+      ]),
       if (LayoutPrefs.supportsTransparency)
         _Group(null, [
           _Setting(
@@ -2078,17 +2075,21 @@ class _SettingsDialogState extends State<SettingsDialog>
         _choice<WritingFont>(
           'writing-font-setting',
           'Writing font',
-          'The font your notes are written in',
+          prefs.writingFont.description,
           options: WritingFont.values,
           selected: prefs.writingFont,
-          label: (font) => font == WritingFont.monospace ? 'Mono' : font.label,
+          label: (font) => switch (font) {
+            WritingFont.monospace => 'Mono',
+            WritingFont.handwritten when !AppPlatform.hasPointer => 'Hand',
+            _ => font.label,
+          },
           onSelected: (font) => prefs.writingFont = font,
           byDefault: WritingFont.clean,
           keyPrefix: 'writing-font',
           styleFor: (font) {
-            // Mixed is named in the type its numbers are set in.
+            // Mixed is named in the hand its titles are written in.
             final shown = font == WritingFont.mixed
-                ? WritingFont.monospace
+                ? WritingFont.handwritten
                 : font;
             return TextStyle(
               fontFamily: shown.fontFamily,
@@ -2096,7 +2097,15 @@ class _SettingsDialogState extends State<SettingsDialog>
               fontVariations: shown.fontVariations,
             );
           },
-          keywords: ['font', 'typeface', 'handwritten', 'mono', 'clean'],
+          keywords: [
+            'font',
+            'typeface',
+            'handwritten',
+            'mono',
+            'clean',
+            'pixel',
+            'retro',
+          ],
         ),
         _Setting(
           'note-text-size-setting',
@@ -2255,6 +2264,7 @@ class _SettingsDialogState extends State<SettingsDialog>
             value: AppTimeZones.displayName(prefs.timeZoneId),
             changed: prefs.timeZoneId != null,
             onReset: () => prefs.timeZoneId = null,
+            wide: true,
             control: SettingsMenuButton(
               label: zone,
               onPressed: _chooseTimeZone,
@@ -3295,7 +3305,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     // The rail needs the room a wide dialog has; a Windows window resized
     // narrow stacks its sections like any other.
     final paned = width >= _railBreakpoint;
-    const corners = BorderRadius.all(Radius.circular(AppRadii.dialog));
+    const corners = BorderRadius.all(Radius.circular(AppRadii.surface));
 
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
@@ -3308,26 +3318,10 @@ class _SettingsDialogState extends State<SettingsDialog>
         width: width,
         height: height,
         clipBehavior: Clip.antiAlias,
-        foregroundDecoration: BoxDecoration(
-          borderRadius: corners,
-          border: Border.all(color: palette.separator),
-        ),
         decoration: BoxDecoration(
           color: palette.surfaceBackground,
           borderRadius: corners,
-          boxShadow: [
-            BoxShadow(
-              color: palette.shadowAt(0x80),
-              offset: const Offset(0, 30),
-              blurRadius: 60,
-              spreadRadius: -24,
-            ),
-            BoxShadow(
-              color: palette.shadowAt(0x59),
-              offset: const Offset(0, 2),
-              blurRadius: 8,
-            ),
-          ],
+          border: Border.all(color: palette.separator),
         ),
         // Line heights here are the design's, which centre a line's
         // leading the way CSS does.
@@ -3341,52 +3335,51 @@ class _SettingsDialogState extends State<SettingsDialog>
     );
   }
 
-  /// The pane's heading: what is on show, a line on what is in it, and the
-  /// way out.
-  Widget _paneHeader({required String title, required String summary}) {
+  /// The pane's heading: what is on show, and the round close. Esc still
+  /// closes the dialog; the button only shows the way out.
+  Widget _paneHeader({required String title}) {
     final palette = context.palette;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 22, 22, 10),
+      padding: const EdgeInsets.fromLTRB(22, 12, 16, 0),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  key: const ValueKey('settings-pane-title'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: chromeStyle(
-                    size: 20,
-                    line: 26,
-                    weight: AppWeight.page,
-                    color: palette.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  summary,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 17 / 12.5,
-                    color: palette.textTertiary,
-                  ),
-                ),
-              ],
+            child: Text(
+              title,
+              key: const ValueKey('settings-pane-title'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: chromeStyle(
+                size: AppTypeScale.title,
+                line: 20,
+                weight: AppWeight.semibold,
+                color: palette.textHeading,
+              ),
             ),
           ),
-          const SizedBox(width: 16),
-          TonalButton(
-            key: const ValueKey('settings-done'),
-            label: 'Done',
-            shortcut: 'esc',
-            neutral: true,
-            onPressed: () => Navigator.of(context).pop(),
+          const SizedBox(width: 12),
+          Tooltip(
+            message: 'Close',
+            child: Material(
+              key: const ValueKey('settings-done'),
+              color: palette.controlBackground,
+              shape: const CircleBorder(),
+              child: InkWell(
+                onTap: () => Navigator.of(context).pop(),
+                customBorder: const CircleBorder(),
+                child: SizedBox.square(
+                  dimension: 18.5,
+                  child: Center(
+                    child: KapyIcon(
+                      KapyIcons.closeRounded,
+                      size: 10,
+                      color: palette.textSecondary,
+                      semanticLabel: 'Close',
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -3398,46 +3391,20 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// that stays put.
   Widget _paneColumn({
     required String title,
-    required String summary,
     required Widget pane,
     Widget? footer,
   }) {
     final palette = context.palette;
-    final surface = palette.surfaceBackground;
     return FocusTraversalGroup(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _paneHeader(title: title, summary: summary),
-          Expanded(
-            child: Stack(
-              children: [
-                Positioned.fill(child: pane),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 64,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          stops: const [0, 0.85],
-                          colors: [surface.withValues(alpha: 0), surface],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _paneHeader(title: title),
+          Expanded(child: pane),
           if (footer != null)
             Container(
               height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 28),
+              padding: const EdgeInsets.symmetric(horizontal: 22),
               decoration: BoxDecoration(
                 border: Border(top: BorderSide(color: palette.paneEdge)),
               ),
@@ -3568,12 +3535,9 @@ class _SettingsDialogState extends State<SettingsDialog>
   Widget _buildPaned(BuildContext context) {
     final palette = context.palette;
     final section = _section;
-    final (title, summary) = _searching
-        ? (
-            '${_count(_results.length, 'setting')} for “$_query”',
-            'Found by name, by everyday words and by what each one changes',
-          )
-        : (section.label, section.summary);
+    final title = _searching
+        ? '${_count(_results.length, 'setting')} for “$_query”'
+        : section.label;
     return BackForwardArea(
       onStep: _stepSections,
       child: Row(
@@ -3582,7 +3546,7 @@ class _SettingsDialogState extends State<SettingsDialog>
           FocusTraversalGroup(
             child: Container(
               width: _navWidth,
-              padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+              padding: const EdgeInsets.fromLTRB(12, 16, 12, 18),
               decoration: BoxDecoration(
                 color: palette.sidebarBackground,
                 border: Border(right: BorderSide(color: palette.paneEdge)),
@@ -3590,57 +3554,66 @@ class _SettingsDialogState extends State<SettingsDialog>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    height: 26,
-                    padding: const EdgeInsets.only(left: 10),
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Settings',
-                      style: chromeStyle(
-                        size: 13,
-                        line: 18,
-                        weight: AppWeight.button,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  // Settings opened on purpose, sent to one pane, leaves the
-                  // keyboard to whatever that pane wanted it for.
                   _searchField(autofocus: widget.section == null),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 8),
                   Expanded(
                     child: LayoutBuilder(
                       builder: (context, constraints) {
                         final updates = widget.updates;
-                        // Every category stays in view, so the card gets only
-                        // what the rail leaves: its rows, a gap and the version.
-                        final left =
-                            constraints.maxHeight -
-                            _sections.length * _SettingsRail.itemHeight -
-                            (updates == null ? 0 : 28);
+                        final sections = _sections;
+                        final labels =
+                            (sections.any(_SettingsRail.general.contains)
+                                ? 1
+                                : 0) +
+                            (sections.any(_SettingsRail.account.contains)
+                                ? 1
+                                : 0);
+                        final railNeeded = math.min(
+                          constraints.maxHeight,
+                          sections.length * _SettingsRail.itemHeight +
+                              labels * _SettingsRail.labelHeight +
+                              2,
+                        );
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Expanded(
+                            SizedBox(
+                              height: railNeeded,
                               child: _SettingsRail(
-                                sections: _sections,
+                                sections: sections,
                                 changed: _changedSections,
-                                // No category is the one on show while results
-                                // are.
                                 selected: _searching ? null : section,
                                 onSelect: _selectFromRail,
                               ),
                             ),
-                            if (updates != null) ...[
-                              SettingsUpdateCard(
-                                updates: updates,
-                                layoutPrefs: widget.layoutPrefs,
-                                maxHeight: left,
+                            Expanded(
+                              child: LayoutBuilder(
+                                builder: (context, box) {
+                                  final foot =
+                                      28.0 + (updates == null ? 0.0 : 26.0);
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (updates != null)
+                                        SettingsUpdateCard(
+                                          updates: updates,
+                                          layoutPrefs: widget.layoutPrefs,
+                                          maxHeight: box.maxHeight - foot - 6,
+                                        ),
+                                      const Spacer(),
+                                      _ChangedCount(
+                                        count: _changedEntries.length,
+                                      ),
+                                      if (updates != null) ...[
+                                        const SizedBox(height: 10),
+                                        _VersionStatus(updates: updates),
+                                      ],
+                                    ],
+                                  );
+                                },
                               ),
-                              const SizedBox(height: 10),
-                              _VersionStatus(updates: updates),
-                            ],
+                            ),
                           ],
                         );
                       },
@@ -3653,7 +3626,6 @@ class _SettingsDialogState extends State<SettingsDialog>
           Expanded(
             child: _paneColumn(
               title: title,
-              summary: summary,
               pane: BackForwardSlide(
                 child: _ScrollingPane(
                   key: _paneKey,
@@ -3678,7 +3650,6 @@ class _SettingsDialogState extends State<SettingsDialog>
   Widget _buildStacked(BuildContext context) {
     return _paneColumn(
       title: 'Settings',
-      summary: 'Everything in one list',
       pane: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -3715,16 +3686,13 @@ class _SettingsDialogState extends State<SettingsDialog>
   List<Widget> _fromGroups(List<_Group> groups) => [
     for (final group in groups) ...[
       if (group != groups.first)
-        SizedBox(height: SettingsMetrics.groupGap * (group.apart ? 2 : 1)),
+        const SizedBox(height: SettingsMetrics.groupGap),
       if (group.title case final title?)
         SettingsLabel(title, detail: group.detail, caption: group.caption),
       if (group.lead case final lead?) ...[lead, const SizedBox(height: 12)],
-      if (group.bare) ...[
-        for (final setting in group.settings) setting.build(bare: true),
-      ] else
-        SettingsGroup(
-          children: [for (final setting in group.settings) setting.build()],
-        ),
+      SettingsGroup(
+        children: [for (final setting in group.settings) setting.build()],
+      ),
       ...group.after,
     ],
   ];
@@ -3933,17 +3901,14 @@ class _AppearancePreview extends StatelessWidget {
       height: 1.45,
       color: palette.textPrimary,
     );
-    final heading = font == WritingFont.clean || font == WritingFont.monospace
-        ? font
-        : WritingFont.handwritten;
+    final heading = font == WritingFont.mixed ? WritingFont.handwritten : font;
     final caption = TextStyle(fontSize: 11, color: palette.textTertiary);
     return Container(
       key: const ValueKey('appearance-preview'),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: palette.wellBackground,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
-        border: Border.all(color: palette.controlBorder),
+        color: palette.cardBackground,
+        borderRadius: BorderRadius.circular(AppRadii.group),
       ),
       child: NotebookPaper(
         style: prefs.paperStyle,
@@ -4001,7 +3966,7 @@ class _AppearancePreview extends StatelessWidget {
                                 decoration: BoxDecoration(
                                   color: palette.tonalBackground,
                                   borderRadius: BorderRadius.circular(
-                                    AppRadii.compact,
+                                    AppRadii.control,
                                   ),
                                 ),
                                 child: Text(
@@ -4010,10 +3975,8 @@ class _AppearancePreview extends StatelessWidget {
                                   softWrap: false,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontFamily:
-                                        AppPlatform.monoFontFallback.first,
-                                    fontFamilyFallback:
-                                        AppPlatform.monoFontFallback,
+                                    fontFamily: AppFonts.ui,
+                                    fontFamilyFallback: AppFonts.uiFallback,
                                     fontSize: 12.5,
                                     color: palette.tonalForeground,
                                   ),
@@ -4067,7 +4030,7 @@ class _TransparencySlider extends StatelessWidget {
     final slider = SliderTheme(
       data: SliderThemeData(
         trackHeight: 4,
-        activeTrackColor: Theme.of(context).colorScheme.primary,
+        activeTrackColor: palette.accentFill,
         inactiveTrackColor: palette.switchTrackOff,
         thumbColor: palette.switchThumb,
         overlayColor: Colors.transparent,
@@ -4349,7 +4312,7 @@ class _Keycap extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: recording ? 9 : 8),
       decoration: BoxDecoration(
         color: recording ? null : palette.surfaceBackground,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(
           color: recording
               ? Theme.of(context).colorScheme.primary
@@ -4365,8 +4328,8 @@ class _Keycap extends StatelessWidget {
           softWrap: false,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontFamily: AppPlatform.monoFontFallback.first,
-            fontFamilyFallback: AppPlatform.monoFontFallback,
+            fontFamily: AppFonts.ui,
+            fontFamilyFallback: AppFonts.uiFallback,
             fontSize: 12,
             height: 1.2,
             color: keys.isEmpty ? palette.textTertiary : palette.textPrimary,
@@ -4523,7 +4486,7 @@ class _ShortcutRow extends StatelessWidget {
       child: InkWell(
         key: ValueKey('shortcut-${action.name}'),
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         child: Opacity(
           opacity: onPressed == null ? 0.45 : 1,
           child: _Keycap(
@@ -4738,11 +4701,23 @@ class _SheetIndex extends StatelessWidget {
       children: [
         for (final card in cards) ...[
           if (card != cards.first) const SizedBox(height: 16),
-          KapyControlSurface(
+          Material(
             color: palette.cardBackground,
-            borderColor: palette.fillEdge,
+            borderRadius: BorderRadius.circular(AppRadii.group),
+            clipBehavior: Clip.antiAlias,
             child: Column(
-              children: [for (final section in card) _row(section)],
+              children: [
+                for (var index = 0; index < card.length; index++) ...[
+                  if (index > 0)
+                    Divider(
+                      height: 1,
+                      thickness: 1,
+                      indent: 12,
+                      color: palette.pageBorder,
+                    ),
+                  _row(card[index]),
+                ],
+              ],
             ),
           ),
         ],
@@ -4855,8 +4830,8 @@ class _AccountRow extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         height: 20 / 15,
-                        fontWeight: AppWeight.font(AppWeight.button),
-                        fontVariations: AppWeight.wght(AppWeight.button),
+                        fontWeight: AppWeight.font(AppWeight.regular),
+                        fontVariations: AppWeight.wght(AppWeight.regular),
                         color: palette.textPrimary,
                       ),
                     ),
@@ -4934,6 +4909,8 @@ class _IndexRow extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 15,
                         height: 20 / 15,
+                        fontWeight: AppWeight.font(AppWeight.medium),
+                        fontVariations: AppWeight.wght(AppWeight.medium),
                         color: palette.textPrimary,
                       ),
                     ),
@@ -4955,7 +4932,7 @@ class _IndexRow extends StatelessWidget {
                             const SizedBox(width: 12),
                             DecoratedBox(
                               decoration: BoxDecoration(
-                                color: palette.clay,
+                                color: waitingMarker,
                                 shape: BoxShape.circle,
                               ),
                               child: const SizedBox.square(dimension: 8),
@@ -5000,14 +4977,48 @@ class _SettingsRail extends StatelessWidget {
   final ValueChanged<SettingsSection> onSelect;
 
   /// One row and the gap under it.
-  static const double itemHeight = 34;
+  static const double itemHeight = 32;
+
+  /// A quiet group label and the space around it.
+  static const double labelHeight = 36;
+
+  static const general = [
+    SettingsSection.appearance,
+    SettingsSection.notes,
+    SettingsSection.voice,
+    SettingsSection.window,
+    SettingsSection.shortcuts,
+  ];
+  static const account = [
+    SettingsSection.account,
+    SettingsSection.sharing,
+    SettingsSection.about,
+  ];
 
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final section in sections)
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    Widget label(String text) => Padding(
+      key: ValueKey('settings-group-${text.toLowerCase()}'),
+      padding: const EdgeInsets.fromLTRB(8, 14, 8, 6),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          height: 16 / 12,
+          color: palette.textQuiet,
+        ),
+      ),
+    );
+    List<Widget> group(String name, List<SettingsSection> order) {
+      final shown = [
+        for (final section in order)
+          if (sections.contains(section)) section,
+      ];
+      if (shown.isEmpty) return const [];
+      return [
+        label(name),
+        for (final section in shown)
           _RailItem(
             key: ValueKey('settings-section-${section.name}'),
             icon: section.icon,
@@ -5016,9 +5027,16 @@ class _SettingsRail extends StatelessWidget {
             selected: section == selected,
             onTap: () => onSelect(section),
           ),
-      ],
-    ),
-  );
+      ];
+    }
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [...group('General', general), ...group('Account', account)],
+      ),
+    );
+  }
 }
 
 class _RailItem extends StatelessWidget {
@@ -5047,26 +5065,26 @@ class _RailItem extends StatelessWidget {
         selected: selected,
         button: true,
         child: Material(
-          color: selected ? palette.fillSelected : Colors.transparent,
+          color: selected ? palette.selectedBackground : Colors.transparent,
           borderRadius: corners,
           child: InkWell(
             onTap: onTap,
             borderRadius: corners,
             hoverColor: palette.hover,
             child: Container(
-              height: 32,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
+              height: 30,
+              padding: const EdgeInsets.symmetric(horizontal: 9),
               child: Row(
                 children: [
-                  KapyIcon(icon, size: 16, color: palette.textTertiary),
-                  const SizedBox(width: 10),
+                  KapyIcon(icon, size: 15, color: palette.textPrimary),
+                  const SizedBox(width: 9),
                   Expanded(
                     child: Text(
                       label,
                       style: chromeStyle(
-                        size: 13.5,
+                        size: 13,
                         line: 18,
-                        weight: selected ? AppWeight.selected : AppWeight.body,
+                        weight: AppWeight.regular,
                         color: palette.textPrimary,
                       ),
                       overflow: TextOverflow.ellipsis,
@@ -5169,8 +5187,8 @@ class _SheetPage extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 17,
                             height: 22 / 17,
-                            fontWeight: AppWeight.font(AppWeight.page),
-                            fontVariations: AppWeight.wght(AppWeight.page),
+                            fontWeight: AppWeight.font(AppWeight.semibold),
+                            fontVariations: AppWeight.wght(AppWeight.semibold),
                             color: palette.textPrimary,
                           ),
                           overflow: TextOverflow.ellipsis,
@@ -5181,11 +5199,11 @@ class _SheetPage extends StatelessWidget {
                             title,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: handStyle(
-                              26,
+                            style: uiStyle(
+                              AppTypeScale.spaceTitle,
                               32,
-                              FontWeight.w400,
-                              palette.textPrimary,
+                              FontWeight.w600,
+                              palette.textHeading,
                             ),
                           ),
                         ),
@@ -5199,7 +5217,9 @@ class _SheetPage extends StatelessWidget {
                     textStyle: chromeStyle(
                       size: 15,
                       line: 20,
-                      weight: back == null ? AppWeight.button : AppWeight.page,
+                      weight: back == null
+                          ? AppWeight.regular
+                          : AppWeight.semibold,
                       color: done,
                     ),
                   ),
@@ -5255,7 +5275,7 @@ class _ScrollingPane extends StatelessWidget {
       child: SingleChildScrollView(
         controller: controller,
         padding: AppPlatform.hasPointer
-            ? const EdgeInsets.fromLTRB(28, 0, 24, 24)
+            ? const EdgeInsets.fromLTRB(21, 14, 21, 24)
             : const EdgeInsets.only(right: 7),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5286,8 +5306,45 @@ Widget _withFlash(
   );
 }
 
-/// The installed version at the foot of the rail, with a dot that says
-/// whether there is a newer one.
+/// How many settings are off their default, at the foot of the rail.
+class _ChangedCount extends StatelessWidget {
+  const _ChangedCount({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: 12,
+      height: 16 / 12,
+      color: context.palette.textQuiet,
+    );
+    return Padding(
+      key: const ValueKey('settings-changed-count'),
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Changed from default',
+                maxLines: 1,
+                softWrap: false,
+                style: style,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text('$count', style: style),
+        ],
+      ),
+    );
+  }
+}
+
+/// The installed version at the foot of the rail.
 class _VersionStatus extends StatelessWidget {
   const _VersionStatus({required this.updates});
 
@@ -5295,39 +5352,21 @@ class _VersionStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     final version = updates.currentVersion;
     if (version.isEmpty) return const SizedBox.shrink();
     final pending = updates.hasUpdate;
-    return Container(
+    return Padding(
       key: const ValueKey('settings-version-status'),
-      height: 18,
-      padding: const EdgeInsets.only(left: 10),
-      child: Row(
-        children: [
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: pending
-                  ? palette.keyword
-                  : Theme.of(context).colorScheme.primary,
-              shape: BoxShape.circle,
-            ),
-            child: const SizedBox.square(dimension: 6),
-          ),
-          const SizedBox(width: 7),
-          Expanded(
-            child: Text(
-              'Version $version · ${pending ? 'Update available' : 'Up to date'}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                height: 16 / 12,
-                color: palette.textTertiary,
-              ),
-            ),
-          ),
-        ],
+      padding: const EdgeInsets.only(left: 8),
+      child: Text(
+        'Version $version · ${pending ? 'Update available' : 'Up to date'}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 11,
+          height: 16 / 11,
+          color: context.palette.textQuiet,
+        ),
       ),
     );
   }
@@ -5640,7 +5679,7 @@ class _UpdateRow extends StatelessWidget {
                       : palette.controlBackground,
                   foregroundColor: palette.textPrimary,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(AppRadii.compact),
+                    borderRadius: BorderRadius.circular(AppRadii.control),
                   ),
                 ),
                 child: Text(
@@ -6004,7 +6043,7 @@ class _StoreAboutPaneState extends State<_StoreAboutPane> {
               textStyle: chromeStyle(
                 size: 15,
                 line: 20,
-                weight: AppWeight.button,
+                weight: AppWeight.regular,
                 color: palette.tonalForeground,
               ),
               shape: RoundedRectangleBorder(

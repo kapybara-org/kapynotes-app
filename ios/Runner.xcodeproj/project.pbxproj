@@ -26,8 +26,6 @@
 		D3C0A0B00000000000000005 /* RecordingLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3C0A0B00000000000000004 /* RecordingLiveActivity.swift */; };
 		D3C0A0B00000000000000007 /* RecordingActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3C0A0B00000000000000006 /* RecordingActivity.swift */; };
 		A1B2C0D000000000000000E4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000E3 /* Assets.xcassets */; };
-		A1B2C0D000000000000000E6 /* Figtree-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000E5 /* Figtree-SemiBold.ttf */; };
-		A1B2C0D000000000000000E8 /* Figtree-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000E7 /* Figtree-Regular.ttf */; };
 		A1B2C0D000000000000000A5 /* WriteNoteWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A1B2C0D000000000000000A1 /* WriteNoteWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
 		C1A0B0F20000000000000002 /* RichClipboardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1A0B0F20000000000000001 /* RichClipboardTests.swift */; };
@@ -120,8 +118,6 @@
 		D3C0A0B00000000000000004 /* RecordingLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingLiveActivity.swift; sourceTree = "<group>"; };
 		D3C0A0B00000000000000006 /* RecordingActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingActivity.swift; sourceTree = "<group>"; };
 		A1B2C0D000000000000000E3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A1B2C0D000000000000000E5 /* Figtree-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-SemiBold.ttf"; sourceTree = "<group>"; };
-		A1B2C0D000000000000000E7 /* Figtree-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Figtree-Regular.ttf"; sourceTree = "<group>"; };
 		A1B2C0D000000000000000A3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -223,8 +219,6 @@
 				D3C0A0B00000000000000001 /* RecordingAttributes.swift */,
 				D3C0A0B00000000000000004 /* RecordingLiveActivity.swift */,
 				A1B2C0D000000000000000E3 /* Assets.xcassets */,
-				A1B2C0D000000000000000E5 /* Figtree-SemiBold.ttf */,
-				A1B2C0D000000000000000E7 /* Figtree-Regular.ttf */,
 				A1B2C0D000000000000000A3 /* Info.plist */,
 			);
 			path = WriteNoteWidget;
@@ -364,8 +358,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1B2C0D000000000000000E4 /* Assets.xcassets in Resources */,
-				A1B2C0D000000000000000E6 /* Figtree-SemiBold.ttf in Resources */,
-				A1B2C0D000000000000000E8 /* Figtree-Regular.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

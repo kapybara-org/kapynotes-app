@@ -2113,7 +2113,7 @@ void main() {
           '```nosuchlanguage\ndefine "it" # too\n```';
       await tester.pumpWidget(harness(body));
       await tester.pumpAndSettle();
-      const palette = KapyTheme.darkPalette;
+      final palette = KapyTheme.darkPalette;
       expect(styleOf(tester, 'def').color, palette.codeKeyword);
       expect(styleOf(tester, 'return').color, palette.codeKeyword);
       expect(styleOf(tester, 'sum').color, palette.codeBuiltIn);

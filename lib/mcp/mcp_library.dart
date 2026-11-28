@@ -190,8 +190,7 @@ class McpLibrary {
     if (note.isDrawing) return const {};
     final results = _engine().evaluateDocument(note.body, titled: true);
     return {
-      for (final entry in results.entries)
-        entry.key + 1: entry.value.text,
+      for (final entry in results.entries) entry.key + 1: entry.value.text,
     };
   }
 

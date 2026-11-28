@@ -826,12 +826,10 @@ class _CommandList extends StatelessWidget {
                           child: Text(
                             command.group.label,
                             style: TextStyle(
-                              color: palette.textTertiary,
-                              fontSize: AppTypeScale.badge,
-                              fontWeight: AppWeight.font(AppWeight.rowTitle),
-                              fontVariations: AppWeight.wght(
-                                AppWeight.rowTitle,
-                              ),
+                              color: palette.textSecondary,
+                              fontSize: AppTypeScale.caption,
+                              fontWeight: AppWeight.font(AppWeight.regular),
+                              fontVariations: AppWeight.wght(AppWeight.regular),
                             ),
                           ),
                         ),
@@ -900,8 +898,8 @@ class _SearchField extends StatelessWidget {
     final style = TextStyle(
       color: palette.textPrimary,
       fontSize: AppTypeScale.body,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     return Container(
       height: 36,
@@ -979,8 +977,8 @@ class _CommandRow extends StatelessWidget {
     final quiet = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     return Semantics(
       button: true,
@@ -1024,8 +1022,10 @@ class _CommandRow extends StatelessWidget {
                               style: TextStyle(
                                 color: palette.textPrimary,
                                 fontSize: AppTypeScale.body,
-                                fontWeight: AppWeight.font(AppWeight.body),
-                                fontVariations: AppWeight.wght(AppWeight.body),
+                                fontWeight: AppWeight.font(AppWeight.regular),
+                                fontVariations: AppWeight.wght(
+                                  AppWeight.regular,
+                                ),
                               ),
                             ),
                           ),
@@ -1170,8 +1170,8 @@ class _KeyHints extends StatelessWidget {
     final style = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     return ExcludeSemantics(
       child: Container(
@@ -1254,8 +1254,8 @@ class _TableSizePicker extends StatelessWidget {
                         style: TextStyle(
                           color: palette.textPrimary,
                           fontSize: AppTypeScale.control,
-                          fontWeight: AppWeight.font(AppWeight.rowTitle),
-                          fontVariations: AppWeight.wght(AppWeight.rowTitle),
+                          fontWeight: AppWeight.font(AppWeight.regular),
+                          fontVariations: AppWeight.wght(AppWeight.regular),
                         ),
                       ),
                     ),

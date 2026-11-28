@@ -143,46 +143,41 @@ void main() {
     expect(find.byTooltip('2 notes'), findsOneWidget);
   });
 
-  testWidgets('a hairline runs along the bar\'s bottom, as under the band', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: KapyTheme.light(),
-        home: Material(
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: 320,
-              child: SidebarWindowBar(
-                title: 'My notes',
-                count: 12,
-                onCreate: () {},
-                onHide: () {},
+  testWidgets(
+    "the bar names the list in handwriting, in the heading's colour",
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.light(),
+          home: Material(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: 320,
+                child: SidebarWindowBar(
+                  title: 'My notes',
+                  count: 12,
+                  onCreate: () {},
+                  onHide: () {},
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
-    final bar = tester.widget<Container>(
-      find
-          .descendant(
-            of: find.byType(SidebarWindowBar),
-            matching: find.byType(Container),
-          )
-          .first,
-    );
-    expect(
-      (bar.foregroundDecoration as BoxDecoration?)?.border,
-      Border(bottom: BorderSide(color: KapyTheme.lightPalette.railBorder)),
-    );
-  });
+      );
+      final title = tester.widget<Text>(
+        find.byKey(const ValueKey('sidebar-space-title')),
+      );
+      expect(title.style?.fontFamily, AppFonts.hand);
+      expect(title.style?.fontSize, 22);
+      expect(title.style?.color, KapyTheme.lightPalette.textHeading);
+    },
+  );
 
   testWidgets("the search field's keycap waits for the pointer, and is T3, "
       'which Riverbank dark keeps apart from T2', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     expect(palette.textTertiary, isNot(palette.textSecondary));
     await tester.pumpWidget(
       MaterialApp(
@@ -257,7 +252,7 @@ void main() {
   testWidgets('the Mac search field is 32 high, 10 in, radius 9, with its '
       '14 px icon in T3', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),
@@ -274,17 +269,19 @@ void main() {
     );
     final search = find.byKey(const ValueKey('sidebar-search-box'));
     final box = tester.widget<Container>(search);
-    expect(tester.getSize(search).height, 32);
+    expect(tester.getSize(search).height, 30);
     expect(box.padding, const EdgeInsets.symmetric(horizontal: 10));
     expect(
       (box.decoration! as BoxDecoration).borderRadius,
-      BorderRadius.circular(9),
+      BorderRadius.circular(AppRadii.control),
     );
+    expect((box.decoration! as BoxDecoration).color, palette.controlBackground);
+    expect((box.decoration! as BoxDecoration).border, isNull);
     final icon = tester.widget<KapyIcon>(
       find.descendant(of: search, matching: find.byType(KapyIcon)),
     );
     expect(icon.size, 14);
-    expect(icon.color, palette.textTertiary);
+    expect(icon.color, palette.textSecondary);
     expect(
       tester.getTopLeft(find.byType(KapyIcon)).dx -
           tester.getTopLeft(search).dx,

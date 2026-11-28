@@ -188,8 +188,8 @@ class _BarButton extends StatelessWidget {
                       style: TextStyle(
                         color: color,
                         fontSize: 21,
-                        fontWeight: AppWeight.font(AppWeight.rowTitle),
-                        fontVariations: AppWeight.wght(AppWeight.rowTitle),
+                        fontWeight: AppWeight.font(AppWeight.regular),
+                        fontVariations: AppWeight.wght(AppWeight.regular),
                         height: 1,
                       ),
                     )

@@ -14,7 +14,7 @@ import 'task_details_sheet.dart';
 
 /// The Tasks boards' colours (KAPY-62, row D), each the nearest of the
 /// palette's own. In dark, the few the palette has no role for are steps off
-/// the card, worked out so Riverbank dark keeps the colours it was drawn in.
+/// the card, worked out from the neutral ladder's steps.
 class TaskInk {
   const TaskInk._({
     required this.card,
@@ -28,6 +28,8 @@ class TaskInk {
     required this.quiet,
     required this.sage,
     required this.doneFill,
+    required this.doneInk,
+    required this.quietOnLift,
     required this.edge,
     required this.keyEdge,
     required this.hairline,
@@ -36,24 +38,44 @@ class TaskInk {
   factory TaskInk.of(BuildContext context) {
     final palette = context.palette;
     if (palette.brightness == Brightness.dark) {
-      final card = palette.cardBackground;
+      final card = palette.wellBackground;
       final text = palette.textPrimary;
       Color step(Color toward, double amount) => Color(
         Color.alphaBlend(toward.withValues(alpha: amount), card).toARGB32(),
       );
+      final chip = step(text, 0.0817);
+      final doneFill = step(palette.accentText, 0.09);
+      Color legible(Color ink, Color ground) {
+        double luminance(Color c) => c.computeLuminance() + 0.05;
+        var shown = ink;
+        for (
+          var step = 0;
+          step < 20 &&
+              luminance(text) > luminance(shown) &&
+              luminance(shown) / luminance(ground) < 4.5;
+          step++
+        ) {
+          shown = Color.lerp(shown, text, 0.1)!;
+        }
+        return shown;
+      }
+
+      final secondary = legible(palette.textSecondary, chip);
       final contrast = palette.increasedContrast;
       return TaskInk._(
         card: card,
-        raised: palette.selectedBackground,
+        raised: step(text, 0.05),
         lifted: step(text, 0.06),
         rowHover: palette.hover,
         button: step(text, 0.07),
-        chip: step(text, 0.0817),
+        chip: chip,
         text: text,
-        secondary: palette.textSecondary,
+        secondary: secondary,
         quiet: palette.textTertiary,
-        sage: palette.accentText,
-        doneFill: step(palette.accentText, 0.16),
+        sage: legible(palette.accentText, card),
+        doneFill: doneFill,
+        doneInk: legible(palette.accentText, doneFill),
+        quietOnLift: secondary,
         edge: contrast ? palette.controlBorder : text.withAlpha(0x14),
         keyEdge: contrast ? palette.checkboxBorder : text.withAlpha(0x24),
         hairline: palette.separator,
@@ -62,7 +84,7 @@ class TaskInk {
     return TaskInk._(
       card: palette.wellBackground,
       raised: palette.cardBackground,
-      lifted: palette.surfaceBackground,
+      lifted: palette.sidebarBackground,
       rowHover: palette.hover,
       button: palette.controlBackground,
       chip: palette.selectedBackground,
@@ -70,7 +92,9 @@ class TaskInk {
       secondary: palette.textSecondary,
       quiet: palette.textTertiary,
       sage: palette.accentText,
-      doneFill: palette.tonalBackground,
+      doneFill: palette.accentFill,
+      doneInk: palette.onAccent,
+      quietOnLift: palette.textTertiary,
       edge: palette.controlBorder,
       keyEdge: palette.keycapBorder,
       hairline: palette.separator,
@@ -88,6 +112,15 @@ class TaskInk {
   final Color quiet;
   final Color sage;
   final Color doneFill;
+
+  /// The phone's Done on [doneFill]: the accent on its wash in dark, white on
+  /// the filled orange in light, where no wash keeps the accent at 4.5 : 1.
+  final Color doneInk;
+
+  /// Quiet words on a lift (a button, a chip, a choice): the quiet ink in
+  /// light, the secondary in dark, where the quiet ink on a lift reads under
+  /// 4.5 : 1.
+  final Color quietOnLift;
   final Color edge;
   final Color keyEdge;
   final Color hairline;
@@ -111,8 +144,8 @@ TextStyle taskText(
 ]) => uiStyle(size, line, FontWeight.w400, color, axis: weight);
 
 TextStyle _mono(Color color) => TextStyle(
-  fontFamily: AppFonts.mono,
-  fontFamilyFallback: AppFonts.monoFallback,
+  fontFamily: AppFonts.ui,
+  fontFamilyFallback: AppFonts.uiFallback,
   fontSize: 11,
   height: 14 / 11,
   color: color,
@@ -545,7 +578,7 @@ class _PairOptionState extends State<_PairOption> {
                   style: taskText(
                     12,
                     16,
-                    phone ? ink.secondary : ink.quiet,
+                    phone ? ink.secondary : ink.quietOnLift,
                     520,
                   ),
                 ),
@@ -849,21 +882,21 @@ class TaskDoNowCard extends StatelessWidget {
               KapyIcon(
                 KapyIcons.checkRounded,
                 size: phone ? 16 : 14,
-                color: phone ? ink.sage : ink.text,
+                color: phone ? ink.doneInk : ink.text,
               ),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   'Done',
                   style: phone
-                      ? taskText(15, 20, ink.sage, 500)
+                      ? taskText(15, 20, ink.doneInk, 500)
                       : taskText(13, 18, ink.text, 500),
                 ),
               ),
               if (!phone && doneShortcut != null) ...[
                 const SizedBox(width: 6),
                 ExcludeSemantics(
-                  child: Text(doneShortcut!, style: _mono(ink.quiet)),
+                  child: Text(doneShortcut!, style: _mono(ink.quietOnLift)),
                 ),
               ],
             ],

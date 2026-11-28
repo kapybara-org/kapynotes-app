@@ -28,8 +28,8 @@ Widget _pie(
                     ChecklistPie(
                       done: done,
                       total: total,
-                      fill: Theme.of(context).colorScheme.primary,
-                      check: palette.paperColor,
+                      fill: palette.accentFill,
+                      check: palette.onAccent,
                     ),
                 ],
               ),

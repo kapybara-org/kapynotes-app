@@ -1,8 +1,10 @@
 # Fonts
 
-## Writing font
+## Handwritten font
 
-The note editor defaults to Shantell Sans by Shantell Martin and Arrow Type.
+The Handwritten writing font, Mixed's titles and headings, and the few
+friendly moments in the app's chrome that use the handwritten accent style
+(`AppFonts.hand`) are set in Shantell Sans by Shantell Martin and Arrow Type.
 Its variable axes are configured with low informality and no baseline bounce,
 keeping the writing surface human without making longer notes feel busy. The
 bundled upright and italic variable fonts are distributed through Google Fonts
@@ -33,46 +35,37 @@ License: [`ShantellSans-OFL.txt`](ShantellSans-OFL.txt)
 
 ## Interface fonts
 
-The app's controls and labels are set in Figtree by Erik Kennedy, bundled so
-that menus, buttons and fields render the same face on every platform instead
-of each system's own. Calculation results and keycaps are set in Geist Mono by
-the Geist Project Authors (Vercel). Both are the upstream variable fonts as
-Google Fonts distributes them, unmodified: Figtree upright and italic with a
-`wght` axis from 300 to 900, and Geist Mono upright with `wght` from 100 to
-900. Both are licensed under the SIL Open Font License 1.1.
+The interface is set in Geist by the Geist Project Authors (Vercel), bundled
+and the same on every platform, under the SIL Open Font License 1.1. The
+Clean writing font and Mixed's body text use it too. The files are the
+upstream variable fonts as the `geist` npm package 1.9.2 ships them (Geist
+1.900), unmodified, with `wght` from 100 to 900.
 
-Geist Mono has no ⌘, ⌥ or ⌃, so a keycap draws those from the platform
-monospace face (`AppFonts.monoFallback` in `lib/core/theme.dart`).
+Geist has no ⌘, ⌥, ⌃, ⎋, ⏎ or ⌫, no ₩ ₺ ₫ ₦ ₸ ₿, and no Devanagari or other
+non-Latin, non-Greek, non-Cyrillic scripts, so those come from the device's
+own face (`AppFonts.uiFallback` in `lib/core/theme.dart`).
+
+Code and the Monospace writing font are set in Geist Mono, the upstream
+variable font as Google Fonts distributes it, unmodified, with `wght` from
+100 to 900. Geist Mono has ⏎ and ⌫ but no ⌘, ⌥, ⌃ or ⎋, so those come from
+the platform monospace face (`AppFonts.monoFallback`).
+
+The Pixel writing font is set in Geist Pixel's Square cut, one of the five
+static cuts in vercel/geist-pixel-font, converted from the npm package's
+WOFF2 to TrueType with fonttools and otherwise unmodified. It has 420
+glyphs and no ₹, ☐, ☑ or ✓; Geist draws whatever it lacks.
 
 | File | Source | Size |
 | --- | --- | --- |
-| `Figtree-Variable.ttf` | [`ofl/figtree/Figtree[wght].ttf`](https://github.com/google/fonts/tree/main/ofl/figtree), from [erikdkennedy/figtree](https://github.com/erikdkennedy/figtree) at `032dfa7` | 63 KB |
-| `Figtree-Italic-Variable.ttf` | [`ofl/figtree/Figtree-Italic[wght].ttf`](https://github.com/google/fonts/tree/main/ofl/figtree) | 63 KB |
+| `Geist-Variable.ttf` | [`geist`](https://www.npmjs.com/package/geist) 1.9.2, `dist/fonts/geist-sans/Geist-Variable.ttf` | 169 KB |
+| `Geist-Italic-Variable.ttf` | `geist` 1.9.2, `dist/fonts/geist-sans/Geist-Italic[wght].ttf` | 175 KB |
 | `GeistMono-Variable.ttf` | [`ofl/geistmono/GeistMono[wght].ttf`](https://github.com/google/fonts/tree/main/ofl/geistmono), from [vercel/geist-font](https://github.com/vercel/geist-font) at `77f0563` | 172 KB |
+| `GeistPixel-Square.ttf` | `geist` 1.9.2, `dist/fonts/geist-pixel/GeistPixel-Square.woff2`, as TrueType | 94 KB |
 
-Licenses: [`Figtree-OFL.txt`](Figtree-OFL.txt),
-[`GeistMono-OFL.txt`](GeistMono-OFL.txt)
-
-## Title font
-
-A note's title, in the default Clean writing font, is set in Newsreader by
-Production Type, under the SIL Open Font License 1.1. Any other writing font
-titles the note in its own face, and scripts Newsreader lacks fall back to the
-writing face.
-
-The app draws the title at one weight and one size, so the file is a static
-instance of the upstream variable font at `wght` 400 and `opsz` 36: 119 KB
-in place of 452 KB. To regenerate it:
-
-```sh
-pip install fonttools
-fonttools varLib.instancer -o Newsreader-Title.ttf \
-  "Newsreader[opsz,wght].ttf" wght=400 opsz=36
-```
-
-Source: <https://github.com/google/fonts/tree/main/ofl/newsreader>
-
-License: [`Newsreader-OFL.txt`](Newsreader-OFL.txt)
+Licenses: [`Geist-OFL.txt`](Geist-OFL.txt) (from vercel/geist-font),
+[`GeistMono-OFL.txt`](GeistMono-OFL.txt),
+[`GeistPixel-OFL.txt`](GeistPixel-OFL.txt) (from
+[vercel/geist-pixel-font](https://github.com/vercel/geist-pixel-font))
 
 ## Formula fonts
 

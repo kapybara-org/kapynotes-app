@@ -418,8 +418,8 @@ class _ActivityRow extends StatelessWidget {
               entry.client.label,
               style: TextStyle(
                 fontSize: 12.5,
-                fontWeight: AppWeight.font(AppWeight.section),
-                fontVariations: AppWeight.wght(AppWeight.section),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: palette.textPrimary,
               ),
             ),

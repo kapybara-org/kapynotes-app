@@ -6,7 +6,6 @@ import 'package:material_ui/material_ui.dart';
 import '../core/theme.dart';
 import 'compact_icon_button.dart';
 import 'control_surface.dart';
-import 'keycap.dart';
 import 'settings_rows.dart';
 
 /// One setting a search can find: what it is called, what else somebody
@@ -205,7 +204,7 @@ class SettingsSearchField extends StatelessWidget {
       child: ValueListenableBuilder<TextEditingValue>(
         valueListenable: controller,
         builder: (context, value, _) => SizedBox(
-          height: 34,
+          height: 28,
           child: TextField(
             key: const ValueKey('settings-search'),
             controller: controller,
@@ -216,50 +215,44 @@ class SettingsSearchField extends StatelessWidget {
             textInputAction: TextInputAction.search,
             onSubmitted: (_) => onSubmitted(),
             style: TextStyle(
-              fontSize: 13,
-              height: 16 / 13,
+              fontSize: 12.5,
+              height: 16 / 12.5,
               color: palette.textPrimary,
             ),
-            cursorHeight: 15,
+            cursorHeight: 14,
             decoration: kapyFieldDecoration(
               context,
-              hintText: 'Search settings',
+              hintText: 'Search',
               hintStyle: TextStyle(
-                fontSize: 13,
-                height: 16 / 13,
-                color: palette.textTertiary,
+                fontSize: 12.5,
+                height: 16 / 12.5,
+                color: palette.textSecondary,
               ),
-              fillColor: palette.fillRest,
-              borderColor: palette.fillEdge,
-              radius: 10,
+              fillColor: palette.cardBackground,
+              borderColor: palette.increasedContrast
+                  ? palette.controlBorder
+                  : Colors.transparent,
+              borderWidth: palette.increasedContrast ? 1 : 0,
+              radius: AppRadii.control,
               neutralFocus: true,
               // InputDecorator gives its prefix the whole adornment slot.
               // Center loosens those constraints so the glyph keeps its
               // intended size.
               prefixIcon: Padding(
-                padding: const EdgeInsets.only(left: 9, right: 8),
+                padding: const EdgeInsets.only(left: 9, right: 7),
                 child: Center(
                   widthFactor: 1,
                   heightFactor: 1,
                   child: KapyIcon(
                     KapyIcons.searchRounded,
-                    size: AppControlMetrics.iconSearch,
-                    color: palette.textTertiary,
+                    size: 13,
+                    color: palette.textSecondary,
                   ),
                 ),
               ),
-              prefixIconConstraints: const BoxConstraints(minHeight: 31),
+              prefixIconConstraints: const BoxConstraints(minHeight: 26),
               suffixIcon: value.text.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.only(right: 12),
-                      child: SizedBox(
-                        height: 28,
-                        child: Center(
-                          widthFactor: 1,
-                          child: Keycap('/', plain: true),
-                        ),
-                      ),
-                    )
+                  ? null
                   : CompactIconButton(
                       key: const ValueKey('settings-search-clear'),
                       tooltip: 'Clear search',
@@ -329,8 +322,8 @@ class SettingsSearchResults<S> extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: SettingsMetrics.titleSize,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: palette.textSecondary,
               ),
             ),

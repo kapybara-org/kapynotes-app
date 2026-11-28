@@ -923,8 +923,8 @@ class _CameraCapturePageState extends State<CameraCapturePage>
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 18,
-                  fontWeight: AppWeight.font(AppWeight.section),
-                  fontVariations: AppWeight.wght(AppWeight.section),
+                  fontWeight: AppWeight.font(AppWeight.regular),
+                  fontVariations: AppWeight.wght(AppWeight.regular),
                 ),
               ),
               const SizedBox(height: 8),
@@ -995,8 +995,8 @@ class _CameraCapturePageState extends State<CameraCapturePage>
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 16,
-                      fontWeight: AppWeight.font(AppWeight.body),
-                      fontVariations: AppWeight.wght(AppWeight.body),
+                      fontWeight: AppWeight.font(AppWeight.regular),
+                      fontVariations: AppWeight.wght(AppWeight.regular),
                     ),
                   ),
                 ],
@@ -1315,8 +1315,8 @@ class _RecordingTime extends StatelessWidget {
               TextSpan(
                 text: cameraClock(elapsed),
                 style: TextStyle(
-                  fontWeight: AppWeight.font(AppWeight.button),
-                  fontVariations: AppWeight.wght(AppWeight.button),
+                  fontWeight: AppWeight.font(AppWeight.regular),
+                  fontVariations: AppWeight.wght(AppWeight.regular),
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
@@ -1370,10 +1370,10 @@ class _ModeSwitch extends StatelessWidget {
                     color: choice == video ? Colors.white : Colors.white70,
                     fontSize: 14,
                     fontWeight: AppWeight.font(
-                      choice == video ? AppWeight.button : AppWeight.body,
+                      choice == video ? AppWeight.regular : AppWeight.regular,
                     ),
                     fontVariations: AppWeight.wght(
-                      choice == video ? AppWeight.button : AppWeight.body,
+                      choice == video ? AppWeight.regular : AppWeight.regular,
                     ),
                   ),
                 ),
@@ -1487,7 +1487,7 @@ class _SideButton extends StatelessWidget {
     excludeSemantics: true,
     child: InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadii.dialog),
+      borderRadius: BorderRadius.circular(AppRadii.surface),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         child: Column(

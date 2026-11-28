@@ -1,3 +1,5 @@
+import 'dart:ui' show BoxHeightStyle;
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -213,7 +215,7 @@ void main() {
       expect(group, findsOne);
 
       final words = tester.widget<Text>(find.text(title));
-      expect(words.style?.fontFamily, AppFonts.title);
+      expect(words.style?.fontFamily, AppFonts.ui);
       expect(words.style?.fontSize, 19);
       expect(words.style?.height, 24 / 19);
       expect(words.style?.color, palette.textPrimary);
@@ -386,12 +388,16 @@ void main() {
     final paragraph = tester.renderObject<RenderParagraph>(
       find.descendant(of: title, matching: find.byType(RichText)),
     );
+    // Line boxes, not glyph boxes: Geist's ascent and descent (1.3 em) run
+    // past the 24/19 line by design, without its ink leaving the line.
     final lines = paragraph.getBoxesForSelection(
       const TextSelection(baseOffset: 0, extentOffset: 'From Wen'.length),
+      boxHeightStyle: BoxHeightStyle.max,
     );
     final textHeight = lines.last.bottom - lines.first.top;
     expect(textHeight, greaterThan(24));
-    expect(paragraph.size.height, greaterThanOrEqualTo(textHeight));
+    // The paragraph's height is its line's, rounded to a whole point.
+    expect(paragraph.size.height, moreOrLessEquals(textHeight, epsilon: 0.5));
     expect(
       tester.getSize(heading('From Wen')).height,
       19 + paragraph.size.height + 1,

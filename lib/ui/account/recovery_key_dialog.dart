@@ -2,7 +2,6 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/file_export.dart';
-import '../../core/platform.dart';
 import '../../core/text_file_export.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
@@ -122,8 +121,8 @@ class _RecoveryKeyDialogState extends State<_RecoveryKeyDialog> {
                   key: const ValueKey('recovery-key-value'),
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontFamily: AppPlatform.monoFontFallback.first,
-                    fontFamilyFallback: AppPlatform.monoFontFallback,
+                    fontFamily: AppFonts.mono,
+                    fontFamilyFallback: AppFonts.monoFallback,
                     fontSize: AppTypeScale.control,
                     height: 1.7,
                     letterSpacing: 0.4,

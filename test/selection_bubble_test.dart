@@ -351,7 +351,7 @@ void main() {
         lessThan(tester.getRect(_bubble).top),
       );
       expect(tester.getSize(menu).width, 236);
-      expect(find.text('TURN INTO'), findsOneWidget);
+      expect(find.text('Turn into'), findsOneWidget);
       expect(
         find.descendant(of: menu, matching: find.text('Markdown')),
         findsNWidgets(4),

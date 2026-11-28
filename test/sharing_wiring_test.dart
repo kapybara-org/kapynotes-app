@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
 import 'package:kapy_notes/core/platform.dart';
-import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 import 'package:kapy_notes/data/local_store.dart';
@@ -27,6 +26,7 @@ import 'package:kapy_notes/ui/settings/sharing_section.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
+import 'package:kapy_notes/core/theme.dart' show waitingMarker;
 import 'package:material_ui/material_ui.dart';
 
 import 'support/sharing_devices.dart' show Device;
@@ -208,9 +208,13 @@ void main() {
     expect(rows.map((row) => row.note.title), contains('Trip budget'));
     expect(rows.every((row) => row.style == NoteRowStyle.touch), isTrue);
     expect(find.byType(NoteCardFace), findsNothing);
-    final width = tester.getSize(find.byType(Sidebar)).width;
+    final width = tester.getSize(find.byType(Sidebar)).width - 2 * 20;
     for (final row in rows) {
-      expect(tester.getSize(find.byWidget(row)).width, width, reason: 'a row');
+      expect(
+        tester.getSize(find.byWidget(row)).width,
+        width,
+        reason: 'a row across the list card',
+      );
     }
     expect(
       find.descendant(of: find.byType(Sidebar), matching: find.byType(Divider)),
@@ -735,7 +739,7 @@ void main() {
     expect(find.byKey(const ValueKey('home-title-notes')), findsOneWidget);
   });
 
-  testWidgets("on a phone, Folders in the bar carries a clay dot on every tab "
+  testWidgets("on a phone, Folders in the bar carries a red dot on every tab "
       'while invitations wait, and loses it once none do', (tester) async {
     final semantics = tester.ensureSemantics();
     await signIn(tester);
@@ -755,9 +759,9 @@ void main() {
     }
     expect(
       (tester.widget<Container>(foldersDot).decoration! as BoxDecoration).color,
-      tester.element(foldersDot).palette.clay,
+      waitingMarker,
     );
-    expect(tester.getSize(foldersDot), const Size.square(7));
+    expect(tester.getSize(foldersDot), const Size.square(6));
     expect(find.bySemanticsLabel('Folders, new in Shared'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('bar-folders')));
     await tester.pumpAndSettle();

@@ -3,15 +3,14 @@ import 'package:material_ui/material_ui.dart';
 import '../core/theme.dart';
 import '../data/writing_streak.dart';
 import '../sync/auth_api.dart';
-import 'editor/note_header.dart' show NoteTitleUnderline;
+import 'notes_list.dart' show CountBadge;
 import 'spaces_rail.dart' show AccountAvatar, StreakMark;
-import 'tasks/task_marks.dart';
 
 /// Home's header on a phone: the Notes and Tasks titles, the one on screen
-/// in ink with its count and the note title's clay underline, then the
-/// writing streak and the avatar that opens Settings.
+/// bright with its count, then the writing streak and the avatar that opens
+/// Settings.
 ///
-/// Notes keeps its count's room while Tasks is on screen, so Tasks sits 12
+/// Notes keeps its count's room while Tasks is on screen, so Tasks sits 16
 /// after the count on both pages and stays put when you swipe between them.
 class PhoneHomeHeader extends StatelessWidget {
   const PhoneHomeHeader({
@@ -44,21 +43,18 @@ class PhoneHomeHeader extends StatelessWidget {
   final AccountUser? user;
   final VoidCallback onSettings;
 
-  /// How far S's 44 pt target reaches past its 32 pt circle on each side,
-  /// into the room around it, so the circle keeps its place.
-  static const double _reach = 6;
-
   @override
   Widget build(BuildContext context) {
     final onTasks = this.onTasks;
     final streak = this.streak;
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.3,
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.only(left: 20, right: 20 - _reach),
+    return PhoneTitleBar(
+      // The titles shrink together, only when a narrow phone at large text
+      // has no room for them beside the streak and S.
+      title: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
         child: Row(
-          spacing: 12,
+          spacing: 16,
           children: [
             _Title(
               key: const ValueKey('home-title-notes'),
@@ -75,32 +71,74 @@ class PhoneHomeHeader extends StatelessWidget {
                 selected: tasks,
                 onPressed: onTasks,
               ),
-            Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                spacing: 12 - _reach,
-                children: [
-                  if (streak != null && streak.days > 0)
-                    Flexible(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: StreakMark(
-                          key: const ValueKey('phone-streak'),
-                          streak: streak,
-                          inline: true,
-                        ),
-                      ),
-                    ),
-                  AccountAvatar(
-                    key: const ValueKey('phone-account'),
-                    label: 'Settings',
-                    target: 32 + 2 * _reach,
-                    user: user,
-                    onPressed: onSettings,
-                  ),
-                ],
-              ),
-            ),
+          ],
+        ),
+      ),
+      trailing: [
+        if (streak != null && streak.days > 0)
+          StreakMark(
+            key: const ValueKey('phone-streak'),
+            streak: streak,
+            inline: true,
+          ),
+        AccountAvatar(
+          key: const ValueKey('phone-account'),
+          label: 'Settings',
+          target: PhoneTitleBar.avatarTarget,
+          user: user,
+          onPressed: onSettings,
+        ),
+      ],
+    );
+  }
+}
+
+/// The frame every phone tab's header is drawn in, Home's and the lists'
+/// alike (KAP-462): 48 tall under the status bar, text scaled no further than
+/// 1.3×, the title from the 20 pt inset on Home's line, and what ends the row,
+/// S last, ending at it. Switching between Notes, Folders and Kapy AI changes
+/// the words in it and moves nothing.
+class PhoneTitleBar extends StatelessWidget {
+  const PhoneTitleBar({
+    super.key,
+    this.leading,
+    required this.title,
+    this.trailing = const [],
+  });
+
+  /// Before the title, such as a page's back arrow, from a 6 pt inset.
+  final Widget? leading;
+  final Widget title;
+  final List<Widget> trailing;
+
+  /// How far S's 44 pt target reaches past its 32 pt circle on each side,
+  /// into the room around it, so the circle keeps its place.
+  static const double _reach = 6;
+
+  static const double height = 48;
+
+  /// S's tap target, the same on every tab.
+  static const double avatarTarget = 32 + 2 * _reach;
+
+  @override
+  Widget build(BuildContext context) {
+    final leading = this.leading;
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Container(
+        height: height,
+        padding: EdgeInsets.only(
+          left: leading == null ? 20 : 6,
+          right: trailing.isEmpty ? 20 : 20 - _reach,
+        ),
+        child: Row(
+          children: [
+            ?leading,
+            Expanded(child: title),
+            if (trailing.isNotEmpty) ...[
+              const SizedBox(width: 16),
+              Row(spacing: 12 - _reach, children: trailing),
+            ],
           ],
         ),
       ),
@@ -108,8 +146,8 @@ class PhoneHomeHeader extends StatelessWidget {
   }
 }
 
-/// One of Home's titles. The one on screen is in ink with its count and
-/// underlined; the other waits in grey, keeping its count's room unseen.
+/// One of Home's titles. The one on screen is bright with its count; the
+/// other waits a grey quieter, keeping its count's room unseen.
 class _Title extends StatelessWidget {
   const _Title({
     super.key,
@@ -123,10 +161,6 @@ class _Title extends StatelessWidget {
   final int count;
   final bool selected;
   final VoidCallback onPressed;
-
-  /// Paper's 40 × 4 mark: a 2 pt stroke over 38, drawn by the note title's
-  /// own underline.
-  static const _mark = Rect.fromLTWH(2.6, -24.6, 34.8, 26.7);
 
   @override
   Widget build(BuildContext context) {
@@ -142,49 +176,25 @@ class _Title extends StatelessWidget {
         onTap: onPressed,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
-          child: Column(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            spacing: 2,
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            spacing: 6,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                spacing: 6,
-                children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: handStyle(
-                      26,
-                      32,
-                      FontWeight.w600,
-                      selected ? palette.textPrimary : palette.textTertiary,
-                    ),
-                  ),
-                  Visibility.maintain(
-                    visible: selected,
-                    child: Text(
-                      '$count',
-                      maxLines: 1,
-                      softWrap: false,
-                      style: uiStyle(
-                        13,
-                        16,
-                        FontWeight.w400,
-                        palette.textTertiary,
-                        tabular: true,
-                      ),
-                    ),
-                  ),
-                ],
+              Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                style: handTitle(
+                  size: 30,
+                  line: 36,
+                  color: selected ? palette.textHeading : palette.textQuiet,
+                ),
               ),
-              SizedBox(
-                width: 40,
-                height: 4,
-                child: selected ? const NoteTitleUnderline(word: _mark) : null,
+              Visibility.maintain(
+                visible: selected,
+                child: CountBadge(count, phone: true),
               ),
             ],
           ),

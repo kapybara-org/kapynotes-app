@@ -67,11 +67,11 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     for (final weight in [
-      AppWeight.body,
-      AppWeight.selected,
-      AppWeight.button,
-      AppWeight.section,
-      AppWeight.page,
+      AppWeight.regular,
+      AppWeight.regular,
+      AppWeight.regular,
+      AppWeight.regular,
+      AppWeight.semibold,
     ]) {
       final gentle = await inkOf(tester, weight, boldText: false);
       final bold = await inkOf(tester, weight, boldText: true);

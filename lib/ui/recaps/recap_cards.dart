@@ -30,6 +30,7 @@ class RecapTones {
     required this.track,
     required this.accent,
     required this.accentInk,
+    required this.accentFill,
     required this.onAccent,
     required this.cardEdge,
     required this.quietButton,
@@ -56,7 +57,8 @@ class RecapTones {
     track: Color(0x38EDEDED),
     accent: Color(0xFFE8772E),
     accentInk: Color(0xFFE8772E),
-    onAccent: Color(0xFF1A0E06),
+    accentFill: Color(0xFFC05815),
+    onAccent: Color(0xFFFFFFFF),
     cardEdge: Color(0x12FFFFFF),
     quietButton: Color(0xFF3A2A1E),
     onQuietButton: Color(0xFFEDEDED),
@@ -84,7 +86,8 @@ class RecapTones {
     track: Color(0x24171717),
     accent: Color(0xFFD9692A),
     accentInk: Color(0xFFB9551A),
-    onAccent: Color(0xFF1A0E06),
+    accentFill: Color(0xFFBD5A22),
+    onAccent: Color(0xFFFFFFFF),
     cardEdge: Color(0x0F000000),
     quietButton: Color(0xFFFFFFFF),
     onQuietButton: Color(0xFF171717),
@@ -121,6 +124,9 @@ class RecapTones {
 
   /// Orange marks on the page and the tint.
   final Color accentInk;
+
+  /// Orange under words: the calendar's busiest days, with [onAccent] on them.
+  final Color accentFill;
   final Color onAccent;
   final Color cardEdge;
   final Color quietButton;
@@ -739,7 +745,7 @@ class _Calendar extends StatelessWidget {
             height: 38,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: top ? t.accent : t.levels[level],
+              color: top ? t.accentFill : t.levels[level],
               borderRadius: BorderRadius.circular(10),
             ),
             child: FittedBox(
@@ -807,7 +813,7 @@ class _Calendar extends StatelessWidget {
                     children: [
                       Text('Fewer', style: recapText(12, 14, 400, t.tertiary)),
                       const SizedBox(width: 2),
-                      for (final colour in [...t.levels.skip(1), t.accent])
+                      for (final colour in [...t.levels.skip(1), t.accentFill])
                         Container(
                           width: 10,
                           height: 10,

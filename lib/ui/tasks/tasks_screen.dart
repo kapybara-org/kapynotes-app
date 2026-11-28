@@ -829,10 +829,10 @@ class TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
                 done.isNotEmpty
                     ? 'Nothing left to do today.'
                     : phone && !widget.sheet
-                    ? 'Nothing on the list. Tap + to add a task.'
+                    ? 'Nothing on the list.\nTap + to add a task.'
                     : 'Nothing on the list.',
                 key: const ValueKey('tasks-empty'),
-                style: taskText(13, 18, ink.quiet),
+                style: handAccent(context.palette),
               ),
             ),
             PairStage() => TaskPairCard(
@@ -1040,7 +1040,7 @@ class TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
             children: [
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final titleStyle = handStyle(
+                  final titleStyle = uiStyle(
                     32,
                     40,
                     FontWeight.w700,
@@ -1078,7 +1078,7 @@ class TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
               Text(
                 'Newest first, by the day each was finished. Unticking one '
                 'puts it back at the end of the list.',
-                style: uiStyle(13, 18, FontWeight.w500, palette.textSecondary),
+                style: uiStyle(13, 18, FontWeight.w400, palette.textSecondary),
               ),
             ],
           ),
@@ -1096,7 +1096,7 @@ class TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
                 Flexible(
                   child: Text(
                     SidebarTimestamp.doneDay(day, now: now),
-                    style: handStyle(
+                    style: uiStyle(
                       15,
                       22,
                       FontWeight.w600,
@@ -1409,8 +1409,8 @@ class _AddRow extends StatelessWidget {
                   child: Text(
                     focused ? '↵' : shortcut ?? '',
                     style: TextStyle(
-                      fontFamily: AppFonts.mono,
-                      fontFamilyFallback: AppFonts.monoFallback,
+                      fontFamily: AppFonts.ui,
+                      fontFamilyFallback: AppFonts.uiFallback,
                       fontSize: 11,
                       height: 14 / 11,
                       color: ink.quiet,
@@ -1455,7 +1455,7 @@ class _NotePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
     final target = this.target;
-    final radius = phone ? AppRadii.control : AppRadii.compact;
+    final radius = phone ? AppRadii.control : AppRadii.control;
     return Tooltip(
       message: 'Add to a note',
       child: InkWell(
@@ -1876,7 +1876,7 @@ class _RowBox extends StatelessWidget {
                 width: size,
                 height: size,
                 decoration: BoxDecoration(
-                  color: checked ? ink.sage : null,
+                  color: checked ? context.palette.accentFill : null,
                   border: checked
                       ? null
                       : Border.all(color: ink.quiet, width: phone ? 1.5 : 1.25),
@@ -1886,7 +1886,7 @@ class _RowBox extends StatelessWidget {
                     ? KapyIcon(
                         KapyIcons.checkRounded,
                         size: phone ? 14 : 12,
-                        color: context.palette.paperColor,
+                        color: context.palette.onAccent,
                       )
                     : null,
               ),
@@ -1968,7 +1968,7 @@ class _DoneRow extends StatelessWidget {
                           style: uiStyle(
                             16,
                             28,
-                            FontWeight.w500,
+                            FontWeight.w400,
                             palette.textMuted,
                           ),
                         ),
@@ -2010,7 +2010,7 @@ class _DoneRow extends StatelessWidget {
                 textAlign: TextAlign.right,
                 maxLines: 1,
                 softWrap: false,
-                style: uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary),
+                style: uiStyle(12.5, 16, FontWeight.w400, palette.textTertiary),
               ),
             ),
           ],
@@ -2037,7 +2037,6 @@ class _Box extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
     return Semantics(
       checked: done,
       label: label,
@@ -2052,17 +2051,17 @@ class _Box extends StatelessWidget {
             width: 20,
             height: 20,
             decoration: BoxDecoration(
-              color: done ? accent : palette.editorBackground,
+              color: done ? palette.accentFill : palette.editorBackground,
               border: done
                   ? null
                   : Border.all(color: palette.checkboxBorder, width: 1.5),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              shape: BoxShape.circle,
             ),
             child: done
                 ? KapyIcon(
                     KapyIcons.checkRounded,
                     size: 14,
-                    color: palette.paperColor,
+                    color: palette.onAccent,
                   )
                 : null,
           ),
@@ -2224,7 +2223,7 @@ class _PhoneTaskRow extends StatelessWidget {
             color: wash > 0
                 ? context.palette.tonalBackground.withValues(alpha: wash)
                 : null,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: child,
         ),
@@ -2379,8 +2378,8 @@ class TasksBandActions extends StatelessWidget {
           ChecklistPie(
             done: done,
             total: total,
-            fill: ink.sage,
-            check: context.palette.paperColor,
+            fill: context.palette.accentFill,
+            check: context.palette.onAccent,
           ),
           const SizedBox(width: 6),
           ExcludeSemantics(

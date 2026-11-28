@@ -233,7 +233,7 @@ class _PasteChipLayout extends MultiChildLayoutDelegate {
       oldDelegate.caret != caret;
 }
 
-/// Figtree on Paper's 16px line.
+/// Chrome type on a 16px line.
 TextStyle _type(double size, FontWeight weight, Color color) => TextStyle(
   fontSize: size,
   height: 16 / size,
@@ -271,7 +271,7 @@ class _Chip extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.controlBackground,
               border: Border.all(color: palette.selectedBorder),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -286,7 +286,7 @@ class _Chip extends StatelessWidget {
                   'Formatted',
                   style: _type(
                     AppTypeScale.small,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     palette.textSubheading,
                   ),
                 ),

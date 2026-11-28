@@ -205,13 +205,13 @@ class NoteMetaRow extends StatelessWidget {
       fontFamilyFallback: AppFonts.uiFallback,
       fontSize: 13,
       height: 16 / 13,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       color: palette.textTertiary,
     );
     final strong = quiet.copyWith(
-      fontWeight: AppWeight.font(AppWeight.rowTitle),
-      fontVariations: AppWeight.wght(AppWeight.rowTitle),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       color: palette.textSecondary,
     );
     final mobile = AppPlatform.isMobile;
@@ -286,8 +286,8 @@ class NoteMetaRow extends StatelessWidget {
                 key: const ValueKey('note-progress'),
                 done: done,
                 total: tasks,
-                fill: Theme.of(context).colorScheme.primary,
-                check: palette.paperColor,
+                fill: palette.accentFill,
+                check: palette.onAccent,
               ),
               const SizedBox(width: 6),
               Text(progress, style: strong),

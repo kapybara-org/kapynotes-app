@@ -673,9 +673,9 @@ void main() {
       await _show(tester, _window(FakeKapyAi(), onRewrite: write));
       final labels = [
         'What did we decide?',
-        'Create X Post',
+        'Create X post',
         'What are the next steps?',
-        'Create LinkedIn Post',
+        'Create LinkedIn post',
         'What did Arjun ask for?',
         'Your own words…',
       ];
@@ -706,11 +706,11 @@ void main() {
             onInsert: (_) {},
           ),
         );
-        await tester.tap(find.text('Create X Post'));
+        await tester.tap(find.text('Create X post'));
         await tester.pumpAndSettle();
         expect(asked.single, contains('260 characters'));
         expect(
-          find.descendant(of: _drawer, matching: find.text('Create X Post')),
+          find.descendant(of: _drawer, matching: find.text('Create X post')),
           findsOneWidget,
         );
         expect(find.text('Post number 1.'), findsOneWidget);
@@ -748,9 +748,9 @@ void main() {
         expect(saved!.takes.single.text, 'Post number 1.');
         expect(_drawer, findsNothing);
 
-        await tester.ensureVisible(find.text('Create LinkedIn Post'));
+        await tester.ensureVisible(find.text('Create LinkedIn post'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Create LinkedIn Post'));
+        await tester.tap(find.text('Create LinkedIn post'));
         await tester.pumpAndSettle();
         expect(asked.last, contains('LinkedIn'));
         expect(saved!.takes.last.kind, VoiceTakeKind.linkedin);
@@ -844,7 +844,7 @@ void main() {
       await tester.tap(_earlier);
       await tester.pumpAndSettle();
       final rows = [
-        'Create X Post',
+        'Create X post',
         'What did Arjun ask for?',
         'A two-line update for the team',
       ];
@@ -855,7 +855,7 @@ void main() {
           reason: rows[i],
         );
       }
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
       expect(find.text('Reworking our pricing page.'), findsOneWidget);
       expect(find.byKey(const ValueKey('voice-ask-again')), findsOneWidget);
@@ -875,9 +875,9 @@ void main() {
       );
       expect(find.text('What did we decide?'), findsNothing);
       expect(find.text('Your own words…'), findsNothing);
-      expect(find.text('Create LinkedIn Post'), findsOneWidget);
+      expect(find.text('Create LinkedIn post'), findsOneWidget);
       expect(_hint(tester), 'What should it create?');
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
       expect(saved!.takes.single.kind, VoiceTakeKind.x);
     });
@@ -889,7 +889,7 @@ void main() {
         tester,
         _window(ai, onRewrite: write, onChanged: (next) => saved = next),
       );
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
       expect(saved!.takes.single.text, 'Post number 1.');
       expect(find.textContaining('No answers left'), findsNothing);
