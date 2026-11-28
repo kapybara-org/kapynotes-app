@@ -48,8 +48,13 @@ class TaskInk {
       Color legible(Color ink, Color ground) {
         double luminance(Color c) => c.computeLuminance() + 0.05;
         var shown = ink;
-        while (luminance(text) > luminance(shown) &&
-            luminance(shown) / luminance(ground) < 4.5) {
+        for (
+          var step = 0;
+          step < 20 &&
+              luminance(text) > luminance(shown) &&
+              luminance(shown) / luminance(ground) < 4.5;
+          step++
+        ) {
           shown = Color.lerp(shown, text, 0.1)!;
         }
         return shown;

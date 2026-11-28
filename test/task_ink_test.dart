@@ -158,6 +158,17 @@ void main() {
     }
   });
 
+  testWidgets('mid-way through a switch between light and dark, the inks '
+      'still resolve', (tester) async {
+    for (final t in [0.25, 0.5, 0.75]) {
+      final ink = await inkUnder(
+        tester,
+        ThemeData.lerp(KapyTheme.light(), KapyTheme.dark(), t),
+      );
+      expect(ink.secondary, isNotNull, reason: '$t');
+    }
+  });
+
   testWidgets('in dark, Increase contrast strengthens the cards\' edges', (
     tester,
   ) async {
