@@ -324,23 +324,33 @@ class NoteLayout {
   }
 
   /// Scrolls [position] so that the note's last line ends at the bottom of
-  /// the viewport, exactly, measuring the last screenful first. It scrolls
-  /// as a jump does, so what follows the scroll offset follows this too.
-  void jumpToEnd(ScrollPosition position) {
-    final heights = _heights;
+  /// the viewport, exactly, or [below] above it, measuring the last
+  /// screenful first. It scrolls as a jump does, so what follows the scroll
+  /// offset follows this too.
+  void jumpToEnd(ScrollPosition position, {double below = 0}) {
     final sliver = _sliver;
-    if (heights == null || sliver == null) return;
-    final constraints = sliver.constraints;
-    final viewport = constraints.viewportMainAxisExtent;
+    if (_heights == null || sliver == null) return;
+    final end = endOffset(sliver.constraints, below: below);
+    sliver._anchor = null;
+    position.jumpTo(sliver.constraints.precedingScrollExtent + end);
+  }
+
+  /// How far into the note it is scrolled when its last line ends at the
+  /// bottom of the viewport, exactly, or [below] above it, measuring the
+  /// last screenful first.
+  double endOffset(SliverConstraints constraints, {double below = 0}) {
+    final viewport = constraints.viewportMainAxisExtent - below;
     var covered = 0.0;
     for (var line = length - 1; line >= 0 && covered < viewport; line--) {
       covered += measure(line);
     }
-    sliver._anchor = null;
-    position.jumpTo(
-      constraints.precedingScrollExtent + math.max(0, heights.total - viewport),
-    );
+    return math.max(0, _heights!.total - viewport);
   }
+
+  /// Asked once, at the sliver's next layout, how far into the note it
+  /// should be scrolled instead, or null to stay; so the frame it paints is
+  /// already there, rather than the one after.
+  double? Function(SliverConstraints constraints)? revealOnLayout;
 
   void _setWidth(double width) {
     if (width == _width) return;
@@ -728,6 +738,18 @@ class RenderNoteSliver extends RenderSliverMultiBoxAdaptor {
     final heights = layout._heights!;
     final count = heights.length;
     assert(count == layout.length, 'The note was edited without edited().');
+
+    final reveal = layout.revealOnLayout;
+    layout.revealOnLayout = null;
+    final target = reveal?.call(constraints);
+    if (target != null) {
+      final moved = target - constraints.scrollOffset;
+      if (moved.abs() > precisionErrorTolerance) {
+        _anchor = null;
+        geometry = SliverGeometry(scrollOffsetCorrection: moved);
+        return;
+      }
+    }
 
     final anchor = _anchor;
     if (anchor != null && anchor.line < count) {

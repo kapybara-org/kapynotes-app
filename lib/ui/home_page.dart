@@ -6792,6 +6792,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),
+          keyboardRoom: widget.prefs.keyboardRoom,
+          onKeyboardRoom: widget.prefs.rememberKeyboardRoom,
           ensureKeyboardVisible:
               ready && (AppPlatform.isMobile || AppPlatform.isFlutterTest),
           lastUpdatedAt: note.updatedAt,
@@ -6891,6 +6893,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           initialCaret: _resumeCaretIn(note),
           onCaretChanged: (offset) =>
               widget.prefs.rememberCaret(note.id, offset),
+          keyboardRoom: widget.prefs.keyboardRoom,
+          onKeyboardRoom: widget.prefs.rememberKeyboardRoom,
           ensureKeyboardVisible:
               active &&
               _readyToTypeIn(note) &&
