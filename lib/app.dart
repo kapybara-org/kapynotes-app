@@ -266,7 +266,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
 
   /// The [DateTime.weekday] weeks start on where the app is used, read from
   /// the app's localizations as it builds.
-  int _weekStart = DateTime.monday;
+  int _weekStart = DateTime.sunday;
   late final TitleModel? _titleModel =
       widget.titleModel ?? platformTitleModel();
   late final StoreUpdates? _storeUpdates =

@@ -224,6 +224,47 @@ void main() {
       semantics.dispose();
     });
 
+    for (final phone in [true, false]) {
+      testWidgets('a week card and its drawer cover the same days, and a '
+          'day\'s drawer offers the rail\'s week '
+          '(${phone ? 'phone' : 'desktop'})', (tester) async {
+        final app = TimelineApp()..sample();
+        await app.pump(tester, phone: phone);
+        String weekShown() => tester
+            .widget<Text>(
+              find.descendant(
+                of: _key('recap-period-week'),
+                matching: find.byType(Text),
+              ),
+            )
+            .data!;
+
+        await tester.tap(_key('recap-icon-day-2026-11-18'));
+        await tester.pumpAndSettle();
+        expect(
+          weekShown(),
+          TimelineApp.week(DateTime(2026, 11, 18)).label,
+          reason: 'this week on the rail runs 15–21 Nov',
+        );
+        await tester.tapAt(Offset.zero);
+        await tester.pumpAndSettle();
+        if (_key('recap-drawer').evaluate().isNotEmpty) {
+          Navigator.of(tester.element(_key('recap-drawer'))).pop();
+          await tester.pumpAndSettle();
+        }
+
+        final icon = _key('recap-icon-week-2026-11-8');
+        await _reach(tester, icon);
+        await tester.tap(icon);
+        await tester.pumpAndSettle();
+        expect(weekShown(), TimelineApp.lastWeek.label);
+        expect(
+          TimelineApp.makerOf(tester).quote(TimelineApp.lastWeek).plan.period,
+          TimelineApp.lastWeek,
+        );
+      });
+    }
+
     testWidgets('is a 44 pt target on a phone', (tester) async {
       final app = TimelineApp()..sample();
       await app.pump(tester, phone: true);

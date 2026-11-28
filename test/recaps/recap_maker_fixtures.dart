@@ -110,7 +110,7 @@ class MakerWorld {
     folders: () => world.folders.tree,
     displayTime: world.displayTime,
     timeZone: () => 'UTC',
-    firstWeekday: () => DateTime.monday,
+    firstWeekday: () => DateTime.sunday,
     now: () => clock,
     pause: (_) async {},
   );

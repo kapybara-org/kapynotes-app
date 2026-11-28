@@ -38,7 +38,7 @@ const _windowMaterial = MethodChannel('kapynotes/window_material');
 final _week = RecapPeriod.containing(
   DateTime(2026, 11, 17),
   RecapKind.week,
-  firstWeekday: DateTime.monday,
+  firstWeekday: DateTime.sunday,
 );
 
 void main() {
@@ -119,7 +119,7 @@ void main() {
     expect(find.text('Ask about this week'), findsOneWidget);
     expect(
       find.text(
-        'Answers come only from your 2 notes from 16–22 Nov. Hidden notes '
+        'Answers come only from your 2 notes from 15–21 Nov. Hidden notes '
         'are never used.',
       ),
       findsOneWidget,

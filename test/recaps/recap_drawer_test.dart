@@ -97,7 +97,7 @@ void main() {
 
     expect(text('Mon 16 recap'), findsOneWidget);
     expect(text('Yesterday · Monday, 16 November'), findsOneWidget);
-    for (final label in ['Mon 16', '16–22 Nov', 'November', '2026']) {
+    for (final label in ['Mon 16', '15–21 Nov', 'November', '2026']) {
       expect(text(label), findsOneWidget);
     }
     expect(text('Notes'), findsOneWidget);
@@ -125,9 +125,9 @@ void main() {
   testWidgets('the period switch quotes each period', (tester) async {
     await start(tester);
     await open(tester, w.day);
-    await tester.tap(text('16–22 Nov'));
+    await tester.tap(text('15–21 Nov'));
     await tester.pumpAndSettle();
-    expect(text('16–22 Nov recap'), findsOneWidget);
+    expect(text('15–21 Nov recap'), findsOneWidget);
     expect(text('Uses 2 Kapy AI credits'), findsOneWidget);
   });
 
@@ -337,7 +337,7 @@ void main() {
     await open(tester, w.day);
     await tester.tap(text('Create recap'));
     await tester.pump();
-    await tester.tap(text('16–22 Nov'));
+    await tester.tap(text('15–21 Nov'));
     await tester.pump();
     expect(
       text('One recap is made at a time. The Mon 16 recap is being made now.'),
