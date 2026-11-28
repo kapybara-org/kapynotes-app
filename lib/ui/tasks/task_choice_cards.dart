@@ -361,8 +361,8 @@ class _TaskPairCardState extends State<TaskPairCard> {
     return Container(
       key: const ValueKey('tasks-pair'),
       padding: phone
-          ? const EdgeInsets.fromLTRB(16, 14, 16, 16)
-          : const EdgeInsets.all(16),
+          ? const EdgeInsets.fromLTRB(16, 14, 16, 3)
+          : const EdgeInsets.fromLTRB(16, 16, 16, 10),
       decoration: BoxDecoration(
         color: ink.card,
         borderRadius: BorderRadius.circular(phone ? 12 : 10),
@@ -444,28 +444,11 @@ class _TaskPairCardState extends State<TaskPairCard> {
                   spacing: phone ? 0 : 4,
                   children: [left, or, right],
                 ),
-              if (beside)
-                Row(
-                  children: [
-                    Expanded(child: foot),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 340),
-                          child: start,
-                        ),
-                      ),
-                    ),
-                  ],
-                )
-              else
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  spacing: phone ? 8 : 10,
-                  children: [foot, start],
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: phone ? 0 : 4,
+                children: [foot, start],
+              ),
             ],
           );
         },
@@ -618,9 +601,9 @@ class TaskKey extends StatelessWidget {
   }
 }
 
-/// "Stop choosing and start" and the task's name: your pick so far becomes
-/// Do now. The whole name wraps to a second line before anything is cut,
-/// and with larger text it is never cut.
+/// "Stop choosing", a quiet line under the foot: your pick so far becomes Do
+/// now. Screen readers hear the task it starts. On a phone it keeps a 44 pt
+/// target around its one small line.
 /// While it is hovered or focused, [onLit] has the pair outline that task.
 class _StopButton extends StatefulWidget {
   const _StopButton({
@@ -655,11 +638,10 @@ class _StopButtonState extends State<_StopButton> {
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
     final phone = widget.phone;
-    final label = 'Stop choosing and start ${widget.task}';
-    final radius = phone ? 8.0 : 6.0;
+    final color = _hovered || _focused ? ink.secondary : ink.quiet;
     return Semantics(
       button: true,
-      label: label,
+      label: 'Stop choosing and start ${widget.task}',
       excludeSemantics: true,
       onTap: widget.onPressed,
       child: Actions(
@@ -682,47 +664,45 @@ class _StopButtonState extends State<_StopButton> {
               behavior: HitTestBehavior.opaque,
               onTap: widget.onPressed,
               child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: phone ? 44 : 32),
-                child: Center(
+                constraints: BoxConstraints(minHeight: phone ? 44 : 28),
+                child: Align(
+                  alignment: Alignment.centerLeft,
                   widthFactor: 1,
                   heightFactor: 1,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: phone ? 14 : 12,
-                      vertical: phone ? 8 : 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: ink.lifted,
-                      borderRadius: BorderRadius.circular(radius),
-                    ),
-                    foregroundDecoration: _focused
-                        ? BoxDecoration(
-                            border: Border.all(color: ink.sage),
-                            borderRadius: BorderRadius.circular(radius),
-                          )
-                        : taskContrastEdge(context, radius),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            label,
-                            maxLines:
-                                MediaQuery.textScalerOf(context).scale(1) > 1
-                                ? null
-                                : 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: phone
-                                ? taskText(15, 20, ink.text, 500)
-                                : taskText(13, 18, ink.text, 460),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      if (_focused)
+                        Positioned(
+                          left: -6,
+                          right: -6,
+                          top: -3,
+                          bottom: -3,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: ink.sage),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ),
                         ),
-                        if (!phone && AppPlatform.hasPointer) ...[
-                          const SizedBox(width: 8),
-                          const TaskKey('↵'),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'Stop choosing',
+                              style: phone
+                                  ? taskText(13, 18, color)
+                                  : taskText(12, 16, color),
+                            ),
+                          ),
+                          if (!phone && AppPlatform.hasPointer) ...[
+                            const SizedBox(width: 8),
+                            const TaskKey('↵'),
+                          ],
                         ],
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),

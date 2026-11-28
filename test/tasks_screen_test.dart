@@ -668,14 +668,18 @@ void main() {
         expect(inPair('right', 'Pick'), findsOneWidget);
         expect(find.text('or'), findsOneWidget);
         expect(find.text('2 of 4 seen'), findsOneWidget);
-        expect(find.byKey(const ValueKey('tasks-pair-explain')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('tasks-pair-explain')),
+          findsOneWidget,
+        );
         expect(
           find.text('Nothing comes off your list.'),
           findsOneWidget,
           reason: 'Up next has nothing in it until the first pick',
         );
+        expect(find.text('Stop choosing'), findsOneWidget);
         expect(
-          find.text('Stop choosing and start Send the report'),
+          find.bySemanticsLabel('Stop choosing and start Send the report'),
           findsOneWidget,
         );
         expect(find.text('↵'), findsOneWidget);
@@ -702,7 +706,9 @@ void main() {
       expect(inPair('right', 'Call the garage'), findsOneWidget);
       expect(find.text('3 of 4 seen'), findsOneWidget);
       expect(
-        find.text('Nothing comes off your list. Earlier picks wait in Up next.'),
+        find.text(
+          'Nothing comes off your list. Earlier picks wait in Up next.',
+        ),
         findsOneWidget,
       );
       expect(box('Book flights'), findsOneWidget);
@@ -750,7 +756,8 @@ void main() {
       final semantics = tester.ensureSemantics();
       await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
       await pumpScreen(tester, explainPair: false);
-      expect(find.text('Stop choosing and start One'), findsOneWidget);
+      expect(find.text('Stop choosing'), findsOneWidget);
+      expect(find.semantics.byLabel('Stop choosing and start One'), findsOne);
       expect(
         find.text('Nothing comes off your list. Your pick becomes Do now.'),
         findsOneWidget,
@@ -768,19 +775,47 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('Stop choosing names the whole task, on up to two lines', (
-      tester,
-    ) async {
+    testWidgets('Stop choosing is one quiet line under the foot, a 44 pt '
+        'target on a phone, with ↵ on a desktop; screen readers hear the '
+        'whole task it starts', (tester) async {
       await setUpTasks(
         tester,
         'Errands\n☐ Ask Ana which Sintra palace to skip\n☐ B\n☐ C',
       );
-      await pumpScreen(tester);
-      const label =
-          'Stop choosing and start Ask Ana which Sintra palace to skip';
-      expect(find.text(label), findsOneWidget);
-      expect(tester.widget<Text>(find.text(label)).maxLines, 2);
-      expect(find.bySemanticsLabel(label), findsOneWidget);
+      for (final phone in [false, true]) {
+        await pumpScreen(tester, phone: phone);
+        final start = find.byKey(const ValueKey('tasks-start'));
+        final label = find.descendant(
+          of: start,
+          matching: find.text('Stop choosing'),
+        );
+        final reason = 'phone: $phone';
+        expect(label, findsOneWidget, reason: reason);
+        expect(
+          find.bySemanticsLabel(
+            'Stop choosing and start Ask Ana which Sintra palace to skip',
+          ),
+          findsOneWidget,
+          reason: reason,
+        );
+        expect(
+          tester.widget<Text>(label).style!.color,
+          TaskInk.of(tester.element(label)).quiet,
+          reason: reason,
+        );
+        expect(tester.getSize(label).height, phone ? 18 : 16, reason: reason);
+        expect(tester.getSize(start).height, phone ? 44 : 28, reason: reason);
+        expect(
+          tester.getTopLeft(label).dx,
+          tester.getTopLeft(find.textContaining('Nothing comes off')).dx,
+          reason: reason,
+        );
+        expect(
+          find.descendant(of: start, matching: find.text('↵')),
+          phone ? findsNothing : findsOneWidget,
+          reason: reason,
+        );
+      }
       await settle(tester);
     });
 
@@ -1446,12 +1481,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(
-        find.text(
-          'Nothing comes off your list.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('Nothing comes off your list.'), findsOneWidget);
       final left = tester.getRect(
         find.byKey(const ValueKey('tasks-pair-left')),
       );
@@ -1520,7 +1550,17 @@ void main() {
         findsOneWidget,
       );
       final card = tester.widget<Container>(pair);
-      expect(card.padding, const EdgeInsets.fromLTRB(16, 14, 16, 16));
+      expect(
+        card.padding,
+        const EdgeInsets.fromLTRB(16, 14, 16, 3),
+        reason:
+            'Stop choosing\'s 44 pt target holds the other 13 at the bottom',
+      );
+      expect(
+        tester.getRect(pair).bottom -
+            tester.getRect(find.text('Stop choosing')).bottom,
+        16,
+      );
       final fill = card.decoration! as BoxDecoration;
       expect(fill.borderRadius, BorderRadius.circular(12));
       expect(fill.color, KapyTheme.darkPalette.cardBackground);
@@ -1618,10 +1658,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.text('Added to the end of the list'), findsNothing);
-      expect(
-        tester.getRect(find.byKey(const ValueKey('tasks-do-now'))),
-        doNow,
-      );
+      expect(tester.getRect(find.byKey(const ValueKey('tasks-do-now'))), doNow);
       for (final MapEntry(:key, :value) in rows.entries) {
         final row = tasks.read().open.firstWhere((i) => i.id == key);
         expect(tester.getTopLeft(words(row)), value);
@@ -1885,10 +1922,8 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('Increase contrast outlines the add row, its note chip and '
-        'Stop choosing in the theme\'s contrast line, and moves nothing', (
-      tester,
-    ) async {
+    testWidgets('Increase contrast outlines the add row and its note chip in '
+        'the theme\'s contrast line, and moves nothing', (tester) async {
       await canonical(tester);
       for (final phone in [false, true]) {
         final rects = <bool, List<Rect>>{};
@@ -1906,11 +1941,7 @@ void main() {
           }
           final line = theme.extension<CalcPalette>()!.controlBorder;
           rects[increaseContrast] = [];
-          for (final key in [
-            'tasks-add-row',
-            'tasks-note-picker',
-            'tasks-start',
-          ]) {
+          for (final key in ['tasks-add-row', 'tasks-note-picker']) {
             final control = find
                 .descendant(
                   of: find.byKey(ValueKey(key)),
