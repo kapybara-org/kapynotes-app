@@ -123,13 +123,14 @@ ios=FAKE-UDID
     '::warning::phone_about_test.dart hung: the app never connected. Running it again' '!FAIL' \
     'progress:phone_about_test.dart run 1 started' \
     'progress:phone_about_test.dart failed after' 'progress:the app never connected, stopped' \
-    'progress:phone_about_test.dart run 2 started' 'progress:phone_about_test.dart connected' \
+    'progress:phone_about_test.dart run 2 started' \
     'progress:phone_about_test.dart passed after' 'progress:done, exit 0' &
   # Rule 2: an app that connects and then goes quiet is stopped after the
   # stall limit and runs once more.
   check stall-then-pass $ios 'stall pass' 0 2 25 \
     'nothing new reached the log for 3 seconds' \
-    '::warning::phone_about_test.dart hung: the app connected, then stalled' '!FAIL' &
+    '::warning::phone_about_test.dart hung: the app connected, then stalled' '!FAIL' \
+    'progress:phone_about_test.dart connected' 'progress:the app connected, then stalled' &
   # Rule 3: a second hang fails the run with a FAIL line naming the file and
   # each run's kind of hang.
   check launch-hang-twice $ios 'never never' 1 2 35 \
