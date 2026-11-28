@@ -678,8 +678,8 @@ void main() {
         semantics.dispose();
       });
 
-      testWidgets('attach offers Photo, Video, Voice note and File, and Voice '
-          'note starts one', (tester) async {
+      testWidgets('attach offers Camera, Photos, Voice note and File, and '
+          'Voice note starts one', (tester) async {
         var recordings = 0;
         await _open(
           tester,
@@ -691,11 +691,28 @@ void main() {
         );
         await _tap(tester, 'format-attach');
         expect(_attachChoices(tester), [
-          'Photo',
-          'Video',
+          'Camera',
+          'Photos',
           'Voice note',
           'File',
         ]);
+        expect(
+          [
+            for (final icon in tester.widgetList<KapyIcon>(
+              find.descendant(
+                of: find.byType(BottomSheet),
+                matching: find.byType(KapyIcon),
+              ),
+            ))
+              icon.icon,
+          ],
+          [
+            KapyIcons.cameraOutlined,
+            KapyIcons.photoLibraryOutlined,
+            KapyIcons.micRounded,
+            KapyIcons.attachFileRounded,
+          ],
+        );
 
         await tester.tap(find.byKey(const ValueKey('attach-voice')));
         await tester.pumpAndSettle();
@@ -719,7 +736,7 @@ void main() {
             voiceActionBusy: busy,
           );
           await _tap(tester, 'format-attach');
-          expect(_attachChoices(tester), ['Photo', 'Video', 'File']);
+          expect(_attachChoices(tester), ['Camera', 'Photos', 'File']);
         });
       }
 
@@ -757,7 +774,8 @@ void main() {
           const TextSelection.collapsed(offset: 4),
         );
         await _tap(tester, 'format-attach');
-        expect(find.byKey(const ValueKey('attach-photo')), findsNothing);
+        expect(find.byKey(const ValueKey('attach-camera')), findsNothing);
+        expect(find.byKey(const ValueKey('attach-photos')), findsNothing);
         _expectStillWriting(tester);
       });
     });
