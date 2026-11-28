@@ -78,6 +78,35 @@ void main() {
     }
   });
 
+  testWidgets('in light, the phone\'s Done is white on the filled orange, '
+      'at 4.5 : 1 or better in every theme', (tester) async {
+    double contrast(Color a, Color b) {
+      final (hi, lo) = a.computeLuminance() > b.computeLuminance()
+          ? (a, b)
+          : (b, a);
+      return (hi.computeLuminance() + 0.05) / (lo.computeLuminance() + 0.05);
+    }
+
+    for (final theme in AppTheme.values) {
+      for (final increaseContrast in [false, true]) {
+        final themed = KapyTheme.light(
+          theme: theme,
+          increaseContrast: increaseContrast,
+        );
+        final palette = themed.extension<CalcPalette>()!;
+        final ink = await inkUnder(tester, themed);
+        final reason = '${theme.name}, increaseContrast: $increaseContrast';
+        expect(ink.doneFill, palette.accentFill, reason: reason);
+        expect(ink.doneInk, palette.onAccent, reason: reason);
+        expect(
+          contrast(ink.doneInk, ink.doneFill),
+          greaterThanOrEqualTo(4.5),
+          reason: reason,
+        );
+      }
+    }
+  });
+
   testWidgets('in dark, Increase contrast strengthens the cards\' edges', (
     tester,
   ) async {

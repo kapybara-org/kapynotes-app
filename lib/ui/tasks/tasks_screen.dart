@@ -829,7 +829,7 @@ class TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
                 done.isNotEmpty
                     ? 'Nothing left to do today.'
                     : phone && !widget.sheet
-                    ? 'Nothing on the list. Tap + to add a task.'
+                    ? 'Nothing on the list.\nTap + to add a task.'
                     : 'Nothing on the list.',
                 key: const ValueKey('tasks-empty'),
                 style: handAccent(context.palette),

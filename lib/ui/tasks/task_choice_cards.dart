@@ -28,6 +28,7 @@ class TaskInk {
     required this.quiet,
     required this.sage,
     required this.doneFill,
+    required this.doneInk,
     required this.edge,
     required this.keyEdge,
     required this.hairline,
@@ -54,6 +55,7 @@ class TaskInk {
         quiet: palette.textTertiary,
         sage: palette.accentText,
         doneFill: step(palette.accentText, 0.16),
+        doneInk: palette.accentText,
         edge: contrast ? palette.controlBorder : text.withAlpha(0x14),
         keyEdge: contrast ? palette.checkboxBorder : text.withAlpha(0x24),
         hairline: palette.separator,
@@ -70,7 +72,8 @@ class TaskInk {
       secondary: palette.textSecondary,
       quiet: palette.textTertiary,
       sage: palette.accentText,
-      doneFill: palette.tonalBackground,
+      doneFill: palette.accentFill,
+      doneInk: palette.onAccent,
       edge: palette.controlBorder,
       keyEdge: palette.keycapBorder,
       hairline: palette.separator,
@@ -88,6 +91,10 @@ class TaskInk {
   final Color quiet;
   final Color sage;
   final Color doneFill;
+
+  /// The phone's Done on [doneFill]: the accent on its wash in dark, white on
+  /// the filled orange in light, where no wash keeps the accent at 4.5 : 1.
+  final Color doneInk;
   final Color edge;
   final Color keyEdge;
   final Color hairline;
@@ -849,14 +856,14 @@ class TaskDoNowCard extends StatelessWidget {
               KapyIcon(
                 KapyIcons.checkRounded,
                 size: phone ? 16 : 14,
-                color: phone ? ink.sage : ink.text,
+                color: phone ? ink.doneInk : ink.text,
               ),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   'Done',
                   style: phone
-                      ? taskText(15, 20, ink.sage, 500)
+                      ? taskText(15, 20, ink.doneInk, 500)
                       : taskText(13, 18, ink.text, 500),
                 ),
               ),
