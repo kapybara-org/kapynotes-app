@@ -19,18 +19,22 @@
 # A file that is still running after PHONE_FILE_MINUTES (20 by default; the
 # first file, which pays for the cold build, PHONE_FIRST_FILE_MINUTES, 35) is
 # stopped with everything it started, counts as failed, and the next file runs.
-# When PHONE_APP is set, a file that hangs is stopped sooner, with a
-# screenshot of where, and runs once more:
-# - its app hasn't connected PHONE_LAUNCH_SECONDS (150) after flutter drive
-#   started, since the slowest healthy iOS launch took 96;
+# A file that hangs is stopped sooner, with a screenshot of where, and runs
+# once more:
+# - its app hasn't connected PHONE_LAUNCH_SECONDS (150) after its launch, which
+#   is when flutter drive starts on a PHONE_APP build, or when it installs the
+#   app it built: the slowest healthy launch took 96 on an iPhone and 13 on an
+#   emulator. A flutter drive that gives up on the app ("Error waiting for a
+#   debug connection") counts too;
 # - or its app connected and then nothing new reached the log for
 #   PHONE_STALL_SECONDS (240), since phone_recording_away's locked recording
 #   is quiet for up to 163.
-# Without PHONE_APP both are off unless set, so a file whose app never
-# connected (flutter drive ends with "Error waiting for a debug connection")
-# runs once more only after flutter drive gives up or the file's limit stops
-# it. A file that hangs on both runs fails the run with a FAIL line saying
-# which way it hung.
+# A file that hangs on both runs fails the run with a FAIL line saying which
+# way it hung. A build that hangs is stopped only at the file's limit.
+#
+# Each file's runs, with when each started, connected and ended and how, go
+# to build/screenshots/phone-progress.txt as they happen, so a job stopped
+# mid-run still shows which file it was on.
 # PHONE_TESTS, when set, names the only tests to run, such as
 # `phone_recording_away`, for a run that checks one test. A name that isn't
 # one of the phone tests below fails the run, so a typo, or a desktop test
@@ -62,12 +66,10 @@ android=false
 if [[ $device == emulator-* ]]; then android=true; fi
 retry_until=$(( SECONDS + ${PHONE_RETRY_MINUTES:-0} * 60 ))
 log=$(mktemp)
+progress=build/screenshots/phone-progress.txt
 limit=$(( ${PHONE_FIRST_FILE_MINUTES:-35} * 60 ))
-launch=${PHONE_LAUNCH_SECONDS:-${PHONE_APP:+150}}
-launch=${launch:-0}
-stall=${PHONE_STALL_SECONDS:-${PHONE_APP:+240}}
-stall=${stall:-0}
-mkdir -p build/screenshots
+launch=${PHONE_LAUNCH_SECONDS:-150}
+stall=${PHONE_STALL_SECONDS:-240}
 
 wanted() {
   [[ -z ${PHONE_TESTS:-} || " $PHONE_TESTS " == *" $1 "* ]]
@@ -100,6 +102,19 @@ if [[ $device == --check ]]; then
   done
   exit 0
 fi
+mkdir -p build/screenshots
+: > "$progress"
+
+# flutter drive's output reaches the job's log and $log through one tee in the
+# script's own process group. On Linux, a tee in each run's group would die
+# with a run that's stopped, taking with it what flutter drive says on the way
+# out, such as "Error waiting for a debug connection".
+exec 3> >(tee -a "$log")
+
+# Adds a line to the progress file, after the time.
+note() {
+  echo "$(date -u +%H:%M:%S) $*" >> "$progress"
+}
 
 # Stops file $1's run, process group $2, with a screenshot of where it got to.
 # The shot is put off to one side, in a group of its own: a device stuck
@@ -172,21 +187,28 @@ drive() {
       --timeout=600 --screenshot=build/screenshots)
     : > "$log"
     if [[ -n ${PHONE_APP:-} ]]; then echo "$1" > "$PHONE_TEST_FILE"; fi
-    local stopped=false hang= connected=false size=0 now
+    local stopped=false hang= connected=false size=0 now launched=
+    note "$1_test.dart run $(( tries + 1 )) started"
     set -m
-    flutter "${args[@]}" > >(tee "$log") 2>&1 &
+    flutter "${args[@]}" >&3 2>&1 &
     local pid=$! started=$SECONDS quiet=$SECONDS
     set +m
+    if [[ -n ${PHONE_APP:-} ]]; then launched=$started; fi
     while kill -0 "$pid" 2>/dev/null; do
       if (( launch || stall )); then
         now=$(wc -c < "$log")
         if (( now != size )); then size=$now quiet=$SECONDS; fi
+        if [[ -z $launched ]] && grep -qE 'Installing build/.*\.apk' "$log"; then
+          launched=$SECONDS
+          note "$1_test.dart built and installed"
+        fi
         if ! $connected && grep -qE 'Connected to Flutter application|[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
           connected=true
+          note "$1_test.dart connected"
         fi
       fi
-      if ! $connected && (( launch && SECONDS - started >= launch )); then
-        echo "$1_test.dart's app hadn't connected $launch seconds after flutter drive started, so it was stopped"
+      if ! $connected && [[ -n $launched ]] && (( launch && SECONDS - launched >= launch )); then
+        echo "$1_test.dart's app hadn't connected $launch seconds after its launch, so it was stopped"
         hang=launch
       elif $connected && (( stall && SECONDS - quiet >= stall )); then
         echo "$1_test.dart's app connected, then nothing new reached the log for $stall seconds, so it was stopped"
@@ -210,12 +232,16 @@ drive() {
     code=$?
     if $stopped && (( code == 0 )); then code=1; fi
     limit=$(( ${PHONE_FILE_MINUTES:-20} * 60 ))
-    if (( code == 0 )); then return 0; fi
+    if (( code == 0 )); then
+      note "$1_test.dart passed after $(( SECONDS - started )) s"
+      return 0
+    fi
     sleep 1
     if [[ -z $hang ]] && grep -q 'Error waiting for a debug connection' "$log" &&
       ! grep -qE '[0-9]{2}:[0-9]{2} \+[0-9]+' "$log"; then
       hang=launch
     fi
+    note "$1_test.dart failed after $(( SECONDS - started )) s${hang:+: $(hang_said "$hang")}$($stopped && echo ", stopped")"
     if [[ -n $hang ]]; then
       if (( tries == 0 )) && { ! $android || (( SECONDS < retry_until )); }; then
         tries=1 first_hang=$hang
@@ -278,4 +304,5 @@ if adb -s "$device" get-state >/dev/null 2>&1 && wanted phone_bar_android; then
     2) navbar gestural ;;
   esac
 fi
+note "done, exit $status"
 exit "$status"

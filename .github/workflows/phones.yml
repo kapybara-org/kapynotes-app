@@ -69,9 +69,11 @@ jobs:
     needs: names
     if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'phones'
     runs-on: ubuntu-latest
-    # A green run takes 38 to 45 minutes, so 60 leaves room for a slow cold
-    # build and one rerun of a file the emulator spoiled.
-    timeout-minutes: 60
+    # A green run takes 44 to 51 minutes. 80 leaves room for a slow cold build
+    # and a file run again, and for the steps after the screenshots step,
+    # which has its own limit below this one, to save its log and upload what
+    # it took, its progress file included, even when that step is stopped.
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,9 +102,9 @@ jobs:
       - run: flutter pub get --enforce-lockfile
 
       - name: Screenshots on an Android 16 emulator
-        # A file that hangs gives up 15 or 12 of the job's 60 minutes. A file
-        # the emulator spoils before its tests finish runs once more within
-        # the first 40.
+        # A build that hangs gives up 15 or 12 minutes. A file the emulator
+        # spoils before its tests finish runs once more within the first 40.
+        timeout-minutes: 70
         env:
           PHONE_FIRST_FILE_MINUTES: 15
           PHONE_FILE_MINUTES: 12
