@@ -58,12 +58,14 @@ void main() {
       "leaves the app's own name unmarked on ${platform.name} (KAP-463)",
       () async {
         AppPlatform.debugTargetPlatformOverride = platform;
-        const text = 'Welcome to Kapy Notes, a smple note by kapynotes';
+        const text =
+            "Welcome to Kapy Notes, a smple note by kapynotes and Kapy's";
         final results = [
           for (final (word, suggestions) in [
             ('Kapy', ['Kay', 'Happy']),
             ('smple', ['simple']),
             ('kapynotes', ['keynotes']),
+            ("Kapy's", ['Capy']),
           ])
             {
               'startIndex': text.indexOf(word),

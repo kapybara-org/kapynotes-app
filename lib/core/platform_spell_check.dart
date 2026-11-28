@@ -174,7 +174,10 @@ class PlatformSpellCheckService implements SpellCheckService {
         (span) =>
             span.range.end > text.length ||
             !_ownNames.contains(
-              text.substring(span.range.start, span.range.end).toLowerCase(),
+              text
+                  .substring(span.range.start, span.range.end)
+                  .toLowerCase()
+                  .replaceFirst(RegExp("[’']s\$"), ''),
             ),
       )
       .toList(growable: false);
