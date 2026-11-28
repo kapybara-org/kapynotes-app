@@ -75,12 +75,15 @@ typedef NoteFound = ({
 /// child takes a row of its own under it. A line with [room] has no
 /// [leader]. The line is at least [height] tall, for a child that takes more
 /// rows than the writing, and the child is then centred on the whole line.
+/// The line also keeps [below] of room under its writing, such as a title's
+/// for the row under it, whatever else it shows.
 typedef LineTrailing = ({
   Widget child,
   Widget? leader,
   double right,
   double room,
   double height,
+  double below,
 });
 
 /// The space a line keeps between its writing, the leader of what it shows
@@ -302,10 +305,12 @@ class NoteLayout {
 
   double _heightOf(int line) {
     final writing = paragraphOf(line).height;
-    final trailing = trailingOf?.call(line)?.height ?? 0;
-    return trailsUnder(line)
-        ? writing + math.max(_row, trailing)
-        : math.max(writing, trailing);
+    final trailing = trailingOf?.call(line);
+    final height = trailing?.height ?? 0;
+    return (trailsUnder(line)
+            ? writing + math.max(_row, height)
+            : math.max(writing, height)) +
+        (trailing?.below ?? 0);
   }
 
   void edited(LineEdit edit) {

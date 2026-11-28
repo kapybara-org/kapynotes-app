@@ -7549,14 +7549,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// with no words on its first line, and for a title holding a picture or a
   /// formula, which keeps it as an ordinary line.
   ///
-  /// The room under a title for its meta row cannot come from the line's own
-  /// height: whatever makes a row taller sets the words lower in it as well.
-  /// Nor from its line break, which has to stay a break: an empty line under
-  /// the title would otherwise have no row of its own, and a caret on it
-  /// would stand at the end of the title's row. So the last letter on the
-  /// title's last row is drawn by a placeholder that reaches down past the
-  /// row by the room. The row grows downwards and the words stay at its top.
-  /// It is redone only when the title or what it is laid out from changes.
+  /// The room under a title for its meta row is the line's own to keep, past
+  /// the title's last row: the line says so with [LineTrailing.below]. A
+  /// placeholder standing in for the title's last letter would have broken
+  /// the word: the text engine may break a line either side of one. It is
+  /// redone only when the title or what it is laid out from changes.
   _TitleLayout? _layOutTitle(
     BuildContext context,
     TextStyle style,
@@ -7588,32 +7585,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
     if (at != end) return _title = null;
 
-    // An empty placeholder after the words, to find where the text engine
-    // puts the top of one in the last row: level with the surrounding run's
-    // ascent, not with the row's top.
-    final painter =
-        TextPainter(
-            text: TextSpan(
-              style: full.style,
-              children: [
-                ...runs,
-                const WidgetSpan(
-                  alignment: PlaceholderAlignment.top,
-                  child: SizedBox.shrink(),
-                ),
-              ],
-            ),
-            textDirection: TextDirection.ltr,
-            strutStyle: strut,
-            textScaler: scaler,
-          )
-          ..setPlaceholderDimensions(const [
-            PlaceholderDimensions(
-              size: Size.zero,
-              alignment: PlaceholderAlignment.top,
-            ),
-          ])
-          ..layout(maxWidth: width);
+    final painter = TextPainter(
+      text: TextSpan(style: full.style, children: runs),
+      textDirection: TextDirection.ltr,
+      strutStyle: strut,
+      textScaler: scaler,
+    )..layout(maxWidth: width);
     final lines = painter.computeLineMetrics();
     final last = lines.last;
     final row = Rect.fromLTWH(
@@ -7622,23 +7599,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       width,
       last.height,
     );
-    final spacerTop = painter.inlinePlaceholderBoxes!.last.top;
-
-    // The letter: one character standing alone, so not a space, a surrogate
-    // pair or a letter with a mark on it.
-    TextBox? glyph;
-    var letter = end;
-    for (final character in words.characters.toList().reversed) {
-      letter -= character.length;
-      if (character.length != 1 || character.trim().isEmpty) continue;
-      final boxes = painter.getBoxesForSelection(
-        TextSelection(baseOffset: letter, extentOffset: letter + 1),
-      );
-      if (boxes.isEmpty) continue;
-      if (boxes.last.bottom <= row.top) break;
-      glyph = boxes.last;
-      break;
-    }
     final trimmed = words.trimRight();
     final wordBoxes = painter
         .getBoxesForSelection(
@@ -7649,46 +7609,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         )
         .where((box) => box.bottom > row.top);
     painter.dispose();
-    if (glyph == null) return _title = null;
-
-    var start = 0;
-    final run = runs.firstWhere((run) {
-      start += run.text?.length ?? 0;
-      return letter < start;
-    });
-    final drawn = TextSpan(
-      text: words[letter],
-      style: full.style?.merge(run.style) ?? run.style,
-    );
-    final measure = TextPainter(
-      text: drawn,
-      textDirection: TextDirection.ltr,
-      textScaler: scaler,
-    )..layout();
-    final baseline = measure.computeDistanceToActualBaseline(
-      TextBaseline.alphabetic,
-    );
-    measure.dispose();
-    // The field scales a placeholder's widget by the text scale at the size
-    // of the note's own words, the span it sits in, so the letter is drawn
-    // unscaled at the size that comes out right once that scale is applied:
-    // the size the rest of the title is drawn at.
-    final rootSize = full.style?.fontSize ?? kDefaultFontSize;
-    final letterSize = drawn.style?.fontSize ?? rootSize;
-    final inline = scaler.scale(rootSize) / rootSize;
     return _title = (
-      letter: letter,
-      drawn: TextSpan(
-        text: drawn.text,
-        style: drawn.style?.copyWith(
-          fontSize: scaler.scale(letterSize) / inline,
-        ),
-      ),
-      inline: inline,
-      width: glyph.right - glyph.left,
-      top: last.baseline - spacerTop - baseline,
       row: row,
-      spacerTop: spacerTop - row.top,
       word: wordBoxes.isEmpty
           ? null
           : Rect.fromLTRB(
@@ -8367,42 +8289,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   layoutKey,
                   spacers.keys,
                 );
-                // The title's last letter stands in for the room under it,
-                // drawn at the top of a placeholder that reaches below the
-                // row, so the line under the title starts below the room.
-                if (title != null) {
-                  final height =
-                      title.row.height -
-                      title.spacerTop +
-                      _titleRoom(textScaler);
-                  // The field scales the placeholder's widget once more, so
-                  // its lengths go in unscaled.
-                  final inline = title.inline;
-                  spacers[title.letter] = (
-                    width: title.width,
-                    height: height,
-                    child: SizedBox(
-                      width: title.width / inline,
-                      height: height / inline,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          Positioned(
-                            left: 0,
-                            top: title.top / inline,
-                            child: RichText(
-                              text: title.drawn,
-                              textScaler: TextScaler.noScaling,
-                              maxLines: 1,
-                              softWrap: false,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                  _controller.setImageSpansDuringLayout(spacers);
-                }
+                // The title's line keeps the room under it, so the line
+                // under the title starts below the room.
+                final titleRoom = title == null ? null : _titleRoom(textScaler);
                 if (_editingCell != null) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (mounted) _syncTableCellEditorPosition();
@@ -8528,8 +8417,18 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           textStyle,
                           strut,
                           columnWidth: contentWidth,
-                          trailingOf: resultsVisible
-                              ? (line) => switch (_results[line]) {
+                          trailingOf: titleRoom == null && !resultsVisible
+                              ? null
+                              : (line) => switch (_results[line]) {
+                                  _ when line == 0 && titleRoom != null => (
+                                    child: const SizedBox.shrink(),
+                                    leader: null,
+                                    right: contentWidth,
+                                    room: 0.0,
+                                    height: 0.0,
+                                    below: titleRoom,
+                                  ),
+                                  _ when !resultsVisible => null,
                                   null => null,
                                   final result when widget.keepResultRoom => (
                                     child: ResultChip(
@@ -8546,6 +8445,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                       result,
                                       contentWidth,
                                     ),
+                                    below: 0.0,
                                   ),
                                   final result => (
                                     child: ResultChip(
@@ -8560,9 +8460,9 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                     right: contentWidth,
                                     room: 0.0,
                                     height: 0.0,
+                                    below: 0.0,
                                   ),
-                                }
-                              : null,
+                                },
                         ),
                       ),
                       if (!widget.readOnly && markdown.tables.isNotEmpty)
@@ -8697,8 +8597,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
             ),
-          ]
-          else if (!AppPlatform.isMobile)
+          ] else if (!AppPlatform.isMobile)
             SizedBox(height: MediaQuery.paddingOf(context).bottom)
           else ...[
             if (statusShown)
@@ -9678,28 +9577,8 @@ class _UnknownChip extends StatelessWidget {
 }
 
 /// The note's title as laid out on the page: [row] is its last row and
-/// [word] its last word on that row. [letter] is where the letter drawn by
-/// the placeholder under the title stands, [drawn] that letter as the field
-/// would draw it, [width] its advance, and [top] how far down the
-/// placeholder it is drawn so it sits on the row's baseline.
-///
-/// [spacerTop] is how far below the row's top a placeholder in it starts.
-typedef _TitleLayout = ({
-  int letter,
-
-  /// The letter as the placeholder draws it: unscaled, at the size that
-  /// [inline] brings to the title's.
-  TextSpan drawn,
-
-  /// The scale the field gives the placeholder's widget. Every length the
-  /// placeholder is given is divided by it.
-  double inline,
-  double width,
-  double top,
-  Rect row,
-  double spacerTop,
-  Rect? word,
-});
+/// [word] its last word on that row.
+typedef _TitleLayout = ({Rect row, Rect? word});
 
 /// An empty line with a "+" beside it: where it starts, its middle in the
 /// field, and whether the caret or the pointer is on it.

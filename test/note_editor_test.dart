@@ -88,6 +88,8 @@ Widget harness(
   double editorTextScale = 1,
   ShortcutPrefs? shortcuts,
   bool markdown = false,
+  bool phone = false,
+  Brightness brightness = Brightness.dark,
 }) {
   final editor = NoteEditor(
     // Keyed by body so re-pumping with different text remounts the editor,
@@ -99,6 +101,7 @@ Widget harness(
     engine: engine,
     highlighter: Highlighter(engine.registry),
     keepResultRoom: keepResultRoom,
+    phone: phone,
     resultsVisible: resultsVisible,
     lastUpdatedAt: lastUpdatedAt,
     createdAt: createdAt,
@@ -122,7 +125,9 @@ Widget harness(
     markdownEnabled: markdown,
   );
   return MaterialApp(
-    theme: KapyTheme.dark().copyWith(platform: platform),
+    theme:
+        (brightness == Brightness.dark ? KapyTheme.dark() : KapyTheme.light())
+            .copyWith(platform: platform),
     home: Scaffold(
       // A narrower editor where a test needs one, with the rest of the
       // window left empty beside it.
@@ -1347,7 +1352,6 @@ void main() {
       final end = start + text.length;
       final runs = <TextSpan>[];
       var offset = 0;
-      // The title's last letter stands in a placeholder of its own.
       for (final span in rendered.children!) {
         if (span is! TextSpan) {
           offset++;
@@ -2709,9 +2713,8 @@ void main() {
     expect(field.style.fontFamily, WritingFont.mixed.fontFamily);
 
     final rendered = NoteDriver(tester).span;
-    // Its last letter is drawn by the placeholder under the title.
     final heading = rendered.children!.whereType<TextSpan>().firstWhere(
-      (span) => span.text == 'Nightly cos',
+      (span) => span.text == 'Nightly cost',
     );
     final bodyText = rendered.children!.whereType<TextSpan>().firstWhere(
       (span) => span.text == 'nightly',
@@ -2747,7 +2750,7 @@ void main() {
     final scaledRendered = NoteDriver(tester).span;
     final scaledHeading = scaledRendered.children!
         .whereType<TextSpan>()
-        .firstWhere((span) => span.text == 'Nightly cos');
+        .firstWhere((span) => span.text == 'Nightly cost');
     expect(
       scaledHeading.style?.fontSize,
       closeTo(EditorMetrics.titleFontSize * 1.4, 0.001),
@@ -3331,12 +3334,14 @@ void main() {
       await tester.pumpWidget(harness(body));
       await tester.pumpAndSettle();
 
-      final letter = tester.getRect(
-        find.byWidgetPredicate(
-          (widget) => widget is RichText && widget.text.toPlainText() == 'y',
-        ),
-      );
       final editable = NoteDriver(tester);
+      final y = editable
+          .boxesFor(const TextSelection(baseOffset: 4, extentOffset: 5))
+          .single;
+      final letter = Rect.fromPoints(
+        editable.toGlobal(Offset(y.left, y.top)),
+        editable.toGlobal(Offset(y.right, y.bottom)),
+      );
       final a = editable
           .boxesFor(const TextSelection(baseOffset: 3, extentOffset: 4))
           .single;
@@ -3351,8 +3356,8 @@ void main() {
       expect(find.byType(ResultChip), findsOneWidget);
       expect(chipWithText('4'), findsOneWidget);
       expect(editable.toGlobal(Offset(t.left, t.top)).dy, closeTo(aTop, 1));
-      // Scaled once, as the title's row is, rather than twice.
-      expect(letter.height, closeTo(EditorMetrics.titleRow * scale, 1));
+      // Drawn as the rest of the title is, not as a placeholder of its own.
+      expect(letter.height, closeTo(aHeight, 0.5));
       expect(letter.center.dy, closeTo((aTop + aBottom) / 2, aHeight * 0.3));
 
       // The meta row sits under the title, and its words are not cut down
@@ -3377,6 +3382,54 @@ void main() {
       expect(facts.height, lessThanOrEqualTo(editedRect.height * 2 + 1));
       expect(tester.takeException(), isNull);
     });
+  }
+
+  for (final width in [320.0, 390.0]) {
+    for (final scale in [1.0, 1.5, 2.0]) {
+      for (final brightness in Brightness.values) {
+        testWidgets('a phone title at ${width.round()} pt and $scale× text '
+            'breaks only between words in ${brightness.name} (KAP-450)', (
+          tester,
+        ) async {
+          AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          tester.view.physicalSize = Size(width, 2400);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          const title = 'Lisbon trip budget';
+          await tester.pumpWidget(
+            harness(
+              '$title\nBody',
+              phone: true,
+              platform: TargetPlatform.iOS,
+              brightness: brightness,
+              writingFont: WritingFont.handwritten,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final editable = NoteDriver(tester);
+          for (final match in RegExp(r'\S+').allMatches(title)) {
+            final rows = editable
+                .boxesFor(
+                  TextSelection(
+                    baseOffset: match.start,
+                    extentOffset: match.end,
+                  ),
+                )
+                .map((box) => box.top.round())
+                .toSet();
+            expect(
+              rows,
+              hasLength(1),
+              reason: '"${match.group(0)}" breaks across rows',
+            );
+          }
+        });
+      }
+    }
   }
 
   testWidgets('a phone keeps room for a result at each text size', (
