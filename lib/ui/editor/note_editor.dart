@@ -472,6 +472,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   static const _keyboardGoneAfter = Duration(milliseconds: 500);
   Timer? _keyboardGoneTimer;
 
+  /// How long the inset must hold still before the keyboard counts as up.
+  /// Until then it is still coming up, and a fall to zero is Android starting
+  /// its slide again from the bottom, which on a slow phone can take longer
+  /// than [_keyboardGoneAfter] to show (KAP-324), not the reader putting it
+  /// away.
+  static const _keyboardSettleAfter = Duration(milliseconds: 500);
+  Timer? _keyboardSettleTimer;
+  bool _keyboardSettled = false;
+
   final PlatformSpellCheckService _spellCheckService =
       PlatformSpellCheckService();
   Locale? _spellCheckLocale;
@@ -838,6 +847,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _correctionsArrived.dispose();
     _keyboardRetryTimer?.cancel();
     _keyboardGoneTimer?.cancel();
+    _keyboardSettleTimer?.cancel();
     _selectionToolbarTimer?.cancel();
     _pasteOfferTimer?.cancel();
     _keywordHoverTimer?.cancel();
@@ -4705,8 +4715,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // A cell opened with the keyboard down was scrolled into view before the
     // keyboard had a height; now that it has one, the cell may be under it.
     if (isUp && _editingCell != null) _ensureCellVisible();
-    if (isUp) _keyboardGoneTimer?.cancel();
-    if (isUp || !wasUp) return;
+    if (isUp) {
+      _keyboardGoneTimer?.cancel();
+      if (!_keyboardSettled) {
+        _keyboardSettleTimer?.cancel();
+        _keyboardSettleTimer = Timer(
+          _keyboardSettleAfter,
+          () => _keyboardSettled = true,
+        );
+      }
+      return;
+    }
+    _keyboardSettleTimer?.cancel();
+    final settled = _keyboardSettled;
+    _keyboardSettled = false;
+    if (!wasUp || !settled) return;
     if (widget.readOnly || !_editingNote) return;
     // Backgrounding the app also takes the keyboard down, and focus should
     // survive that: it is the same note, still open, when the app comes back.

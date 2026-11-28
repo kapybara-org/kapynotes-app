@@ -16,6 +16,7 @@ import '../context_menu.dart';
 import '../sidebar.dart' show PhoneFiltersButton, SidebarSearchField;
 import '../note_day_scope.dart';
 import '../notes_grouping.dart' show dayShown;
+import '../page_turn.dart';
 import '../sidebar_timestamp.dart';
 import 'task_choice.dart';
 import 'task_choice_cards.dart';
@@ -569,17 +570,23 @@ class TasksScreenState extends State<TasksScreen> {
             });
             return const SizedBox.shrink();
           }
-          return PhoneTaskPage(
-            item: current,
-            tasks: _tasks,
-            label: widget.labelOf(current.note),
-            images: widget.images,
-            onBack: () => Navigator.of(context).pop(),
-            onOpenNote: () {
-              Navigator.of(context).pop();
-              final open = widget.onOpenTask;
-              open == null ? widget.onOpenNote(current.note.id) : open(current);
-            },
+          // A drag right goes back to the list, as the page's arrow does.
+          return PageTurn(
+            onBack: () => unawaited(Navigator.of(context).maybePop()),
+            child: PhoneTaskPage(
+              item: current,
+              tasks: _tasks,
+              label: widget.labelOf(current.note),
+              images: widget.images,
+              onBack: () => Navigator.of(context).pop(),
+              onOpenNote: () {
+                Navigator.of(context).pop();
+                final open = widget.onOpenTask;
+                open == null
+                    ? widget.onOpenNote(current.note.id)
+                    : open(current);
+              },
+            ),
           );
         },
       ),
