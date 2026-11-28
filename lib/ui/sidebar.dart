@@ -842,9 +842,8 @@ extension on Sidebar {
           if (_taggable(context, joining).isNotEmpty)
             const KapyMenuAction(
               value: 'picked-tags',
-              label: 'Tags',
+              label: 'Tags…',
               icon: KapyIcons.tagRounded,
-              hint: '›',
             ),
           if (_fileable(joining).isNotEmpty)
             const KapyMenuAction(
@@ -3191,9 +3190,8 @@ class _NoteRowState extends State<NoteRow> {
           if (TagShelf.maybeOf(context) != null)
             const KapyMenuAction(
               value: 'tags',
-              label: 'Tags',
+              label: 'Tags…',
               icon: KapyIcons.tagRounded,
-              hint: '›',
             ),
           if (widget.folders != null)
             const KapyMenuAction(

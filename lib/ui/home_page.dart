@@ -4947,7 +4947,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (mayEdit && !_specialMode && widget.tags != null)
             const KapyMenuAction(
               value: 'tags',
-              label: 'Tags',
+              label: 'Tags…',
               icon: KapyIcons.tagRounded,
             ),
         ],
