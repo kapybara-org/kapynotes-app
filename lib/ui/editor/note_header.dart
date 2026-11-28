@@ -302,7 +302,7 @@ class NoteMetaRow extends StatelessWidget {
             decoration: totalLeavesOut
                 ? DashedOutline(
                     palette.textSecondary.withValues(alpha: 0.45),
-                    5,
+                    phone ? AppRadii.pill : 5,
                     outset: 3,
                   )
                 : const BoxDecoration(),
@@ -376,7 +376,9 @@ class NoteMetaRow extends StatelessWidget {
                           const SizedBox(width: _gap),
                           dot,
                           const SizedBox(width: _gap),
-                          item,
+                          // A fact too long for what is left of the line
+                          // moves to the next, and wraps there if it must.
+                          Flexible(child: item),
                         ],
                       ),
             ],

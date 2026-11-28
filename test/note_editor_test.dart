@@ -90,7 +90,6 @@ Widget harness(
   double editorTextScale = 1,
   ShortcutPrefs? shortcuts,
   bool markdown = false,
-  bool phone = false,
   Brightness brightness = Brightness.dark,
 }) {
   final editor = NoteEditor(
@@ -114,7 +113,6 @@ Widget harness(
     autofocus: autofocus,
     ensureKeyboardVisible: ensureKeyboardVisible,
     readOnly: readOnly,
-    phone: phone,
     onDocumentChanged: (body, formats, attachments, edit) {
       onBodyChanged?.call(body);
       onFormatsChanged?.call(formats);
@@ -3432,6 +3430,63 @@ void main() {
           }
         });
       }
+    }
+  }
+
+  for (final width in [320.0, 390.0]) {
+    for (final scale in [1.0, 1.5, 2.0]) {
+      testWidgets(
+        'a phone header Total at ${width.round()} pt and $scale× text '
+        'fits the line or wraps, and the other facts stay (KAP-449)',
+        (tester) async {
+          AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+          addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+          tester.view.physicalSize = Size(width, 2400);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.reset);
+          tester.platformDispatcher.textScaleFactorTestValue = scale;
+          addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+          await tester.pumpWidget(
+            harness(
+              'Flat move\n- [ ] sign\n- [x] keys\ndeposit = 2000000 eur\n'
+              'rent: 1200000\nfood: 300\nboxes = 4 kg',
+              phone: true,
+              platform: TargetPlatform.iOS,
+              markdown: true,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          for (final key in ['note-edited', 'note-progress', 'note-total']) {
+            final rect = tester.getRect(find.byKey(ValueKey(key)));
+            expect(rect.width, greaterThan(0), reason: '$key is shown');
+            expect(rect.left, greaterThanOrEqualTo(0), reason: key);
+            expect(rect.right, lessThanOrEqualTo(width), reason: key);
+          }
+          final total = tester.widget<Text>(
+            find.byKey(const ValueKey('note-total')),
+          );
+          expect(total.textSpan!.toPlainText(), startsWith('Total: 3,'));
+          final mark =
+              tester
+                      .widget<DecoratedBox>(
+                        find
+                            .ancestor(
+                              of: find.byKey(const ValueKey('note-total')),
+                              matching: find.byType(DecoratedBox),
+                            )
+                            .first,
+                      )
+                      .decoration
+                  as DashedOutline;
+          expect(
+            mark.radius,
+            AppRadii.pill,
+            reason: 'pill corners as a result',
+          );
+        },
+      );
     }
   }
 
