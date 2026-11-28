@@ -9079,7 +9079,7 @@ void main() {
 
       final result = find.descendant(
         of: find.byType(ResultChip),
-        matching: find.text('2,288.00 EUR'),
+        matching: find.text('2,288.00\u00A0EUR'),
       );
       expect(result, findsOneWidget);
       expect(

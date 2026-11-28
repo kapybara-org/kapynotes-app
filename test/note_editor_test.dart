@@ -2729,7 +2729,7 @@ void main() {
     expect(heading.style?.fontSize, EditorMetrics.titleFontSize);
     expect(bodyText.style?.fontFamily, WritingFont.mixed.fontFamily);
     expect(
-      tester.getRect(chipWithText('896.00 EUR')).center.dy,
+      tester.getRect(chipWithText('896.00\u00A0EUR')).center.dy,
       closeTo(lineRect(tester, body, 2).center.dy, 1.5),
     );
 
@@ -2757,7 +2757,7 @@ void main() {
       closeTo(EditorMetrics.titleFontSize * 1.4, 0.001),
     );
     expect(
-      tester.getRect(chipWithText('896.00 EUR')).center.dy,
+      tester.getRect(chipWithText('896.00\u00A0EUR')).center.dy,
       closeTo(lineRect(tester, body, 2).center.dy, 1.5),
     );
   });
@@ -2780,10 +2780,10 @@ void main() {
         editable.toGlobal(Offset.zero).dx + editable.columnWidth;
 
     for (final entry in {
-      1: '129.00 USD',
-      2: '29.00 USD',
-      3: '147.00 USD',
-      4: '305.00 USD',
+      1: '129.00\u00A0USD',
+      2: '29.00\u00A0USD',
+      3: '147.00\u00A0USD',
+      4: '305.00\u00A0USD',
     }.entries) {
       final row = lastRowRect(tester, body, entry.key);
       final pill = tester.getRect(chipWithText(entry.value));
@@ -2924,8 +2924,8 @@ void main() {
     await tester.pump();
     // Let EditableText commit the initial value as the undo baseline.
     await tester.pump(const Duration(milliseconds: 600));
-    expect(chipWithText('1,200.00 USD'), findsOneWidget);
-    expect(chipWithText('14,400.00 USD'), findsOneWidget);
+    expect(chipWithText('1,200.00\u00A0USD'), findsOneWidget);
+    expect(chipWithText('14,400.00\u00A0USD'), findsOneWidget);
 
     final controller = tester.widget<NoteField>(noteField).controller;
     expect(controller.text, body);
@@ -2955,13 +2955,13 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     expect(controller.text, 'Rent\nrent = 1300 usd\nrent * 12');
-    expect(chipWithText('1,300.00 USD'), findsOneWidget);
-    expect(chipWithText('15,600.00 USD'), findsOneWidget);
+    expect(chipWithText('1,300.00\u00A0USD'), findsOneWidget);
+    expect(chipWithText('15,600.00\u00A0USD'), findsOneWidget);
 
     await control(LogicalKeyboardKey.keyZ);
     await tester.pumpAndSettle();
     expect(controller.text, '$body$body');
-    expect(chipWithText('14,400.00 USD'), findsNWidgets(2));
+    expect(chipWithText('14,400.00\u00A0USD'), findsNWidgets(2));
     await tester.pump(const Duration(seconds: 2));
     debugDefaultTargetPlatformOverride = null;
   });
@@ -3178,7 +3178,7 @@ void main() {
     expect(rows, hasLength(1), reason: 'the writing runs the full width');
     final pill = tester.getRect(
       find.descendant(
-        of: chipWithText('1,152.00 EUR'),
+        of: chipWithText('1,152.00\u00A0EUR'),
         matching: find.byType(AnimatedContainer),
       ),
     );
@@ -3211,7 +3211,7 @@ void main() {
     await tester.pumpWidget(harness(body, keepResultRoom: true));
     await tester.pumpAndSettle();
 
-    final chip = chipWithText('2,295.00 EUR');
+    final chip = chipWithText('2,295.00\u00A0EUR');
     final target = tester.getRect(chip);
     final pill = tester.getRect(
       find.descendant(of: chip, matching: find.byType(AnimatedContainer)),
@@ -3563,7 +3563,7 @@ void main() {
 
     final pill = tester.getRect(
       find.descendant(
-        of: chipWithText('2,295.00 EUR'),
+        of: chipWithText('2,295.00\u00A0EUR'),
         matching: find.byType(AnimatedContainer),
       ),
     );
@@ -3615,7 +3615,7 @@ void main() {
       reason: 'a line without a result keeps the full writing width',
     );
 
-    final chip = chipWithText('2,295.00 EUR');
+    final chip = chipWithText('2,295.00\u00A0EUR');
     expect(chip, findsOneWidget);
     final paragraph = tester.renderObject<RenderParagraph>(
       find.descendant(of: chip, matching: find.byType(RichText)),
@@ -3710,9 +3710,9 @@ total to usd''';
     final scroll = field.scrollController;
     expect(scroll.offset, greaterThan(0));
     for (final entry in {
-      4: '479.07 USD',
-      8: '896.00 EUR',
-      12: '385.00 EUR',
+      4: '479.07\u00A0USD',
+      8: '896.00\u00A0EUR',
+      12: '385.00\u00A0EUR',
     }.entries) {
       expect(
         tester.getRect(chipWithText(entry.value)).center.dy,
@@ -3751,6 +3751,86 @@ total to usd''';
     expect(tester.testTextInput.isVisible, isFalse);
     expect(field.scrollController.offset, lessThan(scrollBefore));
   });
+
+  testWidgets('keeps an amount with its currency code when drawn, and copies '
+      'it with a plain space (KAP-449)', (tester) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await tester.pumpWidget(harness('Flat\n5000 eur\nrent: 1200'));
+    await tester.pumpAndSettle();
+
+    final chip = chipWithText('5,000.00\u00A0EUR');
+    expect(chip, findsOneWidget);
+    final result = tester.widget<ResultChip>(chip).result;
+    expect(result.text, '5,000.00 EUR');
+    expect(result.copyText, isNot(contains('\u00A0')));
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('note-total')))
+          .textSpan!
+          .toPlainText(),
+      'Total: 6,200.00\u00A0EUR',
+    );
+
+    await tester.tap(chip);
+    await tester.pump();
+    expect(copied, [result.copyText]);
+    expect(copied.single, isNot(contains('\u00A0')));
+    expect(find.textContaining('Copied'), findsOneWidget);
+    expect(find.text('Copied ${result.copyText}'), findsOneWidget);
+    await tester.pumpAndSettle(const Duration(seconds: 2));
+  });
+
+  for (final (scale, expected) in [
+    (1.0, '2,000,000.00\u00A0EUR'),
+    (2.0, '2,000,000.00 EUR'),
+  ]) {
+    testWidgets('a phone result at 320 pt and $scale× text ties its code to '
+        'the amount only while the pair fits a line (KAP-449)', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      tester.view.physicalSize = const Size(320, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      await tester.pumpWidget(
+        harness(
+          'Flat\ndeposit = 2000000 eur',
+          keepResultRoom: true,
+          phone: true,
+          platform: TargetPlatform.iOS,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<Text>(
+              find.descendant(
+                of: find.byType(ResultChip),
+                matching: find.byType(Text),
+              ),
+            )
+            .data,
+        expected,
+      );
+    });
+  }
 
   testWidgets('recalculates as the user types', (tester) async {
     await tester.pumpWidget(harness('Sums\n2 + 2'));
@@ -3817,7 +3897,7 @@ total to usd''';
       tester,
     ) async {
       await pumpAt(tester, 'Flat\n5000 eur\nrent: 1200\nfood: 300');
-      expect(headerTotal(tester), 'Total: 6,500.00 EUR');
+      expect(headerTotal(tester), 'Total: 6,500.00\u00A0EUR');
       expect(headerMark(tester), isNot(isA<DashedOutline>()));
       expect(countOn(tester, '1,200'), isNull, reason: 'rent is counted');
       expect(countOn(tester, '300'), isNull, reason: 'food is counted');
@@ -3826,8 +3906,8 @@ total to usd''';
       await tester.pumpAndSettle();
       expect(chipWithText('1,200'), findsOneWidget, reason: 'rent 1200');
       expect(chipWithText('300'), findsOneWidget, reason: 'food 300');
-      expect(chipWithText('6,500.00 EUR'), findsOneWidget);
-      expect(countOn(tester, '6,500.00 EUR')!.mark, isFalse);
+      expect(chipWithText('6,500.00\u00A0EUR'), findsOneWidget);
+      expect(countOn(tester, '6,500.00\u00A0EUR')!.mark, isFalse);
       expect(find.byKey(const ValueKey('note-total')), findsNothing);
     });
 
@@ -3835,16 +3915,16 @@ total to usd''';
       tester,
     ) async {
       await pumpAt(tester, 'Flat\n5000 eur\nrent: 1200\nboxes = 4 kg');
-      expect(headerTotal(tester), 'Total: 6,200.00 EUR');
+      expect(headerTotal(tester), 'Total: 6,200.00\u00A0EUR');
       expect(headerMark(tester), isA<DashedOutline>());
       expect(countOn(tester, '4 kg')!.mark, isTrue);
 
       await tester.enterNote('Flat\n5000 eur\nrent: 1200\nboxes = 4 kg\ntotal');
       await tester.pumpAndSettle();
-      expect(countOn(tester, '6,200.00 EUR')!.mark, isTrue);
+      expect(countOn(tester, '6,200.00\u00A0EUR')!.mark, isTrue);
       final box = tester.widget<AnimatedContainer>(
         find.descendant(
-          of: chipWithText('6,200.00 EUR'),
+          of: chipWithText('6,200.00\u00A0EUR'),
           matching: find.byType(AnimatedContainer),
         ),
       );

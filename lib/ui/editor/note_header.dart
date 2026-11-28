@@ -12,7 +12,8 @@ import '../collaborator_colors.dart';
 import '../save_status.dart';
 import '../sidebar_timestamp.dart';
 import 'note_footer.dart' show typingStatusText;
-import 'results_gutter.dart' show DashedOutline;
+import 'dotted_wrap.dart';
+import 'results_gutter.dart' show DashedOutline, ResultChip;
 
 /// The note title's hand-drawn underline, under its last word: Paper's clay
 /// stroke, a little longer than the word and rising slightly into it.
@@ -214,6 +215,17 @@ class NoteMetaRow extends StatelessWidget {
       fontVariations: AppWeight.wght(AppWeight.rowTitle),
       color: palette.textSecondary,
     );
+    var totalWords = total;
+    if (total case final total?) {
+      final tied = ResultChip.tied(total);
+      final painter = TextPainter(
+        text: TextSpan(text: tied, style: strong),
+        textDirection: TextDirection.ltr,
+        textScaler: MediaQuery.textScalerOf(context),
+      )..layout();
+      if (painter.width <= width) totalWords = tied;
+      painter.dispose();
+    }
     final mobile = AppPlatform.isMobile;
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
     final typingText = typingStatusText([for (final p in typing) p.name]);
@@ -294,7 +306,7 @@ class NoteMetaRow extends StatelessWidget {
             ],
           ),
         ),
-      if (total case final total?)
+      if (totalWords case final totalWords?)
         _TotalHover(
           describe: describeTotal,
           child: DecoratedBox(
@@ -320,7 +332,7 @@ class NoteMetaRow extends StatelessWidget {
               key: const ValueKey('note-total'),
               TextSpan(
                 text: 'Total: ',
-                children: [TextSpan(text: total, style: strong)],
+                children: [TextSpan(text: totalWords, style: strong)],
               ),
               style: quiet,
             ),
@@ -373,25 +385,13 @@ class NoteMetaRow extends StatelessWidget {
         crossAxisAlignment: WrapCrossAlignment.center,
         spacing: _gap + 4,
         children: [
-          Wrap(
+          // A fact too long for what is left of the line moves to the next,
+          // leaving its dot behind, and wraps there if it must.
+          DottedWrap(
             key: const ValueKey('note-facts'),
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              for (final (index, item) in facts.indexed)
-                index == 0
-                    ? item
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(width: _gap),
-                          dot,
-                          const SizedBox(width: _gap),
-                          // A fact too long for what is left of the line
-                          // moves to the next, and wraps there if it must.
-                          Flexible(child: item),
-                        ],
-                      ),
-            ],
+            dot: dot,
+            gap: _gap,
+            items: facts,
           ),
           ?tags,
         ],
@@ -407,23 +407,11 @@ class NoteMetaRow extends StatelessWidget {
           children: [
             ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 16),
-              child: Wrap(
+              child: DottedWrap(
                 key: const ValueKey('note-facts'),
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  for (final (index, item) in facts.indexed)
-                    index == 0
-                        ? item
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const SizedBox(width: _gap),
-                              dot,
-                              const SizedBox(width: _gap),
-                              item,
-                            ],
-                          ),
-                ],
+                dot: dot,
+                gap: _gap,
+                items: facts,
               ),
             ),
             const SizedBox(height: 8),
