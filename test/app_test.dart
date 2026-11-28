@@ -3213,9 +3213,7 @@ void main() {
     expect(prefs.editorTextScale, 1);
   });
 
-  testWidgets('Settings shows the zoom and steps it', (
-    tester,
-  ) async {
+  testWidgets('Settings shows the zoom and steps it', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpApp(tester);
@@ -3228,7 +3226,10 @@ void main() {
       find.descendant(of: row, matching: find.text('The whole window')),
       findsOneWidget,
     );
-    expect(find.descendant(of: row, matching: find.text('100%')), findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('100%')),
+      findsOneWidget,
+    );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('note-text-size-setting')),
@@ -3238,11 +3239,17 @@ void main() {
     );
 
     await tester.tap(
-      find.descendant(of: row, matching: find.byKey(const ValueKey('stepper-up'))),
+      find.descendant(
+        of: row,
+        matching: find.byKey(const ValueKey('stepper-up')),
+      ),
     );
     await tester.pumpAndSettle();
     expect(prefs.zoom, 1.1);
-    expect(find.descendant(of: row, matching: find.text('110%')), findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('110%')),
+      findsOneWidget,
+    );
     expect(prefs.editorTextScale, 1);
   });
 
@@ -3260,7 +3267,8 @@ void main() {
       for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
         AppPlatform.debugTargetPlatformOverride = platform;
         for (final listShown in [true, false]) {
-          final reason = '${(zoom * 100).round()}%, ${platform.name}, list '
+          final reason =
+              '${(zoom * 100).round()}%, ${platform.name}, list '
               '${listShown ? 'shown' : 'hidden'}';
           await pumpApp(tester, sidebarVisible: listShown);
           prefs.zoom = zoom;
@@ -3287,7 +3295,10 @@ void main() {
           await tester.ensureVisible(zoomRow);
           await tester.pumpAndSettle();
           for (final words in ['Zoom', 'The whole window']) {
-            final text = find.descendant(of: zoomRow, matching: find.text(words));
+            final text = find.descendant(
+              of: zoomRow,
+              matching: find.text(words),
+            );
             expect(
               tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
               isFalse,
@@ -10805,6 +10816,10 @@ void main() {
             await pumpHome(tester, also: trip);
             await tester.tap(tasksTitle);
             await tester.pumpAndSettle();
+            if (opener == 'tasks-note-picker') {
+              await tester.tap(find.byKey(const ValueKey('phone-new')));
+              await tester.pumpAndSettle();
+            }
             await tester.tap(find.byKey(ValueKey(opener)));
             await tester.pumpAndSettle();
             final items = find.byWidgetPredicate(
@@ -15119,8 +15134,13 @@ void main() {
       );
       await showNotesList(tester);
       final tasksTitle = find.byKey(const ValueKey('home-title-tasks'));
-      final field = find.byKey(const ValueKey('tasks-add-field'));
+      final field = find.byKey(
+        const ValueKey('tasks-add-field'),
+        skipOffstage: false,
+      );
       await tester.tap(tasksTitle);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('phone-new')));
       await tester.pumpAndSettle();
       await tester.enterText(field, 'Buy sta');
       await tester.pumpAndSettle();
@@ -15133,6 +15153,40 @@ void main() {
       await tester.tap(tasksTitle);
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(field).controller!.text, 'Buy sta');
+    });
+    testWidgets("the phone's add field goes away with the keyboard", (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      await notes.load();
+      notes.create(body: 'Groceries\nOat milk');
+      await pumpApp(
+        tester,
+        size: const Size(393, 852),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        ),
+      );
+      await showNotesList(tester);
+      final field = find.byKey(
+        const ValueKey('tasks-add-field'),
+        skipOffstage: false,
+      );
+      await tester.tap(find.byKey(const ValueKey('home-title-tasks')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('phone-new')));
+      await tester.pumpAndSettle();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(field.hitTestable(), findsOneWidget);
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isFalse);
+      expect(field.hitTestable(), findsNothing);
     });
     testWidgets("Android's Back closes a note's slash menu before the page", (
       tester,
