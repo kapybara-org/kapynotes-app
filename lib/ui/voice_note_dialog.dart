@@ -401,6 +401,7 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
     final insert = widget.actions.onInsert;
     final ask = widget.actions.ask;
     final posting = widget.actions.onRewrite != null && _ref.transcript != null;
+    final top = _pageTop();
     final body = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -431,10 +432,17 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
         ),
         Expanded(
           child: ask == null && !posting
-              ? _content(palette)
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ?top,
+                    Expanded(child: _content(palette)),
+                  ],
+                )
               : VoiceAsk(
                   actions: ask,
                   ref: _ref,
+                  top: top,
                   page: _content(palette),
                   unavailable: ask == null ? null : _askUnavailable(ask),
                   compact: widget.asSheet,
@@ -743,12 +751,10 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
   Widget _transcript(CalcPalette palette) {
     final transcript = _ref.transcript!;
     final rows = _layout();
-    final speakers = transcript.speakerIds;
     final rename = widget.actions.onChanged == null
         ? null
         : (int speaker) => unawaited(_renameSpeaker(speaker));
-
-    final list = ListView.builder(
+    return ListView.builder(
       controller: _transcriptScroll,
       padding: const EdgeInsets.fromLTRB(14, 6, 14, 20),
       itemCount: rows.length + 1,
@@ -855,8 +861,21 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
         );
       },
     );
+  }
 
+  /// The transcript's search and speakers rows, which stay whole above Ask's
+  /// drawer at its tallest. Null when the page has neither.
+  Widget? _pageTop() {
+    if (_onSummary || _emptyState() != null) return null;
+    final transcript = _ref.transcript!;
+    final speakers = transcript.speakerIds;
+    if (!_searching && speakers.length < 2) return null;
+    final rename = widget.actions.onChanged == null
+        ? null
+        : (int speaker) => unawaited(_renameSpeaker(speaker));
     return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_searching)
           _SearchBar(
@@ -874,7 +893,6 @@ class _VoiceNoteViewState extends State<VoiceNoteView> {
             speakers: speakers,
             onRename: rename,
           ),
-        Expanded(child: list),
       ],
     );
   }
