@@ -94,23 +94,26 @@ Future<void> _home(WidgetTester tester) async {
 }
 
 /// Opens the long note from the list and brings the keyboard up as a phone
-/// does: asked for once the page has focused the note, then sliding in over
-/// 18 frames while the page turns. Returns what each frame showed, from the
-/// first one with the page on screen.
+/// does: asked for once the page has focused the note, then, [late] frames
+/// later, sliding in over 18 frames while the page turns. Returns what each
+/// frame showed, from the first one with the page on screen.
 Future<List<({Rect caret, double offset})>> _open(
   WidgetTester tester, {
   double keyboard = _keyboard,
+  int late = 0,
 }) async {
   await tester.tap(find.widgetWithText(NoteRow, _title));
   final frames = <({Rect caret, double offset})>[];
   int? asked;
-  for (var frame = 0; frame < 30; frame++) {
+  for (var frame = 0; frame < 30 + late; frame++) {
     if (asked == null && tester.testTextInput.isVisible) asked = frame;
     if (asked != null) {
-      final t = ((frame - asked) / 18).clamp(0.0, 1.0);
-      tester.view.viewInsets = FakeViewPadding(
-        bottom: keyboard * Curves.easeOutCubic.transform(t),
-      );
+      final t = ((frame - asked - late) / 18).clamp(0.0, 1.0);
+      final inset = keyboard * Curves.easeOutCubic.transform(t);
+      // Only a keyboard that moves tells the app so.
+      if (inset != tester.view.viewInsets.bottom) {
+        tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      }
     }
     await tester.pump(const Duration(milliseconds: 16));
     if (frame > 0) frames.add(_seen(tester));
@@ -168,6 +171,26 @@ void main() {
     }, variant: phones);
   }
 
+  testWidgets('a keyboard that takes most of a second to start, as an '
+      "Android emulator's does, finds a note opened at its end already in "
+      'place', (tester) async {
+    await _pump(tester);
+    await _open(tester);
+    await _home(tester);
+
+    // 50 frames of 16 ms: 800 ms before it moves.
+    final frames = await _open(tester, late: 50);
+    final settled = _seen(tester);
+    for (final (index, frame) in frames.indexed) {
+      expect(
+        frame.offset,
+        settled.offset,
+        reason: 'frame ${index + 1} scrolled the note',
+      );
+    }
+    _expectAboveTheBar(tester);
+  }, variant: phones);
+
   testWidgets('the first time, with no keyboard seen yet, the note follows '
       'the keyboard up and remembers the room it took', (tester) async {
     await _pump(tester, caret: _lowCaret);
@@ -200,8 +223,8 @@ void main() {
     expect(prefs.keyboardRoom(_phone.width), closeTo(room - 60, 0.01));
   }, variant: phones);
 
-  testWidgets('a keyboard that never comes, as with one plugged in, leaves '
-      'no room held below the note', (tester) async {
+  testWidgets('a keyboard that never comes, as with one plugged in, has its '
+      'room held for 5 s and then none', (tester) async {
     await _pump(tester);
     await _open(tester);
     await _home(tester);
@@ -209,11 +232,13 @@ void main() {
 
     await tester.tap(find.widgetWithText(NoteRow, _title));
     await tester.pumpAndSettle();
-    final scroll = tester.widget<NoteField>(noteField).scrollController;
-    expect(scroll.position.viewportDimension, greaterThan(room));
-    final caret = _seen(tester).caret;
-    expect(caret.bottom, lessThanOrEqualTo(tester.getRect(noteField).bottom));
-    expect(caret.bottom, greaterThan(tester.getRect(noteField).bottom - 40));
+    double gap() =>
+        tester.getRect(noteField).bottom - _seen(tester).caret.bottom;
+    expect(gap(), greaterThan(room - 40));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(gap(), greaterThanOrEqualTo(0));
+    expect(gap(), lessThan(40));
     expect(prefs.keyboardRoom(_phone.width), room);
   }, variant: phones);
 }

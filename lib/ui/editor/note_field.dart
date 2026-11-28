@@ -195,9 +195,13 @@ class NoteFieldState extends State<NoteField>
   /// take, reserved below the note until it has come up.
   double _keyboardExpected = 0;
 
-  /// How long the keyboard holds still before it counts as up, or, asked
-  /// for and not moving yet, as not coming.
+  /// How long the keyboard holds still before it counts as up.
   static const _keyboardStillAfter = Duration(milliseconds: 500);
+
+  /// How long a keyboard asked for may stay down before it counts as not
+  /// coming, as with one plugged in. Android's can take most of a second to
+  /// start, and the editor asks again for five.
+  static const _keyboardLateAfter = Duration(seconds: 5);
   Timer? _keyboardStillTimer;
 
   /// The caret's opacity as it blinks, and what times the blink. The timer
@@ -1706,9 +1710,6 @@ class NoteFieldState extends State<NoteField>
   void didChangeMetrics() {
     final keyboard = View.of(context).viewInsets.bottom;
     if (keyboard > _keyboard && widget.focusNode.hasFocus) _scheduleReveal();
-    if (keyboard < _keyboard && _keyboardExpected > 0) {
-      setState(() => _keyboardExpected = 0);
-    }
     _keyboard = keyboard;
     if (_keyboardDown != null) _waitForKeyboardToHold();
   }
@@ -1733,24 +1734,27 @@ class NoteFieldState extends State<NoteField>
   }
 
   /// Once the keyboard has held still, it is up, and the room it took is
-  /// reported; or, if it never moved, it isn't coming. Either way nothing is
+  /// reported; or, if it stays down, it isn't coming. Either way nothing is
   /// held for it any more.
   void _waitForKeyboardToHold() {
     _keyboardStillTimer?.cancel();
-    _keyboardStillTimer = Timer(_keyboardStillAfter, () {
-      if (!mounted) return;
-      final down = _keyboardDown;
-      final scroll = widget.scrollController;
-      if (down != null &&
-          _keyboard > 0 &&
-          scroll.hasClients &&
-          down.width == MediaQuery.sizeOf(context).width) {
-        final room = down.height - scroll.position.viewportDimension;
-        if (room > 0) widget.onKeyboardRoom?.call(down.width, room);
+    _keyboardStillTimer = Timer(
+      _keyboard > 0 ? _keyboardStillAfter : _keyboardLateAfter,
+      () {
+        if (!mounted) return;
+        final down = _keyboardDown;
+        final scroll = widget.scrollController;
+        if (down != null &&
+            _keyboard > 0 &&
+            scroll.hasClients &&
+            down.width == MediaQuery.sizeOf(context).width) {
+          final room = down.height - scroll.position.viewportDimension;
+          if (room > 0) widget.onKeyboardRoom?.call(down.width, room);
+        }
         _keyboardDown = null;
-      }
-      if (_keyboardExpected > 0) setState(() => _keyboardExpected = 0);
-    });
+        if (_keyboardExpected > 0) setState(() => _keyboardExpected = 0);
+      },
+    );
   }
 
   /// The room still held below the note for a keyboard on its way, in a
