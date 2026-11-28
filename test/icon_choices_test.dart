@@ -120,5 +120,17 @@ void main() {
       Center(child: ViewAllLink(phone: true, count: 7, onPressed: () {})),
     );
     expect(tester.getSize(badge).height, 18);
+
+    // At 2× text it grows with its number and stays a circle (KAP-468).
+    await pump(
+      tester,
+      MediaQuery(
+        data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+        child: Center(
+          child: ViewAllLink(phone: true, count: 7, onPressed: () {}),
+        ),
+      ),
+    );
+    expect(tester.getSize(badge), const Size.square(36));
   });
 }

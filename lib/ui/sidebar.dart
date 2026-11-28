@@ -1419,6 +1419,8 @@ extension on Sidebar {
         endIndent: phone ? 0 : 10,
         color: list[index - 1].id == selectedId || list[index].id == selectedId
             ? Colors.transparent
+            : pinnedOnly
+            ? context.palette.controlBorder
             : context.palette.pageBorder,
       );
       if (phone && !cards) {

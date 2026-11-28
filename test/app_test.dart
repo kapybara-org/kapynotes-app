@@ -9878,6 +9878,34 @@ void main() {
         return titles;
       }
 
+      for (final brightness in Brightness.values) {
+        testWidgets('in ${brightness.name} a pinned card stands apart from '
+            'the page', (tester) async {
+          tester.platformDispatcher.platformBrightnessTestValue = brightness;
+          addTearDown(
+            tester.platformDispatcher.clearPlatformBrightnessTestValue,
+          );
+          await pumpPinned(tester, 2);
+          final face = find.byType(PhoneCardFace).first;
+          final palette = tester.element(face).palette;
+          final card = tester
+              .widgetList<Container>(
+                find.descendant(of: face, matching: find.byType(Container)),
+              )
+              .firstWhere((each) => each.decoration is BoxDecoration);
+          final fill = (card.decoration! as BoxDecoration).color;
+          final edge = card.foregroundDecoration as BoxDecoration?;
+          if (brightness == Brightness.dark) {
+            expect(fill, palette.controlBackground);
+            expect(fill, isNot(palette.cardBackground));
+            expect(edge, isNull);
+          } else {
+            expect(fill, palette.cardBackground);
+            expect(edge!.border!.top.color, palette.controlBorder);
+          }
+        });
+      }
+
       List<String> inDays(WidgetTester tester) {
         final today = find.bySemanticsLabel(RegExp(r'^Today, '));
         final top = tester.getTopLeft(today).dy;
@@ -13780,6 +13808,17 @@ void main() {
       expect(
         tester.widgetList<NoteRow>(find.byType(NoteRow)).map((r) => r.style),
         everyElement(NoteRowStyle.row),
+      );
+      expect(
+        tester
+            .widgetList<Divider>(
+              find.descendant(
+                of: find.byType(Sidebar),
+                matching: find.byType(Divider),
+              ),
+            )
+            .map((divider) => divider.color),
+        contains(tester.element(bar).palette.controlBorder),
       );
       expect(row, findsNothing);
       expect(viewAll, findsNothing);

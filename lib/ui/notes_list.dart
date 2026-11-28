@@ -453,12 +453,29 @@ class PhoneCardFace extends StatelessWidget {
     final palette = context.palette;
     final picking = this.picking;
     final marked = selected || picking == true;
-    final fill = marked ? palette.selectedBackground : palette.cardBackground;
+    // A phone's page is the card's own colour, so its cards step up from it:
+    // dark a shade lighter, light a hairline round it.
+    final phone = !AppPlatform.hasPointer;
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final fill = marked
+        ? palette.selectedBackground
+        : phone && dark
+        ? palette.controlBackground
+        : palette.cardBackground;
     final result = glance.amount ?? glance.result;
     final text = glance.line;
     final card = Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
       decoration: BoxDecoration(color: fill, borderRadius: _cardRadius),
+      foregroundDecoration: phone && !dark && !marked
+          ? BoxDecoration(
+              borderRadius: _cardRadius,
+              border: Border.all(
+                color: palette.controlBorder,
+                width: AppHairline.of(context),
+              ),
+            )
+          : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -1510,13 +1527,15 @@ class CountBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final extent = phone ? AppCountBadge.phone : AppCountBadge.desktop;
+    // As tall as its number draws, so large text keeps it round.
+    final scaled = MediaQuery.textScalerOf(context).scale(extent);
     return Container(
-      constraints: BoxConstraints(minWidth: extent, minHeight: extent),
+      constraints: BoxConstraints(minWidth: scaled, minHeight: scaled),
       padding: const EdgeInsets.symmetric(horizontal: AppCountBadge.padding),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: palette.selectedBackground,
-        borderRadius: BorderRadius.circular(extent / 2),
+        borderRadius: BorderRadius.circular(scaled / 2),
       ),
       child: Text(
         '$count',
