@@ -109,10 +109,12 @@ void main() {
 
       await tester.tap(find.text(_offLine));
       await tester.pumpAndSettle();
+      expect(find.text('Downloaded'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('voice-live-to-en')));
       await tester.pumpAndSettle();
 
       expect(engine.calls.skip(2), [
+        'pairStatus es en',
         'pairStatus es en',
         'prepare es en',
         'pairStatus es en',
@@ -141,7 +143,7 @@ void main() {
       await tester.tap(find.text(_offLine));
       await tester.pumpAndSettle();
       expect(find.text('Download Spanish and English?'), findsOneWidget);
-      expect(find.textContaining('download of 62 MB'), findsOneWidget);
+      expect(find.textContaining('download of about 62 MB'), findsOneWidget);
 
       await tester.tap(find.text('Not now'));
       await tester.pumpAndSettle();
