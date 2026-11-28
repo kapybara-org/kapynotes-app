@@ -819,12 +819,16 @@ void main() {
           .value;
       expect(shown(), 1);
       final room = tester.getSize(bar);
+      final left = tester.getTopLeft(bar).dx;
       final drag = await tester.startGesture(_middle);
       await drag.moveBy(const Offset(-30, 0));
       await drag.moveBy(const Offset(-30, 0));
       await tester.pump();
+      expect(_left(tester, 1), -60, reason: 'the page moved');
+      expect(tester.getTopLeft(bar).dx, left, reason: 'the bar did not');
       await tester.pump(PageTurn.fade ~/ 2);
       expect(shown(), inExclusiveRange(0, 1));
+      expect(tester.getTopLeft(bar).dx, left);
       await tester.pump(PageTurn.fade);
       expect(shown(), 0);
       expect(tester.getSize(bar), room);

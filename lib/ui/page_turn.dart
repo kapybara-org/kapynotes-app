@@ -336,7 +336,9 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
             offset: Offset(at * _width, 0),
             child: Opacity(
               opacity: opacity,
-              child: RepaintBoundary(child: page),
+              child: RepaintBoundary(
+                child: _Shifted(offset: at * _width, child: page),
+              ),
             ),
           ),
         ),
@@ -469,7 +471,8 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
 
 /// A part of a page under a [PageTurn] that hides while a turn moves,
 /// keeping its room: at once where [PageTurn.over] draws it still over the
-/// pages instead, or over [fade], back too if the turn springs back.
+/// pages instead, or over [fade], back too if the turn springs back, held
+/// where it stands on the screen while it does.
 class HiddenWhileTurning extends StatelessWidget {
   const HiddenWhileTurning({
     super.key,
@@ -493,15 +496,31 @@ class HiddenWhileTurning extends StatelessWidget {
         child: child,
       );
     }
+    final shifted =
+        context.dependOnInheritedWidgetOfExactType<_Shifted>()?.offset ?? 0;
     return IgnorePointer(
       ignoring: moving,
-      child: AnimatedOpacity(
-        opacity: moving ? 0 : 1,
-        duration: fade,
-        child: child,
+      child: Transform.translate(
+        offset: Offset(-shifted, 0),
+        child: AnimatedOpacity(
+          opacity: moving ? 0 : 1,
+          duration: fade,
+          child: child,
+        ),
       ),
     );
   }
+}
+
+/// How far the [PageTurn] has moved the page under it across the screen, so
+/// a part that only fades can hold its place instead.
+class _Shifted extends InheritedWidget {
+  const _Shifted({required this.offset, required super.child});
+
+  final double offset;
+
+  @override
+  bool updateShouldNotify(_Shifted oldWidget) => offset != oldWidget.offset;
 }
 
 /// Whether the [PageTurn] over the pages under it moves a turn.

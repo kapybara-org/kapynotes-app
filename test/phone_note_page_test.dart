@@ -2581,8 +2581,10 @@ void main() {
       await drag.moveBy(const Offset(30, 0));
       await drag.moveBy(const Offset(30, 0));
       await tester.pump();
+      expect(tester.getRect(bar), room, reason: 'it fades where it stands');
       await tester.pump(PageTurn.fade ~/ 2);
       expect(shown(), inExclusiveRange(0, 1));
+      expect(tester.getRect(bar), room);
       await tester.pump(PageTurn.fade);
       expect(shown(), 0);
       expect(tester.getSize(bar), room.size);
