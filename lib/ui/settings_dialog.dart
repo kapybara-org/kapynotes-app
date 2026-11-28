@@ -4030,7 +4030,7 @@ class _TransparencySlider extends StatelessWidget {
     final slider = SliderTheme(
       data: SliderThemeData(
         trackHeight: 4,
-        activeTrackColor: Theme.of(context).colorScheme.primary,
+        activeTrackColor: palette.accentFill,
         inactiveTrackColor: palette.switchTrackOff,
         thumbColor: palette.switchThumb,
         overlayColor: Colors.transparent,

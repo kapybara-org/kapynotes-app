@@ -106,7 +106,7 @@ class _TranslatePickerState extends State<TranslatePicker> {
       12,
       16,
       palette.textTertiary,
-      weight: FontWeight.w600,
+      weight: FontWeight.w400,
     );
     return Column(
       key: const ValueKey('voice-translate-picker'),
