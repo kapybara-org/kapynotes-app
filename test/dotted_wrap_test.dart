@@ -3,9 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ui/editor/dotted_wrap.dart';
 
 void main() {
-  const dot = ColoredBox(
-    color: Color(0xFF000000),
-    child: SizedBox(width: 4, height: 8),
+  final dot = Semantics(
+    label: '·',
+    container: true,
+    child: ColoredBox(
+      color: Color(0xFF000000),
+      child: SizedBox(width: 4, height: 8),
+    ),
   );
 
   Future<void> pump(WidgetTester tester, double width, List<double> items) =>
@@ -60,6 +64,28 @@ void main() {
       reason: 'the dot before the third fact is not drawn',
     );
     expect(tester.getSize(find.byKey(const ValueKey('facts'))).height, 32);
+  });
+
+  testWidgets('a dot left behind is not exposed to semantics', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await pump(tester, 250, [100, 100, 100]);
+    expect(find.bySemanticsLabel('·'), findsOneWidget);
+    await pump(tester, 400, [100, 100, 100]);
+    expect(find.bySemanticsLabel('·'), findsNWidgets(2));
+    semantics.dispose();
+  });
+
+  testWidgets('answers an intrinsic size like the line it lays out', (
+    tester,
+  ) async {
+    await pump(tester, 250, [100, 100, 100]);
+    final box = tester.renderObject<RenderBox>(
+      find.byKey(const ValueKey('facts')),
+    );
+    expect(box.getMinIntrinsicWidth(double.infinity), 100);
+    expect(box.getMaxIntrinsicWidth(double.infinity), 100 * 3 + 2 * (20 + 4));
+    expect(box.getMinIntrinsicHeight(250), 32);
+    expect(box.getMinIntrinsicHeight(400), 16);
   });
 
   testWidgets('a fact wider than the line takes a line and wraps in it', (

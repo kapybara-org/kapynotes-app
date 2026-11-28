@@ -107,6 +107,39 @@ class _RenderDottedWrap extends RenderBox
   }
 
   @override
+  double computeMinIntrinsicWidth(double height) {
+    var widest = 0.0;
+    var index = 0;
+    for (var child = firstChild; child != null; child = childAfter(child)) {
+      if (index.isEven) {
+        widest = math.max(widest, child.getMinIntrinsicWidth(height));
+      }
+      index++;
+    }
+    return widest;
+  }
+
+  @override
+  double computeMaxIntrinsicWidth(double height) {
+    var total = 0.0;
+    var index = 0;
+    for (var child = firstChild; child != null; child = childAfter(child)) {
+      total += child.getMaxIntrinsicWidth(height);
+      if (index.isOdd) total += _gap * 2;
+      index++;
+    }
+    return total;
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      getDryLayout(BoxConstraints(maxWidth: width)).height;
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      computeMinIntrinsicHeight(width);
+
+  @override
   Size computeDryLayout(BoxConstraints constraints) {
     final loose = BoxConstraints(maxWidth: constraints.maxWidth);
     final sizes = [

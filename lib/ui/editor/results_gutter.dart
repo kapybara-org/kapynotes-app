@@ -68,12 +68,6 @@ class ResultChip extends StatefulWidget {
   /// changes: what is copied, saved or sent keeps its plain space.
   static String tied(String text) => text.replaceFirst(_beforeCode, '\u00A0');
 
-  /// [result]'s text on a line [width] wide. It is tied while that holds it
-  /// whole, so a result too wide for any line still breaks at its space and
-  /// not inside the code.
-  static String drawn(BuildContext context, LineResult result, double width) =>
-      widthOf(context, result) <= width ? tied(result.text) : result.text;
-
   /// The widest the chip is until hovered.
   final double collapsedWidth;
 
@@ -130,7 +124,7 @@ class ResultChip extends StatefulWidget {
     if (_railHeights[key] case final height?) return height;
     final painter = TextPainter(
       text: TextSpan(
-        text: drawn(context, result, width),
+        text: result.text,
         style: DefaultTextStyle.of(
           context,
         ).style.merge(_textStyle(total: result.isTotal)),
@@ -228,7 +222,7 @@ class _ResultChipState extends State<ResultChip> {
         : ResultChip._railRadius(MediaQuery.textScalerOf(context));
 
     final words = Text(
-      ResultChip.drawn(context, widget.result, widget.collapsedWidth),
+      widget.result.text,
       // A phone's result wraps, and its line grows to hold it. A pill keeps to
       // one line and ends with an ellipsis, and grows under the pointer.
       maxLines: pill ? 1 : null,
