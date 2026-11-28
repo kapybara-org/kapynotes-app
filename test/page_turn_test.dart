@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show RenderAnimatedOpacity;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ui/page_turn.dart';
 import 'package:material_ui/material_ui.dart';
@@ -784,6 +785,58 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.byType(_Pages), findsNothing);
+    });
+  });
+
+  group('a part that fades as a turn starts', () {
+    testWidgets('fades out over its fade under a turn with nothing over it, '
+        'keeping its room and taking no touch, and back once the turn has '
+        'sprung back', (tester) async {
+      var taps = 0;
+      await _pump(
+        tester,
+        _Pages(
+          page: (i) => Column(
+            children: [
+              Expanded(child: _Counter('page $i')),
+              HiddenWhileTurning(
+                fade: PageTurn.fade,
+                child: GestureDetector(
+                  onTap: () => taps++,
+                  child: SizedBox(height: 40, child: Text('bar $i')),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+      final bar = find.text('bar 1');
+      double shown() => tester
+          .renderObject<RenderAnimatedOpacity>(
+            find.ancestor(of: bar, matching: find.byType(AnimatedOpacity)),
+          )
+          .opacity
+          .value;
+      expect(shown(), 1);
+      final room = tester.getSize(bar);
+      final drag = await tester.startGesture(_middle);
+      await drag.moveBy(const Offset(-30, 0));
+      await drag.moveBy(const Offset(-30, 0));
+      await tester.pump();
+      await tester.pump(PageTurn.fade ~/ 2);
+      expect(shown(), inExclusiveRange(0, 1));
+      await tester.pump(PageTurn.fade);
+      expect(shown(), 0);
+      expect(tester.getSize(bar), room);
+      await tester.tap(bar, warnIfMissed: false);
+      expect(taps, 0);
+      await drag.moveBy(const Offset(60, 0));
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(_state(tester).turns, isEmpty);
+      expect(shown(), 1);
+      await tester.tap(bar);
+      expect(taps, 1);
     });
   });
 
