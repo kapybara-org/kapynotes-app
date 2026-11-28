@@ -35,6 +35,10 @@ typedef RecapTopicRow = ({
   String? colour,
 });
 
+/// How long before a recap was made a hide still takes words out of it: a
+/// device may make a recap before another device's hide has reached it.
+const Duration recapHideGrace = Duration(days: 1);
+
 /// What a recap shows when it opens: the numbers worked out on the device
 /// when it was made, and the words Kapy AI wrote, checked again against what
 /// the period holds now.
@@ -60,7 +64,8 @@ class RecapStory {
   /// added to it.
   ///
   /// A line can tell of a note without naming it, so where a note one of
-  /// the recap's parts may have read was hidden after it was made, every
+  /// the recap's parts may have read was hidden after it was made, or less
+  /// than [recapHideGrace] before, every
   /// line no part can be told from is dropped too: the title, the topics,
   /// the line of the year and what's next. So are a year's moments of that
   /// part's months, and the highlights and the quote of any note that part
@@ -118,7 +123,7 @@ class RecapStory {
     );
     final changed = [
       for (final note in now.hidden)
-        if (note.at.isAfter(record.madeAt) &&
+        if (note.at.isAfter(record.madeAt.subtract(recapHideGrace)) &&
             !handled.contains(note.id) &&
             (record.allRead?.mayHold(note.id) ?? true))
           note.id,

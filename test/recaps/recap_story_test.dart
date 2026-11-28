@@ -19,12 +19,13 @@ void main() {
   final made = DateTime(2026, 11, 20, 9);
   late RecapWorld world;
 
-  void write({Set<String> hidden = const {}}) {
+  void write({Set<String> hidden = const {}, String? hiddenAt}) {
     world.note(
       'trip',
       '2026-11-19T08:00:00Z',
       body: 'Trip\n☑ Book\n☐ Pay',
       hidden: hidden.contains('trip'),
+      hiddenAt: hidden.contains('trip') ? hiddenAt : null,
     );
     world.note(
       'standup',
@@ -32,12 +33,14 @@ void main() {
       body: '${NoteAttachmentRef.placeholder}\nStandup',
       attachments: [recapVoice()],
       hidden: hidden.contains('standup'),
+      hiddenAt: hidden.contains('standup') ? hiddenAt : null,
     );
     world.note(
       'plan',
       '2026-11-19T11:00:00Z',
       body: 'Plan\nThe deck, the room, a walk',
       hidden: hidden.contains('plan'),
+      hiddenAt: hidden.contains('plan') ? hiddenAt : null,
     );
   }
 
@@ -77,8 +80,9 @@ void main() {
   Future<RecapStory> reopen(
     KapyChat chat, {
     Set<String> hidden = const {},
+    String? hiddenAt,
   }) async {
-    write(hidden: hidden);
+    write(hidden: hidden, hiddenAt: hiddenAt);
     await world.load();
     return RecapStory.read(chat, world.material(thursday))!;
   }
@@ -168,6 +172,7 @@ void main() {
         final story = await reopen(
           recap(),
           hidden: {'trip', 'standup', 'plan'},
+          hiddenAt: '2026-11-18T08:00:00Z',
         );
         expect(story.cards, [
           RecapCard.cover,
@@ -214,7 +219,6 @@ void main() {
 
   group('a note gone since the recap was made', () {
     final since = DateTime.utc(2026, 11, 25).toIso8601String();
-    final before = DateTime.utc(2026, 11, 19, 13).toIso8601String();
     const answer = [
       'TITLE: A full day',
       'HIGHLIGHT: Trip | Booked, one left to pay',
@@ -314,12 +318,35 @@ void main() {
       );
     });
 
-    test('a note hidden before the recap was made drops nothing', () async {
-      final story = await reopenWith(parted(), hiddenAt: before);
+    test('a note hidden a day or more before the recap was made drops '
+        'nothing', () async {
+      final made = recapOf(recap())!.madeAt;
+      final story = await reopenWith(
+        parted(),
+        hiddenAt: made
+            .subtract(recapHideGrace + const Duration(minutes: 1))
+            .toUtc()
+            .toIso8601String(),
+      );
       expect(story.lines.next, 'Pay for it before Friday');
       expect(story.lines.title, 'A full day');
       expect(story.lines.quote, isNotNull);
       expect(story.wordsGone, isFalse);
+    });
+
+    test('a note hidden less than a day before the recap was made still '
+        'takes its words out, since another device may not have seen the '
+        'hide yet', () async {
+      final made = recapOf(recap())!.madeAt;
+      expectAllLeftOut(
+        await reopenWith(
+          parted(),
+          hiddenAt: made
+              .subtract(recapHideGrace - const Duration(minutes: 1))
+              .toUtc()
+              .toIso8601String(),
+        ),
+      );
     });
 
     test('a note archived since drops nothing more', () async {
@@ -799,7 +826,11 @@ void main() {
     test(
       'holds the words and names the notes, never one hidden since',
       () async {
-        final story = await reopen(recap(), hidden: {'plan'});
+        final story = await reopen(
+          recap(),
+          hidden: {'plan'},
+          hiddenAt: '2026-11-18T08:00:00Z',
+        );
         final note = story.note;
         expect(note.names, ['trip', 'standup']);
         expect(note.body, contains('- Trip: Booked, one left to pay'));
