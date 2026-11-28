@@ -37,6 +37,7 @@ class NoteField extends StatefulWidget {
     required this.strut,
     this.readOnly = false,
     this.autofocus = false,
+    this.revealOnOpen = false,
     this.inputFormatters = const [],
     this.undoController,
     this.cursorColor,
@@ -65,6 +66,12 @@ class NoteField extends StatefulWidget {
   final StrutStyle strut;
   final bool readOnly;
   final bool autofocus;
+
+  /// Whether the field opens to be written in, so that its first frame is
+  /// laid out with the caret in view, above the room [keyboardRoom] says the
+  /// keyboard on its way will take, rather than at the top of the note for
+  /// the focus that follows to move it a frame later.
+  final bool revealOnOpen;
 
   /// Run over every change the user makes, in order, before it lands.
   final List<TextInputFormatter> inputFormatters;
@@ -292,7 +299,9 @@ class NoteFieldState extends State<NoteField>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final opening = _layout == null;
     _ensureLayout();
+    if (opening && widget.revealOnOpen && !widget.readOnly) _openToWrite();
     final tickersEnabled = TickerMode.valuesOf(context).enabled;
     if (tickersEnabled != _tickersEnabled) {
       _tickersEnabled = tickersEnabled;
@@ -1792,9 +1801,55 @@ class NoteFieldState extends State<NoteField>
   /// field [height] tall: what it is expected to take, less what it has
   /// taken so far.
   double _keyboardAhead(double height) {
+    if (_keyboardExpected <= 0) return 0;
     final down = _keyboardDown;
-    if (down == null || _keyboardExpected <= 0) return 0;
-    return math.max(0, _keyboardExpected - (down.height - height));
+    return math.max(
+      0,
+      _keyboardExpected - (down == null ? 0 : down.height - height),
+    );
+  }
+
+  /// Holds the room the keyboard took last time from the first frame, and
+  /// lays that frame out with the caret in view above it. The focus that
+  /// follows takes over the room; if none comes, it goes after
+  /// [_keyboardLateAfter].
+  void _openToWrite() {
+    if (widget.onKeyboardRoom != null &&
+        View.of(context).viewInsets.bottom == 0) {
+      _keyboardExpected =
+          widget.keyboardRoom?.call(MediaQuery.sizeOf(context).width) ?? 0;
+      if (_keyboardExpected > 0) {
+        _keyboardStillTimer = Timer(_keyboardLateAfter, _releaseKeyboardRoom);
+      }
+    }
+    layout.revealOnLayout = _revealOnOpen;
+  }
+
+  /// How far into the note it should be scrolled for its first frame to show
+  /// the caret as [bringIntoView] would, measuring a screenful up to it.
+  double? _revealOnOpen(SliverConstraints constraints) {
+    final selection = _value.selection;
+    if (!selection.isValid || _caret == null) return null;
+    final position = selection.extent;
+    final extent = constraints.viewportMainAxisExtent;
+    final ahead = _keyboardAhead(extent);
+    if (position.offset >= _text.length) {
+      return layout.endOffset(constraints, below: ahead);
+    }
+    final line = _lines.lineAt(position.offset);
+    if (line == 0) return null;
+    var covered = 0.0;
+    for (var above = line; above >= 0 && covered < extent; above--) {
+      covered += layout.measure(above);
+    }
+    final heights = layout.heights!;
+    final at = constraints.scrollOffset;
+    final by = _scrollToShow(
+      _caretRow(position, line).translate(0, heights.topOf(line) - at),
+      extent - ahead,
+    );
+    if (by == null) return null;
+    return clampDouble(at + by, 0, math.max(0, heights.total + ahead - extent));
   }
 
   /// Shows the caret once the frame is laid out, and again after the next
@@ -1833,27 +1888,14 @@ class NoteFieldState extends State<NoteField>
       scroll.jumpTo(scrollPosition.minScrollExtent);
       return true;
     }
-    final caret = caretRectAt(position);
-    if (caret == null) return false;
-    final shown = Rect.fromCenter(
-      center: caret.center,
-      width: caret.width,
-      height: math.max(
-        caret.height,
-        layout.paragraphOf(_lines.lineAt(position.offset)).preferredLineHeight,
-      ),
+    final line = _lines.lineAt(position.offset);
+    final top = lineTop(line);
+    if (top == null || _layout?.width == null || _caret == null) return false;
+    final by = _scrollToShow(
+      _caretRow(position, line).translate(0, top),
+      scrollPosition.viewportDimension - ahead,
     );
-    final viewport = scrollPosition.viewportDimension - ahead;
-    final double by;
-    if (shown.height >= viewport) {
-      by = shown.center.dy - viewport / 2;
-    } else if (shown.top < 0) {
-      by = shown.top;
-    } else if (shown.bottom > viewport) {
-      by = shown.bottom - viewport;
-    } else {
-      return false;
-    }
+    if (by == null) return false;
     final target = clampDouble(
       scrollPosition.pixels + by,
       scrollPosition.minScrollExtent,
@@ -1864,6 +1906,34 @@ class NoteFieldState extends State<NoteField>
     }
     scroll.jumpTo(target);
     return true;
+  }
+
+  /// The caret at [position], on [line], with a row's height around it, in
+  /// the line's coordinates.
+  Rect _caretRow(TextPosition position, int line) {
+    layout.measure(line);
+    final paragraph = layout.paragraphOf(line);
+    final caret = caretRectIn(
+      paragraph,
+      _local(position, line),
+      _caret!,
+      layout.width!,
+    );
+    return Rect.fromCenter(
+      center: caret.center,
+      width: caret.width,
+      height: math.max(caret.height, paragraph.preferredLineHeight),
+    );
+  }
+
+  /// How far to scroll for [shown], in the view's coordinates, to be in a
+  /// view [viewport] tall: the least distance, or to its middle when it is
+  /// taller; null when it already is.
+  static double? _scrollToShow(Rect shown, double viewport) {
+    if (shown.height >= viewport) return shown.center.dy - viewport / 2;
+    if (shown.top < 0) return shown.top;
+    if (shown.bottom > viewport) return shown.bottom - viewport;
+    return null;
   }
 
   // TextLayoutMetrics, over the paragraph of each line.

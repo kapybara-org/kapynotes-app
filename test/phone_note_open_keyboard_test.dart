@@ -99,7 +99,7 @@ Future<void> _home(WidgetTester tester) async {
 /// does: asked for once the page has focused the note, then, [late] frames
 /// later, sliding in over 18 frames while the page turns. A phone too busy
 /// to move it stops it a third of the way up for [stall] frames. Returns
-/// what each frame showed, from the first one with the page on screen.
+/// what each painted frame showed, from the first one with the note in it.
 Future<List<({Rect caret, double offset})>> _open(
   WidgetTester tester, {
   double keyboard = _keyboard,
@@ -122,7 +122,7 @@ Future<List<({Rect caret, double offset})>> _open(
       }
     }
     await tester.pump(const Duration(milliseconds: 16));
-    if (frame > 0) frames.add(_seen(tester));
+    if (noteField.evaluate().isNotEmpty) frames.add(_seen(tester));
   }
   await tester.pump(const Duration(seconds: 1));
   await tester.pumpAndSettle();

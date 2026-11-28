@@ -8703,8 +8703,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
             ),
-          ]
-          else if (!AppPlatform.isMobile)
+          ] else if (!AppPlatform.isMobile)
             SizedBox(height: MediaQuery.paddingOf(context).bottom)
           else ...[
             if (statusShown)
@@ -8940,6 +8939,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 focusNode: _focusNode,
                 scrollController: _scrollController,
                 autofocus: !widget.readOnly && widget.autofocus,
+                revealOnOpen:
+                    AppPlatform.isMobile && widget.ensureKeyboardVisible,
                 readOnly: widget.readOnly,
                 style: textStyle,
                 strut: strut,

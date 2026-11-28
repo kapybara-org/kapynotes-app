@@ -2,9 +2,10 @@
 // recording showed it, for KAPY-35 to judge: the note opened once so the
 // keyboard's room is known, then opened again and filmed off the device's
 // own screen as build/screenshots/note-open.mp4 when the run's host reads
-// screens. Opened again, the note is where it ends up from the page's first
-// frame and doesn't move while the keyboard slides in. Each frame's scroll
-// offset and keyboard inset are printed, as NOTE-OPEN-FRAMES.
+// screens. Opened again, the note is where it ends up from the first frame
+// painted with it, its top never shown, and doesn't move while the keyboard
+// slides in. Each frame's scroll offset and keyboard inset are printed, as
+// NOTE-OPEN-FRAMES.
 //
 //   flutter drive --driver test_driver/integration_test.dart \
 //     --target integration_test/phone_note_open_test.dart -d <device> \
@@ -150,7 +151,7 @@ void main() {
     );
     final offsets = {
       for (final frame in frames)
-        if (frame.offset != null && frame.offset! > 0) frame.offset!.round(),
+        if (frame.offset != null) frame.offset!.round(),
     };
     expect(
       offsets,
