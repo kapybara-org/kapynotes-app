@@ -196,6 +196,9 @@ class NoteFieldState extends State<NoteField>
   /// take, reserved below the note until it has come up.
   double _keyboardExpected = 0;
 
+  /// Whether a keyboard has come up since the field took focus.
+  bool _keyboardCame = false;
+
   /// How long the keyboard holds still before it counts as up.
   static const _keyboardStillAfter = Duration(milliseconds: 500);
 
@@ -1727,6 +1730,7 @@ class NoteFieldState extends State<NoteField>
     }
     final width = MediaQuery.sizeOf(context).width;
     _keyboardDown = (width: width, height: scroll.position.viewportDimension);
+    _keyboardCame = false;
     final expected = widget.keyboardRoom?.call(width) ?? 0;
     if (expected != _keyboardExpected) {
       setState(() => _keyboardExpected = expected);
@@ -1734,32 +1738,49 @@ class NoteFieldState extends State<NoteField>
     _waitForKeyboardToHold();
   }
 
-  /// Once the keyboard has held still, it is up, and the room it took is
-  /// reported; or, if it stays down, it isn't coming, as with one plugged in,
-  /// and no room is reported, so the next note opens with none held. Either
-  /// way nothing is held for it any more.
+  /// Each time the keyboard holds still while up, the room it took is
+  /// reported, so a keyboard that only paused on its way, as on a phone too
+  /// busy to move it, is measured again once it is all the way up. The room
+  /// held for it goes once it has taken all of it, or, if it holds still
+  /// short of that, after [_keyboardLateAfter]. A keyboard that stays down
+  /// isn't coming, as with one plugged in: no room is reported, so the next
+  /// note opens with none held.
   void _waitForKeyboardToHold() {
     _keyboardStillTimer?.cancel();
+    final up = _keyboard > 0;
     _keyboardStillTimer = Timer(
-      _keyboard > 0 ? _keyboardStillAfter : _keyboardLateAfter,
+      up ? _keyboardStillAfter : _keyboardLateAfter,
       () {
-        if (!mounted) return;
         final down = _keyboardDown;
+        if (!mounted || down == null) return;
         final scroll = widget.scrollController;
-        if (down != null &&
-            scroll.hasClients &&
-            down.width == MediaQuery.sizeOf(context).width) {
-          final room = _keyboard > 0
-              ? down.height - scroll.position.viewportDimension
-              : 0.0;
-          if (room > 0 || _keyboardExpected > 0) {
-            widget.onKeyboardRoom?.call(down.width, room);
-          }
+        final sameWidth =
+            scroll.hasClients && down.width == MediaQuery.sizeOf(context).width;
+        final room = sameWidth && up
+            ? down.height - scroll.position.viewportDimension
+            : 0.0;
+        if (room > 0) {
+          _keyboardCame = true;
+          widget.onKeyboardRoom?.call(down.width, room);
+        } else if (sameWidth && !_keyboardCame && _keyboardExpected > 0) {
+          widget.onKeyboardRoom?.call(down.width, 0);
         }
-        _keyboardDown = null;
-        if (_keyboardExpected > 0) setState(() => _keyboardExpected = 0);
+        if (!sameWidth || !up || room >= _keyboardExpected) {
+          _releaseKeyboardRoom();
+        } else {
+          _keyboardStillTimer = Timer(
+            _keyboardLateAfter - _keyboardStillAfter,
+            _releaseKeyboardRoom,
+          );
+        }
       },
     );
+  }
+
+  void _releaseKeyboardRoom() {
+    if (mounted && _keyboardExpected > 0) {
+      setState(() => _keyboardExpected = 0);
+    }
   }
 
   /// The room still held below the note for a keyboard on its way, in a

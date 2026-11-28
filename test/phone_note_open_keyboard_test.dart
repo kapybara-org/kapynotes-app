@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/app.dart';
@@ -95,20 +97,24 @@ Future<void> _home(WidgetTester tester) async {
 
 /// Opens the long note from the list and brings the keyboard up as a phone
 /// does: asked for once the page has focused the note, then, [late] frames
-/// later, sliding in over 18 frames while the page turns. Returns what each
-/// frame showed, from the first one with the page on screen.
+/// later, sliding in over 18 frames while the page turns. A phone too busy
+/// to move it stops it a third of the way up for [stall] frames. Returns
+/// what each frame showed, from the first one with the page on screen.
 Future<List<({Rect caret, double offset})>> _open(
   WidgetTester tester, {
   double keyboard = _keyboard,
   int late = 0,
+  int stall = 0,
 }) async {
   await tester.tap(find.widgetWithText(NoteRow, _title));
   final frames = <({Rect caret, double offset})>[];
   int? asked;
-  for (var frame = 0; frame < 30 + late; frame++) {
+  for (var frame = 0; frame < 30 + late + stall; frame++) {
     if (asked == null && tester.testTextInput.isVisible) asked = frame;
     if (asked != null) {
-      final t = ((frame - asked - late) / 18).clamp(0.0, 1.0);
+      var moved = frame - asked - late;
+      if (moved > 6) moved = math.max(6, moved - stall);
+      final t = (moved / 18).clamp(0.0, 1.0);
       final inset = keyboard * Curves.easeOutCubic.transform(t);
       // Only a keyboard that moves tells the app so.
       if (inset != tester.view.viewInsets.bottom) {
@@ -205,8 +211,31 @@ void main() {
     expect((LayoutPrefs(store)..load()).keyboardRoom(_phone.height), isNull);
   }, variant: phones);
 
+  testWidgets('a keyboard that stops on its way up, on a phone too busy to '
+      'move it, is measured once it is all the way up, and the note opened '
+      'again stays still through the same stop', (tester) async {
+    await _pump(tester);
+    // 44 frames of 16 ms: the keyboard stands still for 700 ms.
+    await _open(tester, stall: 44);
+    final room = prefs.keyboardRoom(_phone.width)!;
+    expect(room, greaterThan(_keyboard - 100));
+    await _home(tester);
+
+    final frames = await _open(tester, stall: 44);
+    final settled = _seen(tester);
+    for (final (index, frame) in frames.indexed) {
+      expect(
+        frame.offset,
+        settled.offset,
+        reason: 'frame ${index + 1} scrolled the note',
+      );
+    }
+    _expectAboveTheBar(tester);
+    expect(prefs.keyboardRoom(_phone.width), room);
+  }, variant: phones);
+
   testWidgets('a smaller keyboard than last time still ends with the caret '
-      'in sight, holds no room past it once it is up, and is remembered', (
+      'in sight, holds no room past it after 5 s, and is remembered', (
     tester,
   ) async {
     await _pump(tester);
@@ -215,6 +244,8 @@ void main() {
     await _home(tester);
 
     await _open(tester, keyboard: _keyboard - 60);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
     final scroll = tester.widget<NoteField>(noteField).scrollController;
     final bar = tester.getRect(find.byKey(_bar));
     final caret = _seen(tester).caret;
