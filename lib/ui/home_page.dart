@@ -6,7 +6,6 @@ import 'package:flutter/services.dart'
         HardwareKeyboard,
         KeyDownEvent,
         KeyEvent,
-        KeyUpEvent,
         LogicalKeyboardKey,
         SystemUiOverlayStyle;
 import 'package:material_ui/material_ui.dart';
@@ -48,7 +47,6 @@ import '../data/note_drawing.dart';
 import '../files/file_picker.dart';
 import '../data/note_attachment.dart';
 import '../data/note_format.dart';
-import '../data/note_switcher.dart';
 import '../data/notes_store.dart';
 import '../data/onboarding.dart';
 import 'editor/voice_chip.dart';
@@ -298,7 +296,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   final FocusScopeNode _desktopShortcutFocus = FocusScopeNode(
     debugLabel: 'desktop-shortcuts',
   );
-  final NoteSwitcher _noteSwitcher = NoteSwitcher();
   GlobalKey<NoteEditorState> _phoneEditorKey = GlobalKey<NoteEditorState>();
   GlobalKey<NoteEditorState> _archiveEditorKey = GlobalKey<NoteEditorState>();
 
@@ -386,9 +383,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   int _hiddenSystemUiDepth = 0;
   bool _voiceActionBusy = false;
   int _selectionRequest = 0;
-  _NoteSwitchModifier? _noteSwitchModifier;
-  EditorWorkspacePreviewSession? _noteSwitchWorkspace;
-  ({String id, bool focusEditor})? _committedSwitchAwaitingSelection;
 
   /// The note on screen when the arrows began walking the list, which ⌘↵
   /// puts back. Null once anything else takes over.
@@ -572,7 +566,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _selectedId = _workspace.selectedNoteId;
     // Opens on the tab that lists the note it opens on.
     _showTabOf(_selectedId);
-    HardwareKeyboard.instance.addHandler(_handleHardwareKey);
     widget.notes.addListener(_onNotesChanged);
     widget.dayTabs?.addListener(_onDayTabsChanged);
     if (widget.folders case final folders?) {
@@ -623,7 +616,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.account?.sync?.leaveNote(_selectedId);
     _namer?.dispose();
     _saveStatus.dispose();
-    HardwareKeyboard.instance.removeHandler(_handleHardwareKey);
     FocusManager.instance.removeListener(_syncStatusBar);
     if (_statusBarHidden) unawaited(StatusBar.setHidden(false));
     WidgetsBinding.instance.removeObserver(this);
@@ -666,10 +658,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       // an ordinary resume one unanswered question and nothing else.
       unawaited(_runWidgetActions(QuickCapture.launchIntent()));
     } else {
-      // A window can lose the matching modifier-up event while focus moves to
-      // the operating system. Commit the last preview so the switcher cannot
-      // remain half-open when the app returns.
-      _commitNoteSwitch(focusEditor: false);
       _namer?.left(_selectedId);
     }
   }
@@ -1405,18 +1393,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         }
       }
     }
-    final collectionIds =
-        (_archiveMode
-                ? widget.notes.archivedNotes
-                : _hiddenMode
-                ? widget.notes.hiddenNotes
-                : widget.notes.notes)
-            .map((note) => note.id);
-    final workspacePreview = _noteSwitchWorkspace;
-    if (workspacePreview != null &&
-        !workspacePreview.canContinueWith(collectionIds)) {
-      _cancelNoteSwitchPreview();
-    }
     final previous = _selectedId;
     widget.prefs.retainRecentlyOpenedNoteIds(
       widget.notes.allNotes.map((note) => note.id),
@@ -1447,8 +1423,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   /// Keeps the selection pointing at a note that still exists.
   void _reconcileSelection() {
-    _noteSwitcher.retain(widget.notes.allNotes.map((note) => note.id));
-    if (!_noteSwitcher.isActive) _noteSwitchModifier = null;
     final available = _archiveMode
         ? widget.notes.archivedNotes
         : _hiddenMode
@@ -1547,7 +1521,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   void _setSelectedId(String? id, {bool selectionPreview = false}) {
-    if (!selectionPreview) _cancelNoteSwitchPreview();
+    if (!selectionPreview) _listWalkStart = null;
     final previous = _selectedId;
     if (_specialMode) {
       if (previous != id) {
@@ -1617,12 +1591,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Deletes the new notes the reader left without writing anything.
   ///
   /// A note still open — on screen, in a tab behind, or in the tabs a day's
-  /// notes took the place of — is still being looked at, and one mid-way
-  /// through a held-key switch may be switched back to. A note that got any
+  /// notes took the place of — is still being looked at. A note that got any
   /// writing, picture or recording is a real note from then on, and stops
   /// being a candidate even if later emptied.
   void _discardAbandonedBlanks() {
-    if (_noteSwitchWorkspace != null) return;
     final open = {..._workspace.tabbedNoteIds, ..._workspace.keptNoteIds};
     final recordingInto = widget.recording?.isRecording ?? false
         ? widget.recording?.session?.noteId
@@ -1676,33 +1648,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
   }
 
-  /// Abandons a held-key preview, and a walk down the list, before another
-  /// interaction takes ownership. On the desktop that also puts the tabs back
-  /// as the gesture found them, so a click or a change to the panes never
-  /// inherits a half-previewed layout.
-  bool _cancelNoteSwitchPreview() {
-    _listWalkStart = null;
-    _noteSwitchModifier = null;
-    _committedSwitchAwaitingSelection = null;
-    _noteSwitcher.cancel();
-    final preview = _noteSwitchWorkspace;
-    _noteSwitchWorkspace = null;
-    if (preview == null) return false;
-
-    final previous = _selectedId;
-    preview.cancel();
-    _selectedId = _workspace.selectedNoteId;
-    if (previous != _selectedId) {
-      widget.account?.sync?.leaveNote(previous);
-      _namer?.left(previous);
-      _phoneEditorKey = _phoneEditorFor(_selectedId);
-    }
-    final open = _workspace.openNoteIds;
-    _paneEditorKeys.removeWhere((id, _) => !open.contains(id));
-    _scheduleDiscardAbandonedBlanks();
-    return true;
-  }
-
   /// Runs [change] at once, unless it would take the note being recorded into
   /// off the screen: one of [leaving]. That recording is delivered first,
   /// while the editor holding its note is still there to take it at the
@@ -1726,24 +1671,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     String id, {
     bool focusEditor = true,
     bool selectionPreview = false,
-    EditorWorkspacePreviewSession? workspacePreview,
   }) {
-    assert(workspacePreview == null || selectionPreview);
     final request = ++_selectionRequest;
-    // Any explicit selection owns the interaction now, even when it lands on
-    // the note already being previewed. Otherwise releasing an old modifier
-    // could focus or re-promote a row after a sidebar click took over.
-    if (!selectionPreview && _cancelNoteSwitchPreview() && mounted) {
-      setState(() {});
-    }
-    final leaving = workspacePreview?.displacedBy(id) ?? _leavingFor(id);
-    _afterRecordingLeaves(leaving, () {
+    if (!selectionPreview) _listWalkStart = null;
+    _afterRecordingLeaves(_leavingFor(id), () {
       if (!mounted || request != _selectionRequest) return;
       _selectNow(
         id,
         focusEditor: focusEditor,
         selectionPreview: selectionPreview,
-        workspacePreview: workspacePreview,
       );
     });
   }
@@ -1781,26 +1717,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     String id, {
     required bool focusEditor,
     bool selectionPreview = false,
-    EditorWorkspacePreviewSession? workspacePreview,
   }) {
-    if (!focusEditor) {
-      _holdEditorAutofocus();
-      // A preview may only activate an editor already mounted in another
-      // pane. Move focus to the shortcut scope so the active-pane marker and
-      // the real keyboard focus agree, while further Tabs still reach the
-      // same held-key session.
-      if (selectionPreview && _noteSwitcher.isActive) {
-        _desktopShortcutFocus.requestScopeFocus();
-      }
-    }
+    if (!focusEditor) _holdEditorAutofocus();
     final paneBefore = _workspace.activePane;
     setState(() {
-      if (workspacePreview != null && workspacePreview.preview(id)) {
-        final previous = _selectedId;
-        _adoptWorkspaceSelection(previous, selectionPreview: true);
-      } else {
-        _setSelectedId(id, selectionPreview: selectionPreview);
-      }
+      _setSelectedId(id, selectionPreview: selectionPreview);
       if (!selectionPreview) _phonePageOpen = true;
     });
     if (!selectionPreview) {
@@ -1810,12 +1731,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     // not take the keyboard by itself.
     if (focusEditor && !_specialMode && _workspace.activePane != paneBefore) {
       _focusSelectedEditorHere();
-    }
-    final committed = _committedSwitchAwaitingSelection;
-    if (selectionPreview && committed?.id == id) {
-      _committedSwitchAwaitingSelection = null;
-      _commitWorkspacePreview();
-      if (committed!.focusEditor) _focusSelectedEditorHere();
     }
   }
 
@@ -1936,7 +1851,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     bool focus = true,
   }) {
     if (_specialMode) return;
-    if (_cancelNoteSwitchPreview()) setState(() {});
+    _listWalkStart = null;
     _afterRecordingLeaves(leaving, () {
       if (!mounted) return;
       final previous = _selectedId;
@@ -1952,6 +1867,17 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _changeTabs(
       index == _workspace.frontTabIndex ? const {} : _workspace.openNoteIds,
       () => _workspace.activateTab(_tabIndex(tabId)),
+    );
+  }
+
+  /// Next tab and Previous tab: the open tab beside the one in front, in the
+  /// row's order, and from either end round to the other. Only the open tabs:
+  /// no other note is reached, and with one tab nothing moves.
+  void _cycleTab(int delta) {
+    final tabs = _workspace.tabs;
+    if (_specialMode || _usesCompactLayout || tabs.length < 2) return;
+    _activateTab(
+      '${tabs[(_workspace.frontTabIndex + delta) % tabs.length].id}',
     );
   }
 
@@ -2156,107 +2082,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }, focus: false);
   }
 
-  /// Previews another note in MRU order while the switching modifier is held.
-  /// The final preview is committed and focused by [_handleHardwareKey] when
-  /// that modifier is released.
-  void _cycleNote(int delta) {
-    // Walk the notes most recently opened first, grouped as the sidebar
-    // groups them, so pins and shared spaces still lead and one Ctrl+Tab
-    // toggles between the last two notes. The list itself keeps its
-    // last-edited order.
-    final visible = _visibleNotes;
-    final opened = widget.prefs.recentlyOpenedNoteIds;
-    final byId = {for (final note in visible) note.id: note};
-    final openedIds = opened.toSet();
-    final switchOrder = SidebarNoteGroups(
-      notes: [
-        for (final id in opened) ?byId[id],
-        for (final note in visible)
-          if (!openedIds.contains(note.id)) note,
-      ],
-      pinnedNoteIds: widget.notes.pinnedNoteIds,
-      sharing: widget.account?.sharing,
-      specialMode: _specialMode,
-      tab: widget.account?.sharing == null || _specialMode ? null : _sidebarTab,
-    ).displayOrder;
-    final starting = !_noteSwitcher.isActive;
-    final next = _noteSwitcher.advance(
-      currentId: _selectedId,
-      // A note already visible in another pane is still a note the user can
-      // switch to. Selecting it activates that pane instead of duplicating it.
-      eligibleIds: switchOrder.map((note) => note.id),
-      delta: delta,
-    );
-    if (next == null) return;
-
-    if (starting &&
-        !_specialMode &&
-        !_usesCompactLayout &&
-        _workspace.frontTab != null) {
-      _noteSwitchWorkspace = _workspace.beginPreviewSession();
-    }
-
-    final action = delta < 0
-        ? ShortcutAction.previousNote
-        : ShortcutAction.nextNote;
-    _noteSwitchModifier ??= _NoteSwitchModifier.forBinding(
-      widget.shortcuts.bindingFor(action),
-    );
-    _select(
-      next,
-      focusEditor: false,
-      selectionPreview: true,
-      workspacePreview: _noteSwitchWorkspace,
-    );
-
-    // Settings requires a modifier today, but keeping this fallback makes the
-    // controller safe if that policy ever changes or a binding is migrated.
-    if (_noteSwitchModifier == null) _commitNoteSwitch();
-  }
-
-  /// Observes the modifier independently of whichever editor is mounted. A
-  /// preview replaces that editor, so tying key-up to its FocusNode would lose
-  /// the exact event that commits the switch.
-  bool _handleHardwareKey(KeyEvent event) {
-    final modifier = _noteSwitchModifier;
-    if (!_noteSwitcher.isActive ||
-        modifier == null ||
-        event is! KeyUpEvent ||
-        !modifier.matches(event.logicalKey) ||
-        modifier.isPressed(HardwareKeyboard.instance)) {
-      return false;
-    }
-    _commitNoteSwitch();
-    return false;
-  }
-
-  void _commitNoteSwitch({bool focusEditor = true}) {
-    final id = _noteSwitcher.commit();
-    _noteSwitchModifier = null;
-    if (id == null) {
-      _cancelNoteSwitchPreview();
-      return;
-    }
-
-    widget.prefs.lastOpenedNoteId = id;
-    if (_selectedId == id) {
-      _commitWorkspacePreview();
-      if (focusEditor) _focusSelectedEditorHere();
-    } else {
-      // A recording may still be flushing before the preview can replace its
-      // editor. Its guarded selection callback focuses this committed target
-      // when, and only when, that final request lands.
-      _committedSwitchAwaitingSelection = (id: id, focusEditor: focusEditor);
-    }
-  }
-
-  void _commitWorkspacePreview() {
-    final preview = _noteSwitchWorkspace;
-    _noteSwitchWorkspace = null;
-    preview?.commit();
-    _scheduleDiscardAbandonedBlanks();
-  }
-
   /// The day a note was given, where it has one.
   DateTime? _ownDayOf(Note note) => widget.days?.dayOf(note.id);
 
@@ -2285,7 +2110,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     final folderId = _folderInFront;
     final keyboard = _weekHasKeyboard;
-    if (_cancelNoteSwitchPreview()) setState(() {});
+    _listWalkStart = null;
     _afterRecordingLeaves(_workspace.openNoteIds, () {
       if (!mounted) return;
       final previous = _selectedId;
@@ -2384,6 +2209,36 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         }
       },
     );
+  }
+
+  /// + on the tab row: a new note in a new tab at the end of the row, in
+  /// front, with its title picked to type over, as New note starts one. It
+  /// goes into the folder in front as New note's does, and with a day's notes
+  /// as the tabs it is that day's once it has words, as a page written on the
+  /// day is.
+  void _newNoteInNewTab() {
+    if (!(_noteLimit?.canCreate ?? true)) {
+      unawaited(_explainNoteLimit(creating: true));
+      return;
+    }
+    final folderId = _folderInFront;
+    _changeTabs(_workspace.openNoteIds, () {
+      final note = widget.notes.create(
+        body: Note.blankBody,
+        authored: false,
+        hidden: _hiddenMode,
+      );
+      _freshNoteIds.add(note.id);
+      if (_workspace.dayInTabs case final day?) _dayOfFreshNote[note.id] = day;
+      if (folderId != null) {
+        if (widget.folders?.file([note.id], folderId) case final refusal?) {
+          Toast.show(context, folderRefusalText(refusal), isError: true);
+        }
+      }
+      if (!_workspace.openInNewTab(note.id)) return false;
+      _workspace.activateTab(_workspace.tabs.length - 1);
+      return true;
+    }, focus: false);
   }
 
   /// Gives the note whose page is open another day, or none at all.
@@ -3861,7 +3716,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     final id = _selectedId;
     if (id != null) {
-      _cancelNoteSwitchPreview();
+      _listWalkStart = null;
       widget.prefs.lastOpenedNoteId = id;
     }
     _selectedEditor?.focusHere();
@@ -4439,8 +4294,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             onShowArchive: () => _showNotes(NotesShow.archive),
             showsTasks: _taskController != null,
             showsShared: widget.account?.sharing != null,
-            onNextNote: () => _cycleNote(1),
-            onPreviousNote: () => _cycleNote(-1),
+            onNewNoteInNewTab: _specialMode || _usesCompactLayout
+                ? null
+                : _newNoteInNewTab,
+            onNextTab: () => _cycleTab(1),
+            onPreviousTab: () => _cycleTab(-1),
             onSplitEditor: _specialMode || !_workspace.canSplit
                 ? null
                 : _splitEditor,
@@ -5255,6 +5113,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       onSelect: _activateTab,
       onClose: _closeTab,
       onCloseOthers: _closeOtherTabs,
+      onNew: _newNoteInNewTab,
+      newShortcut: widget.shortcuts
+          .hintFor(ShortcutAction.newNoteInNewTab)
+          ?.keycapLabel,
       onPin: day == null
           ? null
           : (id, {required pin}) {
@@ -5800,6 +5662,31 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             keepBefore: true,
             after: tasks == null && tasksPage != null ? (_) => tasksPage : null,
             onTurn: (tasks) => _showHome(tasks: tasks),
+            // Home's header stays put while Notes and Tasks turn under it:
+            // each page's own hides, and Notes' and Tasks' copies are drawn
+            // over them instead, crossfading as the turn goes.
+            over: tasksPage == null
+                ? null
+                : (_, shift) {
+                    final toTasks = (tasks != null ? 1 - shift : -shift).clamp(
+                      0.0,
+                      1.0,
+                    );
+                    return Stack(
+                      children: [
+                        Opacity(
+                          opacity: 1 - toTasks,
+                          child: _asHome(tasks: false, _phoneHomeHeader),
+                        ),
+                        Positioned.fill(
+                          child: Opacity(
+                            opacity: toTasks,
+                            child: _asHome(tasks: true, _phoneHomeHeader),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
             onBack: _phoneLevel != null
                 ? () => unawaited(_phoneNavigator.currentState?.maybePop())
                 : null,
@@ -5884,7 +5771,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _phoneHomeHeader(),
+              HiddenWhileTurning(child: _phoneHomeHeader()),
               Expanded(
                 child: TasksScreen(
                   key: _tasksPage,
@@ -6053,7 +5940,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               trailing: _phoneAccount(),
             )
           : _phoneHome
-          ? _phoneHomeHeader()
+          ? HiddenWhileTurning(child: _phoneHomeHeader())
           : tree
           ? PhoneListTitle(title: 'Folders', trailing: _phoneAccount())
           : PhoneListTitle(
@@ -7035,47 +6922,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 }
 
-/// The modifier whose release commits a note-switch session.
-///
-/// Shift is normally only the direction reversal in Ctrl+Shift+Tab, so the
-/// first non-Shift modifier owns the session. A Shift-only custom binding
-/// still works and commits when Shift itself is released.
-enum _NoteSwitchModifier {
-  meta,
-  control,
-  alt,
-  shift;
-
-  static _NoteSwitchModifier? forBinding(ShortcutBinding? binding) {
-    if (binding == null) return null;
-    if (binding.meta) return meta;
-    if (binding.control) return control;
-    if (binding.alt) return alt;
-    if (binding.shift) return shift;
-    return null;
-  }
-
-  bool matches(LogicalKeyboardKey key) => switch (this) {
-    meta =>
-      key == LogicalKeyboardKey.metaLeft || key == LogicalKeyboardKey.metaRight,
-    control =>
-      key == LogicalKeyboardKey.controlLeft ||
-          key == LogicalKeyboardKey.controlRight,
-    alt =>
-      key == LogicalKeyboardKey.altLeft || key == LogicalKeyboardKey.altRight,
-    shift =>
-      key == LogicalKeyboardKey.shiftLeft ||
-          key == LogicalKeyboardKey.shiftRight,
-  };
-
-  bool isPressed(HardwareKeyboard keyboard) => switch (this) {
-    meta => keyboard.isMetaPressed,
-    control => keyboard.isControlPressed,
-    alt => keyboard.isAltPressed,
-    shift => keyboard.isShiftPressed,
-  };
-}
-
 /// Keyboard shortcuts that a desktop user expects to just work.
 class _DesktopShortcuts extends StatelessWidget {
   const _DesktopShortcuts({
@@ -7094,8 +6940,9 @@ class _DesktopShortcuts extends StatelessWidget {
     required this.onShowArchive,
     required this.showsTasks,
     required this.showsShared,
-    required this.onNextNote,
-    required this.onPreviousNote,
+    required this.onNewNoteInNewTab,
+    required this.onNextTab,
+    required this.onPreviousTab,
     required this.onSplitEditor,
     required this.onCloseTab,
     required this.onReopenTab,
@@ -7175,8 +7022,11 @@ class _DesktopShortcuts extends StatelessWidget {
   final VoidCallback onShowArchive;
   final bool showsTasks;
   final bool showsShared;
-  final VoidCallback onNextNote;
-  final VoidCallback onPreviousNote;
+
+  /// Null where there are no tabs, such as in Archive.
+  final VoidCallback? onNewNoteInNewTab;
+  final VoidCallback onNextTab;
+  final VoidCallback onPreviousTab;
   final VoidCallback? onSplitEditor;
 
   /// Null where the chord would close nothing the reader could see go.
@@ -7233,9 +7083,11 @@ class _DesktopShortcuts extends StatelessWidget {
               onShowSpace(LibrarySpace.shared),
         ?shortcuts.bindingFor(ShortcutAction.showArchive)?.activator:
             onShowArchive,
-        ?shortcuts.bindingFor(ShortcutAction.nextNote)?.activator: onNextNote,
-        ?shortcuts.bindingFor(ShortcutAction.previousNote)?.activator:
-            onPreviousNote,
+        ?shortcuts.bindingFor(ShortcutAction.newNoteInNewTab)?.activator:
+            ?onNewNoteInNewTab,
+        ?shortcuts.bindingFor(ShortcutAction.nextTab)?.activator: onNextTab,
+        ?shortcuts.bindingFor(ShortcutAction.previousTab)?.activator:
+            onPreviousTab,
         ?shortcuts.bindingFor(ShortcutAction.splitEditor)?.activator:
             ?onSplitEditor,
         ?shortcuts.bindingFor(ShortcutAction.closeTab)?.activator: ?onCloseTab,
@@ -7271,6 +7123,25 @@ class _DesktopShortcuts extends StatelessWidget {
             ?onDeleteNote,
         ?shortcuts.bindingFor(ShortcutAction.toggleKapyAi)?.activator:
             ?onToggleKapyAi,
+        // A Mac's other next and previous tab, as Safari and Xcode have it:
+        // Cmd+Shift+] and Cmd+Shift+[, which arrive as the braces they type.
+        // Not when the person gave the chord to an action, since every match
+        // runs.
+        for (final (brace, step) in [
+          (LogicalKeyboardKey.braceRight, onNextTab),
+          (LogicalKeyboardKey.braceLeft, onPreviousTab),
+        ])
+          if (AppPlatform.isMacOS &&
+              !ShortcutAction.values.any((action) {
+                final binding = shortcuts.bindingFor(action);
+                return binding != null &&
+                    binding.logicalKey == brace &&
+                    binding.meta &&
+                    binding.shift &&
+                    !binding.control &&
+                    !binding.alt;
+              }))
+            SingleActivator(brace, meta: true, shift: true): step,
       },
       child: FocusScope(
         node: focusNode,

@@ -1498,12 +1498,15 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
       await tester.pumpAndSettle();
       final tab = tester.getRect(
-        find
-            .ancestor(of: tabTitled('Gym plan'), matching: find.byType(Row))
-            .first,
+        find.ancestor(
+          of: tabTitled('Gym plan'),
+          matching: find.byWidgetPredicate(
+            (widget) => '${widget.key}'.contains("'note-tab-"),
+          ),
+        ),
       );
       await tester.tapAt(
-        Offset(tab.right + 1, tab.center.dy),
+        Offset(tab.right - 1, tab.center.dy),
         buttons: kSecondaryButton,
       );
       await tester.pumpAndSettle();
@@ -1517,10 +1520,10 @@ void main() {
     });
   }
 
-  // The same day after the window narrows to 820, too narrow for its three
-  // tabs and for the strip's days. Gym plan, pinned, stays on the row though
-  // it is the least recently used, and Standup notes folds into "1 more" in
-  // its place.
+  // The same day after the window narrows to 852, too narrow for its three
+  // tabs beside + and for the strip's days. Gym plan, pinned, stays on the
+  // row though it is the least recently used, and Standup notes folds into
+  // "1 more" in its place.
   testWidgets('desktop dark week, a pinned tab in a narrow window', (
     tester,
   ) async {
@@ -1533,7 +1536,7 @@ void main() {
     );
     await tester.tap(find.byKey(const ValueKey('day-strip-2026-8-31')));
     await tester.pumpAndSettle();
-    tester.view.physicalSize = const Size(820, 800);
+    tester.view.physicalSize = const Size(852, 800);
     await tester.pumpAndSettle();
     await tester.tap(tabTitled('Standup notes'));
     await tester.pumpAndSettle();

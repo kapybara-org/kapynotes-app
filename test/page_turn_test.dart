@@ -40,6 +40,7 @@ class _Pages extends StatefulWidget {
     this.canStart,
     this.onBack,
     this.top,
+    this.over = false,
   });
 
   final int start;
@@ -51,6 +52,10 @@ class _Pages extends StatefulWidget {
   /// from, built for the page it shows.
   final Widget Function(int index)? top;
 
+  /// Whether each page draws a title of its own, which hides while a turn
+  /// moves and is drawn over the pages instead, naming where they stand.
+  final bool over;
+
   @override
   State<_Pages> createState() => _PagesState();
 }
@@ -61,7 +66,14 @@ class _PagesState extends State<_Pages> {
 
   Widget _page(int i) => KeyedSubtree(
     key: ValueKey('page-$i'),
-    child: widget.page?.call(i) ?? _Counter('page $i'),
+    child: widget.over
+        ? Column(
+            children: [
+              HiddenWhileTurning(child: Text('title $i')),
+              Expanded(child: widget.page?.call(i) ?? _Counter('page $i')),
+            ],
+          )
+        : widget.page?.call(i) ?? _Counter('page $i'),
   );
 
   @override
@@ -79,6 +91,9 @@ class _PagesState extends State<_Pages> {
       null => null,
     },
     onlyFromTop: widget.top != null,
+    over: widget.over
+        ? (_, shift) => Text('over ${shift.toStringAsFixed(2)}')
+        : null,
     onTurn: (later) => setState(() {
       turns.add(later);
       index += later ? 1 : -1;
@@ -234,6 +249,89 @@ void main() {
       await drag.up();
       await tester.pumpAndSettle();
       expect(_state(tester).turns, isEmpty);
+    });
+  });
+
+  group('a part drawn over the turn', () {
+    bool titlesShown(WidgetTester tester) => tester
+        .widgetList<Visibility>(
+          find.descendant(
+            of: find.byType(HiddenWhileTurning),
+            matching: find.byType(Visibility),
+          ),
+        )
+        .every((visibility) => visibility.visible);
+
+    testWidgets('is drawn still while a turn moves, with where the page '
+        "stands, and the pages' own copies hide, keeping their room", (
+      tester,
+    ) async {
+      await _pump(tester, const _Pages(over: true));
+      expect(find.textContaining('over'), findsNothing);
+      expect(titlesShown(tester), isTrue);
+      final room = tester.getSize(find.text('title 1'));
+      final drag = await tester.startGesture(_middle);
+      await drag.moveBy(const Offset(-60, 0));
+      await drag.moveBy(const Offset(-40, 0));
+      await tester.pump();
+      expect(find.text('over -0.25'), findsOneWidget);
+      expect(tester.getTopLeft(find.text('over -0.25')).dy, 0);
+      expect(titlesShown(tester), isFalse);
+      expect(tester.getSize(find.text('title 1')), room);
+      await drag.up();
+      await tester.pump();
+      expect(find.textContaining('over'), findsOneWidget, reason: 'settling');
+      await tester.pumpAndSettle();
+      expect(_state(tester).turns, [true]);
+      expect(find.textContaining('over'), findsNothing);
+      expect(titlesShown(tester), isTrue);
+    });
+
+    testWidgets('goes once a drag let go short has sprung back', (
+      tester,
+    ) async {
+      await _pump(tester, const _Pages(over: true));
+      await tester.timedDragFrom(
+        _middle,
+        const Offset(-60, 0),
+        const Duration(milliseconds: 600),
+      );
+      await tester.pump();
+      expect(find.textContaining('over'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(_state(tester).turns, isEmpty);
+      expect(find.textContaining('over'), findsNothing);
+      expect(titlesShown(tester), isTrue);
+    });
+
+    testWidgets('under reduce motion, goes as soon as a drag short of a turn '
+        'is let go', (tester) async {
+      await _pump(tester, const _Pages(over: true), reduceMotion: true);
+      await tester.timedDragFrom(
+        _middle,
+        const Offset(-60, 0),
+        const Duration(milliseconds: 600),
+      );
+      await tester.pump();
+      expect(_state(tester).turns, isEmpty);
+      expect(find.textContaining('over'), findsNothing);
+      expect(titlesShown(tester), isTrue);
+    });
+
+    testWidgets('under reduce motion, goes as the crossfade goes', (
+      tester,
+    ) async {
+      await _pump(tester, const _Pages(over: true), reduceMotion: true);
+      await tester.timedDragFrom(
+        _middle,
+        const Offset(-200, 0),
+        const Duration(milliseconds: 300),
+      );
+      await tester.pump(PageTurn.fade ~/ 2);
+      expect(find.text('over -0.50'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(_state(tester).turns, [true]);
+      expect(find.textContaining('over'), findsNothing);
     });
   });
 

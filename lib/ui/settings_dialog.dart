@@ -3502,12 +3502,13 @@ extension on ShortcutAction {
     ShortcutAction.findInNote ||
     ShortcutAction.newTask ||
     ShortcutAction.newDrawing ||
-    ShortcutAction.nextNote ||
-    ShortcutAction.previousNote ||
     ShortcutAction.deleteNote ||
     ShortcutAction.toggleKapyAi => _ShortcutGroup.notesAndSearch,
     ShortcutAction.goBack ||
     ShortcutAction.goForward ||
+    ShortcutAction.newNoteInNewTab ||
+    ShortcutAction.nextTab ||
+    ShortcutAction.previousTab ||
     ShortcutAction.closeTab ||
     ShortcutAction.reopenTab ||
     ShortcutAction.splitEditor ||

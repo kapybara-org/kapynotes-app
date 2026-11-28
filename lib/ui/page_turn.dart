@@ -29,6 +29,11 @@ import 'package:material_ui/material_ui.dart';
 /// A page may keep a part of itself still above the turn, its [top], such
 /// as a header, which shows the page turned to as soon as a turn is let go.
 ///
+/// Or each page may draw its own copy of a part that should not move, such
+/// as Home's header, inside [HiddenWhileTurning]: while a turn moves, those
+/// copies hide, keeping their room, and [over] draws the part still over
+/// the pages instead.
+///
 /// Under reduce motion nothing moves with the finger: a turn past the same
 /// marks crossfades to its page instead.
 class PageTurn extends StatefulWidget {
@@ -43,6 +48,7 @@ class PageTurn extends StatefulWidget {
     this.canStart,
     this.top,
     this.onlyFromTop = false,
+    this.over,
   });
 
   final Widget child;
@@ -75,6 +81,12 @@ class PageTurn extends StatefulWidget {
 
   /// Whether a turn starts only from a drag on [top].
   final bool onlyFromTop;
+
+  /// What is drawn still over the top of the pages while a turn moves, from
+  /// the drag's start until the turn has settled, built each frame with
+  /// where the page on screen stands, as a share of the width: negative as
+  /// it moves towards [after]. Under reduce motion, as the crossfade goes.
+  final Widget Function(BuildContext context, double shift)? over;
 
   /// How far a drag goes across before it is a turn, and how far up or down
   /// it may go before that, at no steeper than [steepest] (rise over run).
@@ -129,6 +141,14 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
 
   final _top = GlobalKey();
 
+  /// Whether a turn moves, from its drag's start until it has settled and
+  /// [PageTurn.onTurn] has built the page turned to, or it has sprung back.
+  bool _moving = false;
+
+  void _stop() {
+    if (_moving && !_dragging) setState(() => _moving = false);
+  }
+
   double _width = 1;
   double _pulled = 0;
   bool _dragging = false;
@@ -144,7 +164,10 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
   void didUpdateWidget(PageTurn oldWidget) {
     super.didUpdateWidget(oldWidget);
     _before = _after = null;
-    if (!_shift.isAnimating && !_fade.isAnimating) _settlingTo = null;
+    if (!_shift.isAnimating && !_fade.isAnimating) {
+      _settlingTo = null;
+      if (!_dragging) _moving = false;
+    }
   }
 
   @override
@@ -190,6 +213,7 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
     _shift.stop();
     _dragging = true;
     _pulled = _shift.value;
+    if (widget.over != null && !_moving) setState(() => _moving = true);
   }
 
   void _drag(DragUpdateDetails details) {
@@ -240,8 +264,12 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
   void _settleBack() {
     _pulled = 0;
     final from = _shift.value.abs();
-    if (from == 0) return;
-    _shift.animateTo(0, duration: _left(from, 0), curve: PageTurn.curve);
+    if (from == 0) return _stop();
+    _shift
+        .animateTo(0, duration: _left(from, 0), curve: PageTurn.curve)
+        .whenCompleteOrCancel(() {
+          if (mounted && _shift.value == 0) _stop();
+        });
   }
 
   void _settle(bool forward, double speed) {
@@ -373,6 +401,19 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
                     at: fading == true ? 0 : shift + 1,
                     opacity: fading == true ? _fade.value : 1,
                   ),
+                if (widget.over case final over? when _moving)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: over(context, switch (fading) {
+                        true => -_fade.value,
+                        false => _fade.value,
+                        null => shift,
+                      }),
+                    ),
+                  ),
               ],
             );
           },
@@ -380,10 +421,11 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
       },
     );
     final top = widget.top;
+    final turning = _Moving(moving: _moving, child: pages);
     final page = RawGestureDetector(
       gestures: turn(),
       child: top == null
-          ? pages
+          ? turning
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -392,7 +434,7 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
                   behavior: HitTestBehavior.opaque,
                   child: top(context, _settlingTo ?? _fadingTo),
                 ),
-                Expanded(child: pages),
+                Expanded(child: turning),
               ],
             ),
     );
@@ -421,6 +463,36 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
       ],
     );
   }
+}
+
+/// A part of a page under a [PageTurn] with [PageTurn.over] that hides
+/// while a turn moves, keeping its room, as the turn draws it still over the
+/// pages instead.
+class HiddenWhileTurning extends StatelessWidget {
+  const HiddenWhileTurning({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Visibility(
+    visible:
+        !(context.dependOnInheritedWidgetOfExactType<_Moving>()?.moving ??
+            false),
+    maintainState: true,
+    maintainAnimation: true,
+    maintainSize: true,
+    child: child,
+  );
+}
+
+/// Whether the [PageTurn] over the pages under it moves a turn.
+class _Moving extends InheritedWidget {
+  const _Moving({required this.moving, required super.child});
+
+  final bool moving;
+
+  @override
+  bool updateShouldNotify(_Moving oldWidget) => moving != oldWidget.moving;
 }
 
 /// A horizontal drag that wins only once it is plainly sideways:
