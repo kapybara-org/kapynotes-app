@@ -1,0 +1,13 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:dist="http://schemas.android.com/apk/distribution">
+    <!-- On demand and not fused: nothing about it goes into a phone's install
+         until somebody downloads a language pair only ML Kit can translate. -->
+    <dist:module
+        dist:instant="false"
+        dist:title="@string/translation_runtime_title">
+        <dist:delivery>
+            <dist:on-demand />
+        </dist:delivery>
+        <dist:fusing dist:include="false" />
+    </dist:module>
+</manifest>

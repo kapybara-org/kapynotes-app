@@ -63,6 +63,9 @@ class _NoControls implements RecordingControls {
     required Duration elapsed,
     required bool paused,
     required bool interrupted,
+    bool live = false,
+    String? phrase,
+    String? heard,
   }) async {}
 
   @override
