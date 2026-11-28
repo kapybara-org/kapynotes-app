@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/retrieval.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/recaps/recap_material.dart';
+import 'package:kapy_notes/recaps/recap_period.dart';
 
 import 'recap_fixtures.dart';
 
@@ -185,5 +186,30 @@ void main() {
       expectWithin(packed, device);
       expect(packed, hasLength(5));
     });
+  });
+
+  test('a note in Recently deleted is no part of a recap', () async {
+    final world = RecapWorld();
+    world.tick('2026-11-18T08:00:00Z', () {
+      world.note('kept', '2026-11-19T08:00:00Z', body: 'Kept\n☐ Book');
+      world.note(
+        'binned',
+        '2026-11-19T09:00:00Z',
+        body: 'Binned words\n☐ Gone task',
+      );
+    });
+    final index = world.notes.indexWhere((note) => note.id == 'binned');
+    world.notes[index] = world.notes[index].copyWith(
+      archivedAt: DateTime.utc(2026, 11, 20),
+      trashedAt: DateTime.utc(2026, 11, 20),
+    );
+    await world.load();
+    final week = periodOf(DateTime(2026, 11, 19), RecapKind.week);
+
+    final material = world.material(week);
+    expect([
+      for (final item in material.items) item.note.id,
+    ], isNot(contains('binned')));
+    expect(world.digest(week).counts.notes, 1);
   });
 }

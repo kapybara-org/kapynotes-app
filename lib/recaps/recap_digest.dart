@@ -235,10 +235,10 @@ Map<Note, DateTime> recapNotes(
     ),
 };
 
-/// The ids of [notes] a recap may read: not hidden, not archived.
+/// The ids of [notes] a recap may read: not hidden, archived or in the trash.
 Set<String> _visible(List<Note> notes) => {
   for (final note in notes)
-    if (!note.isHidden && !note.isArchived) note.id,
+    if (!note.isHidden && !note.isArchived && !note.isTrashed) note.id,
 };
 
 /// The visible notes in [period], each with the index of its day in it.
@@ -249,7 +249,7 @@ Map<Note, int> _held(
   DateTime? Function(Note note)? ownDay,
 ) => {
   for (final note in notes)
-    if (!note.isHidden && !note.isArchived)
+    if (!note.isHidden && !note.isArchived && !note.isTrashed)
       note: ?period.indexOf(
         noteDay(note, displayTime, ownDay: ownDay?.call(note)),
       ),
