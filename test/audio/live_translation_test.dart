@@ -37,6 +37,7 @@ class FakeLiveEngine implements LiveTranslationEngine {
   int? bytes;
   Object? startError;
   String? written;
+  Future<String?>? stopping;
 
   final phraseEvents = StreamController<LivePhrase>.broadcast();
   final levelEvents = StreamController<double>.broadcast();
@@ -122,7 +123,7 @@ class FakeLiveEngine implements LiveTranslationEngine {
   @override
   Future<String?> stop() async {
     calls.add('stop');
-    return written;
+    return stopping ?? written;
   }
 
   @override
@@ -228,6 +229,22 @@ void main() {
       expect(engine.calls.last, 'stop');
       expect(controller.liveText, isNull);
     });
+
+    test(
+      'a live session that never finishes stopping still ends the recording',
+      () async {
+        turnOn();
+        await controller.start(noteId: 'n1');
+        engine.stopping = Completer<String?>().future;
+
+        await controller.stop().timeout(const Duration(seconds: 10));
+
+        expect(engine.calls.last, 'stop');
+        expect(recorder.stopped, isTrue);
+        expect(controller.session, isNull);
+        expect(controller.liveText, isNull);
+      },
+    );
 
     test('the latest translated phrase goes to the Lock Screen', () async {
       turnOn();

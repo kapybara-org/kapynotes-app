@@ -910,7 +910,7 @@ class _SettingsDialogState extends State<SettingsDialog>
   /// else whether to wait for Wi-Fi.
   Future<bool?> _confirmLiveDownload(String from, String to, int? bytes) {
     var wifiOnly = true;
-    final size = bytes == null ? '' : ' of ${fileSize(bytes)}';
+    final size = bytes == null ? '' : ' of about ${fileSize(bytes)}';
     return showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -966,11 +966,26 @@ class _SettingsDialogState extends State<SettingsDialog>
       for (final locale in PlatformDispatcher.instance.locales)
         locale.languageCode.toLowerCase(),
     };
-    final codes = languages.targets.where((code) => code != from).toList()
-      ..sort((a, b) {
-        final mine = (own.contains(b) ? 1 : 0) - (own.contains(a) ? 1 : 0);
-        return mine != 0 ? mine : _liveName(a).compareTo(_liveName(b));
-      });
+    final codes = languages.targets.where((code) => code != from).toList();
+    final statuses = await Future.wait([
+      for (final code in codes)
+        live.engine
+            .pairStatus(from, code)
+            .then<LivePairStatus?>((pair) => pair.status, onError: (_) => null),
+    ]);
+    if (!mounted) return null;
+    final downloaded = {
+      for (final (index, code) in codes.indexed)
+        if (statuses[index] == LivePairStatus.installed) code,
+    };
+    int first(Set<String> set, String a, String b) =>
+        (set.contains(b) ? 1 : 0) - (set.contains(a) ? 1 : 0);
+    codes.sort((a, b) {
+      final ready = first(downloaded, a, b);
+      if (ready != 0) return ready;
+      final mine = first(own, a, b);
+      return mine != 0 ? mine : _liveName(a).compareTo(_liveName(b));
+    });
     final current = live.prefs.liveTranslateTo;
     return showDialog<String>(
       context: context,
@@ -988,10 +1003,15 @@ class _SettingsDialogState extends State<SettingsDialog>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(_liveName(code)),
-                        if (languages.names[code]?.own case final name?
-                            when name != _liveName(code))
+                        if ([
+                              if (languages.names[code]?.own case final name?
+                                  when name != _liveName(code))
+                                name,
+                              if (downloaded.contains(code)) 'Downloaded',
+                            ]
+                            case final line when line.isNotEmpty)
                           Text(
-                            name,
+                            line.join(' · '),
                             style: TextStyle(
                               fontSize: AppTypeScale.small,
                               color: context.palette.textSecondary,
