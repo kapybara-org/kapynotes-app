@@ -3432,6 +3432,51 @@ void main() {
     }
   }
 
+  testWidgets('a title typed into an empty note keeps the room under it, '
+      'and the line below stays put as it wraps (KAP-450)', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.physicalSize = const Size(320, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.pumpWidget(harness('', phone: true, autofocus: true));
+    await tester.pumpAndSettle();
+
+    Future<double> gap(String text) async {
+      await tester.enterNote('$text\nBody');
+      await tester.pumpAndSettle();
+      const body = 'Body';
+      final editable = NoteDriver(tester);
+      final start = editable.value.text.indexOf(body);
+      final box = editable
+          .boxesFor(TextSelection(baseOffset: start, extentOffset: start + 4))
+          .first;
+      final titleEnd = editable
+          .boxesFor(TextSelection(baseOffset: 0, extentOffset: text.length))
+          .map((box) => box.bottom)
+          .reduce(math.max);
+      return box.top - titleEnd;
+    }
+
+    final oneLetter = await gap('L');
+    final oneRow = await gap('Lisbon');
+    final wrapped = await gap('Lisbon trip budget');
+    // Room for the meta row, at twice the text size.
+    expect(
+      oneLetter,
+      greaterThanOrEqualTo(
+        2 *
+            (EditorMetrics.metaGap +
+                EditorMetrics.metaBottom +
+                EditorMetrics.phoneMetaRow),
+      ),
+    );
+    expect(oneRow, closeTo(oneLetter, 0.5));
+    expect(wrapped, closeTo(oneLetter, 0.5));
+  });
+
   testWidgets('a phone keeps room for a result at each text size', (
     tester,
   ) async {
