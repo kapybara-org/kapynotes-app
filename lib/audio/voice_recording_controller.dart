@@ -695,7 +695,7 @@ class VoiceRecordingController extends ChangeNotifier {
     // On Android the live recorder ends its own session as it stops.
     if (_liveText != null && identical(_backend, _recorder)) {
       try {
-        await live?.engine.stop();
+        await live?.engine.stop().timeout(const Duration(seconds: 5));
       } catch (error) {
         debugPrint('KapyNotes: live translation did not stop: $error');
       }
