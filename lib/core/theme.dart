@@ -1886,6 +1886,14 @@ class KapyTheme {
           borderRadius: BorderRadius.circular(AppRadii.control),
           borderSide: BorderSide(color: color, width: width),
         );
+    final fieldBorders = WidgetStateInputBorder.resolveWith((states) {
+      final focused = states.contains(WidgetState.focused);
+      final width = focused ? 1.25 : 1.0;
+      if (states.contains(WidgetState.error)) {
+        return fieldBorder(scheme.error, width: width);
+      }
+      return fieldBorder(focused ? accent : Colors.transparent, width: width);
+    });
 
     return base.copyWith(
       extensions: [palette],
@@ -2151,17 +2159,10 @@ class KapyTheme {
         ),
         prefixIconColor: palette.textTertiary,
         suffixIconColor: palette.textTertiary,
-        border: WidgetStateInputBorder.resolveWith((states) {
-          final focused = states.contains(WidgetState.focused);
-          final width = focused ? 1.25 : 1.0;
-          if (states.contains(WidgetState.error)) {
-            return fieldBorder(scheme.error, width: width);
-          }
-          return fieldBorder(
-            focused ? accent : Colors.transparent,
-            width: width,
-          );
-        }),
+        border: fieldBorders,
+        activeIndicatorBorder: WidgetStateBorderSide.resolveWith(
+          (states) => fieldBorders.resolve(states).borderSide,
+        ),
       ),
       switchTheme: SwitchThemeData(
         materialTapTargetSize: tapTarget,

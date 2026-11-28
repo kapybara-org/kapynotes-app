@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:ui' show ImageByteFormat;
 import 'package:flutter/foundation.dart';
 import 'dart:math';
 
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -195,6 +197,62 @@ void main() {
     final ring = (decorationOf('plain').border! as WidgetStateInputBorder)
         .resolve({WidgetState.focused});
     expect(ring.borderSide.color, KapyTheme.lightPalette.accent);
+  });
+
+  testWidgets('a field that brings its own outline shows the theme\'s sides '
+      'on it: none at rest, orange when focused', (tester) async {
+    final own = FocusNode();
+    final plain = FocusNode();
+    addTearDown(own.dispose);
+    addTearDown(plain.dispose);
+    final keys = [GlobalKey(), GlobalKey()];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Material(
+          child: Column(
+            children: [
+              for (final (index, focus) in [own, plain].indexed)
+                RepaintBoundary(
+                  key: keys[index],
+                  child: SizedBox(
+                    width: 200,
+                    child: TextField(
+                      focusNode: focus,
+                      decoration: InputDecoration(
+                        border: focus == own
+                            ? OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Future<List<int>> edgeOf(GlobalKey key) async =>
+        (await tester.runAsync(() async {
+          final image =
+              await (key.currentContext!.findRenderObject()!
+                      as RenderRepaintBoundary)
+                  .toImage();
+          final data = await image.toByteData(format: ImageByteFormat.rawRgba);
+          final at = (image.height ~/ 2) * image.width * 4;
+          return data!.buffer.asUint8List().sublist(at, at + 4);
+        }))!;
+
+    expect(await edgeOf(keys[0]), await edgeOf(keys[1]), reason: 'at rest');
+    own.requestFocus();
+    await tester.pumpAndSettle();
+    final ringed = await edgeOf(keys[0]);
+    plain.requestFocus();
+    await tester.pumpAndSettle();
+    expect(ringed, await edgeOf(keys[1]), reason: 'focused');
   });
 
   test('three weights: regular, medium for row titles, semibold for '
