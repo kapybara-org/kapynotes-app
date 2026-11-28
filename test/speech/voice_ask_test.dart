@@ -430,7 +430,7 @@ void main() {
     testWidgets('out of answers', (tester) async {
       await held(tester, KapyLimitReached(resetsAt: DateTime(2026, 12, 1)));
       expect(
-        find.textContaining('No answers left until 1 Dec'),
+        find.textContaining('No credits left until 1 Dec'),
         findsOneWidget,
       );
     });
@@ -786,7 +786,7 @@ void main() {
       await tester.tap(find.text('Create X Post'));
       await tester.pumpAndSettle();
       expect(saved!.takes.single.text, 'Post number 1.');
-      expect(find.textContaining('No answers left'), findsNothing);
+      expect(find.textContaining('No credits left'), findsNothing);
     });
   });
 

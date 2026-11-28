@@ -67,7 +67,7 @@ void main() {
     List<(int, int)>? parts,
   }) => engine.make(
     plan(period),
-    digest: world.digest(period),
+    digest: () => world.digest(period),
     model: model,
     engine: ai,
     budget: budget,
@@ -711,7 +711,7 @@ void main() {
       final ai = ScriptedEngine(['TITLE: Day']);
       await engine.make(
         planned,
-        digest: world.digest(day),
+        digest: () => world.digest(day),
         model: KapyModel.cloud,
         engine: ai,
         budget: RetrievalBudget.cloud,

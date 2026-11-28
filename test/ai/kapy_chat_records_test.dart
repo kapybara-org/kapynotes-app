@@ -3,7 +3,12 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
+import 'package:kapy_notes/ai/kapy_ai_store.dart';
+import 'package:kapy_notes/ai/kapy_chat_book.dart';
 import 'package:kapy_notes/ai/kapy_chat_records.dart';
+import 'package:kapy_notes/recaps/recap_period.dart';
+
+import 'ai_fakes.dart';
 
 KapyMessage _message(String text, {List<KapyNoteRef> read = const []}) =>
     KapyMessage(
@@ -301,6 +306,109 @@ void main() {
         chatMessageParts(_chatId, _message('x')).single.toPayload(),
         isNot(contains('readTo')),
       );
+    });
+  });
+
+  group('a chat about a period', () {
+    final week = RecapPeriod.containing(
+      DateTime(2026, 11, 19),
+      RecapKind.week,
+      firstWeekday: DateTime.monday,
+    );
+    const wire = {'kind': 'week', 'first': '2026-11-16', 'last': '2026-11-22'};
+
+    KapyChat chat({
+      String title = 'What did I get done this week?',
+      int titleAt = 5,
+      RecapPeriod? scope,
+      List<KapyMessage> messages = const [],
+    }) => KapyChat(
+      id: _chatId,
+      title: title,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(titleAt),
+      titleAt: DateTime.fromMillisecondsSinceEpoch(titleAt),
+      modelAt: DateTime.fromMillisecondsSinceEpoch(1),
+      model: KapyModel.cloud,
+      scope: scope,
+      messages: messages,
+    );
+
+    test('carries its period in the chat record', () {
+      final payload = ChatMeta.of(chat(scope: week)).toPayload();
+      expect(payload['scope'], wire);
+      expect(
+        ChatMeta.fromPayload(jsonDecode(jsonEncode(payload)))!.scope,
+        week,
+      );
+      expect(ChatMeta.of(chat()).toPayload().containsKey('scope'), isFalse);
+    });
+
+    test('an older build keeps it, and reads the chat as an ordinary one', () {
+      // A build from before it reads the record with the period among the
+      // fields it does not know: the chat is whole without it, titled by its
+      // question, and a rename there writes the period back.
+      final payload =
+          jsonDecode(jsonEncode(ChatMeta.of(chat(scope: week)).toPayload()))
+              as Map;
+      final pulled = ChatMeta.fromPayload(payload)!;
+      expect(pulled.title.v, 'What did I get done this week?');
+      expect(pulled.model.v, KapyModel.cloud.toJson());
+      expect(pulled.extra.keys, ['scope']);
+      final renamed = ChatMeta.of(
+        chat(title: 'Week notes', titleAt: 9),
+      ).merge(pulled);
+      expect(renamed.title.v, 'Week notes');
+      expect(renamed.toPayload()['scope'], wire);
+      expect(renamed.scope, week);
+    });
+
+    test('a period that is not one leaves an ordinary chat', () {
+      for (final raw in [
+        {'kind': 'week', 'first': '2026-11-16', 'last': '2026-12-16'},
+        'November',
+        {'kind': 'year'},
+      ]) {
+        final payload = {...ChatMeta.of(chat()).toPayload(), 'scope': raw};
+        final meta = ChatMeta.fromPayload(jsonDecode(jsonEncode(payload)))!;
+        expect(meta.scope, isNull);
+        expect(meta.toPayload()['scope'], raw, reason: 'kept as it came');
+      }
+    });
+
+    test('the chat book keeps it on the device and from the account', () async {
+      final store = MemoryStore();
+      final book = KapyChatBook(store);
+      await book.load();
+      final asked = chat(
+        scope: week,
+        messages: [
+          KapyMessage(
+            id: 'q',
+            role: KapyRole.user,
+            text: 'What did I get done this week?',
+            at: DateTime.fromMillisecondsSinceEpoch(5),
+          ),
+        ],
+      );
+      book.put(asked);
+      final reopened = KapyChatBook(store);
+      await reopened.load();
+      expect(reopened.chats.single.scope, week);
+      expect(
+        chatFromJson(jsonDecode(jsonEncode(chatToJson(asked))))!.scope,
+        week,
+      );
+
+      final elsewhere = KapyChatBook(MemoryStore());
+      await elsewhere.load();
+      elsewhere.applyRemoteChat(
+        ChatMeta.fromPayload(
+          jsonDecode(jsonEncode(ChatMeta.of(asked).toPayload())),
+        )!,
+        1,
+      );
+      expect(elsewhere.chats.single.scope, week);
     });
   });
 }

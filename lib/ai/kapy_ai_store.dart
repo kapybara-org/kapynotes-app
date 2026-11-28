@@ -1,4 +1,5 @@
 import '../data/local_store.dart';
+import '../recaps/recap_period.dart';
 import 'kapy_ai.dart';
 
 /// Kapy AI's settings and chats, in the app's [LocalStore].
@@ -116,6 +117,7 @@ Map<String, Object?> chatToJson(KapyChat chat) => {
   'messages': [for (final message in chat.messages) _messageToJson(message)],
   if (chat.recording case final recording?) 'recording': recording.toJson(),
   'recap': ?chat.recap,
+  if (chat.scope case final scope?) 'scope': scope.toJson(),
 };
 
 KapyChat? chatFromJson(Object? raw) {
@@ -138,6 +140,7 @@ KapyChat? chatFromJson(Object? raw) {
     ],
     recording: KapyRecordingRef.fromJson(raw['recording']),
     recap: _map(raw['recap']),
+    scope: RecapPeriod.fromJson(raw['scope']),
   );
 }
 

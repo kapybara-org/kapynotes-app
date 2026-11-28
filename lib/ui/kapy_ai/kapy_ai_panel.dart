@@ -6,17 +6,20 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
+import '../../ai/period_scope.dart';
 import '../../core/phone_keyboard.dart';
 import '../../core/platform.dart';
 import '../../core/popup_keyboard.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
+import '../../recaps/recap_period.dart';
 import 'kapy_ai_chats.dart';
 import 'kapy_ai_conversation.dart';
 import 'kapy_ai_parts.dart';
 import 'kapy_ai_picker.dart';
 
-/// Whether the panel is open, and the note its "This note" chip carries.
+/// Whether the panel is open, and what its chip carries: the note of "This
+/// note", or a period.
 ///
 /// Kept apart from [KapyAi] because it is about this window rather than the
 /// chats: closing the panel keeps the chat, and opening it from a note only
@@ -24,6 +27,7 @@ import 'kapy_ai_picker.dart';
 class KapyAiPanelController extends ChangeNotifier {
   bool _open = false;
   String? _noteId;
+  RecapPeriod? _period;
   String? _draft;
 
   bool get isOpen => _open;
@@ -31,14 +35,28 @@ class KapyAiPanelController extends ChangeNotifier {
   /// The note the next question searches first, or null for all notes.
   String? get noteId => _noteId;
 
-  /// Opens from [noteId]'s page, or from nowhere in particular. A [draft]
-  /// waits in the composer, for a question asked while Kapy AI was still
-  /// answering.
-  void open({String? noteId, String? draft}) {
+  /// The period the next question is about, which it reads instead of every
+  /// note, or null for all notes.
+  RecapPeriod? get period => _period;
+
+  /// Opens from [noteId]'s page, about [period], or from nowhere in
+  /// particular. A [draft] waits in the composer, for a question asked while
+  /// Kapy AI was still answering.
+  void open({String? noteId, RecapPeriod? period, String? draft}) {
     _open = true;
-    _noteId = noteId;
+    _noteId = period == null ? noteId : null;
+    _period = period;
     _draft = draft ?? _draft;
     notifyListeners();
+  }
+
+  /// Follows the chat on screen: a chat about a period carries its chip,
+  /// in place of the note's. [quietly] while the panel is being built.
+  void scopeTo(RecapPeriod? period, {bool quietly = false}) {
+    if (period == _period) return;
+    _period = period;
+    if (period != null) _noteId = null;
+    if (!quietly) notifyListeners();
   }
 
   /// Keeps what was left typed in the composer as it goes, so the question
@@ -69,6 +87,9 @@ class KapyAiPanelController extends ChangeNotifier {
     _noteId = null;
     notifyListeners();
   }
+
+  /// The period chip's ✕: the next question starts a chat about all notes.
+  void detachPeriod() => scopeTo(null);
 }
 
 /// The panel's width beside the page.
@@ -153,12 +174,26 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
 
   KapyAi get _ai => widget.kapyAi;
 
+  /// The chat on screen when last looked, so the chip follows another.
+  String? _chatId;
+
   @override
   void initState() {
     super.initState();
     _takeDraft();
     _field.addListener(() => setState(() {}));
     widget.controller.addListener(_takeDraft);
+    final chat = _ai.current;
+    _chatId = chat?.id;
+    // Opened onto a chat about a period from nowhere in particular, the chip
+    // is that period's: a question there is about it.
+    final controller = widget.controller;
+    if (chat != null &&
+        controller.noteId == null &&
+        controller.period == null) {
+      controller.scopeTo(chat.scope, quietly: true);
+    }
+    _ai.addListener(_followChat);
     // Asked for rather than autofocused, which yields to whatever already
     // holds focus, and beside a note that is its editor. Esc and typing both
     // need the field. The sheet resting over a note waits for a tap
@@ -170,12 +205,22 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
 
   @override
   void dispose() {
+    _ai.removeListener(_followChat);
     widget.controller.removeListener(_takeDraft);
     widget.controller.keep(_field.text);
     _field.dispose();
     _fieldFocus.dispose();
     _panelFocus.dispose();
     super.dispose();
+  }
+
+  /// Another chat on screen, from the chats or a question that started one,
+  /// carries its own chip.
+  void _followChat() {
+    final chat = _ai.current;
+    if (chat == null || chat.id == _chatId) return;
+    _chatId = chat.id;
+    widget.controller.scopeTo(chat.scope);
   }
 
   void _takeDraft() {
@@ -197,7 +242,14 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
       _chats = false;
       _picking = false;
     });
-    unawaited(_ai.ask(question, noteId: widget.controller.noteId));
+    final period = widget.controller.period;
+    unawaited(
+      _ai.ask(
+        question,
+        noteId: period == null ? widget.controller.noteId : null,
+        period: period,
+      ),
+    );
   }
 
   /// A pick with a question held up answers it with the new model; without
@@ -585,6 +637,15 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
 
   Widget _body() {
     final chat = _ai.current;
+    final period = widget.controller.period;
+    if (period != null && (chat == null || chat.scope != period)) {
+      return KapyAiPeriodEmpty(
+        period: period,
+        read: _ai.readPeriod(period),
+        today: widget.now(),
+        onAsk: _ask,
+      );
+    }
     if (chat == null || chat.messages.isEmpty) {
       final noteId = _noteId;
       return KapyAiEmpty(
@@ -620,10 +681,23 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
 
   Widget _composer() {
     final palette = context.palette;
-    final noteId = _noteId;
+    final period = widget.controller.period;
+    final noteId = period == null ? _noteId : null;
     final typed = _field.text.trim().isNotEmpty;
     final canSend = typed && !_ai.answering;
     final line = typed && _ai.answering ? 'Kapy AI is still answering' : null;
+    final hint = switch (period) {
+      null => 'Ask Kapy AI…',
+      _ when _ai.current?.scope == period => 'Ask a follow-up…',
+      _ => 'Ask about ${kapyPeriodName(period, widget.now())}…',
+    };
+    final usage = _ai.cloudUsage;
+    final credits =
+        _ai.model.kind == KapyModelKind.cloud &&
+            usage != null &&
+            usage.remaining > 0
+        ? '1 credit · ${usage.remaining} left'
+        : null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
       child: Column(
@@ -641,9 +715,21 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (noteId != null) ...[
-                      _NoteChip(
-                        title: widget.noteTitle(noteId)!,
+                    if (period != null) ...[
+                      _ScopeChip(
+                        key: const ValueKey('kapy-ai-period-chip'),
+                        removeKey: const ValueKey('kapy-ai-period-chip-remove'),
+                        icon: KapyIcons.calendarOutlined,
+                        label: period.label,
+                        onRemove: widget.controller.detachPeriod,
+                      ),
+                      const SizedBox(height: 8),
+                    ] else if (noteId != null) ...[
+                      _ScopeChip(
+                        key: const ValueKey('kapy-ai-chip'),
+                        removeKey: const ValueKey('kapy-ai-chip-remove'),
+                        icon: KapyIcons.noteOutlined,
+                        label: 'This note · ${widget.noteTitle(noteId)!}',
                         onRemove: widget.controller.detachNote,
                       ),
                       const SizedBox(height: 8),
@@ -660,7 +746,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                         cursorColor: palette.selectedBorder,
                         style: kapyText(13.5, 20, palette.textPrimary),
                         decoration: InputDecoration.collapsed(
-                          hintText: 'Ask Kapy AI…',
+                          hintText: hint,
                           hintStyle: kapyText(13.5, 20, palette.textTertiary),
                         ),
                       ),
@@ -679,6 +765,14 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                             ),
                           ),
                         ),
+                        if (credits != null) ...[
+                          Text(
+                            credits,
+                            key: const ValueKey('kapy-ai-credits'),
+                            style: kapyText(11.5, 16, palette.textTertiary),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         Tooltip(
                           message: 'Ask',
                           child: Material(
@@ -729,18 +823,26 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
   }
 }
 
-/// "This note · Trip budget", and its ✕.
-class _NoteChip extends StatelessWidget {
-  const _NoteChip({required this.title, required this.onRemove});
+/// What the next question reads, "This note · Trip budget" or "17–23 Nov",
+/// and its ✕, which searches all notes instead.
+class _ScopeChip extends StatelessWidget {
+  const _ScopeChip({
+    required super.key,
+    required this.removeKey,
+    required this.icon,
+    required this.label,
+    required this.onRemove,
+  });
 
-  final String title;
+  final Key removeKey;
+  final KapyIconData icon;
+  final String label;
   final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
     return Container(
-      key: const ValueKey('kapy-ai-chip'),
       height: 24,
       padding: const EdgeInsets.only(left: 7, right: 3),
       decoration: BoxDecoration(
@@ -750,15 +852,11 @@ class _NoteChip extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          KapyIcon(
-            KapyIcons.noteOutlined,
-            size: 13,
-            color: palette.textSecondary,
-          ),
+          KapyIcon(icon, size: 13, color: palette.textSecondary),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
-              'This note · $title',
+              label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: kapyText(
@@ -773,7 +871,7 @@ class _NoteChip extends StatelessWidget {
           Tooltip(
             message: 'Search all notes',
             child: InkWell(
-              key: const ValueKey('kapy-ai-chip-remove'),
+              key: removeKey,
               borderRadius: BorderRadius.circular(AppRadii.small),
               onTap: onRemove,
               child: Padding(

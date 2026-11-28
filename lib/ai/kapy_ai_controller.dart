@@ -11,6 +11,10 @@ import '../data/local_store.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/notes_store.dart';
+import '../recaps/recap_lines.dart' show recapTitle;
+import '../recaps/recap_period.dart';
+import '../recaps/recap_record.dart' show recapChatOf;
+import '../recaps/recap_story.dart';
 import '../speech/languages.dart';
 import '../sync/config.dart';
 import '../sync/key_store.dart';
@@ -22,6 +26,7 @@ import 'kapy_ai_store.dart';
 import 'kapy_chat_book.dart';
 import 'local_tools.dart';
 import 'open_router.dart';
+import 'period_scope.dart';
 import 'recording_context.dart';
 import 'recording_translation.dart';
 import 'retrieval.dart';
@@ -375,6 +380,21 @@ class KapyAiController extends KapyAi {
     return isPro ? _cloud.usage : null;
   }
 
+  @override
+  bool get onTrial => _billing?.trialRunning ?? false;
+
+  @override
+  KapyPending? recapHold(KapyModel model) {
+    unawaited(_ready());
+    return switch (_holdFor(model, cloudOnly: true)) {
+      KapyCloudConsent() || KapyAccountConsent() => null,
+      final held => held,
+    };
+  }
+
+  @override
+  AnswerEngine recapEngine(KapyModel model) => _engineFor(model);
+
   // -------------------------------------------------------------------------
   // Accounts
 
@@ -556,6 +576,7 @@ class KapyAiController extends KapyAi {
       modelAt: model == null ? chat.modelAt : at,
       recording: chat.recording,
       recap: chat.recap,
+      scope: chat.scope,
     );
   }
 
@@ -590,6 +611,7 @@ class KapyAiController extends KapyAi {
     String question, {
     String? noteId,
     KapyRecordingRef? recording,
+    RecapPeriod? period,
   }) async {
     final text = question.trim();
     if (text.isEmpty || _answering) return;
@@ -601,9 +623,9 @@ class KapyAiController extends KapyAi {
           : text,
       at: _now(),
     );
-    final chat = recording == null || current?.recording == recording
-        ? current
-        : null;
+    final chat = recording != null
+        ? (current?.recording == recording ? current : null)
+        : (current?.scope == period ? current : null);
     if (chat == null) {
       final at = _now();
       final translation = recording == null
@@ -619,6 +641,7 @@ class KapyAiController extends KapyAi {
         model: model,
         messages: [asked],
         recording: recording,
+        scope: recording == null ? period : null,
       );
       _currentId = created.id;
       _next = null;
@@ -639,7 +662,27 @@ class KapyAiController extends KapyAi {
   void _onNotes() {
     _linkSources.clear();
     _readWhole.clear();
+    _periodReads.clear();
   }
+
+  KapyPeriodReader? _periods;
+
+  /// What each period held when last read, until a note changes.
+  final _periodReads = <RecapPeriod, KapyPeriodRead?>{};
+
+  @override
+  KapyPeriodReader? get periods => _periods;
+
+  @override
+  set periods(KapyPeriodReader? reader) {
+    _periods = reader;
+    _periodReads.clear();
+    _notify();
+  }
+
+  @override
+  KapyPeriodRead? readPeriod(RecapPeriod period) =>
+      _periodReads.putIfAbsent(period, () => _periods?.call(period));
 
   @override
   bool readWhole(KapyChat chat, KapyMessage answer) =>
@@ -679,6 +722,12 @@ class KapyAiController extends KapyAi {
     final voice = recording == null ? null : _recording(recording);
     if (recording != null && voice == null) {
       _pending = KapyFailed(_refusal(recording), retry: false);
+      _notify();
+      return;
+    }
+    if (chat.scope case final scope?
+        when recording == null && _periods == null) {
+      _pending = KapyFailed(_unread(scope), retry: false);
       _notify();
       return;
     }
@@ -768,15 +817,34 @@ class KapyAiController extends KapyAi {
     final heard = voice == null
         ? null
         : readRecording(voice.note, voice.ref, budget);
+    final period = voice == null ? chat.scope : null;
+    final gathered = period == null ? null : _periods?.call(period);
+    if (period != null && gathered == null) {
+      throw AnswerFailed(_unread(period), retry: false);
+    }
     final retrieval = heard == null
         ? retrieve(
             store: _notes,
             question: question.text,
-            noteId: _heldNoteId,
+            noteId: period == null ? _heldNoteId : null,
             budget: budget,
+            scope: gathered == null
+                ? null
+                : RetrievalScope(
+                    notes: gathered.sent(_notes, today: _now()),
+                    total: gathered.notes,
+                    overview: _overview(gathered),
+                  ),
           )
         : Retrieval(notes: heard.parts, matching: 0);
-    final read = readableNotes(_notes, retrieval.notes);
+    // A period's tasks and its recap go as notes of no note of their own,
+    // made from what the period holds this moment.
+    final readable = readableNotes(_notes, retrieval.notes).toSet();
+    final read = [
+      for (final note in retrieval.notes)
+        if (readable.contains(note) || (gathered != null && note.id.isEmpty))
+          note,
+    ];
     final hidden = {
       for (final note in _notes.allNotes)
         if (note.isHidden) note.id,
@@ -789,7 +857,9 @@ class KapyAiController extends KapyAi {
     final text = await _engineFor(using).answer(
       using,
       AnswerRequest(
-        question: question.text,
+        question: period == null
+            ? question.text
+            : kapyPeriodQuestion(period, question.text),
         notes: read,
         history: [
           for (final message in earlier.sublist(
@@ -814,7 +884,8 @@ class KapyAiController extends KapyAi {
               at: _now(),
               read: [
                 for (final note in {
-                  for (final note in read) note.id: note,
+                  for (final note in read)
+                    if (note.id.isNotEmpty) note.id: note,
                 }.values)
                   KapyNoteRef(
                     noteId: note.id,
@@ -945,6 +1016,27 @@ class KapyAiController extends KapyAi {
     }
     return null;
   }
+
+  /// The recap of [read]'s period as one note, once it is made: its words
+  /// as they read when it opens, so a line from a note hidden since is left
+  /// out ([RecapStory.read]). Null while there is none, or nothing of it is
+  /// left.
+  ReadNote? _overview(KapyPeriodRead read) {
+    final chat = recapChatOf(_book.chats, read.period);
+    final story = chat == null ? null : RecapStory.read(chat, read.material);
+    if (story == null || story.lines.text.isEmpty) return null;
+    return ReadNote(
+      id: '',
+      title: recapTitle(read.period),
+      text: story.lines.text,
+      edited: story.record.madeAt,
+    );
+  }
+
+  /// Why a chat about [period] cannot be answered here.
+  String _unread(RecapPeriod period) =>
+      'Kapy AI can’t read ${period.label} here. Remove it to ask about all '
+      'your notes.';
 
   /// Why [_recording] found nothing to read for [link].
   String _refusal(KapyRecordingRef link) =>

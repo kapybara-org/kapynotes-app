@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart' as hashes;
 
 import '../data/stamped.dart';
+import '../recaps/recap_period.dart';
 import 'kapy_ai.dart';
 
 /// A chat as the records it syncs as. One for the chat, and one for each
@@ -71,6 +72,7 @@ class ChatMeta {
       if (chat.recording case final recording?)
         recordingField: recording.toJson(),
       recapField: ?chat.recap,
+      if (chat.scope case final scope?) scopeField: scope.toJson(),
     },
   );
 
@@ -91,6 +93,11 @@ class ChatMeta {
 
   KapyRecordingRef? get recording =>
       KapyRecordingRef.fromJson(extra[recordingField]);
+
+  /// A chat about a period keeps the period here too, as [KapyChat.scope].
+  static const String scopeField = 'scope';
+
+  RecapPeriod? get scope => RecapPeriod.fromJson(extra[scopeField]);
 
   Map<String, Object?>? get recap => switch (extra[recapField]) {
     final Map raw => raw.cast<String, Object?>(),

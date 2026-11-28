@@ -394,6 +394,44 @@ void main() {
     });
   });
 
+  group('recaps', () {
+    test('Free: Kapy AI Cloud is locked for a recap too', () async {
+      final ai = await build(billing: await billingOn(pro: false));
+      final held = ai.recapHold(KapyModel.cloud)! as KapyCloudLocked;
+      expect(held.upgrade, isTrue);
+      expect(ai.onTrial, isFalse);
+    });
+
+    test('Pro: the drawer’s own privacy line is the consent', () async {
+      final ai = await build(billing: await billingOn(pro: true));
+      await ai.ask('Lisbon?');
+      expect(ai.pending, isA<KapyCloudConsent>());
+      expect(ai.recapHold(KapyModel.cloud), isNull);
+    });
+
+    test('a recap’s calls go through the same Kapy AI Cloud', () async {
+      final ai = await build(billing: await billingOn(pro: true));
+      final answer = await ai
+          .recapEngine(KapyModel.cloud)
+          .answer(
+            KapyModel.cloud,
+            AnswerRequest(question: 'Recap', notes: const [], today: testNow),
+          );
+      expect(answer, 'cloud answer');
+      expect(sent.last.url.path, endsWith('/ai/answer'));
+    });
+
+    test('an account of their own needs no consent of its own', () async {
+      final ai = await build(billing: await billingOn(pro: false));
+      final model = KapyModel(
+        kind: KapyModelKind.openRouter,
+        id: 'google/gemini-3.8-flash',
+        label: 'Gemini',
+      );
+      expect(ai.recapHold(model), isNull);
+    });
+  });
+
   group('pending states', () {
     test('cloud consent is asked once per device', () async {
       final ai = await build(billing: await billingOn(pro: true));

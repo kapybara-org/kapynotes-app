@@ -115,7 +115,7 @@ class KapyAiPicker extends StatelessWidget {
                 KapyModel.cloud,
                 usage == null
                     ? 'Answers through Kapy cloud'
-                    : '${usage.remaining} of ${usage.limit} answers left this month',
+                    : '${usage.remaining} of ${usage.limit} credits left this month',
               )
             : _Row(
                 key: const ValueKey('kapy-ai-model-cloud-cloud'),

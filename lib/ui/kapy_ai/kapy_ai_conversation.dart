@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
+import '../../ai/period_scope.dart';
 import '../../core/mobile_data.dart';
 import '../../core/phone_keyboard.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../kapy_cursor_peek.dart';
+import '../../recaps/recap_period.dart';
 import '../mobile_data_sheet.dart';
 import '../settings_rows.dart' show SettingsPie;
 import 'kapy_ai_markdown.dart';
@@ -105,6 +107,68 @@ class KapyAiEmpty extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A new chat about a period: what it reads, why a narrower question does
+/// better where the period holds more than one answer reads, and three
+/// questions to start from, two that fit any period and one about its main
+/// topic.
+class KapyAiPeriodEmpty extends StatelessWidget {
+  const KapyAiPeriodEmpty({
+    super.key,
+    required this.period,
+    required this.read,
+    required this.today,
+    required this.onAsk,
+  });
+
+  final RecapPeriod period;
+
+  /// What the period holds, or null where it cannot be read.
+  final KapyPeriodRead? read;
+  final DateTime today;
+  final ValueChanged<String> onAsk;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final read = this.read;
+    final suggestions = kapyPeriodSuggestions(period, today: today, read: read);
+    return SingleChildScrollView(
+      key: const ValueKey('kapy-ai-period-empty'),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Ask about ${kapyPeriodName(period, today)}',
+            style: kapyText(
+              17,
+              22,
+              palette.textPrimary,
+              weight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            read?.reads ??
+                'Answers come only from ${period.label}. Hidden notes are '
+                    'never used.',
+            style: kapyText(13, 18, palette.textSecondary),
+          ),
+          if (read?.narrower case final line?) ...[
+            const SizedBox(height: 6),
+            Text(line, style: kapyText(12, 16, palette.textTertiary)),
+          ],
+          const SizedBox(height: 16),
+          for (final suggestion in suggestions) ...[
+            if (suggestion != suggestions.first) const SizedBox(height: 6),
+            _Suggestion(suggestion, onTap: () => onAsk(suggestion)),
+          ],
+        ],
       ),
     );
   }
@@ -248,6 +312,12 @@ class KapyAiConversation extends StatelessWidget {
         pending == null &&
         kapyAi.answering &&
         chat.messages.lastOrNull?.role == KapyRole.user;
+    final scope = chat.scope;
+    final total = scope == null ? null : kapyAi.readPeriod(scope)?.notes;
+    final latestCloud = chat.messages.reversed
+        .where((message) => message.model?.kind == KapyModelKind.cloud)
+        .firstOrNull
+        ?.id;
     final children = [
       for (final message in chat.messages)
         message.role == KapyRole.user
@@ -255,6 +325,9 @@ class KapyAiConversation extends StatelessWidget {
             : _Answer(
                 message: message,
                 sources: kapyAi.linkSources(chat, message),
+                source: _source(message, latest: message.id == latestCloud),
+                period: scope,
+                total: total,
                 noteTitle: noteTitle,
                 onOpenNote: onOpenNote,
                 now: now,
@@ -303,6 +376,24 @@ class KapyAiConversation extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// The quiet line under an answer: what wrote it, and for Kapy AI Cloud
+  /// what it cost, with what is left beside the latest answer alone, since
+  /// that is the only one it is true of: "Kapy AI Cloud · 1 credit · 411 of
+  /// 500 left". The device's model and the person's own accounts cost
+  /// nothing, so their line names them alone.
+  String? _source(KapyMessage message, {required bool latest}) {
+    final model = message.model;
+    if (model == null) return null;
+    final named = model.sourceLine(kapyDeviceWord);
+    if (model.kind != KapyModelKind.cloud) return named;
+    final usage = kapyAi.cloudUsage;
+    return [
+      named,
+      '1 credit',
+      if (latest && usage != null) '${usage.remaining} of ${usage.limit} left',
+    ].join(' · ');
   }
 }
 
@@ -369,6 +460,9 @@ class _Answer extends StatelessWidget {
   const _Answer({
     required this.message,
     required this.sources,
+    required this.source,
+    required this.period,
+    required this.total,
     required this.noteTitle,
     required this.onOpenNote,
     required this.now,
@@ -377,6 +471,13 @@ class _Answer extends StatelessWidget {
 
   final KapyMessage message;
   final String sources;
+
+  /// What wrote it, and what it cost.
+  final String? source;
+
+  /// The period the chat is about, and how many notes it holds now.
+  final RecapPeriod? period;
+  final int? total;
   final String? Function(String noteId) noteTitle;
   final ValueChanged<String> onOpenNote;
   final DateTime now;
@@ -385,7 +486,7 @@ class _Answer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final source = message.model?.sourceLine(kapyDeviceWord);
+    final source = this.source;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -398,6 +499,8 @@ class _Answer extends StatelessWidget {
           const SizedBox(height: 10),
           _NotesRead(
             message: message,
+            period: period,
+            total: total,
             noteTitle: noteTitle,
             onOpenNote: onOpenNote,
             now: now,
@@ -427,6 +530,7 @@ class _Answer extends StatelessWidget {
                 Flexible(
                   child: Text(
                     source,
+                    key: const ValueKey('kapy-ai-source'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: kapyText(11.5, 16, palette.textTertiary),
@@ -441,15 +545,22 @@ class _Answer extends StatelessWidget {
 }
 
 /// "Read 3 of the 7 matching notes", and the three, each opening its note.
+/// In a chat about a period, it says the period too: "Read 3 of the 14 notes
+/// from 17–23 Nov" where the answer could read any of them, and "Read 12 of
+/// the 31 matching notes from November" where its words narrowed them.
 class _NotesRead extends StatelessWidget {
   const _NotesRead({
     required this.message,
+    required this.period,
+    required this.total,
     required this.noteTitle,
     required this.onOpenNote,
     required this.now,
   });
 
   final KapyMessage message;
+  final RecapPeriod? period;
+  final int? total;
   final String? Function(String noteId) noteTitle;
   final ValueChanged<String> onOpenNote;
   final DateTime now;
@@ -459,9 +570,14 @@ class _NotesRead extends StatelessWidget {
     final palette = context.palette;
     final read = message.read.length;
     final matching = message.matching < read ? read : message.matching;
+    final period = this.period;
+    final total = this.total;
+    final narrowed = period == null || (total != null && matching < total);
+    final kind = narrowed ? 'matching note' : 'note';
+    final from = period == null ? '' : ' from ${period.label}';
     final heading = read == matching
-        ? 'Read the ${matching == 1 ? 'one matching note' : '$matching matching notes'}'
-        : 'Read $read of the $matching matching notes';
+        ? 'Read the ${matching == 1 ? 'one $kind' : '$matching ${kind}s'}$from'
+        : 'Read $read of the $matching ${kind}s$from';
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.all(color: palette.separator),
@@ -735,16 +851,16 @@ class KapyAiNotice extends StatelessWidget {
       ),
       KapyLimitReached(:final resetsAt, :final fallback) => (
         KapyIcons.scheduleRounded,
-        'No answers left until ${resetsAt.day} '
+        'No credits left until ${resetsAt.day} '
             '${kapyMonths[resetsAt.month - 1].substring(0, 3)}',
         [
           // The allowance is the account's own (a trial gets fewer than a
           // subscription), so it is read, never assumed.
           [
             if (ai.cloudUsage case CloudUsage(:final limit))
-              'Kapy AI Cloud gives $limit answers a month.'
+              'Kapy AI Cloud gives $limit credits a month.'
             else
-              'Kapy AI Cloud’s answers for the month are used up.',
+              'Kapy AI Cloud’s credits for the month are used up.',
             'Until then, ${fallback == null ? 'your accounts' : '${named(fallback)} and your accounts'} '
                 'still answer.',
           ].join(' '),

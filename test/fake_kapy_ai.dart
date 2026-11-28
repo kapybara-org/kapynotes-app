@@ -1,4 +1,5 @@
 import 'package:kapy_notes/ai/kapy_ai.dart';
+import 'package:kapy_notes/recaps/recap_period.dart';
 
 /// Kapy AI with nothing behind it: every state the UI can be in is a field a
 /// test sets, and every member the UI can call is written down in [calls].
@@ -217,12 +218,13 @@ class FakeKapyAi extends KapyAi {
     String question, {
     String? noteId,
     KapyRecordingRef? recording,
+    RecapPeriod? period,
   }) async {
-    calls.add(
-      recording == null
-          ? 'ask:$question:${noteId ?? ''}'
-          : 'askRecording:$question:${recording.hash}',
-    );
+    calls.add(switch ((recording, period)) {
+      (final recording?, _) => 'askRecording:$question:${recording.hash}',
+      (_, final period?) => 'askPeriod:$question:${period.label}',
+      _ => 'ask:$question:${noteId ?? ''}',
+    });
     if (recording != null) {
       // As the engine does: a question about a recording goes on its chat,
       // or starts one.

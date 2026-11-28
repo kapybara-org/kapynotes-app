@@ -543,7 +543,7 @@ void main() {
       addTearDown(controller.dispose);
       await tester.pumpWidget(_harness(_panel(ai, controller)));
 
-      expect(find.text('Kapy AI Cloud'), findsWidgets);
+      expect(find.text('Kapy AI Cloud · 1 credit'), findsOneWidget);
       expect(find.text('Codex on this Mac'), findsOneWidget);
       expect(find.text('Claude Code on this Mac'), findsOneWidget);
       expect(find.text('Through your key'), findsOneWidget);
@@ -593,7 +593,7 @@ void main() {
         ),
       );
 
-      expect(find.text('412 of 500 answers left this month'), findsOneWidget);
+      expect(find.text('412 of 500 credits left this month'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('kapy-ai-model-cloud-cloud')));
       expect(ai.calls, ['pickModel:cloud']);
     });
@@ -1067,7 +1067,7 @@ void main() {
         ),
       );
 
-      expect(find.text('No answers left until 1 Dec'), findsOneWidget);
+      expect(find.text('No credits left until 1 Dec'), findsOneWidget);
       await tester.tap(find.text('Use Apple Intelligence'));
       expect(ai.calls, ['answerWith:apple']);
     });
@@ -1092,7 +1092,7 @@ void main() {
         ai: ai,
       );
 
-      expect(find.textContaining('gives 50 answers a month'), findsOneWidget);
+      expect(find.textContaining('gives 50 credits a month'), findsOneWidget);
       expect(find.textContaining('500'), findsNothing);
     });
 
@@ -1111,7 +1111,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('kapy-ai-model-button')));
       await tester.pump();
 
-      expect(find.text('41 of 50 answers left this month'), findsOneWidget);
+      expect(find.text('41 of 50 credits left this month'), findsOneWidget);
     });
 
     testWidgets('offline: Use the device, or Try again', (tester) async {

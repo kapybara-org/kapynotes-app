@@ -1,5 +1,9 @@
 import 'package:flutter/foundation.dart';
 
+import '../recaps/recap_period.dart';
+import 'answer_engine.dart';
+import 'period_scope.dart';
+
 /// The shared contract between Kapy AI's engine (lib/ai/) and its UI
 /// (lib/ui/kapy_ai/). The engine implements [KapyAi]; the UI only reads
 /// these types and calls these members.
@@ -277,6 +281,7 @@ class KapyChat {
     DateTime? modelAt,
     this.recording,
     this.recap,
+    this.scope,
   }) : titleAt = titleAt ?? createdAt,
        modelAt = modelAt ?? createdAt;
 
@@ -303,6 +308,12 @@ class KapyChat {
   /// carries it. A chat with one is a recap, opened as a story and kept out
   /// of the chat list.
   final Map<String, Object?>? recap;
+
+  /// The period this chat is about, which it reads instead of every note:
+  /// its notes, tasks and voice notes, and its recap once made. Null for a
+  /// chat about all the notes. Kept in the chat's sealed record, which
+  /// builds that do not know it keep as is.
+  final RecapPeriod? scope;
 }
 
 /// What holds up the last question, drawn inline under it (kapy-ai-7/8).
@@ -345,7 +356,7 @@ class KapyDownloading extends KapyPending {
   final int total;
 }
 
-/// "No answers left until 1 Dec". Use the device model.
+/// "No credits left until 1 Dec". Use the device model.
 class KapyLimitReached extends KapyPending {
   const KapyLimitReached({required this.resetsAt, this.fallback});
   final DateTime resetsAt;
@@ -441,6 +452,20 @@ abstract class KapyAi extends ChangeNotifier {
   /// Null on Free, and until the server has answered once.
   CloudUsage? get cloudUsage;
 
+  /// Whether the account has Pro through its trial, which still offers
+  /// Upgrade.
+  bool get onTrial => false;
+
+  /// What stops [model] from making a recap now: Kapy AI Cloud locked, or an
+  /// account of the person's own that can't answer. Null when nothing does.
+  /// Consent is never among them, because the recap drawer shows its own
+  /// privacy line beside Create recap.
+  KapyPending? recapHold(KapyModel model) => null;
+
+  /// What a recap's calls go through with [model]: the same engine its
+  /// answers use. Null where there is none.
+  AnswerEngine? recapEngine(KapyModel model) => null;
+
   /// Every account offered on this platform: Codex and Claude Code on
   /// desktop only (and only while their switches are on), OpenRouter
   /// everywhere.
@@ -477,11 +502,25 @@ abstract class KapyAi extends ChangeNotifier {
   /// on the current chat when that chat is about the same recording, and
   /// starts one that is otherwise. Its answers read the recording's
   /// transcript, with times and speakers, rather than the notes.
+  ///
+  /// [period] is the composer's period chip: the question goes on the
+  /// current chat when that chat is about the same period, or about none
+  /// when [period] is null, and starts one that is otherwise. A chat about a
+  /// period reads only what the period holds ([periods]).
   Future<void> ask(
     String question, {
     String? noteId,
     KapyRecordingRef? recording,
+    RecapPeriod? period,
   });
+
+  /// Gathers what a period holds, for a chat about it. Home sets it, since
+  /// it holds the notes' days, the tasks, the tags and the folders. Null
+  /// reads nothing, and a chat about a period cannot be answered.
+  KapyPeriodReader? periods;
+
+  /// What [period] holds now, for the empty chat and an answer's card.
+  KapyPeriodRead? readPeriod(RecapPeriod period) => periods?.call(period);
 
   /// The empty chat's third suggestion when opened from [noteId], drawn from
   /// that note ("Draft the weekly report email"). Null shows only the two

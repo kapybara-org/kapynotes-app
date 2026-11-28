@@ -59,7 +59,9 @@ import '../speech/speech_api.dart';
 import '../speech/speech_errors.dart';
 import 'voice_consent_sheet.dart';
 import '../ai/kapy_ai.dart';
+import '../ai/period_scope.dart';
 import '../ai/recording_translation.dart' show RecentLanguages;
+import '../recaps/recap_period.dart';
 import '../sync/aead.dart';
 import '../sync/sync_api.dart';
 import '../sync/account.dart';
@@ -147,6 +149,17 @@ const double kCrampedPageHeight = 240;
 /// leaves a cramped page; see [kCrampedPageHeight].
 bool isCrampedPage(Size size, double keyboardInset) =>
     keyboardInset > 0 && size.height - keyboardInset < kCrampedPageHeight;
+
+/// Opens Kapy AI about [period], as the recap drawer's Ask Kapy AI does: a
+/// sheet over Home on a phone, and the panel beside the note on a desktop.
+/// It goes back to the chat about [period] on screen, or starts one.
+///
+/// [context] must be under Home, such as the row the drawer was opened from,
+/// rather than a route over it. False where nothing opened: no Home above
+/// it, Kapy AI off or not in this build, or [period] can't be read here.
+bool openKapyAiForPeriod(BuildContext context, RecapPeriod period) =>
+    context.findAncestorStateOfType<_HomePageState>()?._askAbout(period) ??
+    false;
 
 /// What the toast says as notes go: [deleted] of the reader's own, which
 /// go for good, and [removed] that somebody else shares, which only leave
@@ -538,6 +551,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (_taskController != null) unawaited(_loadTaskFolds());
     _kapyAiWasOn = _kapyAiOn;
     _kapyAi?.addListener(_onKapyAi);
+    _kapyAi?.periods = _readPeriod;
     if (widget.titleModel case final model?) {
       _namer = NoteNamer(
         notes: widget.notes,
@@ -633,6 +647,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _desktopShortcutFocus.dispose();
     _newFolder.dispose();
     _kapyAi?.removeListener(_onKapyAi);
+    if (_kapyAi?.periods == _readPeriod) _kapyAi?.periods = null;
     _kapyPanel.dispose();
     _pageSteps.dispose();
     _taskSteps.dispose();
@@ -3644,6 +3659,40 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       ? 'Search notes and folders'
       : 'Search';
 
+  /// What [period] holds for a chat about it, read as its recap reads it:
+  /// the notes by the day the list shows them on, the tasks and the tags.
+  KapyPeriodRead? _readPeriod(RecapPeriod period) {
+    final tags = widget.tags;
+    final folders = widget.folders;
+    if (tags == null || folders == null) return null;
+    return KapyPeriodRead.gather(
+      period,
+      store: widget.notes,
+      tasks:
+          _taskController?.read() ??
+          TaskBoard.read(
+            entries: const [],
+            notes: const [],
+            docOf: (_) => null,
+          ),
+      tags: tags,
+      folders: folders.tree,
+      displayTime: widget.prefs.displayTime,
+      ownDay: widget.days == null ? null : _ownDayOf,
+    );
+  }
+
+  /// [openKapyAiForPeriod].
+  bool _askAbout(RecapPeriod period) {
+    final ai = _kapyAi;
+    if (ai == null || !ai.enabled || ai.readPeriod(period) == null) {
+      return false;
+    }
+    if (ai.current?.scope != period) ai.newChat();
+    _openKapyAi(period: period);
+    return true;
+  }
+
   /// Opens the panel, or the phone's sheet, from the note on screen so its
   /// chip is attached. With [question] it first starts a new chat and asks
   /// it there, which is how ⌘K's Ask row and its Tab reach Kapy AI. On a
@@ -3651,16 +3700,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// note; everything else opens it at full height. [typing] opens it with
   /// its field ready to type in, keyboard up, as the bar's New chat does.
   /// With [aboutNote] false the chat is about no note, whichever is open
-  /// behind: the Kapy AI tab's + is not a note's own button.
+  /// behind: the Kapy AI tab's + is not a note's own button. With [period]
+  /// it is about that period instead, and opens at full height.
   void _openKapyAi({
     String? question,
     bool fromNote = false,
     bool typing = false,
     bool aboutNote = true,
+    RecapPeriod? period,
   }) {
     final ai = _kapyAi;
     if (ai == null || !ai.enabled) return;
-    final shown = aboutNote ? _shownNote(_selectedId)?.id : null;
+    final shown = aboutNote && period == null
+        ? _shownNote(_selectedId)?.id
+        : null;
     final noteId = shown != null && _kapyNoteTitle(shown) != null
         ? shown
         : null;
@@ -3670,11 +3723,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       unawaited(ai.ask(question, noteId: noteId));
     }
     if (!_usesCompactLayout) {
-      _kapyPanel.open(noteId: noteId, draft: draft);
+      _kapyPanel.open(noteId: noteId, period: period, draft: draft);
       return;
     }
     FocusManager.instance.primaryFocus?.unfocus();
-    _kapyPanel.open(noteId: noteId, draft: draft);
+    _kapyPanel.open(noteId: noteId, period: period, draft: draft);
     unawaited(
       showKapyAiSheet(
         context,

@@ -52,6 +52,28 @@ class RetrievalBudget {
       RetrievalBudget(notes: 12, chars: chars, charsPerNote: chars);
 }
 
+/// What a chat about a period reads instead of every note: the period's
+/// notes, voice notes and tasks, gathered on the device as a recap of it
+/// gathers them, and the recap itself once it is made.
+class RetrievalScope {
+  const RetrievalScope({
+    required this.notes,
+    required this.total,
+    this.overview,
+  });
+
+  /// The period's visible notes and voice notes, each with its note's id,
+  /// and its tasks as one note with none.
+  final List<ReadNote> notes;
+
+  /// How many notes the period holds: "Read 3 of the 14 notes".
+  final int total;
+
+  /// The period's recap, read first whatever the question, as one of the
+  /// notes.
+  final ReadNote? overview;
+}
+
 /// A note shorter than this is not worth reading once the budget is nearly
 /// spent: a few lines from the middle of the twelfth note mislead more than
 /// they inform.
@@ -73,42 +95,95 @@ const int _maxTitleChars = 200;
 ///
 /// [noteId] is the "This note" chip: read first whatever it holds, unless it
 /// is hidden, and on its own when nothing else matches.
+///
+/// With [scope], the question reads the period's material alone, ranked the
+/// same way against it, the recap first. A period is when, so the question's
+/// time words weigh nothing. When none of its words are in the period, every
+/// note of it is as good as another, and the latest are read first.
 Retrieval retrieve({
   required NotesStore store,
   required String question,
   required RetrievalBudget budget,
   String? noteId,
+  RetrievalScope? scope,
 }) {
   final terms = questionTerms(question);
+  if (scope != null) return _withinScope(store, scope, terms, budget);
   final window = _editedWithin(question, store.now());
-  final scored = <({Note note, int score})>[];
+  final scored = <({ReadNote note, int score})>[];
   for (final note in [...store.notes, ...store.archivedNotes]) {
     if (note.isHidden || note.id == noteId) continue;
-    var score = _score(note, terms);
+    var score = _score(note.title, note.searchText, terms);
     if (window != null &&
         !note.updatedAt.isBefore(window.from) &&
         note.updatedAt.isBefore(window.to)) {
       score += 2;
     }
-    if (score > 0) scored.add((note: note, score: score));
+    if (score > 0) scored.add((note: _asRead(note), score: score));
   }
-  scored.sort((a, b) {
-    final byScore = b.score.compareTo(a.score);
-    return byScore != 0
-        ? byScore
-        : b.note.updatedAt.compareTo(a.note.updatedAt);
-  });
+  _rank(scored);
 
   final chip = noteId == null ? null : _visible(store, noteId);
-  final ranked = [?chip, for (final entry in scored) entry.note];
+  final ranked = [
+    if (chip != null) _asRead(chip),
+    for (final entry in scored) entry.note,
+  ];
+  return Retrieval(notes: _fit(ranked, budget), matching: ranked.length);
+}
 
+Retrieval _withinScope(
+  NotesStore store,
+  RetrievalScope scope,
+  List<String> terms,
+  RetrievalBudget budget,
+) {
+  final scored = <({ReadNote note, int score})>[
+    for (final note in scope.notes)
+      if (note.id.isEmpty || _visible(store, note.id) != null)
+        (note: note, score: _score(note.title, note.text, terms)),
+  ];
+  final matched = [
+    for (final entry in scored)
+      if (entry.score > 0) entry,
+  ];
+  final ranked = matched.isEmpty ? scored : matched;
+  _rank(ranked);
+  final notes = {
+    for (final entry in ranked)
+      if (entry.note.id.isNotEmpty) entry.note.id,
+  };
+  return Retrieval(
+    notes: _fit([
+      ?scope.overview,
+      for (final entry in ranked) entry.note,
+    ], budget),
+    matching: matched.isEmpty ? scope.total : notes.length,
+  );
+}
+
+/// Best first, the latest first among equals.
+void _rank(List<({ReadNote note, int score})> scored) => scored.sort((a, b) {
+  final byScore = b.score.compareTo(a.score);
+  return byScore != 0 ? byScore : b.note.edited.compareTo(a.note.edited);
+});
+
+ReadNote _asRead(Note note) => ReadNote(
+  id: note.id,
+  title: note.title,
+  text: note.searchText,
+  edited: note.updatedAt,
+);
+
+/// [ranked], from the first, as many as [budget] takes, each cut to the room
+/// left.
+List<ReadNote> _fit(List<ReadNote> ranked, RetrievalBudget budget) {
   final read = <ReadNote>[];
   var spent = 0;
   for (final note in ranked) {
     if (read.length == budget.notes) break;
     final room = budget.chars - spent;
     if (room < _minimumUsefulChars) break;
-    var text = note.searchText;
+    var text = note.text;
     final cap = room < budget.charsPerNote ? room : budget.charsPerNote;
     if (text.length > cap) text = text.substring(0, cap);
     spent += text.length;
@@ -119,11 +194,11 @@ Retrieval retrieve({
             ? note.title.substring(0, _maxTitleChars)
             : note.title,
         text: text,
-        edited: note.updatedAt,
+        edited: note.edited,
       ),
     );
   }
-  return Retrieval(notes: read, matching: ranked.length);
+  return read;
 }
 
 /// The notes in [notes] that are still there and still not hidden.
@@ -180,11 +255,11 @@ List<String> questionTerms(String question) {
 
 const Set<String> _timeWords = {'today', 'yesterday', 'week'};
 
-int _score(Note note, List<String> terms) {
+int _score(String heading, String text, List<String> terms) {
   if (terms.isEmpty) return 0;
-  final title = note.title.toLowerCase();
+  final title = heading.toLowerCase();
   final lines = [
-    for (final line in note.searchText.split('\n'))
+    for (final line in text.split('\n'))
       line.toLowerCase().replaceAll(_whitespace, ' '),
   ];
   var score = 0;

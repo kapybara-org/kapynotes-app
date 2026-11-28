@@ -154,4 +154,135 @@ void main() {
     store.hide('a');
     expect(readableNotes(store, read).map((note) => note.id), ['b']);
   });
+
+  group('a period', () {
+    ReadNote read(String id, String title, String text, {int daysAgo = 0}) =>
+        ReadNote(
+          id: id,
+          title: title,
+          text: '$title\n$text',
+          edited: testNow.subtract(Duration(days: daysAgo)),
+        );
+
+    test('reads only what the period holds, never a hidden note', () async {
+      final store = await notesWith([
+        noteJson('acme', 'Acme call\npricing'),
+        noteJson('outside', 'Acme pricing from October'),
+        noteJson('hidden', 'Acme secret', hidden: true),
+      ]);
+      final result = retrieve(
+        store: store,
+        question: 'What about Acme pricing?',
+        budget: budget,
+        scope: RetrievalScope(
+          notes: [
+            read('acme', 'Acme call', 'pricing'),
+            read('hidden', 'Acme secret', 'pricing'),
+          ],
+          total: 1,
+        ),
+      );
+      expect(result.notes.map((note) => note.id), ['acme']);
+      expect(result.matching, 1);
+    });
+
+    test('ranks against the question, then reads the latest first', () async {
+      final store = await notesWith([
+        noteJson('a', 'Gym'),
+        noteJson('b', 'Acme'),
+        noteJson('c', 'Acme kickoff'),
+      ]);
+      final scope = RetrievalScope(
+        notes: [
+          read('a', 'Gym', 'legs', daysAgo: 0),
+          read('b', 'Standup', 'Acme deck', daysAgo: 1),
+          read('c', 'Acme kickoff', 'slides', daysAgo: 3),
+          read('', 'Tasks', 'Done:\n- Send the Acme deck'),
+        ],
+        total: 3,
+      );
+      final matched = retrieve(
+        store: store,
+        question: 'Acme',
+        budget: budget,
+        scope: scope,
+      );
+      expect(matched.notes.map((note) => note.title), [
+        'Acme kickoff',
+        'Tasks',
+        'Standup',
+      ]);
+      expect(matched.matching, 2, reason: 'the notes, not the tasks note');
+
+      final any = retrieve(
+        store: store,
+        question: 'What did I get done this week?',
+        budget: budget,
+        scope: scope,
+      );
+      expect(any.notes.map((note) => note.title), [
+        'Gym',
+        'Tasks',
+        'Standup',
+        'Acme kickoff',
+      ], reason: 'no word in it is in the period, so every note is read');
+      expect(any.matching, 3, reason: 'all the notes the period holds');
+    });
+
+    test('a time word does not reach outside the period', () async {
+      final store = await notesWith([noteJson('old', 'Old')]);
+      final result = retrieve(
+        store: store,
+        question: 'What did I write yesterday?',
+        budget: budget,
+        scope: RetrievalScope(
+          notes: [read('old', 'Old', 'words', daysAgo: 30)],
+          total: 1,
+        ),
+      );
+      expect(result.notes.single.id, 'old');
+    });
+
+    test('its recap is read first, as one of the twelve', () async {
+      final store = await notesWith([
+        for (var i = 0; i < 14; i++) noteJson('n$i', 'Note $i'),
+      ]);
+      final result = retrieve(
+        store: store,
+        question: 'Anything',
+        budget: budget,
+        scope: RetrievalScope(
+          notes: [for (var i = 0; i < 14; i++) read('n$i', 'Note $i', 'x')],
+          total: 14,
+          overview: read('', 'Recap · 17–23 Nov', 'TITLE: A calm week'),
+        ),
+      );
+      expect(result.notes, hasLength(budget.notes));
+      expect(result.notes.first.title, 'Recap · 17–23 Nov');
+      expect(result.matching, 14);
+    });
+
+    test('stays within the characters a model reads', () async {
+      final store = await notesWith([
+        for (var i = 0; i < 6; i++) noteJson('n$i', 'Note $i'),
+      ]);
+      final result = retrieve(
+        store: store,
+        question: 'Anything',
+        budget: budget,
+        scope: RetrievalScope(
+          notes: [
+            for (var i = 0; i < 6; i++) read('n$i', 'Note $i', 'x' * 20000),
+          ],
+          total: 6,
+        ),
+      );
+      final chars = result.notes.fold(0, (sum, note) => sum + note.text.length);
+      expect(chars, lessThanOrEqualTo(budget.chars));
+      expect(
+        result.notes.every((note) => note.text.length <= budget.charsPerNote),
+        isTrue,
+      );
+    });
+  });
 }

@@ -109,6 +109,53 @@ class RecapPeriod {
     RecapKind.year => '${first.year}',
   };
 
+  /// As a chat about the period keeps it: its kind and its first and last
+  /// days.
+  Map<String, Object?> toJson() => {
+    'kind': kind.name,
+    'first': _iso(first),
+    'last': _iso(last),
+  };
+
+  /// Null for anything that is not exactly a period as [toJson] writes one:
+  /// a record from another device is not trusted to hold one.
+  static RecapPeriod? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final kind = RecapKind.values.asNameMap()[raw['kind']];
+    final first = _day(raw['first']);
+    final last = _day(raw['last']);
+    if (kind == null || first == null || last == null) return null;
+    final period = RecapPeriod.containing(
+      first,
+      kind,
+      firstWeekday: first.weekday,
+    );
+    return _number(period.first) == _number(first) &&
+            _number(period.last) == _number(last)
+        ? period
+        : null;
+  }
+
+  static String _iso(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-'
+      '${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
+
+  /// A day written as [_iso] does, and only a real one: 30 February is not.
+  static DateTime? _day(Object? raw) {
+    if (raw is! String) return null;
+    final parts = _isoDay.firstMatch(raw);
+    if (parts == null) return null;
+    final day = DateTime(
+      int.parse(parts[1]!),
+      int.parse(parts[2]!),
+      int.parse(parts[3]!),
+    );
+    return _iso(day) == raw ? day : null;
+  }
+
+  static final RegExp _isoDay = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
+
   /// [date]'s calendar day as a number, whole days since 1 January 1970.
   static int _number(DateTime date) =>
       DateTime.utc(date.year, date.month, date.day).millisecondsSinceEpoch ~/

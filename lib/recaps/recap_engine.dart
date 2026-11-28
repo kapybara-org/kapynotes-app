@@ -105,12 +105,13 @@ class RecapEngine {
   }
 
   /// Makes [plan]'s recap with [model] through [engine], sending what
-  /// [budget] allows a call. [digest] gives its numbers, and [timeZone] and
+  /// [budget] allows a call. [digest] gives its numbers, asked once the
+  /// last call is back so a note hidden meanwhile never counts, and [timeZone] and
   /// [firstWeekday] say how its days were worked out. [onPart] hears each
   /// part come back; [stopped] is asked before each call.
   Future<RecapOutcome> make(
     RecapPlan plan, {
-    required RecapDigest digest,
+    required RecapDigest Function() digest,
     required KapyModel model,
     required AnswerEngine engine,
     required RetrievalBudget budget,
@@ -236,7 +237,7 @@ class RecapEngine {
       timeZone: timeZone,
       firstWeekday: firstWeekday,
       madeAt: started,
-      numbers: RecapNumbers.of(digest, material),
+      numbers: RecapNumbers.of(digest(), material),
       fingerprint: material.fingerprint,
       digest: period.kind == RecapKind.month && over && lines.digest.isNotEmpty
           ? lines.digest
