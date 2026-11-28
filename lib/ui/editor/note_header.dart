@@ -302,7 +302,17 @@ class NoteMetaRow extends StatelessWidget {
             decoration: totalLeavesOut
                 ? DashedOutline(
                     palette.textSecondary.withValues(alpha: 0.45),
-                    phone ? AppRadii.pill : 5,
+                    // A phone's ends are round as on a result pill, and stay a
+                    // line's worth when the Total wraps, so the outline never
+                    // becomes an oval that cuts the words.
+                    phone
+                        ? (MediaQuery.textScalerOf(
+                                        context,
+                                      ).scale(quiet.fontSize!) *
+                                      quiet.height! +
+                                  6) /
+                              2
+                        : 5,
                     outset: 3,
                   )
                 : const BoxDecoration(),

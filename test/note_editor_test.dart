@@ -3480,10 +3480,20 @@ void main() {
                       )
                       .decoration
                   as DashedOutline;
+          final line = tester.getRect(
+            find.byKey(const ValueKey('note-edited')),
+          );
+          if (width == 320 && scale == 2) {
+            expect(
+              tester.getSize(find.byKey(const ValueKey('note-total'))).height,
+              greaterThan(line.height * 1.5),
+              reason: 'the Total wraps here',
+            );
+          }
           expect(
             mark.radius,
-            AppRadii.pill,
-            reason: 'pill corners as a result',
+            closeTo(line.height / 2 + 3, 1),
+            reason: 'round ends one line tall, wrapped or not',
           );
         },
       );
