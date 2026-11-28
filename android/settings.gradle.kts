@@ -25,3 +25,4 @@ plugins {
 
 include(":app")
 include(":speech_runtime")
+include(":translation_runtime")

@@ -18,10 +18,11 @@ enum ShortcutAction {
   showDrawings,
   showShared,
   showArchive,
-  nextNote,
-  previousNote,
   goBack,
   goForward,
+  newNoteInNewTab,
+  nextTab,
+  previousTab,
   closeTab,
   reopenTab,
   splitEditor,
@@ -38,6 +39,7 @@ enum ShortcutAction {
   zoomIn,
   zoomOut,
   resetZoom,
+  openCamera,
   insertImage,
   insertVideo,
   insertFile,
@@ -68,10 +70,11 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.showDrawings => 'Go to Drawings',
     ShortcutAction.showShared => 'Go to Shared',
     ShortcutAction.showArchive => 'Go to Archive',
-    ShortcutAction.nextNote => 'Next note',
-    ShortcutAction.previousNote => 'Previous note',
     ShortcutAction.goBack => 'Go back',
     ShortcutAction.goForward => 'Go forward',
+    ShortcutAction.newNoteInNewTab => 'New note in a new tab',
+    ShortcutAction.nextTab => 'Next tab',
+    ShortcutAction.previousTab => 'Previous tab',
     ShortcutAction.closeTab => 'Close tab',
     ShortcutAction.reopenTab => 'Reopen closed tab',
     ShortcutAction.splitEditor => 'Split view',
@@ -88,6 +91,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.zoomIn => 'Zoom in',
     ShortcutAction.zoomOut => 'Zoom out',
     ShortcutAction.resetZoom => 'Reset zoom',
+    ShortcutAction.openCamera => 'Open the camera',
     ShortcutAction.insertImage => 'Add an image',
     ShortcutAction.insertVideo => 'Add a video',
     ShortcutAction.insertFile => 'Attach a file',
@@ -119,11 +123,14 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.showDrawings => 'Open Drawings',
     ShortcutAction.showShared => 'Open the notes shared with you',
     ShortcutAction.showArchive => 'Open Archived Notes',
-    ShortcutAction.nextNote => 'Switch forward through recently used notes',
-    ShortcutAction.previousNote =>
-      'Switch backward through recently used notes',
     ShortcutAction.goBack => 'Show the note you had open before',
     ShortcutAction.goForward => 'Go forward again after going back',
+    ShortcutAction.newNoteInNewTab =>
+      'Start a note in a tab of its own at the end of the row',
+    ShortcutAction.nextTab =>
+      'Move to the open tab on the right, or from the last back to the first',
+    ShortcutAction.previousTab =>
+      'Move to the open tab on the left, or from the first round to the last',
     ShortcutAction.closeTab =>
       'Close the tab you are in. Its note stays in the list',
     ShortcutAction.reopenTab => 'Bring back closed tabs, the last one first',
@@ -149,6 +156,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.zoomIn => 'Make everything in the window one step larger',
     ShortcutAction.zoomOut => 'Make everything in the window one step smaller',
     ShortcutAction.resetZoom => 'Return the window to its usual size',
+    ShortcutAction.openCamera =>
+      'Take a photo or record a video for the note',
     ShortcutAction.insertImage => 'Choose a picture or take a photo',
     ShortcutAction.insertVideo => 'Choose a video to play in the note',
     ShortcutAction.insertFile =>
@@ -403,10 +412,16 @@ class ShortcutPrefs extends ChangeNotifier {
   }
 
   /// What [saved] holds for [action]. Close tab was Close pane until there
-  /// were tabs, on the same keys.
+  /// were tabs, and Next tab and Previous tab were Next note and Previous
+  /// note until they stepped through the tabs, on the same keys.
   static Object? _saved(Map<Object?, Object?> saved, ShortcutAction action) =>
       saved[action.name] ??
-      (action == ShortcutAction.closeTab ? saved['closePane'] : null);
+      switch (action) {
+        ShortcutAction.closeTab => saved['closePane'],
+        ShortcutAction.nextTab => saved['nextNote'],
+        ShortcutAction.previousTab => saved['previousNote'],
+        _ => null,
+      };
 
   /// The defaults [action] has shipped with and since given up.
   ///
@@ -501,6 +516,15 @@ class ShortcutPrefs extends ChangeNotifier {
           meta: useMeta,
           control: !useMeta,
           shift: true,
+        ),
+      ],
+      // Cmd/Ctrl+T, which New note in a new tab answers to now.
+      ShortcutAction.cycleTextStyle => [
+        ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.keyT,
+          physicalKey: PhysicalKeyboardKey.keyT,
+          meta: useMeta,
+          control: !useMeta,
         ),
       ],
       // The first notes-list default. Cmd/Ctrl+S is a better fit because
@@ -722,17 +746,25 @@ class ShortcutPrefs extends ChangeNotifier {
       // follow [useMeta]. Cmd+Tab is the macOS application switcher: the window
       // server takes it before any app is told a key moved, so a Cmd default
       // here would simply never fire. Ctrl+Tab is free on both, and is
-      // already what every tabbed app means by "the next one".
-      ShortcutAction.nextNote => const ShortcutBinding(
+      // already what every tabbed app means by "the next tab".
+      ShortcutAction.nextTab => const ShortcutBinding(
         logicalKey: LogicalKeyboardKey.tab,
         physicalKey: PhysicalKeyboardKey.tab,
         control: true,
       ),
-      ShortcutAction.previousNote => const ShortcutBinding(
+      ShortcutAction.previousTab => const ShortcutBinding(
         logicalKey: LogicalKeyboardKey.tab,
         physicalKey: PhysicalKeyboardKey.tab,
         control: true,
         shift: true,
+      ),
+      // What every tabbed app opens a new tab with. Reopen closed tab keeps
+      // the same key with Shift.
+      ShortcutAction.newNoteInNewTab => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyT,
+        physicalKey: PhysicalKeyboardKey.keyT,
+        meta: useMeta,
+        control: !useMeta,
       ),
       // The same split chord as VS Code. The notes-list toggle originally
       // occupied it, but that default migrated to S and left this free.
@@ -831,10 +863,8 @@ class ShortcutPrefs extends ChangeNotifier {
       // the system-wide keys use: Ctrl+Alt is AltGr on international layouts
       // and opens a terminal on Ubuntu. Windows switches input language on
       // Alt+Shift only when both are let go with no other key pressed, so
-      // Alt+Shift+T leaves the layout alone. Not P for pin: Cmd+Shift+P is the
-      // chord the settings pane's own test rebinds onto, and a default that
-      // occupies it would be refused there by [conflictFor] — see the
-      // defaults-do-not-collide test.
+      // Alt+Shift+T leaves the layout alone. Not P for pin: Cmd+Shift+P opens
+      // the camera.
       ShortcutAction.toggleAlwaysOnTop => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyT,
         physicalKey: PhysicalKeyboardKey.keyT,
@@ -895,6 +925,14 @@ class ShortcutPrefs extends ChangeNotifier {
         meta: useMeta,
         control: !useMeta,
       ),
+      // P for photo: ⌘⇧C is Checklist, and nothing else here holds P.
+      ShortcutAction.openCamera => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyP,
+        physicalKey: PhysicalKeyboardKey.keyP,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
+      ),
       // Shift keeps this distinct from Italic while retaining the mnemonic.
       ShortcutAction.insertImage => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyI,
@@ -919,11 +957,15 @@ class ShortcutPrefs extends ChangeNotifier {
         control: !useMeta,
         shift: true,
       ),
+      // H for heading. T was the first default, until New note in a new tab
+      // took the key every browser opens a tab with. See
+      // [_supersededDefaults].
       ShortcutAction.cycleTextStyle => ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.keyT,
-        physicalKey: PhysicalKeyboardKey.keyT,
+        logicalKey: LogicalKeyboardKey.keyH,
+        physicalKey: PhysicalKeyboardKey.keyH,
         meta: useMeta,
         control: !useMeta,
+        shift: true,
       ),
       ShortcutAction.formatBold => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyB,

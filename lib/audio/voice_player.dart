@@ -249,7 +249,27 @@ class VoicePlayer extends ChangeNotifier {
     }
     // Already on its way. A second press is not a second download.
     if (_openingHash == hash) return;
+    await _open(hash, from: from, start: true);
+  }
 
+  /// Loads [hash] again from where it stands, playing or paused, because the
+  /// file behind it changed: its noise was removed, or put back. Listening
+  /// carries on from the same moment in the other file.
+  Future<void> reopen(String hash) async {
+    if (_activeHash != hash) return;
+    _idle?.cancel();
+    await _open(
+      hash,
+      from: _completed ? Duration.zero : _position,
+      start: _playing,
+    );
+  }
+
+  Future<void> _open(
+    String hash, {
+    required Duration? from,
+    required bool start,
+  }) async {
     final request = ++_request;
     _openingHash = hash;
     _failedHash = null;
@@ -295,9 +315,13 @@ class VoicePlayer extends ChangeNotifier {
 
     _positions = _backend.positions.listen(_onPosition);
     _completions = _backend.completions.listen((_) => _onCompleted());
-    _playing = true;
+    _playing = start;
     _notify();
-    await _backend.play();
+    if (start) {
+      await _backend.play();
+    } else {
+      _startIdleTimer();
+    }
   }
 
   Future<void> pause() async {

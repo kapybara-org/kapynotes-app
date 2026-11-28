@@ -116,6 +116,10 @@ end run
 /// folded notification reads it for the notification's title,
 /// `expand:Recording paused`.
 Future<String?> _act(String device, String action) async {
+  if (action.startsWith('record:')) {
+    return _record(device, action.substring(7));
+  }
+  if (action == 'record-stop') return _stopRecording(device);
   Future<String?> run(String executable, List<String> arguments) async {
     final result = await Process.run(executable, arguments);
     if (result.exitCode == 0) return null;
@@ -483,6 +487,74 @@ Future<String?> _tapAgain(String device) async {
   await _adbShell(device, ['input', 'keyevent', 'KEYCODE_WAKEUP']);
   final tap = await _adbShell(device, ['input', 'tap', ...at]);
   return tap.exitCode == 0 ? null : '${tap.stderr}'.trim();
+}
+
+/// The recording of the device's screen under way, from `record:<name>`
+/// until `record-stop`, and the name it is saved under, as
+/// `build/screenshots/<name>.mp4`.
+({Process process, String name})? _recording;
+
+Future<String?> _record(String device, String name) async {
+  if (!_name.hasMatch(name)) return 'not a recording name: $name';
+  if (_recording case final going?) return 'already recording ${going.name}';
+  await Directory('build/screenshots').create(recursive: true);
+  final process = _isSimulator(device)
+      ? await Process.start('xcrun', [
+          'simctl',
+          'io',
+          device,
+          'recordVideo',
+          '--codec=h264',
+          '--force',
+          'build/screenshots/$name.mp4',
+        ])
+      : await Process.start('adb', [
+          '-s',
+          device,
+          'shell',
+          'screenrecord',
+          '--bit-rate',
+          '8000000',
+          '/sdcard/kapynotes-$name.mp4',
+        ]);
+  _recording = (process: process, name: name);
+  // Both recorders take a moment to begin.
+  await Future<void>.delayed(const Duration(seconds: 2));
+  return null;
+}
+
+Future<String?> _stopRecording(String device) async {
+  final recording = _recording;
+  if (recording == null) return 'nothing is recording';
+  _recording = null;
+  final (:process, :name) = recording;
+  if (_isSimulator(device)) {
+    process.kill(ProcessSignal.sigint);
+    final code = await process.exitCode.timeout(const Duration(seconds: 30));
+    return code == 0 ? null : 'recordVideo ended with $code';
+  }
+  final stop = await Process.run('adb', [
+    '-s',
+    device,
+    'shell',
+    'pkill',
+    '-INT',
+    'screenrecord',
+  ]);
+  if (stop.exitCode != 0) return 'screenrecord: ${stop.stderr}'.trim();
+  await process.exitCode.timeout(const Duration(seconds: 30));
+  // The file is whole only once screenrecord has written its index.
+  await Future<void>.delayed(const Duration(seconds: 1));
+  final file = '/sdcard/kapynotes-$name.mp4';
+  final pull = await Process.run('adb', [
+    '-s',
+    device,
+    'pull',
+    file,
+    'build/screenshots/$name.mp4',
+  ]);
+  await Process.run('adb', ['-s', device, 'shell', 'rm', file]);
+  return pull.exitCode == 0 ? null : '${pull.stderr}'.trim();
 }
 
 /// Saves what [device]'s screen shows as

@@ -29,10 +29,18 @@ abstract class RecordingControls {
   /// [elapsed] is how long the recording is at this moment. While it is
   /// neither [paused] nor [interrupted], the phone counts on from there by
   /// itself, so nothing needs to be sent every second.
+  ///
+  /// [live] is set while the recording is heard and translated live, and
+  /// [phrase] and [heard] are its latest translated phrase and what was said,
+  /// when the person lets the words show on a locked phone. Without them the
+  /// phone shows exactly what it always has.
   Future<void> show({
     required Duration elapsed,
     required bool paused,
     required bool interrupted,
+    bool live = false,
+    String? phrase,
+    String? heard,
   });
 
   /// Takes them away, including any a run that ended without warning left
@@ -79,10 +87,16 @@ class PlatformRecordingControls implements RecordingControls {
     required Duration elapsed,
     required bool paused,
     required bool interrupted,
+    bool live = false,
+    String? phrase,
+    String? heard,
   }) => _call('show', {
     'elapsedMs': elapsed.inMilliseconds,
     'paused': paused,
     'interrupted': interrupted,
+    if (live) 'live': true,
+    'phrase': ?phrase,
+    'heard': ?heard,
   });
 
   @override

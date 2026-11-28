@@ -302,6 +302,10 @@ class KapyIcons {
     0xE031,
     HugeIcons.strokeRoundedImage01,
   );
+  static const mediaOutlined = KapyIconData(
+    0xE0F5,
+    HugeIcons.strokeRoundedImagePlay,
+  );
   static const infoOutlined = KapyIconData(
     0xE032,
     HugeIcons.strokeRoundedInformationCircle,
@@ -339,6 +343,10 @@ class KapyIcons {
     HugeIcons.strokeRoundedSidebarLeft,
   );
   static const micRounded = KapyIconData(0xE03D, HugeIcons.strokeRoundedMic01);
+  static const voiceIdRounded = KapyIconData(
+    0xE0F4,
+    HugeIcons.strokeRoundedVoiceId,
+  );
   static const micOffRounded = KapyIconData(
     0xE0EE,
     HugeIcons.strokeRoundedMicOff01,
