@@ -101,12 +101,21 @@ class _KapyAiPageState extends State<KapyAiPage> {
                   focusNode: _searchFocus,
                   textInputAction: TextInputAction.search,
                   onTapOutside: (_) => _searchFocus.unfocus(),
-                  style: TextStyle(fontSize: 16, color: palette.textPrimary),
+                  // The well's own placeholder line, so it is the height
+                  // and grey Notes' and Folders' are (KAP-462).
+                  style: uiStyle(
+                    AppTypeScale.row,
+                    22,
+                    FontWeight.w400,
+                    palette.textPrimary,
+                  ),
                   decoration: InputDecoration.collapsed(
                     hintText: 'Search chats',
-                    hintStyle: TextStyle(
-                      fontSize: 16,
-                      color: palette.textTertiary,
+                    hintStyle: uiStyle(
+                      AppTypeScale.row,
+                      22,
+                      FontWeight.w400,
+                      palette.textSecondary,
                     ),
                   ),
                 ),

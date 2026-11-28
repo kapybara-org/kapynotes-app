@@ -5676,7 +5676,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  PhoneListTitle(title: 'Folders', trailing: _phoneAccount()),
+                  PhoneListTitle(
+                    title: 'Folders',
+                    trailing: _phoneAccount(),
+                    handwritten: true,
+                  ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
                     child: _phoneFolderTiles(),
@@ -5934,7 +5938,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   Widget _phoneAccount() => AccountAvatar(
     key: const ValueKey('phone-account'),
     label: 'Settings',
-    target: 44,
+    target: PhoneTitleBar.avatarTarget,
     user: widget.account?.user,
     onPressed: _showSettings,
   );
@@ -5980,7 +5984,11 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : _phoneHome
           ? HiddenWhileTurning(child: _phoneHomeHeader())
           : tree
-          ? PhoneListTitle(title: 'Folders', trailing: _phoneAccount())
+          ? PhoneListTitle(
+              title: 'Folders',
+              trailing: _phoneAccount(),
+              handwritten: true,
+            )
           : PhoneListTitle(
               title: folder?.name ?? _listTitle,
               count: folder != null

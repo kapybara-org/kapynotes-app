@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
@@ -761,8 +764,53 @@ class PhoneSpaces extends StatefulWidget {
   State<PhoneSpaces> createState() => _PhoneSpacesState();
 }
 
-class _PhoneSpacesState extends State<PhoneSpaces> {
+class _PhoneSpacesState extends State<PhoneSpaces>
+    with SingleTickerProviderStateMixin {
   final _bar = GlobalKey();
+  final _page = GlobalKey();
+
+  /// The tab left, as it was last drawn, fading out over the one chosen. The
+  /// header frame and the paper are the same on every tab, so only what
+  /// differs between them changes (KAP-462).
+  ui.Image? _leaving;
+  late final _fade =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 150),
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) _dropLeaving();
+      });
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    _leaving?.dispose();
+    super.dispose();
+  }
+
+  void _dropLeaving() {
+    final leaving = _leaving;
+    if (leaving == null) return;
+    setState(() => _leaving = null);
+    leaving.dispose();
+  }
+
+  void _select(PhoneTab tab) {
+    if (tab != widget.tab && !MediaQuery.disableAnimationsOf(context)) {
+      final page = _page.currentContext?.findRenderObject();
+      // Taken between frames, so the page is as it was last drawn; a debug
+      // build skips the fade on the rare tap that lands mid-repaint.
+      if (page is RenderRepaintBoundary &&
+          !(kDebugMode && page.debugNeedsPaint)) {
+        _leaving?.dispose();
+        _leaving = page.toImageSync(
+          pixelRatio: View.of(context).devicePixelRatio,
+        );
+        _fade.forward(from: 0);
+      }
+    }
+    widget.onSelected(tab);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -792,7 +840,23 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
-      body: widget.child,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          RepaintBoundary(key: _page, child: widget.child),
+          if (_leaving case final leaving?)
+            IgnorePointer(
+              child: FadeTransition(
+                opacity: ReverseAnimation(_fade),
+                child: RawImage(
+                  image: leaving,
+                  scale: View.of(context).devicePixelRatio,
+                  fit: BoxFit.fill,
+                ),
+              ),
+            ),
+        ],
+      ),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.fromLTRB(16, 0, 16, PhoneSpaces._lift(context)),
         child: Row(
@@ -820,7 +884,7 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
                           label: item.label,
                           selected: item.to == widget.tab,
                           dot: item.to == PhoneTab.folders && widget.foldersDot,
-                          onPressed: () => widget.onSelected(item.to),
+                          onPressed: () => _select(item.to),
                         ),
                       ),
                   ],
