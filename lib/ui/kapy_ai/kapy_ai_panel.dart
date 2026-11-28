@@ -418,9 +418,9 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: kapyText(
-                      17,
-                      22,
-                      palette.textPrimary,
+                      AppTypeScale.title,
+                      20,
+                      palette.textHeading,
                       weight: FontWeight.w600,
                     ),
                   ),
@@ -444,7 +444,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                             15,
                             20,
                             palette.textSecondary,
-                            weight: FontWeight.w500,
+                            weight: FontWeight.w400,
                           ),
                         ),
                       ),
@@ -583,19 +583,16 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                   _chats ? 'Chats' : 'Kapy AI',
                   maxLines: 1,
                   style: docked
-                      ? kapyText(
-                          13,
-                          18,
-                          palette.textPrimary,
-                          weight: FontWeight.w500,
-                        )
-                      : TextStyle(
-                          fontFamily: 'Shantell Sans',
-                          fontSize: 17,
-                          height: 22 / 17,
-                          fontWeight: AppWeight.font(AppWeight.section),
-                          fontVariations: AppWeight.wght(AppWeight.section),
+                      ? handTitle(
+                          size: 17,
+                          line: 22,
                           color: palette.textPrimary,
+                        )
+                      : kapyText(
+                          AppTypeScale.title,
+                          20,
+                          palette.textHeading,
+                          weight: FontWeight.w600,
                         ),
                 ),
               ),
@@ -708,7 +705,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
               decoration: BoxDecoration(
                 color: palette.editorBackground,
                 border: Border.all(color: palette.separator, width: 1.5),
-                borderRadius: BorderRadius.circular(AppRadii.dialog),
+                borderRadius: BorderRadius.circular(AppRadii.surface),
               ),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
@@ -847,7 +844,7 @@ class _ScopeChip extends StatelessWidget {
       padding: const EdgeInsets.only(left: 7, right: 3),
       decoration: BoxDecoration(
         color: palette.kapyHighlight,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
+        borderRadius: BorderRadius.circular(AppRadii.control),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -993,7 +990,6 @@ class KapyAiToolbarButton extends StatelessWidget {
     this.radius = 10,
     this.iconSize = 17,
     this.trailingGap = 6,
-    this.divided = false,
     this.showsOpen = true,
   });
 
@@ -1008,10 +1004,6 @@ class KapyAiToolbarButton extends StatelessWidget {
   /// The space before the next action, kept inside so a hidden button takes
   /// its gap with it.
   final double trailingGap;
-
-  /// Whether a hairline sets it apart from the actions before it, as at the
-  /// end of the page's bar. The hairline hides with the button.
-  final bool divided;
 
   /// Whether it turns tonal while the panel is open. A phone's sheet covers
   /// the note instead, and its button stays a bare icon (M10).
@@ -1038,21 +1030,7 @@ class KapyAiToolbarButton extends StatelessWidget {
       );
       return Padding(
         padding: EdgeInsets.only(right: trailingGap),
-        child: divided
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 1,
-                    height: 16,
-                    child: ColoredBox(color: palette.controlBorder),
-                  ),
-                  const SizedBox(width: 8),
-                  button,
-                ],
-              )
-            : button,
+        child: button,
       );
     },
   );
@@ -1092,9 +1070,7 @@ Future<void> showKapyAiSheet(
     routeSettings: typing ? const TypingPopupSettings() : null,
     backgroundColor: Colors.transparent,
     elevation: 0,
-    barrierColor: palette.brightness == Brightness.dark
-        ? const Color(0xA30C0B09)
-        : palette.scrim,
+    barrierColor: palette.scrim,
     builder: (_) =>
         _KapyAiSheet(rest: rest, statusBar: statusBar, panel: panel),
   );

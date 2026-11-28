@@ -14,7 +14,7 @@ import 'task_details_sheet.dart';
 
 /// The Tasks boards' colours (KAPY-62, row D), each the nearest of the
 /// palette's own. In dark, the few the palette has no role for are steps off
-/// the card, worked out so Riverbank dark keeps the colours it was drawn in.
+/// the card, worked out from the neutral ladder's steps.
 class TaskInk {
   const TaskInk._({
     required this.card,
@@ -62,7 +62,7 @@ class TaskInk {
     return TaskInk._(
       card: palette.wellBackground,
       raised: palette.cardBackground,
-      lifted: palette.surfaceBackground,
+      lifted: palette.sidebarBackground,
       rowHover: palette.hover,
       button: palette.controlBackground,
       chip: palette.selectedBackground,
@@ -111,8 +111,8 @@ TextStyle taskText(
 ]) => uiStyle(size, line, FontWeight.w400, color, axis: weight);
 
 TextStyle _mono(Color color) => TextStyle(
-  fontFamily: AppFonts.mono,
-  fontFamilyFallback: AppFonts.monoFallback,
+  fontFamily: AppFonts.ui,
+  fontFamilyFallback: AppFonts.uiFallback,
   fontSize: 11,
   height: 14 / 11,
   color: color,

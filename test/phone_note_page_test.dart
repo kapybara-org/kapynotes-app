@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show kLongPressTimeout;
+import 'package:flutter/rendering.dart' show RenderAnimatedOpacity;
 import 'package:flutter/semantics.dart'
     show CustomSemanticsAction, SemanticsAction, SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
@@ -24,13 +25,14 @@ import 'package:kapy_notes/sync/account.dart';
 import 'package:kapy_notes/sync/doc_store.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/sync/sync_state.dart';
-import 'package:kapy_notes/ui/day_strip.dart' show DayPicker;
+import 'package:kapy_notes/ui/day_strip.dart' show DayPicker, DayStrip;
 import 'package:kapy_notes/ui/day_tabs_row.dart' show DayTabsRow;
 import 'package:kapy_notes/ui/editor/note_editor.dart'
     show NoteEditor, NoteEditorState;
 import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/home_page.dart' show HomePage;
+import 'package:kapy_notes/ui/page_turn.dart' show PageTurn;
 import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
@@ -1735,7 +1737,7 @@ void main() {
         ('pin', 'Pin note'),
         ('share', 'Share note'),
         ('folder', 'Move to folder…'),
-        ('tags', 'Tags'),
+        ('tags', 'Tags…'),
         ('hide', 'Move to Hidden Notes'),
         ('archive', 'Archive note'),
         ('delete', 'Delete note…'),
@@ -2300,6 +2302,305 @@ void main() {
 
       await back(tester, swipe: true);
       expect(header, findsNothing);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+  });
+
+  group('a day turn (KAP-429)', () {
+    Future<void> turn(WidgetTester tester, Offset from, double dx) async {
+      await tester.timedDragFrom(
+        from,
+        Offset(dx, 0),
+        const Duration(milliseconds: 400),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Offset onHeader(WidgetTester tester) =>
+        tester.getCenter(find.byKey(const ValueKey('page-day'))) +
+        const Offset(60, 0);
+    Offset onText(WidgetTester tester) =>
+        tester.getCenter(find.byType(NoteEditor)) + const Offset(0, 120);
+
+    void keyboardDown() => FocusManager.instance.primaryFocus?.unfocus();
+
+    testWidgets('a drag on the header turns to the day before and after, as '
+        'the week picks them, in place, so Back still goes Home', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      await turn(tester, onHeader(tester), 200);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+
+      await turn(tester, onHeader(tester), 200);
+      expect(openNoteBody(tester), startsWith('Gym plan'));
+      expect(find.byKey(const ValueKey('day-tabs')), findsOneWidget);
+
+      await turn(tester, onHeader(tester), -200);
+      await turn(tester, onHeader(tester), -200);
+      expect(openNoteBody(tester), startsWith('Errands'));
+
+      await turn(tester, onHeader(tester), -200);
+      expect(openNoteBody(tester), isEmpty);
+      expect(find.text('Start typing…'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('page-day')),
+          matching: find.text('20'),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(header, findsNothing);
+      expect(find.widgetWithText(NoteRow, 'Call with Arjun'), findsOneWidget);
+    });
+
+    testWidgets('the note follows the finger under a header that stays put, '
+        'with the day coming in beside it, which becomes the page as it was '
+        'drawn', (tester) async {
+      seed();
+      await pump(tester);
+      keyboardDown();
+      await tester.pumpAndSettle();
+      final left = tester.getTopLeft(header).dx;
+      final note = tester.getTopLeft(find.byType(NoteEditor)).dx;
+      final drag = await tester.startGesture(onHeader(tester));
+      await drag.moveBy(const Offset(30, 0));
+      await drag.moveBy(const Offset(70, 0));
+      await tester.pump();
+      expect(header, findsOneWidget);
+      expect(tester.getTopLeft(header).dx, left);
+      expect(tester.getTopLeft(find.byType(NoteEditor).first).dx, isNot(note));
+      expect(
+        tester
+            .widgetList<NoteEditor>(find.byType(NoteEditor))
+            .map((editor) => editor.initialBody.split('\n').first),
+        containsAll(['Call with Arjun', 'Standup notes']),
+      );
+      final editors = tester
+          .stateList<NoteEditorState>(find.byType(NoteEditor))
+          .toList();
+      expect(editors, hasLength(2));
+      await drag.moveBy(const Offset(60, 0));
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(
+        tester.state<NoteEditorState>(find.byType(NoteEditor)),
+        isIn(editors),
+        reason: 'the page coming in is kept, not drawn again',
+      );
+    });
+
+    testWidgets("once a turn is let go, the week's fill slides to the day "
+        'it turns to, and the week slides only into another week', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      final fill = find.byKey(const ValueKey('day-strip-fill'));
+      double x(Finder finder) => tester.getCenter(finder).dx;
+      await tester.timedDragFrom(
+        onHeader(tester),
+        const Offset(200, 0),
+        const Duration(milliseconds: 400),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(x(fill), allOf(lessThan(x(day(19))), greaterThan(x(day(18)))));
+      expect(day(22), findsOneWidget, reason: 'the same week stays put');
+      await tester.pumpAndSettle();
+      expect(x(fill), moreOrLessEquals(x(day(18)), epsilon: 0.5));
+    });
+
+    testWidgets("a day's tabs and tasks line turn with its note, under a "
+        'header that keeps its height', (tester) async {
+      seed();
+      await pump(tester);
+      await turn(tester, onHeader(tester), 200);
+      await turn(tester, onHeader(tester), 200);
+      final tabs = find.byKey(const ValueKey('day-tabs'));
+      expect(tabs, findsOneWidget, reason: 'Monday has two notes');
+      expect(find.descendant(of: header, matching: tabs), findsNothing);
+      final height = tester.getSize(header).height;
+      final left = tester.getTopLeft(tabs).dx;
+      final drag = await tester.startGesture(onHeader(tester));
+      await drag.moveBy(const Offset(-40, 0));
+      await drag.moveBy(const Offset(-60, 0));
+      await tester.pump();
+      expect(tester.getTopLeft(tabs).dx, moreOrLessEquals(left - 100));
+      expect(tester.getSize(header).height, height);
+      await drag.up();
+      await tester.pump();
+      expect(tabs, findsOneWidget, reason: 'they leave with the note');
+      expect(find.descendant(of: header, matching: tabs), findsNothing);
+      expect(tester.getSize(header).height, height, reason: 'once let go');
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+      expect(tabs, findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(PhoneNoteHeaderEnd),
+          matching: find.descendant(
+            of: tasksLine,
+            matching: find.text('2 tasks today'),
+          ),
+        ),
+        findsOneWidget,
+        reason:
+            "Tuesday's page has today's tasks line, which Monday's tabs "
+            'had not',
+      );
+      expect(tester.getSize(header).height, height);
+    });
+
+    testWidgets('a turn into another week slides the week there', (
+      tester,
+    ) async {
+      seed();
+      days.setDay('arjun', DateTime(2025, 11, 16));
+      await pump(tester);
+      expect(day(16), findsOneWidget);
+      expect(day(15), findsNothing);
+      await tester.timedDragFrom(
+        onHeader(tester),
+        const Offset(200, 0),
+        const Duration(milliseconds: 400),
+      );
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(day(15), findsOneWidget);
+      expect(find.byType(DayStrip), findsOneWidget);
+      expect(day(22), findsOneWidget, reason: 'both weeks show as it slides');
+      await tester.pumpAndSettle();
+      expect(day(15), findsOneWidget);
+      expect(day(22), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('page-day')),
+          matching: find.text('15'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a short slow drag springs back on the same day', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      await tester.timedDragFrom(
+        onHeader(tester),
+        const Offset(70, 0),
+        const Duration(milliseconds: 700),
+      );
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(find.byType(NoteEditor), findsOneWidget);
+    });
+
+    testWidgets("a drag on the note's text never turns the day, with the "
+        'keyboard down, the caret in it or the keyboard up; the header does', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      keyboardDown();
+      await tester.pumpAndSettle();
+      await turn(tester, onText(tester), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      await tester.tap(find.byType(NoteEditor));
+      await tester.pumpAndSettle();
+      expect(
+        tester.state<NoteEditorState>(find.byType(NoteEditor)).writing,
+        isTrue,
+      );
+      await turn(tester, onText(tester), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      await turn(tester, onText(tester) - const Offset(0, 120), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+
+      await turn(tester, onHeader(tester), 200);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+    testWidgets("on Android too, a drag on the note's text never turns the "
+        'day, and the header does', (tester) async {
+      seed();
+      await pump(tester);
+      keyboardDown();
+      await tester.pumpAndSettle();
+      await turn(tester, onText(tester), 200);
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      await turn(tester, onHeader(tester), 200);
+      expect(openNoteBody(tester), startsWith('Standup notes'));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
+
+    testWidgets('a scroll down the note, drifting sideways, never turns', (
+      tester,
+    ) async {
+      seed();
+      await pump(tester);
+      keyboardDown();
+      await tester.pumpAndSettle();
+      await tester.timedDragFrom(
+        onText(tester),
+        const Offset(150, -200),
+        const Duration(milliseconds: 400),
+      );
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+    });
+
+    testWidgets("with the keyboard up, the keyboard's bar fades as a turn "
+        'starts, in its own room, and comes back once the turn has sprung '
+        'back', (tester) async {
+      seed();
+      await pump(tester);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      final bar = find.byKey(const ValueKey('phone-format-bar'));
+      expect(bar, findsOneWidget);
+      double shown() => tester
+          .renderObject<RenderAnimatedOpacity>(
+            find.ancestor(of: bar, matching: find.byType(AnimatedOpacity)),
+          )
+          .opacity
+          .value;
+      expect(shown(), 1);
+      final room = tester.getRect(bar);
+      final drag = await tester.startGesture(onHeader(tester));
+      await drag.moveBy(const Offset(30, 0));
+      await drag.moveBy(const Offset(30, 0));
+      await tester.pump();
+      await tester.pump(PageTurn.fade ~/ 2);
+      expect(shown(), inExclusiveRange(0, 1));
+      await tester.pump(PageTurn.fade);
+      expect(shown(), 0);
+      expect(tester.getSize(bar), room.size);
+      await drag.moveBy(const Offset(-60, 0));
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(shown(), 1);
+      expect(tester.getRect(bar), room);
+    });
+
+    testWidgets("on an iPhone, a drag from the left edge is iOS's back, not "
+        'a turn', (tester) async {
+      seed();
+      await pump(tester);
+      await turn(tester, Offset(4, tester.getCenter(header).dy), 300);
+      expect(header, findsNothing);
+      expect(find.widgetWithText(NoteRow, 'Call with Arjun'), findsOneWidget);
     }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
   });
 }

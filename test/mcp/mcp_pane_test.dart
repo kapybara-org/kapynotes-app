@@ -301,11 +301,10 @@ void main() {
     );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
-    // A phone sets its headings in capitals.
-    expect(find.text('AI APPS'), findsNothing);
+    expect(find.text('AI apps'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('settings-section-voice')));
     await tester.pumpAndSettle();
-    expect(find.text('AI APPS'), findsOneWidget);
+    expect(find.text('AI apps'), findsOneWidget);
     expect(
       find.text(
         'Assistants connect through Kapy Notes on your Mac, Windows PC or '

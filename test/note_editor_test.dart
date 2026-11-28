@@ -408,10 +408,8 @@ void main() {
       harness('first line\nsecond line', autofocus: true),
     );
     await tester.pumpAndSettle();
-    final topLeft = tester.getTopLeft(noteField);
-
     await tester.pump(const Duration(seconds: 4));
-    await tester.tapAt(topLeft + const Offset(40, 43));
+    await tester.tapAt(lineRect(tester, 'first line\nsecond line', 0).center);
     await tester.pump();
 
     await tester.pump(const Duration(seconds: 4));
@@ -1314,11 +1312,12 @@ void main() {
     final address = runs.firstWhere(
       (span) => span.text == 'example.com/docs?q=notes',
     );
-    expect(address.style!.fontFamily, AppFonts.mono);
+    expect(address.style!.fontFamily, AppFonts.ui);
+    expect(address.style!.fontSize, 12.5);
     expect(address.style!.decoration, TextDecoration.none);
     // The full stop after it is the sentence's, not the address's.
     final period = runs.firstWhere((span) => span.text == '.');
-    expect(period.style?.fontFamily, isNot(AppFonts.mono));
+    expect(period.style?.fontSize, isNot(12.5));
     expect(
       period.style?.decoration?.contains(TextDecoration.underline) ?? false,
       isFalse,
@@ -1371,7 +1370,7 @@ void main() {
       'https://example.com/docs',
     ]) {
       for (final run in runsOf(link)) {
-        expect(run.style!.fontFamily, AppFonts.mono, reason: link);
+        expect(run.style!.fontFamily, AppFonts.ui, reason: link);
       }
     }
 
@@ -2818,15 +2817,15 @@ void main() {
             .color!;
     TextStyle styleOf(String text) =>
         tester.widget<Text>(find.text(text)).style!;
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
 
     expect(fillOf('42'), palette.totalPillBackground);
     expect(styleOf('42').color, palette.totalPillText);
-    expect(styleOf('42').fontWeight, FontWeight.w600);
+    expect(styleOf('42').fontWeight, AppWeight.font(AppWeight.regular));
     for (final text in ['12', '30']) {
       expect(fillOf(text), palette.resultPillBackground);
       expect(styleOf(text).color, palette.resultPillText);
-      expect(styleOf(text).fontWeight, FontWeight.w500);
+      expect(styleOf(text).fontWeight, AppWeight.font(AppWeight.regular));
     }
   });
 
@@ -3036,16 +3035,17 @@ void main() {
               as BoxDecoration;
       TextStyle styleOf(String text) =>
           tester.widget<Text>(find.text(text)).style!;
-      const palette = KapyTheme.darkPalette;
+      final palette = KapyTheme.darkPalette;
 
       expect(find.byType(ResultLeader), findsNothing);
       expect(decorationOf('42').color, palette.totalPillBackground);
       expect(styleOf('42').color, palette.totalPillText);
-      expect(styleOf('42').fontWeight, FontWeight.w600);
       for (final text in ['12', '30']) {
         expect(decorationOf(text).color, palette.resultPillBackground);
         expect(styleOf(text).color, palette.resultPillText);
-        expect(styleOf(text).fontWeight, FontWeight.w500);
+      }
+      for (final text in ['12', '30', '42']) {
+        expect(styleOf(text).fontWeight, FontWeight.w400);
       }
       for (final (line, text) in [(1, '12'), (2, '30'), (3, '42')]) {
         final style = styleOf(text);
@@ -4065,6 +4065,8 @@ total to usd''';
     ) async {
       final node = await pumpFocused(tester);
       await setKeyboard(tester, 300);
+      // Up and still: a keyboard that is still moving is still coming up.
+      await tester.pump(const Duration(seconds: 1));
       expect(node.hasFocus, isTrue);
 
       // Android's Back is swallowed by the IME: the keyboard goes, and all the
@@ -4105,6 +4107,36 @@ total to usd''';
       );
     });
 
+    // A slow phone (CI, Android, runs 45992261717 and 46042569829): Android
+    // started the keyboard's slide, called it off and started it again from
+    // the bottom, and the second slide reached the app only after more than
+    // half a second. Read as a dismissal, the zero in between took the focus,
+    // and that put the keyboard away just after it opened (KAP-324).
+    testWidgets('a keyboard that slides in slowly keeps the note', (
+      tester,
+    ) async {
+      final node = await pumpFocused(tester);
+      tester.testTextInput.log.clear();
+      for (final height in [40.0, 120.0]) {
+        await setKeyboard(tester, height);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await setKeyboard(tester, 0);
+      await tester.pump(const Duration(milliseconds: 800));
+      for (final height in [60.0, 300.0, 600.0, 883.0]) {
+        await setKeyboard(tester, height);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pump(const Duration(seconds: 4));
+
+      expect(node.hasFocus, isTrue);
+      expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
+      expect(
+        tester.testTextInput.log.map((call) => call.method),
+        isNot(contains('TextInput.hide')),
+      );
+    });
+
     // The editor lets go only once the keyboard has stayed down, so by then
     // the reader may have moved on to another field. That one keeps it.
     testWidgets('a field that takes the focus after Back keeps it', (
@@ -4112,6 +4144,7 @@ total to usd''';
     ) async {
       final node = await pumpFocused(tester);
       await setKeyboard(tester, 300);
+      await tester.pump(const Duration(seconds: 1));
       await setKeyboard(tester, 0);
       await tester.pump(const Duration(milliseconds: 200));
 
@@ -4233,6 +4266,7 @@ total to usd''';
     ) async {
       final node = await pumpFocused(tester);
       await setKeyboard(tester, 300);
+      await tester.pump(const Duration(seconds: 1));
 
       // Backgrounding takes the keyboard with it. The note is still open and
       // still the one being written in, so the caret belongs where it is.

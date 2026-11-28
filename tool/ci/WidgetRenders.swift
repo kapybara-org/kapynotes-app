@@ -1,4 +1,3 @@
-import CoreText
 import SwiftUI
 import UIKit
 
@@ -87,23 +86,10 @@ struct WidgetRenders {
     if !condition { failures.append(failure) }
   }
 
-  /// Registers the fonts the extension lists, the way UIAppFonts would, and
-  /// checks that Figtree's two weights answer to the names the widgets use.
+  /// The widgets draw with the system face, so the extension bundles none.
   @MainActor private static func checkFonts(listedIn info: URL) {
     let listed = (NSDictionary(contentsOf: info)?["UIAppFonts"] as? [String]) ?? []
-    check(
-      listed == ["Figtree-SemiBold.ttf", "Figtree-Regular.ttf"],
-      "UIAppFonts lists \(listed), not Figtree's SemiBold and Regular")
-    for font in listed {
-      guard let url = Bundle.main.url(forResource: font, withExtension: nil) else {
-        check(false, "\(font) is in UIAppFonts but not in ios/WriteNoteWidget")
-        continue
-      }
-      check(CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil), "\(font) won't register")
-    }
-    for name in ["Figtree-SemiBold", "Figtree-Regular"] {
-      check(UIFont(name: name, size: 17) != nil, "No font named \(name)")
-    }
+    check(listed.isEmpty, "UIAppFonts lists \(listed); the widgets use the system face")
   }
 
   @MainActor private static func save(

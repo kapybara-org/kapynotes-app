@@ -302,6 +302,10 @@ class KapyIcons {
     0xE031,
     HugeIcons.strokeRoundedImage01,
   );
+  static const mediaOutlined = KapyIconData(
+    0xE0F5,
+    HugeIcons.strokeRoundedImagePlay,
+  );
   static const infoOutlined = KapyIconData(
     0xE032,
     HugeIcons.strokeRoundedInformationCircle,
@@ -595,6 +599,14 @@ class KapyIcons {
   static const sunsetRounded = KapyIconData(
     0xE0E8,
     HugeIcons.strokeRoundedSunset,
+  );
+  static const sunOutlined = KapyIconData(
+    0xE0ED,
+    HugeIcons.strokeRoundedSun03,
+  );
+  static const moonOutlined = KapyIconData(
+    0xE0EE,
+    HugeIcons.strokeRoundedMoon02,
   );
   static const redoRounded = KapyIconData(
     0xE084,

@@ -9,6 +9,7 @@ import '../../data/folders.dart';
 import '../../sync/presence.dart';
 import '../checklist_pie.dart';
 import '../collaborator_colors.dart';
+import '../save_status.dart';
 import '../sidebar_timestamp.dart';
 import 'note_footer.dart' show typingStatusText;
 
@@ -59,19 +60,19 @@ class _UnderlinePainter extends CustomPainter {
       old.word != word || old.color != color;
 }
 
-/// What Saved says, for the date line to carry while the page is too narrow
+/// The save status, for the date line to carry while the page is too narrow
 /// to show it in its bar.
 class DateLineSaved extends InheritedWidget {
-  const DateLineSaved({super.key, required this.saved, required super.child});
+  const DateLineSaved({super.key, required this.save, required super.child});
 
-  /// Null while the bar has room for Saved itself.
-  final ({String label, String? tooltip})? saved;
+  /// Null while the bar has room for the save status itself.
+  final SaveState? save;
 
-  static ({String label, String? tooltip})? of(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<DateLineSaved>()?.saved;
+  static SaveState? of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<DateLineSaved>()?.save;
 
   @override
-  bool updateShouldNotify(DateLineSaved oldWidget) => saved != oldWidget.saved;
+  bool updateShouldNotify(DateLineSaved oldWidget) => save != oldWidget.save;
 }
 
 /// The folders the notes on the page are filed in, for the line above each
@@ -180,29 +181,45 @@ class NoteMetaRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final save = DateLineSaved.of(context);
+    if (save == null) return _build(context, null);
+    return ListenableBuilder(
+      listenable: save.status,
+      builder: (context, _) => _build(context, save),
+    );
+  }
+
+  /// [save] is set while this line owns the status. It says nothing at rest
+  /// and, when it does, comes last, so nothing before it moves as the words
+  /// come and go.
+  Widget _build(BuildContext context, SaveState? save) {
     final palette = context.palette;
     final quiet = TextStyle(
       fontFamily: AppFonts.ui,
       fontFamilyFallback: AppFonts.uiFallback,
       fontSize: 13,
       height: 16 / 13,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       color: palette.textTertiary,
     );
     final strong = quiet.copyWith(
-      fontWeight: AppWeight.font(AppWeight.rowTitle),
-      fontVariations: AppWeight.wght(AppWeight.rowTitle),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       color: palette.textSecondary,
     );
     final mobile = AppPlatform.isMobile;
     final dot = Text('·', style: quiet.copyWith(color: palette.textDivider));
     final typingText = typingStatusText([for (final p in typing) p.name]);
     final progress = '$done of $tasks done';
-    final saved = DateLineSaved.of(context);
-    final savedLabel = saved == null
+    final notice = save == null || SaveStatusLabel.noticeOf(save) == null
         ? null
-        : Text(saved.label, key: const ValueKey('note-saved'), style: quiet);
+        : SaveStatusLabel(
+            save,
+            key: const ValueKey('note-saved'),
+            style: quiet,
+            icon: false,
+          );
     final items = <Widget>[
       if (!mobile)
         Text(
@@ -250,11 +267,6 @@ class NoteMetaRow extends StatelessWidget {
           key: const ValueKey('note-edited'),
           style: quiet,
         ),
-      if (savedLabel != null)
-        switch (saved?.tooltip) {
-          final tooltip? => Tooltip(message: tooltip, child: savedLabel),
-          null => savedLabel,
-        },
       if (tasks > 0 && !mobile)
         Text(progress, key: const ValueKey('note-progress'), style: quiet)
       else if (tasks > 0)
@@ -268,8 +280,8 @@ class NoteMetaRow extends StatelessWidget {
                 key: const ValueKey('note-progress'),
                 done: done,
                 total: tasks,
-                fill: Theme.of(context).colorScheme.primary,
-                check: palette.paperColor,
+                fill: palette.accentFill,
+                check: palette.onAccent,
               ),
               const SizedBox(width: 6),
               Text(progress, style: strong),
@@ -326,6 +338,7 @@ class NoteMetaRow extends StatelessWidget {
           onPressed: onReadOnlyPressed,
         ),
     ];
+    final facts = [...items, ?notice];
     if (phone) {
       // One line, as M07 draws it: the facts a dot apart, then the tags after
       // a gap. It wraps when they don't fit, and the editor makes room for
@@ -338,7 +351,7 @@ class NoteMetaRow extends StatelessWidget {
             key: const ValueKey('note-facts'),
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              for (final (index, item) in items.indexed)
+              for (final (index, item) in facts.indexed)
                 index == 0
                     ? item
                     : Row(
@@ -370,7 +383,7 @@ class NoteMetaRow extends StatelessWidget {
                 key: const ValueKey('note-facts'),
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  for (final (index, item) in items.indexed)
+                  for (final (index, item) in facts.indexed)
                     index == 0
                         ? item
                         : Row(
@@ -406,6 +419,9 @@ class NoteMetaRow extends StatelessWidget {
       height: EditorMetrics.metaRow,
       child: _MetaLine(
         width: width,
+        reserveLast:
+            save != null &&
+            (save.problem != null || save.status.phase == SavePhase.failed),
         children: [
           for (final (index, item) in items.indexed)
             index == 0
@@ -423,6 +439,8 @@ class NoteMetaRow extends StatelessWidget {
           if (tags case final tags?)
             Padding(padding: const EdgeInsets.only(left: 6), child: tags),
           ?addTag,
+          if (notice != null)
+            Padding(padding: const EdgeInsets.only(left: 12), child: notice),
         ],
       ),
     );
@@ -433,18 +451,28 @@ class NoteMetaRow extends StatelessWidget {
 /// whole. Where the column ends before one does, it and everything after it
 /// step aside, as the bar's items do, rather than run into the pane's edge.
 /// Only the date, first, shortens to fit a column too narrow even for it.
+///
+/// With [reserveLast] the last child keeps its room first, so the others give
+/// way to it: a problem with saving stays on screen until it clears.
 class _MetaLine extends MultiChildRenderObjectWidget {
-  const _MetaLine({required this.width, required super.children});
+  const _MetaLine({
+    required this.width,
+    required this.reserveLast,
+    required super.children,
+  });
 
   final double width;
+  final bool reserveLast;
 
   @override
   RenderObject createRenderObject(BuildContext context) =>
-      _RenderMetaLine(width);
+      _RenderMetaLine(width, reserveLast);
 
   @override
   void updateRenderObject(BuildContext context, _RenderMetaLine renderObject) =>
-      renderObject.width = width;
+      renderObject
+        ..width = width
+        ..reserveLast = reserveLast;
 }
 
 class _MetaLineData extends ContainerBoxParentData<RenderBox> {
@@ -453,7 +481,7 @@ class _MetaLineData extends ContainerBoxParentData<RenderBox> {
 
 class _RenderMetaLine extends RenderBox
     with ContainerRenderObjectMixin<RenderBox, _MetaLineData> {
-  _RenderMetaLine(this._width);
+  _RenderMetaLine(this._width, this._reserveLast);
 
   /// How far one already showing may reach past a column that holds still
   /// before it steps aside: a tag's × as the pointer rests on its chip, so the
@@ -461,13 +489,21 @@ class _RenderMetaLine extends RenderBox
   /// none, so each width shows the same items however it was reached.
   static const double _grace = 15;
 
-  double? _column;
+  double? _room;
 
   double get width => _width;
   double _width;
   set width(double value) {
     if (value == _width) return;
     _width = value;
+    markNeedsLayout();
+  }
+
+  bool get reserveLast => _reserveLast;
+  bool _reserveLast;
+  set reserveLast(bool value) {
+    if (value == _reserveLast) return;
+    _reserveLast = value;
     markNeedsLayout();
   }
 
@@ -485,26 +521,35 @@ class _RenderMetaLine extends RenderBox
   @override
   void performLayout() {
     final column = math.min(width, constraints.maxWidth);
-    final grace = column == _column ? _grace : 0.0;
-    _column = column;
     final height = constraints.maxHeight;
+    final reserved = _reserveLast ? lastChild : null;
+    reserved?.layout(BoxConstraints(maxHeight: height), parentUsesSize: true);
+    final room = math.max(0.0, column - (reserved?.size.width ?? 0));
+    final grace = room == _room ? _grace : 0.0;
+    _room = room;
     var x = 0.0;
     var fits = true;
-    for (var child = firstChild; child != null; child = childAfter(child)) {
-      child.layout(
+    for (var child = firstChild; child != reserved; child = childAfter(child)) {
+      child!.layout(
         BoxConstraints(
-          maxWidth: child == firstChild ? column : double.infinity,
+          maxWidth: child == firstChild ? room : double.infinity,
           maxHeight: height,
         ),
         parentUsesSize: true,
       );
       final data = child.parentData! as _MetaLineData;
-      final reach = x + child.size.width - column;
+      final reach = x + child.size.width - room;
       fits = fits && reach <= (data.shown ? grace : 0);
       data
         ..shown = fits
         ..offset = Offset(x, (height - child.size.height) / 2);
       if (fits) x += child.size.width;
+    }
+    if (reserved != null) {
+      reserved.parentData! as _MetaLineData
+        ..shown = true
+        ..offset = Offset(x, (height - reserved.size.height) / 2);
+      x += reserved.size.width;
     }
     size = constraints.constrain(Size(x, height));
   }

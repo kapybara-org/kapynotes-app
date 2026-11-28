@@ -19,8 +19,6 @@ class NoteEditorContextMenu extends StatelessWidget {
   final TextSelectionToolbarAnchors anchors;
   final List<ContextMenuButtonItem> buttonItems;
 
-  static const double _screenPadding = 8;
-
   @override
   Widget build(BuildContext context) {
     final visibleItems = [
@@ -42,25 +40,16 @@ class NoteEditorContextMenu extends StatelessWidget {
       );
     }
 
-    final topPadding = MediaQuery.paddingOf(context).top + _screenPadding;
-    final localAdjustment = Offset(_screenPadding, topPadding);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        _screenPadding,
-        topPadding,
-        _screenPadding,
-        _screenPadding,
+    return CustomSingleChildLayout(
+      delegate: KapyMenuLayout(
+        position: anchors.primaryAnchor,
+        mediaPadding: MediaQuery.paddingOf(context),
       ),
-      child: CustomSingleChildLayout(
-        delegate: DesktopTextSelectionToolbarLayoutDelegate(
-          anchor: anchors.primaryAnchor - localAdjustment,
-        ),
-        child: RepaintBoundary(
-          key: const ValueKey('editor-context-menu'),
-          child: KapyContextMenuSurface(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: RepaintBoundary(
+        key: const ValueKey('editor-context-menu'),
+        child: KapyContextMenuSurface(
+          child: SingleChildScrollView(
+            child: ListBody(
               children: [
                 for (final item in visibleItems)
                   _EditorContextMenuButton(item: item),
@@ -107,8 +96,8 @@ class _EditorContextMenuButton extends StatelessWidget {
             style: TextStyle(
               color: enabled ? palette.textPrimary : palette.textTertiary,
               fontSize: AppTypeScale.control,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
             ),
           ),
         ),

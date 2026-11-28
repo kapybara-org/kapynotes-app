@@ -179,7 +179,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
 
       expect(asked, contains('260 characters'));
@@ -233,7 +233,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('did not work'), findsOneWidget);
@@ -258,7 +258,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
       expect(
         find.text('Transcribe this recording again to write from it.'),
@@ -284,7 +284,7 @@ void main() {
         ),
       );
 
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
 
       expect(find.textContaining('Cloud summaries reset on'), findsOneWidget);
@@ -301,7 +301,7 @@ void main() {
           actions: VoiceNoteActions(onRewrite: (instruction) async => 'x'),
         ),
       );
-      expect(find.text('Create X Post'), findsNothing);
+      expect(find.text('Create X post'), findsNothing);
       expect(find.byType(TextField), findsNothing);
     });
   });
@@ -394,7 +394,7 @@ void main() {
         await tester.pumpAndSettle();
 
         // The summary tab, with everything on it, and the starters under it.
-        expect(find.text('Create X Post'), findsOneWidget);
+        expect(find.text('Create X post'), findsOneWidget);
         expect(find.byKey(const ValueKey('voice-ask-earlier')), findsOneWidget);
         expect(find.text('Instructions'), findsOneWidget);
         expect(tester.takeException(), isNull);

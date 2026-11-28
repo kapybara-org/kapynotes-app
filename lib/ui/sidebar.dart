@@ -7,7 +7,6 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
-import '../core/editor_font.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../core/toast.dart';
@@ -39,8 +38,7 @@ import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_colours.dart';
 import 'tag_ui.dart';
-import 'tasks/task_marks.dart'
-    show dayTitleStyle, handStyle, metaStyle, uiStyle;
+import 'tasks/task_marks.dart' show dayTitleStyle, metaStyle, uiStyle;
 import 'tonal_button.dart';
 import 'window_drag_area.dart';
 
@@ -657,6 +655,7 @@ extension on Sidebar {
     final nothingShared = query.trim().isEmpty && _onSharedTab;
     final onStartSharing = this.onStartSharing;
     return SidebarEmpty(
+      hand: query.trim().isEmpty,
       message: query.trim().isEmpty
           ? archiveMode
                 ? 'Archived Notes is empty'
@@ -842,9 +841,8 @@ extension on Sidebar {
           if (_taggable(context, joining).isNotEmpty)
             const KapyMenuAction(
               value: 'picked-tags',
-              label: 'Tags',
+              label: 'Tags…',
               icon: KapyIcons.tagRounded,
-              hint: '›',
             ),
           if (_fileable(joining).isNotEmpty)
             const KapyMenuAction(
@@ -1336,7 +1334,15 @@ extension on Sidebar {
 
     void gap(double height) => rows.add((_) => SizedBox(height: height));
 
-    void heading(Widget heading) {
+    // A desktop heading starts where the words under it do. A phone's
+    // heading insets itself inside the margin.
+    final axis = phone || drawings
+        ? margin
+        : cards
+        ? margin + NoteCardFace.textStart
+        : 10 + NoteListRowFace.textStart(touch: false);
+
+    void heading(Widget heading, {bool onAxis = true}) {
       if (rows.isNotEmpty) {
         gap(phone ? 22 : 24);
       } else if (phone) {
@@ -1345,7 +1351,7 @@ extension on Sidebar {
       }
       rows.add(
         (_) => Padding(
-          padding: EdgeInsets.symmetric(horizontal: margin),
+          padding: EdgeInsets.only(left: onAxis ? axis : margin, right: margin),
           child: heading,
         ),
       );
@@ -1374,26 +1380,63 @@ extension on Sidebar {
         style: style,
         clockOnly: clockOnly,
       );
+      // A hairline between two rows, from the text to the edge, left out
+      // beside the open row, whose fill is edge enough.
+      Widget hairline(BuildContext context, int index) => Divider(
+        height: AppHairline.of(context),
+        thickness: AppHairline.of(context),
+        indent: NoteListRowFace.textStart(touch: phone),
+        endIndent: phone ? 0 : 10,
+        color: list[index - 1].id == selectedId || list[index].id == selectedId
+            ? Colors.transparent
+            : context.palette.pageBorder,
+      );
       if (phone && !cards) {
+        // One card a section, built a row at a time so a long folder stays
+        // lazy: the first row rounds its top, the last its foot.
+        Widget carded(
+          BuildContext context,
+          Widget child, {
+          bool first = false,
+          bool last = false,
+        }) => Padding(
+          padding: EdgeInsets.symmetric(horizontal: margin),
+          child: ClipRRect(
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(first ? AppRadii.phoneList : 0),
+              bottom: Radius.circular(last ? AppRadii.phoneList : 0),
+            ),
+            child: ColoredBox(
+              color: context.palette.cardBackground,
+              child: child,
+            ),
+          ),
+        );
         for (final (index, each) in list.indexed) {
           if (index > 0) {
-            rows.add(
-              (context) => Divider(
-                height: AppHairline.of(context),
-                thickness: AppHairline.of(context),
-                indent: margin,
-                endIndent: margin,
-                color: context.palette.separator,
-              ),
-            );
+            rows.add((context) => carded(context, hairline(context, index)));
           }
-          rows.add((_) => note(each));
+          rows.add(
+            (context) => carded(
+              context,
+              note(each),
+              first: index == 0,
+              last: index == list.length - 1,
+            ),
+          );
         }
         return;
       }
       if (!cards) {
         for (final (index, each) in list.indexed) {
-          if (index > 0) gap(2);
+          if (index > 0) {
+            rows.add(
+              (context) => Padding(
+                padding: const EdgeInsets.only(left: 10),
+                child: hairline(context, index),
+              ),
+            );
+          }
           rows.add(
             (_) => Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -1478,6 +1521,7 @@ extension on Sidebar {
             icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
           ),
         ),
+        onAxis: false,
       );
       section(groups.pinned);
     } else if (phone) {
@@ -1496,6 +1540,7 @@ extension on Sidebar {
                   child: PhoneDayHeading(
                     lead: 'Pinned',
                     date: '${groups.pinned.length}',
+                    pin: true,
                   ),
                 ),
                 ViewAllLink(
@@ -1515,7 +1560,7 @@ extension on Sidebar {
           ),
         );
       } else if (pinned.isNotEmpty) {
-        heading(const _PhoneHeading('Pinned'));
+        heading(const _PhoneHeading('Pinned', pin: true));
         section(pinned);
       }
       // A group's heading carries the room above it and sits right on its
@@ -1558,6 +1603,12 @@ extension on Sidebar {
             count: groups.pinned.length,
             noun: noun,
             height: 16,
+            leading: KapyIcon(
+              KapyIcons.pinOutlined,
+              size: 14,
+              color: palette.textPrimary,
+            ),
+            leadingGap: 4,
             trailing:
                 pinned.length < groups.pinned.length &&
                     onPinnedOnlyChanged != null
@@ -2025,8 +2076,8 @@ class _PickActions extends StatelessWidget {
       DefaultTextStyle.of(context).style.merge(
         TextStyle(
           fontSize: AppTypeScale.small,
-          fontWeight: AppWeight.font(AppWeight.body),
-          fontVariations: AppWeight.wght(AppWeight.body),
+          fontWeight: AppWeight.font(AppWeight.regular),
+          fontVariations: AppWeight.wght(AppWeight.regular),
           color: context.palette.textSecondary,
         ),
       );
@@ -2111,27 +2162,19 @@ class SidebarWindowBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    const handwritten = WritingFont.handwritten;
     final hideShortcut = this.hideShortcut;
     final onAskKapy = this.onAskKapy;
     final askKapyShortcut = this.askKapyShortcut;
     final desktop = AppPlatform.hasPointer;
-    final titleStyle = chromeStyle(
-      size: AppTypeScale.spaceTitle,
-      line: AppTypeScale.spaceTitle * 1.3,
-      weight: AppWeight.button,
-      color: palette.textPrimary,
-      family: handwritten.fontFamily,
-      fallback: handwritten.fontFamilyFallback,
-      extra: handwritten.faceVariations,
+    final titleStyle = handTitle(
+      size: 22,
+      line: 28,
+      color: palette.textHeading,
     );
     Widget gap() => SizedBox(width: desktop ? 0 : 8);
 
-    return Container(
+    return SizedBox(
       height: AppControlMetrics.scaleBar(context, height),
-      foregroundDecoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: palette.railBorder)),
-      ),
       child: Stack(
         children: [
           const Positioned.fill(
@@ -2178,7 +2221,7 @@ class SidebarWindowBar extends StatelessWidget {
                           ? 'Ask Kapy'
                           : 'Ask Kapy  ${askKapyShortcut.displayLabel}',
                       extent: 32,
-                      radius: 8,
+                      radius: AppRadii.control,
                       onPressed: onAskKapy,
                       icon: const KapyIcon(
                         KapyIcons.sparklesOutlined,
@@ -2192,7 +2235,7 @@ class SidebarWindowBar extends StatelessWidget {
                     tooltip: newTooltip(noun, newNoteShortcut),
                     semanticLabel: 'New $noun',
                     extent: 32,
-                    radius: 8,
+                    radius: AppRadii.control,
                     onPressed: onCreate,
                     icon: KapyIcon(
                       KapyIcons.addRounded,
@@ -2206,7 +2249,7 @@ class SidebarWindowBar extends StatelessWidget {
                         ? 'Hide notes'
                         : 'Hide notes  ${hideShortcut.displayLabel}',
                     extent: 32,
-                    radius: 8,
+                    radius: AppRadii.control,
                     onPressed: onHide,
                     icon: KapyIcon(
                       KapyIcons.menuOpenRounded,
@@ -2413,8 +2456,8 @@ class _InvitationCard extends StatelessWidget {
       fontFamilyFallback: AppFonts.uiFallback,
       fontSize: touch ? 15 : 13,
       height: touch ? 20 / 15 : 18 / 13,
-      fontWeight: AppWeight.font(AppWeight.button),
-      fontVariations: AppWeight.wght(AppWeight.button),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     final buttonStyle = TextButton.styleFrom(
       minimumSize: Size(0, button),
@@ -2425,7 +2468,7 @@ class _InvitationCard extends StatelessWidget {
       textStyle: label,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(
-          touch ? AppRadii.control : AppRadii.compact,
+          touch ? AppRadii.control : AppRadii.control,
         ),
       ),
     );
@@ -2459,8 +2502,8 @@ class _InvitationCard extends StatelessWidget {
                     style: TextStyle(
                       fontSize: touch ? 14 : 12,
                       height: touch ? 18 / 14 : 16 / 12,
-                      fontWeight: AppWeight.font(AppWeight.button),
-                      fontVariations: AppWeight.wght(AppWeight.button),
+                      fontWeight: AppWeight.font(AppWeight.regular),
+                      fontVariations: AppWeight.wght(AppWeight.regular),
                       color: palette.textPrimary,
                     ),
                   ),
@@ -2676,13 +2719,10 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
         child: Text(
           shortcut.keycapLabel,
           key: const ValueKey('sidebar-search-shortcut'),
-          style: TextStyle(
-            fontFamily: AppFonts.mono,
-            fontFamilyFallback: AppFonts.monoFallback,
-            fontSize: 11,
-            height: 14 / 11,
-            fontWeight: AppWeight.font(AppWeight.body),
-            fontVariations: AppWeight.wght(AppWeight.body),
+          style: chromeStyle(
+            size: AppTypeScale.keycap,
+            line: 14,
+            weight: AppWeight.regular,
             color: palette.textTertiary,
           ),
         ),
@@ -2715,10 +2755,10 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
             onExit: (_) => setState(() => _hovering = false),
             child: Container(
               key: const ValueKey('sidebar-search-box'),
-              height: 32,
+              height: 30,
               padding: const EdgeInsets.symmetric(horizontal: 10),
               decoration: BoxDecoration(
-                color: palette.fillRest,
+                color: palette.controlBackground,
                 borderRadius: BorderRadius.circular(AppRadii.control),
               ),
               child: LayoutBuilder(
@@ -2727,7 +2767,7 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
                     KapyIcon(
                       KapyIcons.searchRounded,
                       size: icon,
-                      color: palette.textTertiary,
+                      color: palette.textSecondary,
                     ),
                     const SizedBox(width: gap),
                     Expanded(
@@ -2735,12 +2775,13 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
                         searching ? query : placeholder,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          height: 16 / 13,
-                          color: searching
+                        style: uiStyle(
+                          AppTypeScale.control,
+                          16,
+                          FontWeight.w400,
+                          searching
                               ? palette.textPrimary
-                              : palette.textTertiary,
+                              : palette.textSecondary,
                         ),
                       ),
                     ),
@@ -2780,15 +2821,15 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
         constraints: const BoxConstraints(minHeight: 44),
         padding: const EdgeInsets.fromLTRB(14, 6, 10, 6),
         decoration: BoxDecoration(
-          color: palette.fillRest,
-          borderRadius: BorderRadius.circular(AppRadii.control),
+          color: palette.controlBackground,
+          borderRadius: BorderRadius.circular(AppRadii.surface),
         ),
         child: Row(
           children: [
             KapyIcon(
               KapyIcons.searchRounded,
               size: 16,
-              color: palette.textTertiary,
+              color: palette.textSecondary,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -2798,11 +2839,11 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
                     searching ? query : placeholder,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: searching
-                          ? palette.textPrimary
-                          : palette.textTertiary,
+                    style: uiStyle(
+                      AppTypeScale.row,
+                      22,
+                      FontWeight.w400,
+                      searching ? palette.textPrimary : palette.textSecondary,
                     ),
                   ),
             ),
@@ -3191,9 +3232,8 @@ class _NoteRowState extends State<NoteRow> {
           if (TagShelf.maybeOf(context) != null)
             const KapyMenuAction(
               value: 'tags',
-              label: 'Tags',
+              label: 'Tags…',
               icon: KapyIcons.tagRounded,
-              hint: '›',
             ),
           if (widget.folders != null)
             const KapyMenuAction(
@@ -3274,7 +3314,7 @@ class _NoteRowState extends State<NoteRow> {
             decoration: BoxDecoration(
               color: palette.surfaceBackground,
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(AppRadii.dialog),
+                top: Radius.circular(AppRadii.surface),
               ),
             ),
             child: SafeArea(
@@ -3304,8 +3344,8 @@ class _NoteRowState extends State<NoteRow> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: AppTypeScale.body,
-                            fontWeight: AppWeight.font(AppWeight.body),
-                            fontVariations: AppWeight.wght(AppWeight.body),
+                            fontWeight: AppWeight.font(AppWeight.regular),
+                            fontVariations: AppWeight.wght(AppWeight.regular),
                             color: palette.textPrimary,
                           ),
                         ),
@@ -3787,8 +3827,8 @@ class _ShareGroupHeader extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: AppTypeScale.caption,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               letterSpacing: 0.3,
               color: palette.textTertiary,
             ),
@@ -3839,7 +3879,7 @@ class _ShareGroupHeader extends StatelessWidget {
         child: ExcludeSemantics(
           child: InkWell(
             onTap: onTap,
-            borderRadius: BorderRadius.circular(AppRadii.compact),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 4, 6, 3),
               child: heading,
@@ -3861,7 +3901,6 @@ class _DrawingsEmpty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    const handwritten = WritingFont.handwritten;
     final onNewDrawing = this.onNewDrawing;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 96, 24, 24),
@@ -3873,9 +3912,8 @@ class _DrawingsEmpty extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: palette.editorBackground,
-                border: Border.all(color: palette.separator),
-                borderRadius: BorderRadius.circular(AppRadii.dialog),
+                color: palette.cardBackground,
+                borderRadius: BorderRadius.circular(AppRadii.surface),
               ),
               alignment: Alignment.center,
               child: KapyIcon(
@@ -3889,18 +3927,7 @@ class _DrawingsEmpty extends StatelessWidget {
           Text(
             'No drawings yet',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: handwritten.fontFamily,
-              fontFamilyFallback: handwritten.fontFamilyFallback,
-              fontSize: 16,
-              height: 22 / 16,
-              fontWeight: AppWeight.font(AppWeight.button),
-              fontVariations: AppWeight.wght(
-                AppWeight.button,
-                extra: handwritten.fontVariations ?? const [],
-              ),
-              color: palette.textSubheading,
-            ),
+            style: handAccent(palette),
           ),
           const SizedBox(height: 10),
           SizedBox(
@@ -3912,8 +3939,8 @@ class _DrawingsEmpty extends StatelessWidget {
               style: TextStyle(
                 fontSize: AppTypeScale.small,
                 height: 18 / 13,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: palette.textTertiary,
               ),
             ),
@@ -3941,9 +3968,14 @@ class SidebarEmpty extends StatelessWidget {
     required this.message,
     this.detail,
     this.action,
+    this.hand = false,
   });
 
   final String message;
+
+  /// Sets [message] in the handwritten accent: only for an empty list's own
+  /// line, never a search's miss or a filter's.
+  final bool hand;
 
   /// A quieter line under [message], saying what will fill the space.
   final String? detail;
@@ -3962,19 +3994,24 @@ class SidebarEmpty extends StatelessWidget {
           Text(
             message,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: AppTypeScale.body,
-              color: context.palette.textTertiary,
-            ),
+            style: hand
+                ? handAccent(context.palette)
+                : uiStyle(
+                    AppTypeScale.body,
+                    AppTypeScale.body * 1.4,
+                    FontWeight.w400,
+                    context.palette.textSecondary,
+                  ),
           ),
           if (detail case final detail?) ...[
             const SizedBox(height: 4),
             Text(
               detail,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: AppTypeScale.small,
-                color: context.palette.textTertiary,
+              style: metaStyle(
+                AppTypeScale.small,
+                AppTypeScale.small * 1.4,
+                context.palette.textTertiary,
               ),
             ),
           ],
@@ -4232,50 +4269,73 @@ class _PhoneShareHeading extends StatelessWidget {
   }
 }
 
-/// A day's heading on a phone's list, as Tasks draws its own: "Today" in
-/// the serif, then the date 8 after it in small quiet sans. A day with no
-/// name is headed by its date alone, in the serif, muted. Folders heads its
-/// notes in no folder with it too (M02): the words alone, unmuted.
+/// A day's heading over its card on a phone's list: "Today" firm in the
+/// text's own colour, then the date smaller and a grey quieter. A day with
+/// no name is headed by its date alone. Folders heads its notes in no folder
+/// with it too (M02): the words alone. Pinned leads with its pin.
 class PhoneDayHeading extends StatelessWidget {
-  const PhoneDayHeading({super.key, required this.lead, this.date});
+  const PhoneDayHeading({
+    super.key,
+    required this.lead,
+    this.date,
+    this.pin = false,
+  });
 
   final String? lead;
   final String? date;
+  final bool pin;
 
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final lead = this.lead;
-    final date = this.date;
     return Semantics(
       header: true,
       label: [?lead, ?date].join(', '),
       excludeSemantics: true,
-      child: lead == null || date == null
-          ? Text(
-              lead ?? date ?? '',
-              key: const ValueKey('phone-day-heading'),
-              style: dayTitleStyle(
-                lead == null ? palette.textTertiary : palette.textPrimary,
+      child: Padding(
+        // In line with the words in the card under it.
+        padding: const EdgeInsets.only(left: 16),
+        child: Row(
+          key: const ValueKey('phone-day-heading'),
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          spacing: 6,
+          children: [
+            if (pin)
+              KapyIcon(
+                KapyIcons.pinOutlined,
+                size: 18,
+                color: palette.textPrimary,
               ),
-            )
-          : Row(
-              key: const ValueKey('phone-day-heading'),
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
-              spacing: 8,
-              children: [
-                Text(lead, style: dayTitleStyle(palette.textPrimary)),
-                Flexible(
-                  child: Text(
-                    date,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: metaStyle(13, 16, palette.textTertiary),
-                  ),
+            if (lead case final lead?)
+              Flexible(
+                child: Text(
+                  lead,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _phoneHeadingStyle(palette),
                 ),
-              ],
-            ),
+              ),
+            if (date case final date?)
+              Flexible(
+                child: Text(
+                  date,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: lead == null
+                      ? _phoneHeadingStyle(palette)
+                      : chromeStyle(
+                          size: 15,
+                          line: 22,
+                          weight: AppWeight.regular,
+                          color: palette.textTertiary,
+                          tabular: true,
+                        ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -4294,7 +4354,7 @@ class PhonePinnedCards extends StatelessWidget {
   final List<Widget> children;
 
   /// Between two cards, across and down.
-  static const double gap = 8;
+  static const double gap = 10;
 
   /// How much of the third card shows past the second.
   static const double peek = 34;
@@ -4326,29 +4386,46 @@ class PhonePinnedCards extends StatelessWidget {
 /// A heading over a phone's list: Pinned, where it has no View all, and
 /// Recent.
 class _PhoneHeading extends StatelessWidget {
-  const _PhoneHeading(this.label);
+  const _PhoneHeading(this.label, {this.pin = false});
 
   final String label;
+  final bool pin;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    header: true,
-    child: Text(
-      label,
-      style: uiStyle(
-        13,
-        18,
-        FontWeight.w500,
-        context.palette.textTertiary,
-        axis: 520,
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Semantics(
+      header: true,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 16),
+        child: Row(
+          spacing: 6,
+          children: [
+            if (pin)
+              KapyIcon(
+                KapyIcons.pinOutlined,
+                size: 18,
+                color: palette.textPrimary,
+              ),
+            Text(label, style: _phoneHeadingStyle(palette)),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
-/// A phone list's title: the space's name large in the hand face, its count
-/// small beside it (M02, M03). The clay mark is Home's alone, under the title
-/// its swipe has on screen.
+/// A section heading on a phone's list: Pinned, Today, a day, Recent.
+TextStyle _phoneHeadingStyle(CalcPalette palette) => chromeStyle(
+  size: 17,
+  line: 22,
+  weight: AppWeight.semibold,
+  color: palette.textPrimary,
+  tabular: true,
+);
+
+/// A phone list's title: the space's name large, its count small and quiet
+/// beside it (M02, M03).
 class PhoneListTitle extends StatelessWidget {
   const PhoneListTitle({
     super.key,
@@ -4356,9 +4433,14 @@ class PhoneListTitle extends StatelessWidget {
     this.count,
     this.onBack,
     this.trailing,
+    this.handwritten = false,
   });
 
   final String title;
+
+  /// Set for Kapy AI, a tab of its own: its name is handwritten, as Home's
+  /// Notes and Tasks are.
+  final bool handwritten;
 
   /// Left out where the page counts nothing, as Folders does.
   final int? count;
@@ -4388,7 +4470,14 @@ class PhoneListTitle extends StatelessWidget {
               key: const ValueKey('phone-list-title'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: handStyle(26, 32, FontWeight.w600, palette.textPrimary),
+              style: handwritten
+                  ? handTitle(size: 30, line: 36, color: palette.textHeading)
+                  : uiStyle(
+                      AppTypeScale.spaceTitle,
+                      32,
+                      FontWeight.w600,
+                      palette.textHeading,
+                    ),
             ),
           ),
           if (count != null) ...[
@@ -4399,7 +4488,7 @@ class PhoneListTitle extends StatelessWidget {
                 13,
                 16,
                 FontWeight.w400,
-                palette.textTertiary,
+                palette.textQuiet,
                 tabular: true,
               ),
             ),

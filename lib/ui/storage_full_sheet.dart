@@ -86,8 +86,12 @@ class _StorageFullSheet extends StatelessWidget {
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(AppRadii.control),
     );
-    TextStyle label(Color color) =>
-        chromeStyle(size: 15, line: 20, weight: AppWeight.button, color: color);
+    TextStyle label(Color color) => chromeStyle(
+      size: 15,
+      line: 20,
+      weight: AppWeight.regular,
+      color: color,
+    );
     return SingleChildScrollView(
       key: const ValueKey('storage-full'),
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
@@ -109,8 +113,8 @@ class _StorageFullSheet extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 17,
                     height: 22 / 17,
-                    fontWeight: AppWeight.font(AppWeight.section),
-                    fontVariations: AppWeight.wght(AppWeight.section),
+                    fontWeight: AppWeight.font(AppWeight.semibold),
+                    fontVariations: AppWeight.wght(AppWeight.semibold),
                     color: palette.textPrimary,
                   ),
                 ),

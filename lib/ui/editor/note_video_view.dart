@@ -362,8 +362,8 @@ class _PlayButton extends StatelessWidget {
 TextStyle _overPicture({bool quiet = false}) => TextStyle(
   color: quiet ? Colors.white70 : Colors.white,
   fontSize: AppTypeScale.caption,
-  fontWeight: AppWeight.font(quiet ? AppWeight.body : AppWeight.rowTitle),
-  fontVariations: AppWeight.wght(quiet ? AppWeight.body : AppWeight.rowTitle),
+  fontWeight: AppWeight.font(AppWeight.regular),
+  fontVariations: AppWeight.wght(AppWeight.regular),
   fontFeatures: const [FontFeature.tabularFigures()],
 );
 

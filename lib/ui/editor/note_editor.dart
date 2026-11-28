@@ -44,6 +44,7 @@ import '../compact_icon_button.dart';
 import '../focus_ring.dart';
 import '../notebook_paper.dart';
 import '../page_toolbar.dart' show NotePathLine, PagePlace;
+import '../page_turn.dart' show HiddenWhileTurning, PageTurn;
 import '../celebrate.dart';
 import '../kapy_cursor_peek.dart';
 import '../kapy_page_peek.dart';
@@ -111,6 +112,7 @@ import 'selection_bubble.dart';
 import 'slash_command_menu.dart';
 import 'slash_commands.dart';
 import '../../sync/presence.dart';
+import 'live_text_card.dart';
 
 /// [edit] is where in the old body the change happened, as the editor saw
 /// it; null when it cannot say. See [NotesStore.updateDocument].
@@ -177,6 +179,7 @@ class NoteEditor extends StatefulWidget {
     this.onImagePrepared,
     this.onImagesRejected,
     this.videoAcquirer,
+    this.cameraAcquirer,
     this.videoIngestor,
     this.videoAttachmentMaxBytes,
     this.fileAcquirer,
@@ -286,6 +289,10 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<ImageBatch>? onImagesRejected;
 
   final VideoFileAcquirer? videoAcquirer;
+
+  /// The camera window on a Mac or PC, or null where there is none. What it
+  /// keeps goes in where the caret is.
+  final Future<List<XFile>> Function(BuildContext context)? cameraAcquirer;
   final VideoBatchIngestor? videoIngestor;
 
   /// Read when a selection is made rather than when the editor is built, so
@@ -471,6 +478,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// gone.
   static const _keyboardGoneAfter = Duration(milliseconds: 500);
   Timer? _keyboardGoneTimer;
+
+  /// How long the inset must hold still before the keyboard counts as up.
+  /// Until then it is still coming up, and a fall to zero is Android starting
+  /// its slide again from the bottom, which on a slow phone can take longer
+  /// than [_keyboardGoneAfter] to show (KAP-324), not the reader putting it
+  /// away.
+  static const _keyboardSettleAfter = Duration(milliseconds: 500);
+  Timer? _keyboardSettleTimer;
+  bool _keyboardSettled = false;
 
   final PlatformSpellCheckService _spellCheckService =
       PlatformSpellCheckService();
@@ -838,6 +854,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _correctionsArrived.dispose();
     _keyboardRetryTimer?.cancel();
     _keyboardGoneTimer?.cancel();
+    _keyboardSettleTimer?.cancel();
     _selectionToolbarTimer?.cancel();
     _pasteOfferTimer?.cancel();
     _keywordHoverTimer?.cancel();
@@ -3111,6 +3128,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  /// Opens the camera, and puts the photo or video kept there where the
+  /// caret is, the way the phone camera's land.
+  Future<void> openCameraAndInsert() async {
+    final acquire = widget.cameraAcquirer;
+    if (acquire == null || widget.readOnly || widget.images == null) return;
+    final files = await acquire(context);
+    if (files.isEmpty || !mounted) return;
+    await insertDroppedMedia(files);
+  }
+
   Future<void> pickAndInsertVideos() async {
     final store = widget.images;
     if (store == null || !_beginVideoAction()) return;
@@ -3409,6 +3436,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Set<SlashCommandType> get _availableSlashCommands => {
     SlashCommandType.checklist,
     SlashCommandType.bulletedList,
+    if (widget.images != null && widget.cameraAcquirer != null)
+      SlashCommandType.camera,
     if (widget.images != null && !_imageActionBusy) SlashCommandType.image,
     if (widget.onRecordVoice != null && !widget.voiceActionBusy)
       SlashCommandType.voiceNote,
@@ -3504,6 +3533,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       markdownEnabled: widget.markdownEnabled,
       hints: {
         for (final (command, action) in const [
+          (SlashCommandType.camera, ShortcutAction.openCamera),
           (SlashCommandType.image, ShortcutAction.insertImage),
           (SlashCommandType.voiceNote, ShortcutAction.recordVoiceNote),
           (SlashCommandType.video, ShortcutAction.insertVideo),
@@ -3737,6 +3767,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             selectionInBlock: const TextSelection.collapsed(offset: 4),
           ),
         );
+        break;
+      case SlashCommandType.camera:
+        if (typed) _consumeSlashCommand(range);
+        await openCameraAndInsert();
         break;
       case SlashCommandType.image:
         if (typed) _consumeSlashCommand(range);
@@ -4705,8 +4739,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // A cell opened with the keyboard down was scrolled into view before the
     // keyboard had a height; now that it has one, the cell may be under it.
     if (isUp && _editingCell != null) _ensureCellVisible();
-    if (isUp) _keyboardGoneTimer?.cancel();
-    if (isUp || !wasUp) return;
+    if (isUp) {
+      _keyboardGoneTimer?.cancel();
+      if (!_keyboardSettled) {
+        _keyboardSettleTimer?.cancel();
+        _keyboardSettleTimer = Timer(
+          _keyboardSettleAfter,
+          () => _keyboardSettled = true,
+        );
+      }
+      return;
+    }
+    _keyboardSettleTimer?.cancel();
+    final settled = _keyboardSettled;
+    _keyboardSettled = false;
+    if (!wasUp || !settled) return;
     if (widget.readOnly || !_editingNote) return;
     // Backgrounding the app also takes the keyboard down, and focus should
     // survive that: it is the same note, still open, when the app comes back.
@@ -8258,8 +8305,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                         if (!styles.contains(MarkdownStyle.tableHeader) &&
                             _tableNumber.hasMatch(words.trim())) {
                           drawn = drawn.copyWith(
-                            fontFamily: AppFonts.mono,
-                            fontFamilyFallback: AppFonts.monoFallback,
+                            fontFamily: AppFonts.ui,
+                            fontFamilyFallback: AppFonts.uiFallback,
                             fontSize: base.fontSize! * 14 / 15,
                             color: switch (words.trim()[0]) {
                               '+' => palette.codeString,
@@ -8436,9 +8483,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                                   palette.controlBorder,
                                               codePanel: palette.codePanel,
                                               codeChip: palette.codeChip,
-                                              accent: Theme.of(
-                                                context,
-                                              ).colorScheme.primary,
+                                              accent: palette.accentFill,
                                               onAccent: Theme.of(
                                                 context,
                                               ).colorScheme.onPrimary,
@@ -8635,14 +8680,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               },
             ),
           ),
-          if (!widget.readOnly && _liveSession != null)
+          if (!widget.readOnly && _liveSession != null) ...[
+            if (widget.recording?.liveText case final text?)
+              LiveTextCard(
+                text: text,
+                prefs: widget.recording!.live!.prefs,
+                paused: _liveSession!.paused,
+                wide: !AppPlatform.isMobile,
+              ),
             VoiceRecordingBar(
               session: _liveSession!,
               onPause: widget.recording?.pause,
               onResume: widget.recording?.resume,
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
-            )
+            ),
+          ]
           else if (!AppPlatform.isMobile)
             SizedBox(height: MediaQuery.paddingOf(context).bottom)
           else ...[
@@ -8655,10 +8708,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 onReadOnlyPressed: widget.onReadOnlyPressed,
               ),
             if (_formatBarShown)
-              PhoneFormatBar(
-                actions: _formatBarActions(mobileTableCell),
-                tapGroup: mobileTableCell == null ? EditableText : _cellEditor,
-                onDismissKeyboard: _dismissKeyboard,
+              HiddenWhileTurning(
+                fade: PageTurn.fade,
+                child: PhoneFormatBar(
+                  actions: _formatBarActions(mobileTableCell),
+                  tapGroup: mobileTableCell == null
+                      ? EditableText
+                      : _cellEditor,
+                  onDismissKeyboard: _dismissKeyboard,
+                ),
               )
             else if (!statusShown)
               SizedBox(height: MediaQuery.paddingOf(context).bottom),
@@ -8844,6 +8902,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           ?.activator:
                       widget.onRecordVoice!,
                 if (!widget.readOnly && widget.images != null) ...{
+                  if (widget.cameraAcquirer != null)
+                    ?widget.shortcuts
+                        .bindingFor(ShortcutAction.openCamera)
+                        ?.activator: () =>
+                        unawaited(openCameraAndInsert()),
                   ?widget.shortcuts
                       .bindingFor(ShortcutAction.insertImage)
                       ?.activator: () =>
@@ -9595,7 +9658,7 @@ class _UnknownChip extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: palette.controlBackground,
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           border: Border.all(color: palette.controlBorder),
         ),
         child: Text(
@@ -9669,8 +9732,8 @@ class _CodeBlockHeader extends StatelessWidget {
                 fontFamily: AppFonts.mono,
                 fontFamilyFallback: AppFonts.monoFallback,
                 fontSize: 11.5,
-                fontWeight: AppWeight.font(AppWeight.rowTitle),
-                fontVariations: AppWeight.wght(AppWeight.rowTitle),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
                 color: quiet,
               ),
             ),
@@ -9696,8 +9759,8 @@ class _CodeBlockHeader extends StatelessWidget {
                       style: TextStyle(
                         fontFamily: AppFonts.ui,
                         fontSize: 12,
-                        fontWeight: AppWeight.font(AppWeight.section),
-                        fontVariations: AppWeight.wght(AppWeight.section),
+                        fontWeight: AppWeight.font(AppWeight.regular),
+                        fontVariations: AppWeight.wght(AppWeight.regular),
                         color: quiet,
                       ),
                     ),

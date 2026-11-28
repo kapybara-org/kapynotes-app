@@ -227,7 +227,7 @@ class _SplitViewState extends State<SplitView> {
                         decoration: BoxDecoration(
                           border: Border(
                             right: BorderSide(
-                              color: palette.separator,
+                              color: palette.paneEdge,
                               width: AppHairline.of(context),
                             ),
                           ),

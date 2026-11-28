@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../core/editor_font.dart';
 import '../../core/theme.dart';
 import '../../data/note.dart';
 import '../../data/task_board.dart';
@@ -42,30 +41,6 @@ String taskNoteLabel(Note note, Space? space) {
   return '${note.title} · $name';
 }
 
-/// Shantell Sans, the hand the app titles things in.
-///
-/// A page title and a note's name, not a meta line. Meta uses [uiStyle].
-TextStyle handStyle(
-  double size,
-  double line,
-  FontWeight weight,
-  Color color, {
-  double? axis,
-  bool tabular = false,
-}) {
-  const hand = WritingFont.handwritten;
-  return chromeStyle(
-    size: size,
-    line: line,
-    weight: axis ?? AppWeight.axisOf(weight),
-    color: color,
-    family: hand.fontFamily,
-    fallback: hand.fontFamilyFallback,
-    extra: hand.faceVariations,
-    tabular: tabular,
-  );
-}
-
 /// A quiet mark that a task has details: lines for words, a picture mark for
 /// a picture or a video. Never a dot, so it cannot be read as a tag.
 class TaskDetailsIcon extends StatelessWidget {
@@ -95,7 +70,7 @@ class TaskDetailsIcon extends StatelessWidget {
   }
 }
 
-/// Figtree, every label and every task's words.
+/// The interface face: every label, every title and every task's words.
 TextStyle uiStyle(
   double size,
   double line,
@@ -111,10 +86,10 @@ TextStyle uiStyle(
   tabular: tabular,
 );
 
-/// Newsreader at 19/24, the serif a phone heads a day with: "Today" over
-/// Home's notes and over Tasks.
+/// The heading a phone puts over a day: "Today" over Home's notes and over
+/// Tasks.
 TextStyle dayTitleStyle(Color color) => TextStyle(
-  fontFamily: AppFonts.title,
+  fontFamily: AppFonts.ui,
   fontFamilyFallback: AppFonts.uiFallback,
   fontSize: 19,
   height: 24 / 19,
@@ -158,9 +133,7 @@ class NoteSwatch extends StatelessWidget {
       decoration: BoxDecoration(
         color:
             TagMarks.of(context, note.id).firstOrNull?.colour?.dot(palette) ??
-            (palette.brightness == Brightness.dark
-                ? const Color(0xFF3A3530)
-                : const Color(0xFFD9D2C1)),
+            palette.switchTrackOff,
         border: size <= 8
             ? null
             : Border.all(color: palette.textPrimary.withAlpha(0x24)),
@@ -221,7 +194,7 @@ class NoteMark extends StatelessWidget {
       message: 'Open $label',
       child: InkWell(
         onTap: onPressed,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 24),
           child: Padding(

@@ -351,7 +351,7 @@ class _TagPickerState extends State<TagPicker> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: index == _picker.at ? palette.hover : null,
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               children: [
@@ -878,7 +878,7 @@ class _TagNameFieldState extends State<TagNameField> {
   }
 }
 
-/// ⋯ on a tag's row: Rename, Colour ▸ and Delete. Rename is the row's own,
+/// ⋯ on a tag's row: Rename, Colour… and Delete. Rename is the row's own,
 /// which turns into a field.
 Future<void> showTagActions(
   BuildContext context, {
@@ -907,9 +907,8 @@ Future<void> showTagActions(
       item(
         const KapyMenuAction(
           value: 'colour',
-          label: 'Colour',
+          label: 'Colour…',
           icon: KapyIcons.tagRounded,
-          hint: '›',
         ),
       ),
       item(

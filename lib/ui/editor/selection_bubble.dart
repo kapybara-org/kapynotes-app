@@ -435,10 +435,10 @@ class _BlockButton extends StatelessWidget {
       onTap: controller.toggleBlocks,
       child: Material(
         color: open ? palette.selectedBackground : Colors.transparent,
-        borderRadius: BorderRadius.circular(AppRadii.compact),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         child: InkWell(
           key: const ValueKey('selection-block'),
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           hoverColor: palette.hover,
           onTap: controller.toggleBlocks,
           child: Container(
@@ -453,8 +453,8 @@ class _BlockButton extends StatelessWidget {
                   style: TextStyle(
                     color: palette.textPrimary,
                     fontSize: AppTypeScale.small,
-                    fontWeight: AppWeight.font(AppWeight.rowTitle),
-                    fontVariations: AppWeight.wght(AppWeight.rowTitle),
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                   ),
                 ),
                 KapyIcon(
@@ -501,9 +501,9 @@ class _BubbleIconButton extends StatelessWidget {
         message: shortcut == null ? label : '$label  $shortcut',
         child: Material(
           color: active ? palette.selectedBackground : Colors.transparent,
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           child: InkWell(
-            borderRadius: BorderRadius.circular(AppRadii.compact),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             hoverColor: palette.hover,
             onTap: onPressed,
             child: SizedBox.square(
@@ -535,8 +535,8 @@ class _LinkField extends StatelessWidget {
     final style = TextStyle(
       color: palette.textPrimary,
       fontSize: AppTypeScale.small,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -560,7 +560,7 @@ class _LinkField extends StatelessWidget {
           alignment: Alignment.centerLeft,
           decoration: BoxDecoration(
             color: palette.surfaceBackground,
-            borderRadius: BorderRadius.circular(AppRadii.compact),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             border: Border.all(color: palette.controlBorder),
           ),
           child: Material(
@@ -594,10 +594,10 @@ class _LinkField extends StatelessWidget {
           onTap: controller._submitLink,
           child: Material(
             color: palette.tonalBackground,
-            borderRadius: BorderRadius.circular(AppRadii.compact),
+            borderRadius: BorderRadius.circular(AppRadii.control),
             child: InkWell(
               key: const ValueKey('selection-link-apply'),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
               onTap: controller._submitLink,
               child: Container(
                 height: 30,
@@ -611,8 +611,8 @@ class _LinkField extends StatelessWidget {
                       style: TextStyle(
                         color: palette.tonalForeground,
                         fontSize: AppTypeScale.caption,
-                        fontWeight: AppWeight.font(AppWeight.rowTitle),
-                        fontVariations: AppWeight.wght(AppWeight.rowTitle),
+                        fontWeight: AppWeight.font(AppWeight.regular),
+                        fontVariations: AppWeight.wght(AppWeight.regular),
                       ),
                     ),
                     const Keycap('↵'),
@@ -648,8 +648,8 @@ class _BlockMenu extends StatelessWidget {
     final quiet = TextStyle(
       color: palette.textTertiary,
       fontSize: AppTypeScale.caption,
-      fontWeight: AppWeight.font(AppWeight.body),
-      fontVariations: AppWeight.wght(AppWeight.body),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
     );
     return Material(
       type: MaterialType.transparency,
@@ -669,13 +669,12 @@ class _BlockMenu extends StatelessWidget {
                 label: 'Turn into',
                 excludeSemantics: true,
                 child: Text(
-                  'TURN INTO',
+                  'Turn into',
                   style: TextStyle(
-                    color: palette.textTertiary,
-                    fontSize: AppTypeScale.badge,
-                    fontWeight: AppWeight.font(AppWeight.rowTitle),
-                    fontVariations: AppWeight.wght(AppWeight.rowTitle),
-                    letterSpacing: 0.44,
+                    color: palette.textSecondary,
+                    fontSize: AppTypeScale.caption,
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                   ),
                 ),
               ),
@@ -725,9 +724,11 @@ class _BlockMenu extends StatelessWidget {
                                   style: TextStyle(
                                     color: palette.textPrimary,
                                     fontSize: AppTypeScale.body,
-                                    fontWeight: AppWeight.font(AppWeight.body),
+                                    fontWeight: AppWeight.font(
+                                      AppWeight.regular,
+                                    ),
                                     fontVariations: AppWeight.wght(
-                                      AppWeight.body,
+                                      AppWeight.regular,
                                     ),
                                   ),
                                 ),

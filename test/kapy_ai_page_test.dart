@@ -63,7 +63,7 @@ FakeKapyAi _ai({bool pro = true, List<KapyChat>? chats}) =>
     FakeKapyAi(pro: pro, chatList: chats ?? _chats)
       ..set(model: KapyModel.cloud);
 
-const _account = SizedBox.square(
+final _account = SizedBox.square(
   key: ValueKey('account'),
   dimension: 32,
   child: DecoratedBox(
@@ -132,6 +132,17 @@ void main() {
     kapyAiAvailable = true;
   });
   tearDown(() => kapyAiAvailable = wasAvailable);
+
+  testWidgets("the page's name is handwritten, Shantell 30/36 at 500", (
+    tester,
+  ) async {
+    await _pump(tester, _ai());
+    final title = tester.widget<Text>(find.text('Kapy AI').first).style!;
+    expect(title.fontFamily, AppFonts.hand);
+    expect(title.fontSize, 30);
+    expect(title.height, 36 / 30);
+    expect(title.fontVariations, contains(const FontVariation('wght', 500)));
+  });
 
   testWidgets('heads it as Notes is: its name and the account, then search', (
     tester,
@@ -456,10 +467,10 @@ void main() {
       expect(pickerText(tester), [
         'On this device',
         'Answers stay on this phone',
-        'KAPY AI',
+        'Kapy AI',
         'Kapy AI Cloud',
         'Part of Pro',
-        'YOUR ACCOUNTS',
+        'Your accounts',
         'Fast',
         'Quick answers and short notes',
         'Manage accounts…',
@@ -477,13 +488,13 @@ void main() {
       );
 
       expect(pickerText(tester), [
-        'ON THIS DEVICE',
+        'On this device',
         'Apple Intelligence',
         'Answers stay on this iPhone',
-        'KAPY AI',
+        'Kapy AI',
         'Kapy AI Cloud',
         'Part of Pro',
-        'YOUR ACCOUNTS',
+        'Your accounts',
         'Fast',
         'Quick answers and short notes',
         'Manage accounts…',

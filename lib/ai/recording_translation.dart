@@ -185,6 +185,45 @@ final RegExp _lineLead = RegExp(
   multiLine: true,
 );
 
+/// [part] translated a line at a time by [translate], as the device's own
+/// translator makes it. [translate] gets only each line's words: a line's
+/// time mark, the name of whoever said it and a point's "- " stay as they
+/// are, so [translatedPart] takes what comes back. Null when [translate]
+/// answers null, or not one translation for each line.
+Future<String?> translateLines(
+  String part,
+  NoteVoiceRef ref,
+  Future<List<String>?> Function(List<String> words) translate,
+) async {
+  final transcript = ref.transcript;
+  final names = transcript != null && transcript.speakerIds.length > 1
+      ? [for (final id in transcript.speakerIds) '${transcript.nameFor(id)}: ']
+      : const <String>[];
+  final leads = <String>[];
+  final words = <String>[];
+  for (final line in part.split('\n')) {
+    final mark = timeMarkPattern.matchAsPrefix(line);
+    var lead = line.startsWith('- ') ? '- ' : '';
+    if (mark != null) {
+      lead = line.substring(0, mark.end);
+      if (line.startsWith(' ', lead.length)) lead += ' ';
+      final at = lead.length;
+      lead +=
+          names.where((name) => line.startsWith(name, at)).firstOrNull ?? '';
+    }
+    leads.add(lead);
+    words.add(line.substring(lead.length));
+  }
+  final translated = await translate(words);
+  if (translated == null || translated.length != words.length) return null;
+  return [
+    for (final (i, lead) in leads.indexed)
+      '$lead${translated[i].replaceAll(_breaks, ' ').trim()}',
+  ].join('\n');
+}
+
+final RegExp _breaks = RegExp(r'\s*\n\s*');
+
 /// The parts of a translation as one text, in order.
 String stitchTranslation(Iterable<String> parts) => parts.join('\n');
 

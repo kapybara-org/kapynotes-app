@@ -68,6 +68,7 @@ class VoiceAsk extends StatefulWidget {
     super.key,
     required this.actions,
     required this.ref,
+    this.top,
     required this.page,
     this.unavailable,
     this.compact = false,
@@ -85,6 +86,10 @@ class VoiceAsk extends StatefulWidget {
 
   /// The recording, with the takes it keeps.
   final NoteVoiceRef ref;
+
+  /// The rows over the page that the drawer never covers: the transcript's
+  /// search and speakers rows.
+  final Widget? top;
 
   /// The summary or the transcript, which the drawer rises over.
   final Widget page;
@@ -403,30 +408,43 @@ class _VoiceAskState extends State<VoiceAsk> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        ?widget.top,
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) => Stack(
               children: [
                 Positioned.fill(child: widget.page),
                 if (showing)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
+                  Positioned.fill(
+                    // The fade over the page above the drawer ends in a
+                    // solid band; at its tallest only that band is left, so
+                    // no row shows cut through above it.
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Container(
-                          height: 24,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                palette.surfaceBackground.withValues(alpha: 0),
-                                palette.surfaceBackground,
-                              ],
+                        Flexible(
+                          child: ClipRect(
+                            child: OverflowBox(
+                              alignment: Alignment.bottomCenter,
+                              minHeight: 24,
+                              maxHeight: 24,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    stops: const [0, 2 / 3],
+                                    colors: [
+                                      palette.surfaceBackground.withValues(
+                                        alpha: 0,
+                                      ),
+                                      palette.surfaceBackground,
+                                    ],
+                                  ),
+                                ),
+                                child: const SizedBox.expand(),
+                              ),
                             ),
                           ),
                         ),
@@ -436,7 +454,7 @@ class _VoiceAskState extends State<VoiceAsk> {
                             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                             child: _Drawer(
                               key: const ValueKey('voice-ask-drawer'),
-                              maxHeight: constraints.maxHeight - 32,
+                              maxHeight: constraints.maxHeight - 16,
                               child: _earlier
                                   ? _earlierList(palette, history)
                                   : chat != null
@@ -818,10 +836,27 @@ class _VoiceAskState extends State<VoiceAsk> {
     final insert = widget.onInsert;
     final copy = widget.onCopy;
     final meta = kapyText(11.5, 16, palette.textTertiary);
+    final heard = languageNamed(widget.ref.transcript?.lang ?? '');
     final source = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (model != null)
+        // Made by the device's own translator, which can't be picked: said
+        // as it is, with the languages it went between.
+        if (model == KapyModel.translator)
+          Flexible(
+            child: Text(
+              [
+                'Translated on this device',
+                if (heard != null && translation != null)
+                  '${heard.english} → ${translation.language.english}',
+              ].join(' · '),
+              key: const ValueKey('voice-ask-translated-here'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: meta,
+            ),
+          )
+        else if (model != null)
           Flexible(
             child: InkWell(
               key: const ValueKey('voice-ask-model'),
@@ -1151,7 +1186,7 @@ class _VoiceAskState extends State<VoiceAsk> {
     ),
     label: Text(
       'Insert into note',
-      style: kapyText(13, 16, palette.accentText, weight: FontWeight.w500),
+      style: kapyText(13, 16, palette.accentText, weight: FontWeight.w400),
     ),
     style: TextButton.styleFrom(
       minimumSize: const Size(0, 28),
@@ -1221,8 +1256,8 @@ typedef _Earlier = ({
 /// What a post is called on its starter, over it in the drawer and in
 /// Earlier: the starter's label, or the person's own words.
 String _postTitle(VoiceTakeKind kind, [String? instruction]) => switch (kind) {
-  VoiceTakeKind.x => 'Create X Post',
-  VoiceTakeKind.linkedin => 'Create LinkedIn Post',
+  VoiceTakeKind.x => 'Create X post',
+  VoiceTakeKind.linkedin => 'Create LinkedIn post',
   VoiceTakeKind.custom => instruction ?? 'Your own words',
 };
 

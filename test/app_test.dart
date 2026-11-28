@@ -90,9 +90,9 @@ import 'package:kapy_notes/ui/sidebar_timestamp.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
 import 'package:kapy_notes/ui/tag_ui.dart';
-import 'package:kapy_notes/ui/tonal_button.dart';
 import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
+import 'package:kapy_notes/ui/page_turn.dart' show HiddenWhileTurning;
 import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
@@ -117,9 +117,17 @@ class MemoryStore extends LocalStore {
   @override
   Future<void> flush() async {}
 
-  /// Writes straight through: no debounce timer to outlive the test.
+  /// Writes straight through: no delay timer to outlive the test.
   @override
   void put(String key, Object? value) => data[key] = value;
+
+  /// Still asks for [flush], so a note switch reaches a store that logs its
+  /// writes, and leaves [writes] as it was: this store has no disk to wait on.
+  @override
+  void putNow(String key, Object? value) {
+    data[key] = value;
+    unawaited(flush());
+  }
 }
 
 class DeferredMemoryStore extends MemoryStore {
@@ -866,6 +874,37 @@ void main() {
           expect(openNoteBody(tester), 'First note');
         }, variant: desktop);
 
+        testWidgets('${by.name}: + on the tab row is no tab: a step from the '
+            'new tab goes to the one before, and back again, and no further '
+            '(KAP-433)', (tester) async {
+          asDesktop();
+          await pumpApp(tester, size: const Size(1400, 800));
+          notes.create(body: 'First note');
+          notes.create(body: 'Second note');
+          await tester.pumpAndSettle();
+          await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+          await tester.pumpAndSettle();
+          final modifier = AppPlatform.isMacOS
+              ? LogicalKeyboardKey.metaLeft
+              : LogicalKeyboardKey.controlLeft;
+          await tester.sendKeyDownEvent(modifier);
+          await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+          await tester.sendKeyUpEvent(modifier);
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(const ValueKey('note-tabs-new')));
+          await tester.pumpAndSettle();
+          final row = find.byType(NoteTabRow);
+          expect(tester.widget<NoteTabRow>(row).tabs, hasLength(3));
+          expect(openNoteBody(tester), Note.untitled);
+
+          await stepOver(tester, row, back, by);
+          expect(openNoteBody(tester), 'Second note');
+          await stepOver(tester, row, forward, by);
+          expect(openNoteBody(tester), Note.untitled);
+          await stepOver(tester, row, forward, by);
+          expect(openNoteBody(tester), Note.untitled, reason: 'the last tab');
+        }, variant: desktop);
+
         testWidgets('${by.name}: over Tasks it moves between its views', (
           tester,
         ) async {
@@ -1057,6 +1096,246 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    '+ on the tab row makes a new note in a new tab at the end, in front, '
+    'with its title picked to type over, and the other tabs stay (KAP-433)',
+    (tester) async {
+      asDesktop();
+      await pumpApp(tester, size: const Size(1400, 800));
+      notes.create(body: 'First note');
+      notes.create(body: 'Second note');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'First note'));
+      await tester.pumpAndSettle();
+      final modifier = AppPlatform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      await tester.sendKeyDownEvent(modifier);
+      await tester.tap(find.widgetWithText(NoteRow, 'Second note'));
+      await tester.sendKeyUpEvent(modifier);
+      await tester.pumpAndSettle();
+      final row = find.byType(NoteTabRow);
+      final before = tester.widget<NoteTabRow>(row).tabs;
+      expect(before.map((tab) => tab.title), ['First note', 'Second note']);
+      final count = notes.notes.length;
+
+      await tester.tap(find.byKey(const ValueKey('note-tabs-new')));
+      await tester.pumpAndSettle();
+
+      expect(notes.notes, hasLength(count + 1));
+      final after = tester.widget<NoteTabRow>(row);
+      expect(after.tabs, hasLength(3));
+      expect(after.tabs.take(2).map((tab) => tab.id), [
+        for (final tab in before) tab.id,
+      ]);
+      expect(after.activeId, after.tabs.last.id);
+      final field = openNoteField(tester);
+      expect(field.controller.text, Note.blankBody);
+      expect(field.focusNode.hasFocus, isTrue);
+      expect(
+        field.controller.selection,
+        const TextSelection(baseOffset: 0, extentOffset: Note.untitled.length),
+      );
+    },
+    variant: TargetPlatformVariant.desktop(),
+  );
+
+  testWidgets(
+    'Cmd+T or Ctrl+T with one note open makes a new note in a new tab, and '
+    'the tab row comes with its + (KAP-433)',
+    (tester) async {
+      asDesktop();
+      await pumpApp(tester, size: const Size(1400, 800));
+      notes.create(body: 'Only note');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'Only note'));
+      await tester.pumpAndSettle();
+      expect(find.byType(NoteTabRow), findsNothing);
+      final count = notes.notes.length;
+
+      await pressShortcut(
+        tester,
+        shortcuts.bindingFor(ShortcutAction.newNoteInNewTab)!,
+      );
+
+      expect(notes.notes, hasLength(count + 1));
+      final row = tester.widget<NoteTabRow>(find.byType(NoteTabRow));
+      expect(row.tabs.map((tab) => tab.title), ['Only note', Note.untitled]);
+      expect(row.activeId, row.tabs.last.id);
+      expect(find.byKey(const ValueKey('note-tabs-new')), findsOneWidget);
+      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
+    },
+    variant: TargetPlatformVariant.desktop(),
+  );
+
+  group('Next tab and Previous tab (KAP-433)', () {
+    Future<void> openTabs(WidgetTester tester, List<String> bodies) async {
+      await tester.tap(find.widgetWithText(NoteRow, bodies.first));
+      await tester.pumpAndSettle();
+      final modifier = AppPlatform.isMacOS
+          ? LogicalKeyboardKey.metaLeft
+          : LogicalKeyboardKey.controlLeft;
+      for (final body in bodies.skip(1)) {
+        await tester.sendKeyDownEvent(modifier);
+        await tester.tap(find.widgetWithText(NoteRow, body));
+        await tester.sendKeyUpEvent(modifier);
+        await tester.pumpAndSettle();
+      }
+    }
+
+    Future<void> press(WidgetTester tester, ShortcutAction action) =>
+        pressShortcut(tester, shortcuts.bindingFor(action)!);
+
+    testWidgets(
+      'walk the open tabs in the row\'s order, round from either end, and '
+      'never reach a note that is not open as a tab',
+      (tester) async {
+        asDesktop();
+        await pumpApp(tester, size: const Size(1400, 800));
+        notes.create(body: 'Not a tab');
+        notes.create(body: 'Third note');
+        notes.create(body: 'Second note');
+        notes.create(body: 'First note');
+        await tester.pumpAndSettle();
+        await openTabs(tester, ['First note', 'Second note', 'Third note']);
+        final row = find.byType(NoteTabRow);
+        expect(tester.widget<NoteTabRow>(row).tabs.map((tab) => tab.title), [
+          'First note',
+          'Second note',
+          'Third note',
+        ]);
+        expect(
+          openNoteBody(tester),
+          'First note',
+          reason: 'the others open behind',
+        );
+
+        final forward = <String>[];
+        for (var i = 0; i < 4; i++) {
+          await press(tester, ShortcutAction.nextTab);
+          forward.add(openNoteBody(tester));
+        }
+        expect(forward, [
+          'Second note',
+          'Third note',
+          'First note',
+          'Second note',
+        ]);
+
+        final back = <String>[];
+        for (var i = 0; i < 4; i++) {
+          await press(tester, ShortcutAction.previousTab);
+          back.add(openNoteBody(tester));
+        }
+        expect(back, ['First note', 'Third note', 'Second note', 'First note']);
+        expect(tester.widget<NoteTabRow>(row).tabs, hasLength(3));
+      },
+      variant: TargetPlatformVariant.desktop(),
+    );
+
+    testWidgets('do nothing with one tab', (tester) async {
+      asDesktop();
+      await pumpApp(tester, size: const Size(1400, 800));
+      notes.create(body: 'Other note');
+      notes.create(body: 'Only tab');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(NoteRow, 'Only tab'));
+      await tester.pumpAndSettle();
+
+      await press(tester, ShortcutAction.nextTab);
+      expect(openNoteBody(tester), 'Only tab');
+      await press(tester, ShortcutAction.previousTab);
+      expect(openNoteBody(tester), 'Only tab');
+      expect(find.byType(NoteTabRow), findsNothing);
+    }, variant: TargetPlatformVariant.desktop());
+
+    testWidgets('on a Mac, Cmd+Shift+] and Cmd+Shift+[ step through the tabs '
+        'too, unless a shortcut already uses them', (tester) async {
+      asDesktop();
+      await pumpApp(tester, size: const Size(1400, 800));
+      notes.create(body: 'Second note');
+      notes.create(body: 'First note');
+      await tester.pumpAndSettle();
+      await openTabs(tester, ['First note', 'Second note']);
+      // Shift+] types }, so that is the key a Mac reports.
+      Future<void> chord(
+        LogicalKeyboardKey brace,
+        PhysicalKeyboardKey key,
+      ) async {
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyDownEvent(brace, physicalKey: key);
+        await tester.sendKeyUpEvent(brace, physicalKey: key);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> next() => chord(
+        LogicalKeyboardKey.braceRight,
+        PhysicalKeyboardKey.bracketRight,
+      );
+      Future<void> previous() =>
+          chord(LogicalKeyboardKey.braceLeft, PhysicalKeyboardKey.bracketLeft);
+
+      expect(openNoteBody(tester), 'First note');
+      await next();
+      expect(openNoteBody(tester), 'Second note');
+      await next();
+      expect(openNoteBody(tester), 'First note');
+      await previous();
+      expect(openNoteBody(tester), 'Second note');
+
+      final results = prefs.resultsVisible;
+      shortcuts.update(
+        ShortcutAction.toggleResults,
+        const ShortcutBinding(
+          logicalKey: LogicalKeyboardKey.braceRight,
+          physicalKey: PhysicalKeyboardKey.bracketRight,
+          meta: true,
+          shift: true,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await next();
+      expect(prefs.resultsVisible, !results);
+      expect(
+        openNoteBody(tester),
+        'Second note',
+        reason: 'the chord shows or hides the results now, and only that',
+      );
+      await previous();
+      expect(openNoteBody(tester), 'First note');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('off a Mac, Shift+Meta+] is no tab shortcut', (tester) async {
+      asDesktop();
+      await pumpApp(tester, size: const Size(1400, 800));
+      notes.create(body: 'Second note');
+      notes.create(body: 'First note');
+      await tester.pumpAndSettle();
+      await openTabs(tester, ['First note', 'Second note']);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      // Windows has no key code for a brace, so the event is a Mac's.
+      await tester.sendKeyDownEvent(
+        LogicalKeyboardKey.braceRight,
+        platform: 'macos',
+        physicalKey: PhysicalKeyboardKey.bracketRight,
+      );
+      await tester.sendKeyUpEvent(
+        LogicalKeyboardKey.braceRight,
+        platform: 'macos',
+        physicalKey: PhysicalKeyboardKey.bracketRight,
+      );
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'First note');
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
+  });
 
   group('voice choices survive a relaunch', () {
     void saveChoices(LocalStore saved) {
@@ -2096,10 +2375,16 @@ void main() {
     expect(find.text('Unpin note'), findsOneWidget);
   });
 
-  testWidgets('a page too narrow for Saved in its bar puts it on the note\'s '
-      'date line', (tester) async {
+  testWidgets('typing says "Saving…", then "Saved", then nothing, on the '
+      'note\'s date line where the page is too narrow for it in its bar', (
+    tester,
+  ) async {
     final inBar = find.byKey(const ValueKey('page-saved'));
     final onDateLine = find.byKey(const ValueKey('note-saved'));
+    final field = find.descendant(
+      of: find.byType(NoteEditor),
+      matching: noteField,
+    );
     await pumpApp(
       tester,
       size: LayoutPrefs.minimumWindowSize,
@@ -2109,12 +2394,39 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getSize(find.byType(PageToolbar)).width, lessThan(560));
     expect(inBar, findsNothing);
-    expect(tester.widget<Text>(onDateLine).data, 'Saved');
+    expect(onDateLine, findsNothing);
+
+    await tester.enterNote('alpha beta', field);
+    await tester.pump();
+    expect(inBar, findsNothing);
+    expect(
+      find.descendant(of: onDateLine, matching: find.text('Saving…')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 1100));
+    expect(
+      find.descendant(of: onDateLine, matching: find.text('Saved')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2400));
+    expect(onDateLine, findsNothing);
 
     tester.view.physicalSize = const Size(1100, 760);
     await tester.pumpAndSettle();
-    expect(inBar, findsOneWidget);
+    await tester.enterNote('alpha beta gamma', field);
+    await tester.pump();
+    expect(
+      find.descendant(of: inBar, matching: find.text('Saving…')),
+      findsOneWidget,
+    );
     expect(onDateLine, findsNothing);
+    await tester.pump(const Duration(milliseconds: 1100));
+    expect(
+      find.descendant(of: inBar, matching: find.text('Saved')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 2400));
+    expect(inBar, findsNothing);
   });
 
   testWidgets('a first run opens on a page, with the notes list closed', (
@@ -2170,7 +2482,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(Sidebar), findsNothing);
       expect(barrier, findsNothing);
-      for (final key in ['page-show-list', 'page-share', 'page-more']) {
+      for (final key in ['page-show-list', 'page-more']) {
         expect(find.byKey(ValueKey(key)), findsOneWidget);
       }
 
@@ -2182,8 +2494,8 @@ void main() {
   );
 
   testWidgets(
-    'a list open over a narrow page draws the one hairline, and the page '
-    'behind it leaves its own out',
+    "a list open over a narrow page draws no hairline of its own, so the "
+    "page's band keeps the one line",
     (tester) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -2200,17 +2512,17 @@ void main() {
         find.byKey(const ValueKey('sidebar-overlay-barrier')),
         findsOneWidget,
       );
-      expect(line(band), isNull);
+      expect(line(band), isNotNull);
       expect(
-        line(
-          find
-              .descendant(
+        tester
+            .widgetList<Container>(
+              find.descendant(
                 of: find.byType(SidebarWindowBar),
                 matching: find.byType(Container),
-              )
-              .first,
-        ),
-        isNotNull,
+              ),
+            )
+            .where((box) => box.foregroundDecoration != null),
+        isEmpty,
       );
 
       await tester.tap(find.byKey(const ValueKey('sidebar-hide')));
@@ -2461,7 +2773,6 @@ void main() {
       tester.getSize(pageButton('page-more', IconButton)),
       const Size.square(32),
     );
-    expect(tester.getSize(pageButton('page-share', FilledButton)).height, 32);
     expect(
       tester.getSize(find.byType(NoteRow).first).height,
       NoteCardFace.height,
@@ -2530,6 +2841,19 @@ void main() {
     );
   });
 
+  testWidgets("the notes list's name is handwritten, Shantell 22/28 at 500", (
+    tester,
+  ) async {
+    await pumpApp(tester);
+    final title = tester
+        .widget<Text>(find.byKey(const ValueKey('sidebar-space-title')))
+        .style!;
+    expect(title.fontFamily, AppFonts.hand);
+    expect(title.fontSize, 22);
+    expect(title.height, 28 / 22);
+    expect(title.fontVariations, contains(const FontVariation('wght', 500)));
+  });
+
   testWidgets('opens footer settings and resets desktop panel widths', (
     tester,
   ) async {
@@ -2540,15 +2864,14 @@ void main() {
 
     await openSettings(tester, section: SettingsSection.notes);
 
-    // Twice over now: the sidebar row that opened it, and the dialog's title.
-    expect(find.text('Settings'), findsWidgets);
+    expect(find.byType(SettingsDialog), findsOneWidget);
     final dailyToggle = find.byKey(const ValueKey('daily-separators-toggle'));
     final compactSwitch = find.descendant(
       of: dailyToggle,
       matching: find.byKey(const ValueKey('compact-switch-indicator')),
     );
     expect(prefs.dailySeparatorsEnabled, isTrue);
-    expect(tester.getSize(compactSwitch), const Size(38, 22));
+    expect(tester.getSize(compactSwitch), const Size(36, 16));
 
     final readyToType = find.byKey(
       const ValueKey('ready-to-type-on-open-toggle'),
@@ -2631,7 +2954,7 @@ void main() {
     expect(styleOf('Opening').fontFamily, isNot('Shantell Sans'));
     expect(
       styleOf('Opening').fontVariations,
-      AppWeight.variations(AppWeight.section),
+      AppWeight.variations(AppWeight.regular),
     );
     expect(styleOf('Daily separators').fontFamily, isNot('Shantell Sans'));
     expect(
@@ -2834,8 +3157,8 @@ void main() {
     );
     expect(
       labelOf(WritingFont.mixed).style?.fontFamily,
-      WritingFont.monospace.fontFamily,
-      reason: 'Mixed is named in the type its numbers are set in',
+      WritingFont.handwritten.fontFamily,
+      reason: 'Mixed is named in the hand its titles are written in',
     );
 
     final monospace = find.byKey(const ValueKey('writing-font-monospace'));
@@ -2848,6 +3171,124 @@ void main() {
 
     final restored = LayoutPrefs(store)..load();
     expect(restored.writingFont, WritingFont.monospace);
+  });
+
+  test('Pixel is kept, and a writing style from a later version reads as '
+      'Clean', () {
+    store.data['writingFont.v1'] = 'pixel';
+    expect((LayoutPrefs(store)..load()).writingFont, WritingFont.pixel);
+    store.data['writingFont.v1'] = 'a style from a later version';
+    expect((LayoutPrefs(store)..load()).writingFont, WritingFont.clean);
+  });
+
+  Future<void> openPhoneSettings(
+    WidgetTester tester,
+    double width, {
+    SettingsSection section = SettingsSection.appearance,
+  }) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = Size(width, 700);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showSettings(
+                context,
+                layoutPrefs: LayoutPrefs(store)..load(),
+                shortcuts: ShortcutPrefs(store)..load(),
+                rates: RatesRepository(store),
+                notes: notes,
+                section: section,
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    if (section != SettingsSection.appearance) return;
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('writing-font-pixel')),
+    );
+  }
+
+  testWidgets('a phone shares a choice equally when its labels fit, each '
+      'label measured in the face it is drawn in', (tester) async {
+    double width(String key) => tester.getSize(find.byKey(ValueKey(key))).width;
+
+    await openPhoneSettings(tester, 320);
+    expect({
+      for (final paper in PaperStyle.values) width('paper-style-${paper.name}'),
+    }, hasLength(1));
+
+    tester.view.physicalSize = const Size(390, 700);
+    await tester.pumpAndSettle();
+    expect({
+      for (final font in WritingFont.values) width('writing-font-${font.name}'),
+    }, hasLength(1));
+  });
+
+  testWidgets('a phone puts the time zone under its name, so neither line is '
+      'cut', (tester) async {
+    for (final width in [320.0, 390.0]) {
+      await openPhoneSettings(tester, width, section: SettingsSection.notes);
+      final row = find.byKey(const ValueKey('time-zone-setting'));
+      await tester.ensureVisible(row);
+      await tester.pumpAndSettle();
+      for (final words in ['Time zone for dates', 'Used by separators']) {
+        final text = find.descendant(
+          of: row,
+          matching: find.textContaining(words),
+        );
+        expect(
+          tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
+          isFalse,
+          reason: '$words at $width',
+        );
+      }
+      final menu = find.descendant(
+        of: row,
+        matching: find.byType(SettingsMenuButton),
+      );
+      expect(
+        tester.getRect(menu).top,
+        greaterThan(tester.getRect(find.text('Time zone for dates')).bottom),
+      );
+      await tester.pumpWidget(const SizedBox());
+    }
+  });
+
+  testWidgets('on a 320 pt phone all five writing styles keep their letters', (
+    tester,
+  ) async {
+    await openPhoneSettings(tester, 320);
+    for (final font in WritingFont.values) {
+      final segment = find.byKey(ValueKey('writing-font-${font.name}'));
+      final label = find.descendant(of: segment, matching: find.byType(Text));
+      final shown = find.descendant(
+        of: segment,
+        matching: find.byType(FittedBox),
+      );
+      expect(
+        tester.getSize(shown).width / tester.getSize(label).width,
+        greaterThan(0.9),
+        reason: font.name,
+      );
+    }
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('writing-font-handwritten')),
+        matching: find.text('Hand'),
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('changes app text size live and persists it', (tester) async {
@@ -2902,9 +3343,7 @@ void main() {
     expect(prefs.editorTextScale, 1);
   });
 
-  testWidgets('Settings shows the zoom and steps it', (
-    tester,
-  ) async {
+  testWidgets('Settings shows the zoom and steps it', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpApp(tester);
@@ -2917,7 +3356,10 @@ void main() {
       find.descendant(of: row, matching: find.text('The whole window')),
       findsOneWidget,
     );
-    expect(find.descendant(of: row, matching: find.text('100%')), findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('100%')),
+      findsOneWidget,
+    );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('note-text-size-setting')),
@@ -2927,11 +3369,17 @@ void main() {
     );
 
     await tester.tap(
-      find.descendant(of: row, matching: find.byKey(const ValueKey('stepper-up'))),
+      find.descendant(
+        of: row,
+        matching: find.byKey(const ValueKey('stepper-up')),
+      ),
     );
     await tester.pumpAndSettle();
     expect(prefs.zoom, 1.1);
-    expect(find.descendant(of: row, matching: find.text('110%')), findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('110%')),
+      findsOneWidget,
+    );
     expect(prefs.editorTextScale, 1);
   });
 
@@ -2949,7 +3397,8 @@ void main() {
       for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
         AppPlatform.debugTargetPlatformOverride = platform;
         for (final listShown in [true, false]) {
-          final reason = '${(zoom * 100).round()}%, ${platform.name}, list '
+          final reason =
+              '${(zoom * 100).round()}%, ${platform.name}, list '
               '${listShown ? 'shown' : 'hidden'}';
           await pumpApp(tester, sidebarVisible: listShown);
           prefs.zoom = zoom;
@@ -2959,10 +3408,8 @@ void main() {
           await tester.pumpAndSettle();
 
           final page = tester.getRect(bar);
-          for (final key in ['page-share', 'page-more']) {
-            final control = tester.getRect(find.byKey(ValueKey(key)));
-            expect(page.intersect(control), control, reason: '$key, $reason');
-          }
+          final more = tester.getRect(find.byKey(const ValueKey('page-more')));
+          expect(page.intersect(more), more, reason: 'page-more, $reason');
           final screen = Offset.zero & (window / zoom);
           for (final key in ['rail-notes', 'rail-drawings']) {
             final item = tester.getRect(find.byKey(ValueKey(key)));
@@ -2970,7 +3417,7 @@ void main() {
           }
 
           await openSettings(tester);
-          final done = find.text('Done');
+          final done = find.byKey(const ValueKey('settings-done'));
           expect(done, findsOneWidget, reason: reason);
           final doneRect = tester.getRect(done);
           expect(screen.intersect(doneRect), doneRect, reason: reason);
@@ -2978,7 +3425,10 @@ void main() {
           await tester.ensureVisible(zoomRow);
           await tester.pumpAndSettle();
           for (final words in ['Zoom', 'The whole window']) {
-            final text = find.descendant(of: zoomRow, matching: find.text(words));
+            final text = find.descendant(
+              of: zoomRow,
+              matching: find.text(words),
+            );
             expect(
               tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
               isFalse,
@@ -3329,14 +3779,14 @@ void main() {
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyP);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyP);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyU);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyU);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
     await tester.pumpAndSettle();
 
     final recorded = shortcuts.bindingFor(ShortcutAction.findNotes)!;
-    expect(recorded.logicalKey, LogicalKeyboardKey.keyP);
+    expect(recorded.logicalKey, LogicalKeyboardKey.keyU);
     expect(recorded.meta, isTrue);
     expect(recorded.shift, isTrue);
   });
@@ -3464,156 +3914,24 @@ void main() {
     expect(find.byKey(const ValueKey('shortcut-recording-note')), findsNothing);
   });
 
-  testWidgets(
-    'Ctrl+Tab previews, commits on Ctrl-up, and toggles recent notes',
-    (tester) async {
-      await pumpApp(tester);
-      final alpha = notes.create(body: 'alpha');
-      final bravo = notes.create(body: 'bravo');
-      final charlie = notes.create(body: 'charlie');
-      await tester.pumpAndSettle();
-
-      // Switching is its own recency order. It must not forge an edit merely to
-      // move a note to the front of that order.
-      expect(notes.notes.map((note) => note.body), [
-        'charlie',
-        'bravo',
-        'alpha',
-      ]);
-      final updatedAt = {
-        for (final note in notes.notes) note.id: note.updatedAt,
-      };
-      final openedBeforeSwitch = prefs.lastOpenedNoteId;
-
-      Future<void> tabWhileControlIsDown({bool shift = false}) async {
-        if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-        await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
-        await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
-        if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-        await tester.pumpAndSettle();
-      }
-
-      List<String> sidebarOrder() => tester
-          .widgetList<NoteRow>(find.byType(NoteRow))
-          .map((row) => row.note.body)
-          .toList();
-
-      expect(openNoteBody(tester), 'alpha');
-      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
-
-      // The first session has no usage history yet, so it falls back to the
-      // visible list after the note already open. Further Tabs preview against
-      // one frozen order while Control remains down.
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tabWhileControlIsDown();
-      expect(openNoteBody(tester), 'charlie');
-      expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
-      await tabWhileControlIsDown();
-      expect(openNoteBody(tester), 'bravo');
-      expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-      expect(prefs.lastOpenedNoteId, openedBeforeSwitch);
-      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
-
-      // Releasing the switching modifier is the commit: the previewed editor
-      // gets focus, and this note becomes the most recently used one without
-      // disturbing the content store's newest-edited ordering.
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await tester.pumpAndSettle();
-      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-      expect(prefs.lastOpenedNoteId, bravo.id);
-      expect(notes.notes.map((note) => note.id), [
-        charlie.id,
-        bravo.id,
-        alpha.id,
-      ]);
-      expect({
-        for (final note in notes.notes) note.id: note.updatedAt,
-      }, updatedAt);
-      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
-
-      // The note just left is now second in MRU order, so one more Ctrl+Tab is
-      // a true two-note toggle rather than another step through the sidebar.
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tabWhileControlIsDown();
-      expect(openNoteBody(tester), 'alpha');
-      expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await tester.pumpAndSettle();
-      expect(openNoteBody(tester), 'alpha');
-      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-      expect(prefs.lastOpenedNoteId, alpha.id);
-      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
-
-      // Shift only reverses direction. Letting go of it must not accidentally
-      // commit a Ctrl+Shift+Tab session while Control is still held.
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
-      await tester.pumpAndSettle();
-      expect(openNoteBody(tester), 'charlie');
-      expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-      await tester.pumpAndSettle();
-      expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-      await tester.pumpAndSettle();
-      expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-      expect(sidebarOrder(), ['charlie', 'bravo', 'alpha']);
-    },
-  );
-
-  testWidgets('Ctrl+Tab follows the visible row below a pinned note', (
-    tester,
-  ) async {
-    await pumpApp(tester);
-    final alpha = notes.create(body: 'alpha');
-    notes.create(body: 'bravo');
-    final charlie = notes.create(body: 'charlie');
-    await tester.pumpAndSettle();
-
-    await openNoteActions(tester, alpha.id);
-    await tester.tap(find.byKey(ValueKey('pin-note-${alpha.id}')));
-    await tester.pumpAndSettle();
-
-    // Opening Charlie makes the underlying MRU order Charlie, Alpha, Bravo,
-    // while the pinned section visibly paints Alpha, Charlie, Bravo. Scrubbing
-    // back to Alpha preserves that disagreement until the switch commits.
-    await tester.tap(find.widgetWithText(NoteRow, 'charlie'));
-    await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pumpAndSettle();
-    expect(openNoteBody(tester), 'alpha');
-    expect(
-      tester
-          .widgetList<NoteRow>(find.byType(NoteRow))
-          .map((row) => row.note.body)
-          .toList(),
-      ['alpha', 'charlie', 'bravo'],
-    );
-
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
-    await tester.pumpAndSettle();
-
-    expect(openNoteBody(tester), 'charlie');
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    await tester.pumpAndSettle();
-    expect(prefs.lastOpenedNoteId, charlie.id);
-  });
-
   testWidgets('Ctrl+Tab leaves a list line alone on its way past', (
     tester,
   ) async {
-    await pumpApp(tester);
+    asDesktop();
+    await pumpApp(tester, size: const Size(1400, 800));
     notes.create(body: '\u2022 bravo');
     notes.create(body: 'alpha');
     await tester.pumpAndSettle();
+    final modifier = AppPlatform.isMacOS
+        ? LogicalKeyboardKey.metaLeft
+        : LogicalKeyboardKey.controlLeft;
+    await tester.sendKeyDownEvent(modifier);
+    await tester.tap(find.widgetWithText(NoteRow, 'alpha'));
+    await tester.sendKeyUpEvent(modifier);
+    await tester.pumpAndSettle();
     expect(openNoteBody(tester), '\u2022 bravo');
+    openNoteField(tester).focusNode.requestFocus();
+    await tester.pump();
 
     // Opening a note parks the caret on the blank line underneath, and Tab
     // only claims a line that is actually a list item.
@@ -3638,7 +3956,7 @@ void main() {
     await tab();
     expect(openNoteBody(tester), '  \u25e6 bravo');
 
-    // The same key carrying Ctrl belongs to switching between notes. It has to
+    // The same key carrying Ctrl belongs to the next tab. It has to
     // pass straight through the editor: nesting the item a second time on the
     // way out would be a keystroke nobody asked for.
     await caretOnTheListLine();
@@ -3648,120 +3966,7 @@ void main() {
       notes.notes.map((note) => note.body.trimRight()),
       contains('  \u25e6 bravo'),
     );
-  });
-
-  testWidgets('a Command-based custom note switch commits on Command-up', (
-    tester,
-  ) async {
-    shortcuts.load();
-    shortcuts.update(
-      ShortcutAction.nextNote,
-      const ShortcutBinding(
-        logicalKey: LogicalKeyboardKey.keyJ,
-        physicalKey: PhysicalKeyboardKey.keyJ,
-        meta: true,
-      ),
-    );
-    await pumpApp(tester);
-    notes.create(body: 'alpha');
-    notes.create(body: 'bravo');
-    await tester.pumpAndSettle();
-
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyJ);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyJ);
-    await tester.pumpAndSettle();
-    expect(openNoteBody(tester), 'bravo');
-    expect(openNoteField(tester).focusNode.hasFocus, isFalse);
-
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
-    await tester.pumpAndSettle();
-    expect(openNoteField(tester).focusNode.hasFocus, isTrue);
-  });
-
-  testWidgets('Ctrl+Tab keeps split panes stable while switching every note', (
-    tester,
-  ) async {
-    await pumpApp(tester);
-    final alpha = notes.create(body: 'Alpha');
-    final bravo = notes.create(body: 'Bravo');
-    final charlie = notes.create(body: 'Charlie');
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.widgetWithText(NoteRow, 'Alpha'));
-    await tester.pumpAndSettle();
-    await pickPageAction(tester, 'split');
-    await tester.tap(find.widgetWithText(NoteRow, 'Bravo'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('pane-title-0')));
-    await tester.pumpAndSettle();
-
-    List<String> panes() => [
-      for (var index = 0; index < 2; index++) bodyInPane(tester, index),
-    ];
-    String selectedRow() => tester
-        .widgetList<NoteRow>(find.byType(NoteRow))
-        .singleWhere((row) => row.selected)
-        .note
-        .body;
-    Future<void> tab() async {
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.tab);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.tab);
-      await tester.pumpAndSettle();
-    }
-
-    expect(panes(), ['Alpha', 'Bravo']);
-    expect(selectedRow(), 'Alpha');
-    expect(fieldInPane(tester, 0).focusNode.hasFocus, isTrue);
-
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-    await tab();
-
-    // An already-visible note participates normally. Preview only activates
-    // its pane; it does not duplicate it or leave the caret in the old pane.
-    expect(panes(), ['Alpha', 'Bravo']);
-    expect(selectedRow(), 'Bravo');
-    expect(fieldInPane(tester, 0).focusNode.hasFocus, isFalse);
-    expect(fieldInPane(tester, 1).focusNode.hasFocus, isFalse);
-
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    await tester.pumpAndSettle();
-    expect(prefs.lastOpenedNoteId, bravo.id);
-    expect(fieldInPane(tester, 1).focusNode.hasFocus, isTrue);
-    expect(panes(), ['Alpha', 'Bravo']);
-
-    // Begin again in the left pane to exercise a longer held session.
-    await tester.tap(find.byKey(const ValueKey('pane-title-0')));
-    await tester.pumpAndSettle();
-    expect(prefs.lastOpenedNoteId, alpha.id);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-    await tab();
-
-    await tab();
-
-    // Cycling onward previews an unopened note in the pane where the gesture
-    // began. The other pane remains Bravo instead of being progressively
-    // replaced as focus moves through the preview sequence.
-    expect(panes(), ['Charlie', 'Bravo']);
-    expect(selectedRow(), 'Charlie');
-    expect(fieldInPane(tester, 0).focusNode.hasFocus, isFalse);
-    expect(fieldInPane(tester, 1).focusNode.hasFocus, isFalse);
-
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    await tester.pumpAndSettle();
-
-    expect(prefs.lastOpenedNoteId, charlie.id);
-    expect(fieldInPane(tester, 0).focusNode.hasFocus, isTrue);
-    expect(panes(), ['Charlie', 'Bravo']);
-
-    // The next completed gesture returns to the note just replaced, while the
-    // neighbouring pane is still untouched.
-    await pressShortcut(tester, shortcuts.bindingFor(ShortcutAction.nextNote)!);
-    expect(prefs.lastOpenedNoteId, alpha.id);
-    expect(fieldInPane(tester, 0).focusNode.hasFocus, isTrue);
-    expect(panes(), ['Alpha', 'Bravo']);
-    expect(notes.byId(bravo.id), isNotNull);
-  });
+  }, variant: TargetPlatformVariant.desktop());
 
   testWidgets('each pane holds one note, and a note is never open twice', (
     tester,
@@ -4210,19 +4415,23 @@ void main() {
       expect(tabTitles(tester), ['First note', 'Second note']);
     });
 
-    testWidgets('Ctrl+Tab brings a note forward in the tab it is open in', (
-      tester,
-    ) async {
+    testWidgets('a click in the list ends the walk, so ⌘↵ after it moves '
+        'nothing', (tester) async {
       await threeNotes(tester);
-      await clickWith(tester, LogicalKeyboardKey.metaLeft, 'Second note');
-      await tester.tap(tab('Second note'));
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
       await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Second note');
 
-      await press(tester, ShortcutAction.nextNote);
-      expect(openNoteBody(tester), 'First note');
-      final row = tester.widget<NoteTabRow>(tabRow());
-      expect(tabTitles(tester), ['First note', 'Second note']);
-      expect(row.activeId, row.tabs.first.id);
+      await tester.tap(find.widgetWithText(NoteRow, 'Third note'));
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Third note');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), 'Third note');
+      expect(tabRow(), findsNothing);
     });
 
     testWidgets('the row grows in under the toolbar, and at once with less '
@@ -4439,7 +4648,9 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
         }
         expect(
-          tester.widget<Text>(find.byKey(const ValueKey('recording-status'))).data,
+          tester
+              .widget<Text>(find.byKey(const ValueKey('recording-status')))
+              .data,
           'Microphone is silent',
         );
         expect(find.byKey(const ValueKey('recording-elapsed')), findsOneWidget);
@@ -5181,9 +5392,8 @@ void main() {
     });
 
     testWidgets("the page's 52 band lines up with the list's bar, with the "
-        'month in full at its top left and the week centred on the page', (
-      tester,
-    ) async {
+        'month in three letters at its top left and the week centred on the '
+        'page', (tester) async {
       await library(tester);
       final bar = tester.getRect(find.byKey(const ValueKey('page-toolbar')));
       final list = tester.getRect(find.byType(SidebarWindowBar));
@@ -5192,7 +5402,7 @@ void main() {
       expect(list.height, 52);
       final month = find.byKey(const ValueKey('day-strip-month'));
       expect(
-        find.descendant(of: month, matching: find.text('November')),
+        find.descendant(of: month, matching: find.text('Nov')),
         findsOneWidget,
       );
       expect(tester.getTopLeft(month).dx, bar.left + 10);
@@ -5269,7 +5479,7 @@ void main() {
       for (final width in [1440.0, 1490.0]) {
         await window(width);
         expect(
-          find.descendant(of: month, matching: find.text('November')),
+          find.descendant(of: month, matching: find.text('Nov')),
           findsOneWidget,
           reason: '$width',
         );
@@ -5782,7 +5992,9 @@ void main() {
     final note = notes.create(
       body: 'Quote for the deck\n☑ One\n☐ Two\n☐ Three',
     );
-    final quarter = tags.create('Q4')!;
+    // The line no longer carries a Saved at rest, so the tag is long enough
+    // to be the one that has no room beside the progress.
+    final quarter = tags.create('Q4 planning')!;
     tags.addTag(note.id, quarter.id);
     await pumpApp(
       tester,
@@ -6365,8 +6577,8 @@ void main() {
   });
 
   testWidgets(
-    'the search field is a 4% fill with no border, and under the pointer its '
-    'shortcut is plain Geist Mono in T3 that leaves the placeholder room',
+    'the search field is a control fill with no border, and under the pointer '
+    'its shortcut sits at its end, plain Geist in T3',
     (tester) async {
       await pumpApp(tester);
       final searchKeycap = find.byKey(
@@ -6383,10 +6595,9 @@ void main() {
 
       final binding = shortcuts.bindingFor(ShortcutAction.findNotes)!;
       final search = find.byKey(const ValueKey('sidebar-search-box'));
-      final field = tester.getRect(search);
       final palette = tester.element(search).palette;
       final box = tester.widget<Container>(search).decoration! as BoxDecoration;
-      expect(box.color, palette.fillRest);
+      expect(box.color, palette.controlBackground);
       expect(box.border, isNull);
       expect(box.boxShadow, isNull);
       expect(box.borderRadius, BorderRadius.circular(AppRadii.control));
@@ -6394,10 +6605,11 @@ void main() {
         find.descendant(of: search, matching: find.byType(Keycap)),
         findsNothing,
       );
+      final field = tester.getRect(search);
       final keycap = tester.getRect(searchKeycap);
       final hint = tester.widget<Text>(searchKeycap);
       expect(hint.data, binding.keycapLabel);
-      expect(hint.style!.fontFamily, AppFonts.mono);
+      expect(hint.style!.fontFamily, AppFonts.ui);
       expect(hint.style!.fontSize, 11);
       expect(hint.style!.height, 14 / 11);
       expect(hint.style!.fontWeight, FontWeight.w400);
@@ -6450,7 +6662,7 @@ void main() {
                 '${platform.name}, ${width.round()} wide, list '
                 '${listShown ? 'shown' : 'hidden'}';
             expect(modeSwitch(), findsNothing, reason: reason);
-            for (final key in ['page-share', 'page-more']) {
+            for (final key in ['page-more']) {
               final control = tester.getRect(find.byKey(ValueKey(key)));
               expect(
                 tester.getRect(bar).intersect(control),
@@ -6519,8 +6731,8 @@ void main() {
       TextStyle title() => tester
           .widget<TextField>(find.byKey(const ValueKey('drawing-title')))
           .style!;
-      expect(title().fontFamily, AppFonts.title);
-      expect(title().fontWeight, FontWeight.w400);
+      expect(title().fontFamily, AppFonts.ui);
+      expect(title().fontWeight, EditorMetrics.titleWeight);
 
       prefs.writingFont = WritingFont.handwritten;
       await tester.pumpAndSettle();
@@ -7293,13 +7505,26 @@ void main() {
         expect(tester.getSize(toolbar).width, closeTo(width, 0.01));
       }
 
+      // Typing gives it something to say.
+      var typed = 0;
+      Future<void> type() async {
+        await tester.enterNote(
+          'alpha ${typed++}',
+          find.descendant(of: find.byType(NoteEditor), matching: noteField),
+        );
+        await tester.pump();
+      }
+
       await pageWidth(580);
+      await type();
       expect(inBar, findsNothing);
       expect(onDateLine, findsOneWidget);
 
       await pageWidth(596);
+      await type();
       expect(inBar, findsOneWidget);
       expect(onDateLine, findsNothing);
+      await tester.pump(const Duration(seconds: 4));
     });
   });
 
@@ -7877,8 +8102,7 @@ void main() {
       notes.create(body: 'Trip plan');
       await pumpApp(tester, account: account);
 
-      await tester.tap(find.byKey(const ValueKey('page-share')));
-      await tester.pumpAndSettle();
+      await pickPageAction(tester, 'share');
 
       // Not the share sheet, which would have nothing to share with, and not
       // General either: the pane that signs in, and the reason it opened.
@@ -9591,7 +9815,7 @@ void main() {
       }
       expect(
         tester.getSize(find.byKey(const ValueKey('phone-new'))),
-        const Size(56, 56),
+        const Size(58, 58),
       );
 
       await openPhoneDrawings(tester);
@@ -9753,9 +9977,9 @@ void main() {
         expect(shown[1].right, lessThanOrEqualTo(390));
         expect(shown[2].left, lessThan(390));
         expect(shown[2].right, greaterThan(390));
-        expect(shown[0].width, 160);
-        expect(shown[1].width, 160);
-        expect(shown[1].left - shown[0].right, 8);
+        expect(shown[0].width, 158);
+        expect(shown[1].width, 158);
+        expect(shown[1].left - shown[0].right, PhonePinnedCards.gap);
         expect(390 - shown[2].left, 34);
       });
 
@@ -9803,8 +10027,8 @@ void main() {
           ], titles.reversed.take(rows.length).toList());
           final first = tester.getRect(find.byWidget(rows[0]));
           final second = tester.getRect(find.byWidget(rows[1]));
-          expect(first.left, 0);
-          expect(first.width, 390);
+          expect(first.left, 20, reason: 'inside the list card');
+          expect(first.width, 390 - 2 * 20);
           expect(second.top, greaterThan(first.bottom - 0.5));
           final divider = tester.widget<Divider>(
             find
@@ -9814,8 +10038,8 @@ void main() {
                 )
                 .first,
           );
-          expect(divider.indent, 20);
-          expect(divider.endIndent, 20);
+          expect(divider.indent, NoteListRowFace.textStart(touch: true));
+          expect(divider.endIndent, 0);
           await tester.scrollUntilVisible(
             find.widgetWithText(NoteRow, titles[0]),
             200,
@@ -9887,7 +10111,7 @@ void main() {
           )) {
             expect(
               tester.getRect(find.byWidget(text)).bottom,
-              lessThanOrEqualTo(card.bottom - 14 + 0.5),
+              lessThanOrEqualTo(card.bottom - 12 + 0.5),
               reason: text.data,
             );
           }
@@ -9943,7 +10167,7 @@ void main() {
           final first = tester.getSize(card('Pinned 1')).height;
           expect(
             first,
-            greaterThanOrEqualTo((22 + 18 + 16) * scale + 14 * 2 + 2 + 12),
+            greaterThanOrEqualTo((20 + 18 + 16) * scale + 12 + 3 + 12 + 12),
             reason: 'the card grows with its three lines',
           );
           fits(scroller, 'Home');
@@ -10101,8 +10325,12 @@ void main() {
         await showNotesList(tester);
       }
 
-      Finder underlineOf(Finder title) =>
-          find.descendant(of: title, matching: find.byType(NoteTitleUnderline));
+      Finder selectedOf(Finder title) => find.descendant(
+        of: title,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Semantics && widget.properties.selected == true,
+        ),
+      );
 
       testWidgets('the search field reads "Search notes and tasks" because '
           'Quick find, which it opens, finds tasks too', (tester) async {
@@ -10141,34 +10369,64 @@ void main() {
         );
       });
 
+      testWidgets('Notes and Tasks are handwritten, Shantell 30/36 at 500, '
+          'each a 44 pt target, with the count in the system face', (
+        tester,
+      ) async {
+        await pumpHome(tester);
+        for (final title in [notesTitle, tasksTitle]) {
+          final words = tester
+              .widgetList<Text>(
+                find.descendant(of: title, matching: find.byType(Text)),
+              )
+              .first
+              .style!;
+          expect(words.fontFamily, AppFonts.hand);
+          expect(words.fontSize, 30);
+          expect(words.height, 36 / 30);
+          expect(
+            words.fontVariations,
+            contains(const FontVariation('wght', 500)),
+          );
+          expect(tester.getSize(title).height, greaterThanOrEqualTo(44));
+        }
+        final count = tester
+            .widgetList<Text>(
+              find.descendant(of: notesTitle, matching: find.byType(Text)),
+            )
+            .last
+            .style!;
+        expect(count.fontFamily, AppFonts.ui);
+      });
+
       testWidgets('a tap on Tasks shows Tasks under the same header, and a '
           'tap on Notes comes back', (tester) async {
         await pumpHome(tester);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
 
         await tester.tap(tasksTitle);
         await tester.pumpAndSettle();
         expect(tasksPage, findsOneWidget);
         expect(groceries, findsNothing);
-        expect(underlineOf(tasksTitle), findsOneWidget);
-        expect(underlineOf(notesTitle), findsNothing);
+        expect(selectedOf(tasksTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsNothing);
         expect(find.byKey(const ValueKey('phone-account')), findsOneWidget);
 
         await tester.tap(notesTitle);
         await tester.pumpAndSettle();
         expect(tasksPage, findsNothing);
         expect(groceries, findsOneWidget);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       });
 
-      testWidgets("Tasks carries one clay underline, the header's, over "
-          'Today as a plain label', (tester) async {
+      testWidgets("Tasks marks only the header's title, over Today as a "
+          'plain label', (tester) async {
         await pumpHome(tester);
         await tester.tap(tasksTitle);
         await tester.pumpAndSettle();
 
-        expect(find.byType(NoteTitleUnderline), findsOneWidget);
-        expect(underlineOf(tasksTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsNothing);
+        expect(selectedOf(tasksTitle), findsOneWidget);
         final clay = tester.element(tasksPage).palette.clay;
         expect(
           find.descendant(
@@ -10201,12 +10459,12 @@ void main() {
         await tester.drag(header, const Offset(-120, 0));
         await tester.pumpAndSettle();
         expect(tasksPage, findsOneWidget);
-        expect(underlineOf(tasksTitle), findsOneWidget);
+        expect(selectedOf(tasksTitle), findsOneWidget);
 
         await tester.drag(header, const Offset(120, 0));
         await tester.pumpAndSettle();
         expect(tasksPage, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       });
 
       Future<String> filterByTag(WidgetTester tester, TagStore tags) async {
@@ -10227,7 +10485,7 @@ void main() {
         expect(dot, findsOneWidget);
         expect(trip, findsOneWidget);
         expect(groceries, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       }
 
       Future<void> swipeTo(WidgetTester tester, {required bool tasks}) async {
@@ -10416,6 +10674,115 @@ void main() {
         expect(tasksPage, findsOneWidget);
       });
 
+      testWidgets("Home's header stays put while Notes and Tasks turn under "
+          "it, Tasks' copy fading in as the turn goes (KAP-441)", (
+        tester,
+      ) async {
+        await pumpHome(tester);
+        final header = find.byType(PhoneHomeHeader);
+        final at = tester.getTopLeft(header);
+        Iterable<Element> own() => find
+            .descendant(of: find.byType(HiddenWhileTurning), matching: header)
+            .evaluate();
+        bool ownShown() => [
+          for (final element in find.byType(HiddenWhileTurning).evaluate())
+            tester
+                .widget<Visibility>(
+                  find
+                      .descendant(
+                        of: find.byElementPredicate((e) => e == element),
+                        matching: find.byType(Visibility),
+                      )
+                      .first,
+                )
+                .visible,
+        ].every((visible) => visible);
+        expect(ownShown(), isTrue);
+
+        final drag = await tester.startGesture(tester.getCenter(header));
+        await drag.moveBy(const Offset(-40, 0));
+        await drag.moveBy(const Offset(-160, 0));
+        await tester.pump();
+        expect(tasksPage, findsOneWidget, reason: 'Tasks slides in');
+        final mine = own().toSet();
+        final copies = [
+          for (final element in header.evaluate())
+            if (!mine.contains(element)) element,
+        ];
+        expect(copies, hasLength(2));
+        for (final copy in copies) {
+          expect(
+            tester.getTopLeft(find.byElementPredicate((e) => e == copy)),
+            at,
+          );
+        }
+        double opacityOf(bool tasks) => tester
+            .widget<Opacity>(
+              find
+                  .ancestor(
+                    of: find.byElementPredicate(
+                      (e) =>
+                          copies.contains(e) &&
+                          (e.widget as PhoneHomeHeader).tasks == tasks,
+                    ),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+        expect(opacityOf(true), closeTo(200 / 393, 0.02));
+        expect(opacityOf(false), closeTo(1 - 200 / 393, 0.02));
+        expect(ownShown(), isFalse, reason: "the pages' own copies hide");
+
+        await drag.up();
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+        expect(header, findsOneWidget);
+        expect(tester.getTopLeft(header), at);
+        expect(ownShown(), isTrue);
+        expect(selectedOf(tasksTitle), findsOneWidget);
+      });
+
+      testWidgets("Home's header fades back to Notes' copy as Tasks turns back "
+          'to Notes (KAP-441)', (tester) async {
+        await pumpHome(tester);
+        final header = find.byType(PhoneHomeHeader);
+        final toTasks = await tester.startGesture(tester.getCenter(header));
+        await toTasks.moveBy(const Offset(-40, 0));
+        await toTasks.moveBy(const Offset(-160, 0));
+        await toTasks.up();
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+
+        final drag = await tester.startGesture(tester.getCenter(header.first));
+        await drag.moveBy(const Offset(40, 0));
+        await drag.moveBy(const Offset(160, 0));
+        await tester.pump();
+        final own = find
+            .descendant(of: find.byType(HiddenWhileTurning), matching: header)
+            .evaluate()
+            .toSet();
+        double opacityOf(bool tasks) => tester
+            .widget<Opacity>(
+              find
+                  .ancestor(
+                    of: find.byElementPredicate(
+                      (e) =>
+                          e.widget is PhoneHomeHeader &&
+                          !own.contains(e) &&
+                          (e.widget as PhoneHomeHeader).tasks == tasks,
+                    ),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+        expect(opacityOf(true), closeTo(1 - 200 / 393, 0.02));
+        expect(opacityOf(false), closeTo(200 / 393, 0.02));
+        await drag.up();
+        await tester.pumpAndSettle();
+      });
+
       testWidgets('a short slow swipe stays put, and a short fast one turns '
           'the page', (tester) async {
         await pumpHome(tester);
@@ -10428,7 +10795,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tasksPage, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
 
         await tester.fling(header, const Offset(-60, 0), 1000);
         await tester.pumpAndSettle();
@@ -10481,7 +10848,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byKey(ValueKey('swipe-pin-$groceriesId')), findsOneWidget);
         expect(tasksPage, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       });
 
       // Plain Home has no level to go back to, so its left edge keeps the
@@ -10527,7 +10894,11 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(pin.hitTestable(), findsNothing);
-        expect(tester.getTopLeft(groceries).dx, 0);
+        expect(
+          tester.getTopLeft(groceries).dx,
+          20,
+          reason: 'at rest in its card',
+        );
       });
 
       testWidgets('on plain Home, a left drag from the left edge over a row '
@@ -10537,13 +10908,16 @@ void main() {
         await pumpHome(tester);
 
         await tester.dragFrom(
-          Offset(10, tester.getCenter(groceries).dy),
+          Offset(
+            tester.getTopLeft(groceries).dx + 10,
+            tester.getCenter(groceries).dy,
+          ),
           const Offset(-200, 0),
         );
         await tester.pumpAndSettle();
         expect(find.byKey(ValueKey('swipe-pin-$groceriesId')), findsOneWidget);
         expect(tasksPage, findsNothing);
-        expect(underlineOf(notesTitle), findsOneWidget);
+        expect(selectedOf(notesTitle), findsOneWidget);
       });
 
       testWidgets('Back from Tasks goes to Notes rather than leaving', (
@@ -10810,43 +11184,44 @@ void main() {
         expect(lit(tester), PhoneTab.folders);
       }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-      testWidgets("Drawings' title is in the hand face, its count small beside "
-          'it, and its Pinned and Recent labels 13 pt in muted grey (M03)', (
-        tester,
-      ) async {
-        await pumpFolders(tester);
-        final shelf = notes.create(drawing: true);
-        notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
-        notes.togglePinned(shelf.id);
-        await tap(tester, barFolders);
-        await tap(tester, tile);
-        final palette = tester.element(title).palette;
+      testWidgets(
+        "Drawings' title is in the hand face, its count small beside "
+        'it, and its Pinned and Recent labels are D\'s 17 pt section headings (M03)',
+        (tester) async {
+          await pumpFolders(tester);
+          final shelf = notes.create(drawing: true);
+          notes.updateDrawing(shelf.id, NoteDrawing.empty, title: 'Shelf plan');
+          notes.togglePinned(shelf.id);
+          await tap(tester, barFolders);
+          await tap(tester, tile);
+          final palette = tester.element(title).palette;
 
-        final heading = tester.widget<Text>(title).style!;
-        expect(heading.fontFamily, WritingFont.handwritten.fontFamily);
-        expect(heading.fontSize, 26);
-        expect(heading.height, 32 / 26);
-        expect(heading.color, palette.textPrimary);
-        final count = tester
-            .widget<Text>(
-              find.descendant(
-                of: find.byType(PhoneListTitle),
-                matching: find.text('2'),
-              ),
-            )
-            .style!;
-        expect(count.fontFamily, AppFonts.ui);
-        expect(count.fontSize, 13);
-        expect(count.color, palette.textTertiary);
+          final heading = tester.widget<Text>(title).style!;
+          expect(heading.fontFamily, AppFonts.ui);
+          expect(heading.fontSize, 26);
+          expect(heading.height, 32 / 26);
+          expect(heading.color, palette.textHeading);
+          final count = tester
+              .widget<Text>(
+                find.descendant(
+                  of: find.byType(PhoneListTitle),
+                  matching: find.text('2'),
+                ),
+              )
+              .style!;
+          expect(count.fontFamily, AppFonts.ui);
+          expect(count.fontSize, 13);
+          expect(count.color, palette.textQuiet);
 
-        for (final label in ['Pinned', 'Recent']) {
-          final style = tester.widget<Text>(find.text(label)).style!;
-          expect(style.fontFamily, AppFonts.ui, reason: label);
-          expect(style.fontSize, 13, reason: label);
-          expect(style.height, 18 / 13, reason: label);
-          expect(style.color, palette.textTertiary, reason: label);
-        }
-      });
+          for (final label in ['Pinned', 'Recent']) {
+            final style = tester.widget<Text>(find.text(label)).style!;
+            expect(style.fontFamily, AppFonts.ui, reason: label);
+            expect(style.fontSize, 17, reason: label);
+            expect(style.height, 22 / 17, reason: label);
+            expect(style.color, palette.textPrimary, reason: label);
+          }
+        },
+      );
 
       double iconLeft(WidgetTester tester, Finder row, KapyIconData data) =>
           tester
@@ -11200,7 +11575,7 @@ void main() {
         );
         expect(
           tester.widget<KapyIcon>(glass).color,
-          tester.element(glass).palette.textTertiary,
+          tester.element(glass).palette.textSecondary,
         );
 
         await tap(tester, button);
@@ -11460,7 +11835,11 @@ void main() {
           final page = find.byKey(ValueKey('phone-folder-${folder.id}'));
           expect(page, findsOneWidget);
           expect(tester.widget<NoteRow>(brief).style, NoteRowStyle.touch);
-          expect(tester.getSize(brief).width, 393, reason: 'a full-width row');
+          expect(
+            tester.getSize(brief).width,
+            393 - 2 * 20,
+            reason: 'a row across the list card',
+          );
           expect(find.byType(NoteCardFace), findsNothing);
           expect(find.byType(NoteListRowFace), findsOneWidget);
           expect(
@@ -11767,7 +12146,7 @@ void main() {
                 find.descendant(of: close, matching: find.byType(Material)),
               )
               .color,
-          Theme.of(tester.element(plus)).colorScheme.primary,
+          tester.element(plus).palette.accentFill,
         );
         expect(
           tester.getRect(menu).bottom,
@@ -12320,7 +12699,7 @@ void main() {
       expect(top(older), lessThan(top(row('Renewal notes'))));
 
       final title = tester.widget<Text>(find.text('Call with Arjun'));
-      expect(title.style?.fontFamily, WritingFont.handwritten.fontFamily);
+      expect(title.style?.fontFamily, AppFonts.ui);
       final dots = find.descendant(
         of: row('Call with Arjun'),
         matching: find.byType(TagDots),
@@ -12393,8 +12772,8 @@ void main() {
       }
     });
 
-    testWidgets("a day's heading is the serif name, then its date 8 after "
-        'it in small quiet sans, as Tasks draws Today', (tester) async {
+    testWidgets("a day's heading is the section label, then its date 6 after "
+        'it a grey quieter', (tester) async {
       final nine = DateTime(2026, 11, 19, 9).millisecondsSinceEpoch;
       store.data['notes.v1'] = [
         {
@@ -12414,13 +12793,13 @@ void main() {
         find.descendant(of: heading, matching: find.text('Today')),
       );
       final date = find.descendant(of: heading, matching: find.text('Thu 19'));
-      expect(today.style?.fontFamily, AppFonts.title);
-      expect(today.style?.fontSize, 19);
+      expect(today.style?.fontFamily, AppFonts.ui);
+      expect(today.style?.fontSize, 17);
       expect(today.style?.color, palette.textPrimary);
       final style = tester.widget<Text>(date).style;
       expect(style?.fontFamily, AppFonts.ui);
-      expect(style?.fontSize, 13);
-      expect(style?.height, 16 / 13);
+      expect(style?.fontSize, 15);
+      expect(style?.height, 22 / 15);
       expect(style?.color, palette.textTertiary);
       expect(
         tester.getTopLeft(date).dx -
@@ -12429,7 +12808,7 @@ void main() {
                   find.descendant(of: heading, matching: find.text('Today')),
                 )
                 .dx,
-        8,
+        6,
       );
     });
 
@@ -12464,18 +12843,18 @@ void main() {
       final rects = [for (var i = 0; i < 2; i++) tester.getRect(lines.at(i))];
       for (var i = 0; i < 2; i++) {
         final line = tester.widget<Divider>(lines.at(i));
-        expect(rects[i].left + line.indent!, 20);
-        expect(rects[i].width - line.indent! - line.endIndent!, 393 - 40);
+        expect(rects[i].left + line.indent!, 36);
+        expect(rects[i].right - line.endIndent!, 393 - 20);
       }
       expect(rects[0].top, tester.getRect(row('Morning pages')).bottom);
       expect(rects[1].top, tester.getRect(row('Call with Arjun')).bottom);
       expect(
         tester.widget<Divider>(lines.first).color,
-        tester.element(lines.first).palette.separator,
+        tester.element(lines.first).palette.pageBorder,
       );
     });
 
-    testWidgets('a row with a preview and what it holds is 91 from hairline '
+    testWidgets('a row with a preview and what it holds is 92 from hairline '
         'to hairline, and one with words alone keeps two lines', (
       tester,
     ) async {
@@ -12508,7 +12887,7 @@ void main() {
       expect(lines, findsNWidgets(2));
       expect(
         tester.getTopLeft(lines.at(1)).dy - tester.getTopLeft(lines.at(0)).dy,
-        91,
+        92,
       );
       Finder holdsOf(String title) => find.descendant(
         of: find.widgetWithText(NoteRow, title),
@@ -12635,8 +13014,8 @@ void main() {
         expect(rows, findsNWidgets(3));
         final first = tester.getRect(rows.at(0));
         final second = tester.getRect(rows.at(1));
-        expect(first.left, 0);
-        expect(first.width, 393);
+        expect(first.left, 20, reason: 'inside the list card');
+        expect(first.width, 393 - 2 * 20);
         expect(second.top, greaterThan(first.bottom - 0.5));
         final thumbnail = find.descendant(
           of: rows.first,
@@ -12657,14 +13036,20 @@ void main() {
           ),
           reason: 'a darker inset than the list',
         );
-        expect(tester.getTopLeft(thumbnail).dx, 20);
+        expect(
+          tester.getTopLeft(thumbnail).dx,
+          first.left + NoteListRowFace.textStart(touch: true),
+        );
         expect(tester.getCenter(thumbnail).dy, closeTo(first.center.dy, 0.5));
         final title = find.descendant(
           of: rows.first,
           matching: find.text('App wireframe'),
         );
-        expect(tester.getTopLeft(title).dx, 20 + 64 + 12);
-        expect(tester.widget<Text>(title).style?.fontSize, 17);
+        expect(
+          tester.getTopLeft(title).dx,
+          tester.getTopLeft(thumbnail).dx + 64 + 12,
+        );
+        expect(tester.widget<Text>(title).style?.fontSize, AppTypeScale.row);
         final date = find.descendant(
           of: rows.first,
           matching: find.textContaining(RegExp(r'^Today, ')),
@@ -12848,14 +13233,16 @@ void main() {
         ),
         findsOneWidget,
       );
-      // Drawn the way r3 draws it: 32pt square, at radius 8.
+      // Drawn the way r3 draws it: 32pt square, at the control radius.
       expect(tester.getSize(hide), const Size.square(32));
       final button = tester.widget<IconButton>(
         find.descendant(of: hide, matching: find.byType(IconButton)),
       );
       expect(
         button.style!.shape!.resolve({}),
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+        ),
       );
 
       await tester.tap(hide);
@@ -13136,13 +13523,15 @@ void main() {
       await tester.pumpAndSettle();
 
       await openSpace(tester, 'drawings');
+      await openMore();
       expect(
         tester
-            .widget<TonalButton>(find.byKey(const ValueKey('page-share')))
-            .onPressed,
-        isNull,
+            .widget<PopupMenuItem<String>>(
+              find.byKey(const ValueKey('page-more-share')),
+            )
+            .enabled,
+        isFalse,
       );
-      await openMore();
       expect(find.byKey(const ValueKey('page-more-pin')), findsNothing);
       expect(find.byKey(const ValueKey('page-more-hide')), findsNothing);
       expect(find.byKey(const ValueKey('page-more-archive')), findsNothing);
@@ -13572,7 +13961,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(menu, findsOneWidget);
       expect(tester.getRect(notice), place);
-      await tester.tap(find.text('Tags'));
+      await tester.tap(find.text('Tags…'));
       await tester.pumpAndSettle();
       expect(menu, findsNothing);
       expect(picker, findsOneWidget);
@@ -15486,7 +15875,7 @@ void main() {
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
         // At 1x no result is longer than the column, so a larger text size
         // makes one wrap even on a row of its own, under its writing.
-        tester.platformDispatcher.textScaleFactorTestValue = 1.75;
+        tester.platformDispatcher.textScaleFactorTestValue = 2.0;
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
         final semantics = tester.ensureSemantics();
         await notes.load();

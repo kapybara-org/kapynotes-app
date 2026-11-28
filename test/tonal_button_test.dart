@@ -30,15 +30,15 @@ Color? _ink(WidgetTester tester, String text) =>
     tester.renderObject<RenderParagraph>(find.text(text)).text.style?.color;
 
 void main() {
-  testWidgets('a keycap prints its key in Geist Mono on the keycap colours', (
+  testWidgets('a keycap prints its key in Geist on the keycap colours', (
     tester,
   ) async {
     await _pump(tester, const Keycap('⌘F'));
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
 
     final style = tester.widget<Text>(find.text('⌘F')).style!;
-    expect(style.fontFamily, AppFonts.mono);
-    expect(style.fontFamilyFallback, AppFonts.monoFallback);
+    expect(style.fontFamily, AppFonts.ui);
+    expect(style.fontFamilyFallback, AppFonts.uiFallback);
     expect(style.fontSize, AppTypeScale.keycap);
     expect(style.color, palette.keycapText);
 
@@ -71,7 +71,7 @@ void main() {
         onPressed: () => pressed++,
       ),
     );
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
 
     final surface = _surface(tester);
     expect(surface.color, palette.tonalBackground);
@@ -97,7 +97,7 @@ void main() {
     tester,
   ) async {
     await _pump(tester, TonalButton(label: 'Share', onPressed: () {}));
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     await mouse.addPointer(location: Offset.zero);
     addTearDown(mouse.removePointer);
@@ -139,7 +139,7 @@ void main() {
       'in sage and its words in T1, where plain quiet words are T2', (
     tester,
   ) async {
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
     FilledButton button() => tester.widget<FilledButton>(
       find.descendant(
         of: find.byType(TonalButton),
@@ -183,7 +183,7 @@ void main() {
   test(
     'the focus border stands out from the surface and the selected fill',
     () {
-      const palette = KapyTheme.darkPalette;
+      final palette = KapyTheme.darkPalette;
       double contrast(Color a, Color b) {
         final (x, y) = (a.computeLuminance(), b.computeLuminance());
         return (math.max(x, y) + 0.05) / (math.min(x, y) + 0.05);
@@ -202,7 +202,7 @@ void main() {
 
   testWidgets('a tonal button with nothing to do greys out', (tester) async {
     await _pump(tester, const TonalButton(label: 'Share', onPressed: null));
-    const palette = KapyTheme.darkPalette;
+    final palette = KapyTheme.darkPalette;
 
     expect(_surface(tester).color, palette.controlBackground);
     expect(_ink(tester, 'Share'), palette.textTertiary);

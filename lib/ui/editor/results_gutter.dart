@@ -83,7 +83,7 @@ class ResultChip extends StatefulWidget {
         text: result.text,
         style: DefaultTextStyle.of(
           context,
-        ).style.merge(_textStyle(total: result.isTotal)),
+        ).style.merge(_textStyle()),
       ),
       textDirection: TextDirection.ltr,
       textScaler: scaler,
@@ -120,7 +120,7 @@ class ResultChip extends StatefulWidget {
         text: result.text,
         style: DefaultTextStyle.of(
           context,
-        ).style.merge(_textStyle(total: result.isTotal)),
+        ).style.merge(_textStyle()),
       ),
       textDirection: TextDirection.ltr,
       textScaler: scaler,
@@ -150,14 +150,13 @@ class ResultChip extends StatefulWidget {
   /// line takes a tap, so the lines above and below keep theirs.
   static const double _railTarget = 44;
 
-  static TextStyle _textStyle({bool total = false, Color? color}) {
-    final step = total ? AppWeight.section : AppWeight.button;
+  static TextStyle _textStyle({Color? color}) {
     return TextStyle(
-      fontFamily: AppFonts.mono,
-      fontFamilyFallback: AppFonts.monoFallback,
+      fontFamily: AppFonts.ui,
+      fontFamilyFallback: AppFonts.uiFallback,
       fontSize: AppTypeScale.result,
-      fontWeight: AppWeight.font(step),
-      fontVariations: AppWeight.wght(step),
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
       height: _pillHeight,
       leadingDistribution: TextLeadingDistribution.even,
       color: color,
@@ -224,7 +223,7 @@ class _ResultChipState extends State<ResultChip> {
       textAlign: TextAlign.right,
       // A wrapped result's pill hugs its longest row.
       textWidthBasis: TextWidthBasis.longestLine,
-      style: ResultChip._textStyle(total: total, color: ink),
+      style: ResultChip._textStyle(color: ink),
     );
     final check = KapyIcon(
       KapyIcons.checkRounded,

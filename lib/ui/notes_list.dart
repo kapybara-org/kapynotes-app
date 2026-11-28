@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../calc/engine.dart';
-import '../core/editor_font.dart';
 import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/layout_prefs.dart' show NotesGrouping;
@@ -26,6 +25,7 @@ import 'notes_grouping.dart';
 import 'sidebar.dart' show archiveIcon, hiddenIcon;
 import 'tag_colours.dart';
 import 'tag_ui.dart';
+import 'tasks/task_marks.dart' show metaStyle, uiStyle;
 
 /// What a note can hold besides words, in the order the media filter lists
 /// them.
@@ -160,48 +160,7 @@ class NoteGlance {
   }
 }
 
-const _cardRadius = BorderRadius.only(
-  topLeft: Radius.circular(AppRadii.compact),
-  topRight: Radius.circular(6),
-  bottomLeft: Radius.circular(6),
-  bottomRight: Radius.circular(14),
-);
-
-List<BoxShadow> _cardShadow(CalcPalette palette) => [
-  BoxShadow(color: palette.shadowAt(0x33), offset: const Offset(0, 1)),
-  BoxShadow(
-    color: palette.shadowAt(0x73),
-    offset: Offset(0, 8),
-    blurRadius: 14,
-    spreadRadius: -10,
-  ),
-];
-
-TextStyle _handwritten(
-  double size,
-  double line,
-  FontWeight weight,
-  Color color,
-) {
-  const face = WritingFont.handwritten;
-  return chromeStyle(
-    size: size,
-    line: line,
-    weight: AppWeight.axisOf(weight),
-    color: color,
-    family: face.fontFamily,
-    fallback: face.fontFamilyFallback,
-    extra: face.faceVariations,
-  );
-}
-
-TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
-    chromeStyle(
-      size: size,
-      line: line,
-      weight: AppWeight.axisOf(weight),
-      color: color,
-    );
+const _cardRadius = BorderRadius.all(Radius.circular(AppRadii.card));
 
 /// The small icons a card or row carries before its date: the media in the
 /// note, then whether it is read-only or shared.
@@ -216,15 +175,15 @@ List<KapyIconData> _marksOf(
   if (shared) KapyIcons.groupOutlined,
 ];
 
-/// A card's one fill, opaque on the theme's own card colour so its shadow
-/// never shows through: a step up while the pointer is on it, and another
-/// while it is open or picked. It never takes an outline for being open.
+/// A card's one fill: the card colour, a step up while the pointer is on it,
+/// and the selected row's fill while it is open or picked. It never takes an
+/// outline for being open.
 Color _cardFill(
   CalcPalette palette, {
   required bool selected,
   required bool hovering,
 }) => selected
-    ? Color.alphaBlend(palette.fillControl, palette.cardBackground)
+    ? palette.selectedBackground
     : hovering
     ? Color.alphaBlend(palette.fillRest, palette.cardBackground)
     : palette.cardBackground;
@@ -291,6 +250,9 @@ class NoteCardFace extends StatelessWidget {
 
   static const double height = 84;
 
+  /// Where the card's words start, which a heading over cards lines up with.
+  static const double textStart = 12;
+
   final Note note;
   final NoteGlance glance;
 
@@ -340,12 +302,11 @@ class NoteCardFace extends StatelessWidget {
     ].take(2).toList();
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+      padding: const EdgeInsets.fromLTRB(textStart, 11, 12, 10),
       decoration: BoxDecoration(
         color: fill,
         borderRadius: _cardRadius,
         border: _ringOf(palette, ringed: ringed),
-        boxShadow: _cardShadow(palette),
       ),
       child: Stack(
         children: [
@@ -370,8 +331,8 @@ class NoteCardFace extends StatelessWidget {
                             note.title,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: _figtree(
-                              13,
+                            style: uiStyle(
+                              AppTypeScale.row,
                               18,
                               FontWeight.w500,
                               palette.textPrimary,
@@ -387,15 +348,16 @@ class NoteCardFace extends StatelessWidget {
                               ? chromeStyle(
                                   size: 12,
                                   line: 16,
-                                  weight: AppWeight.page,
+                                  weight: AppWeight.regular,
                                   color: palette.resultPillText,
                                   tabular: true,
                                 )
-                              : _figtree(
+                              : uiStyle(
                                   12,
                                   16,
                                   FontWeight.w400,
                                   palette.textSecondary,
+                                  tabular: true,
                                 ).copyWith(
                                   fontStyle: text == null
                                       ? FontStyle.italic
@@ -430,8 +392,8 @@ class NoteCardFace extends StatelessWidget {
 }
 
 /// A phone's card for a pinned note, on Home's sideways row and on the
-/// Pinned page's grid: the Mac's card in the phone's type sizes, the title
-/// in the hand face, then the first line or its sum's value, then the date
+/// Pinned page's grid: the Mac's card in the phone's type sizes, the title,
+/// then the first line or its sum's value, then the date
 /// and the tags. Its height is its lines' at the person's text size, so it
 /// grows with the text and nothing on it is cut.
 class PhoneCardFace extends StatelessWidget {
@@ -455,7 +417,7 @@ class PhoneCardFace extends StatelessWidget {
     final scaler = MediaQuery.textScalerOf(context);
     double line(double size, double height) =>
         (scaler.scale(size) * height / size).ceilToDouble();
-    return 14 + line(16, 22) + 2 + line(13, 18) + 12 + line(12, 16) + 14;
+    return 12 + line(15, 20) + 3 + line(13, 18) + 12 + line(12, 16) + 12;
   }
 
   final Note note;
@@ -478,15 +440,12 @@ class PhoneCardFace extends StatelessWidget {
     final palette = context.palette;
     final picking = this.picking;
     final marked = selected || picking == true;
-    final fill = marked ? palette.fillSelected : palette.fillRest;
+    final fill = marked ? palette.selectedBackground : palette.cardBackground;
     final result = glance.amount ?? glance.result;
     final text = glance.line;
     final card = Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: fill,
-        borderRadius: BorderRadius.circular(9),
-      ),
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: BoxDecoration(color: fill, borderRadius: _cardRadius),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -498,10 +457,10 @@ class PhoneCardFace extends StatelessWidget {
               note.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: _handwritten(16, 22, FontWeight.w400, palette.textPrimary),
+              style: uiStyle(15, 20, FontWeight.w500, palette.textPrimary),
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 3),
           Text(
             result ?? text ?? '',
             maxLines: 1,
@@ -510,11 +469,17 @@ class PhoneCardFace extends StatelessWidget {
                 ? chromeStyle(
                     size: 13,
                     line: 18,
-                    weight: 600,
+                    weight: AppWeight.regular,
                     color: palette.resultPillText,
                     tabular: true,
                   )
-                : _figtree(13, 18, FontWeight.w400, palette.textSecondary),
+                : uiStyle(
+                    13,
+                    18,
+                    FontWeight.w400,
+                    palette.textSecondary,
+                    tabular: true,
+                  ),
           ),
           const SizedBox(height: 12),
           _MetaRow(
@@ -536,7 +501,7 @@ class PhoneCardFace extends StatelessWidget {
     return Stack(
       children: [
         card,
-        Positioned(top: 14, right: 14, child: PickBox(checked: picking)),
+        Positioned(top: 12, right: 12, child: PickBox(checked: picking)),
       ],
     );
   }
@@ -586,7 +551,7 @@ class _MetaRow extends StatelessWidget {
     final ink = selected ? palette.textSecondary : palette.textTertiary;
     final style = DefaultTextStyle.of(
       context,
-    ).style.merge(_figtree(12, 16, FontWeight.w400, ink));
+    ).style.merge(uiStyle(12, 16, FontWeight.w400, ink, tabular: true));
     final direction = Directionality.of(context);
     final scaler = MediaQuery.textScalerOf(context);
     final first = tags.firstOrNull;
@@ -730,6 +695,11 @@ class NoteListRowFace extends StatelessWidget {
   /// A phone's row: full width between hairlines, with a larger title.
   final bool touch;
 
+  /// Where the row's title starts from the row's edge, which is where the
+  /// hairline between two rows and a desktop heading start too.
+  static double textStart({required bool touch}) =>
+      touch ? 16 : 1.5 + 6.5 + TagDots.size + 8;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
@@ -758,15 +728,15 @@ class NoteListRowFace extends StatelessWidget {
     // does not nudge its text. Open, a row takes a fill, never an outline.
     return Container(
       padding: touch
-          ? const EdgeInsets.symmetric(horizontal: 20, vertical: 12)
-          : const EdgeInsets.all(6.5),
+          ? const EdgeInsets.fromLTRB(16, 12, 16, 12)
+          : const EdgeInsets.fromLTRB(6.5, 8.5, 12.5, 8.5),
       decoration: BoxDecoration(
         color: marked
-            ? palette.fillSelected
+            ? palette.selectedBackground
             : hovering
-            ? palette.fillControl
+            ? palette.hover
             : null,
-        borderRadius: touch ? null : BorderRadius.circular(AppRadii.surface),
+        borderRadius: touch ? null : BorderRadius.circular(AppRadii.control),
         border: touch
             ? null
             : Border.all(
@@ -803,19 +773,12 @@ class NoteListRowFace extends StatelessWidget {
                         note.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: touch
-                            ? _handwritten(
-                                17,
-                                24,
-                                FontWeight.w400,
-                                palette.textPrimary,
-                              )
-                            : _figtree(
-                                14,
-                                18,
-                                FontWeight.w500,
-                                palette.cardTitle,
-                              ),
+                        style: uiStyle(
+                          AppTypeScale.row,
+                          touch ? 22 : 16,
+                          FontWeight.w500,
+                          palette.textPrimary,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -862,23 +825,23 @@ class NoteListRowFace extends StatelessWidget {
                       Text(
                         date,
                         maxLines: 1,
-                        style: _figtree(
-                          AppTypeScale.small,
+                        style: metaStyle(
+                          AppTypeScale.caption,
                           16,
-                          FontWeight.w400,
                           palette.textTertiary,
+                          tabular: true,
                         ),
                       ),
                     ],
                   ],
                 ),
                 if (previewed) ...[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       if (!touch) SizedBox(width: TagDots.size + 8),
                       for (final mark in marks) ...[
-                        KapyIcon(mark, size: 14, color: palette.textMuted),
+                        KapyIcon(mark, size: 14, color: palette.textSecondary),
                         const SizedBox(width: 5),
                       ],
                       Expanded(
@@ -895,15 +858,13 @@ class NoteListRowFace extends StatelessWidget {
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: _figtree(
-                            touch ? 14 : AppTypeScale.body,
-                            touch ? 20 : 16,
-                            FontWeight.w400,
+                          style: metaStyle(
+                            touch ? 14 : AppTypeScale.caption,
+                            touch ? 20 : 14,
                             note.isEmpty
                                 ? palette.textTertiary
-                                : touch
-                                ? palette.textSecondary
-                                : palette.textMuted,
+                                : palette.textSecondary,
+                            tabular: true,
                           ),
                         ),
                       ),
@@ -915,7 +876,7 @@ class NoteListRowFace extends StatelessWidget {
                   ),
                 ],
                 if (bottom) ...[
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 5),
                   Row(
                     key: const ValueKey('note-row-holds'),
                     spacing: 12,
@@ -955,7 +916,7 @@ class NoteListRowFace extends StatelessWidget {
   List<Widget> _holdsOf(CalcPalette palette) {
     final ink = palette.textTertiary;
     final words = chromeStyle(
-      size: 12,
+      size: 12.5,
       line: 16,
       weight: AppWeight.axisOf(FontWeight.w400),
       color: ink,
@@ -1134,7 +1095,6 @@ class DrawingCardFace extends StatelessWidget {
         color: fill,
         borderRadius: _cardRadius,
         border: _ringOf(palette, ringed: ringed),
-        boxShadow: _cardShadow(palette),
       ),
       child: Stack(
         children: [
@@ -1160,7 +1120,7 @@ class DrawingCardFace extends StatelessWidget {
                       note.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _figtree(
+                      style: uiStyle(
                         13,
                         18,
                         FontWeight.w500,
@@ -1214,11 +1174,11 @@ class PhoneDrawingRowFace extends StatelessWidget {
     final palette = context.palette;
     final picking = this.picking;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       color: selected || picking == true
-          ? palette.fillSelected
+          ? palette.selectedBackground
           : hovering
-          ? palette.fillControl
+          ? palette.hover
           : null,
       child: Row(
         children: [
@@ -1237,7 +1197,7 @@ class PhoneDrawingRowFace extends StatelessWidget {
                 Colors.black.withValues(alpha: 0.18),
                 palette.sidebarBackground,
               ),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: DrawingThumbnail(drawing: note.drawing),
           ),
@@ -1250,10 +1210,10 @@ class PhoneDrawingRowFace extends StatelessWidget {
                   note.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: _handwritten(
-                    17,
+                  style: uiStyle(
+                    AppTypeScale.row,
                     22,
-                    FontWeight.w400,
+                    FontWeight.w500,
                     palette.textPrimary,
                   ),
                 ),
@@ -1262,7 +1222,7 @@ class PhoneDrawingRowFace extends StatelessWidget {
                   date,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: _figtree(13, 16, FontWeight.w400, palette.textMuted),
+                  style: metaStyle(13, 16, palette.textTertiary),
                 ),
               ],
             ),
@@ -1304,14 +1264,14 @@ class DrawingListRowFace extends StatelessWidget {
     final marked = selected || picking == true;
     final marks = _marksOf(const {}, locked: locked, shared: shared);
     return Container(
-      padding: const EdgeInsets.all(6.5),
+      padding: const EdgeInsets.symmetric(horizontal: 6.5, vertical: 7),
       decoration: BoxDecoration(
         color: marked
-            ? palette.fillSelected
+            ? palette.selectedBackground
             : hovering
-            ? palette.fillControl
+            ? palette.hover
             : null,
-        borderRadius: BorderRadius.circular(AppRadii.surface),
+        borderRadius: BorderRadius.circular(AppRadii.control),
         border: Border.all(
           color: ringed
               ? palette.selectedBorder.withValues(alpha: 0.5)
@@ -1332,7 +1292,7 @@ class DrawingListRowFace extends StatelessWidget {
             decoration: BoxDecoration(
               color: palette.editorBackground,
               border: Border.all(color: palette.separator),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: DrawingThumbnail(drawing: note.drawing),
           ),
@@ -1346,13 +1306,18 @@ class DrawingListRowFace extends StatelessWidget {
                   note.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: _figtree(14, 18, FontWeight.w500, palette.cardTitle),
+                  style: uiStyle(
+                    AppTypeScale.row,
+                    18,
+                    FontWeight.w500,
+                    palette.textPrimary,
+                  ),
                 ),
                 const SizedBox(height: 3),
                 Row(
                   children: [
                     for (final mark in marks) ...[
-                      KapyIcon(mark, size: 14, color: palette.textMuted),
+                      KapyIcon(mark, size: 14, color: palette.textSecondary),
                       const SizedBox(width: 5),
                     ],
                     Flexible(
@@ -1360,7 +1325,7 @@ class DrawingListRowFace extends StatelessWidget {
                         date,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _figtree(
+                        style: uiStyle(
                           AppTypeScale.small,
                           16,
                           FontWeight.w400,
@@ -1389,6 +1354,7 @@ class NotesListHeading extends StatelessWidget {
     this.noun = 'note',
     this.height = 24,
     this.leading,
+    this.leadingGap = 8,
     this.trailing,
   });
 
@@ -1399,6 +1365,7 @@ class NotesListHeading extends StatelessWidget {
   final String noun;
   final double height;
   final Widget? leading;
+  final double leadingGap;
   final Widget? trailing;
 
   @override
@@ -1410,7 +1377,7 @@ class NotesListHeading extends StatelessWidget {
         children: [
           if (leading case final leading?) ...[
             leading,
-            const SizedBox(width: 8),
+            SizedBox(width: leadingGap),
           ],
           Expanded(
             child: Align(
@@ -1438,8 +1405,7 @@ class NotesListHeading extends StatelessWidget {
   }
 }
 
-/// "View all", at the end of the Pinned heading. A phone's is larger and
-/// quieter, as its Home draws it beside Pinned's serif.
+/// "View all", at the end of the Pinned heading, a phone's a little larger.
 class ViewAllLink extends StatelessWidget {
   const ViewAllLink({super.key, required this.onPressed, this.phone = false});
 
@@ -1449,7 +1415,7 @@ class ViewAllLink extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final ink = phone ? palette.textSecondary : palette.accentText;
+    final ink = palette.textSecondary;
     return Semantics(
       container: true,
       button: true,
@@ -1467,8 +1433,8 @@ class ViewAllLink extends StatelessWidget {
               Text(
                 'View all',
                 style: phone
-                    ? _figtree(13, 16, FontWeight.w400, ink)
-                    : _figtree(AppTypeScale.small, 16, FontWeight.w500, ink),
+                    ? uiStyle(13, 16, FontWeight.w400, ink)
+                    : uiStyle(AppTypeScale.small, 16, FontWeight.w400, ink),
               ),
               SizedBox(width: phone ? 2 : 1),
               KapyIcon(
@@ -1484,21 +1450,59 @@ class ViewAllLink extends StatelessWidget {
   }
 }
 
+/// A count in a small circle that widens into a pill past one digit
+/// ([AppCountBadge]).
+class CountBadge extends StatelessWidget {
+  const CountBadge(this.count, {super.key, this.phone = false});
+
+  final int count;
+  final bool phone;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    final extent = phone ? AppCountBadge.phone : AppCountBadge.desktop;
+    return Container(
+      constraints: BoxConstraints(minWidth: extent, minHeight: extent),
+      padding: const EdgeInsets.symmetric(horizontal: AppCountBadge.padding),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: palette.selectedBackground,
+        borderRadius: BorderRadius.circular(extent / 2),
+      ),
+      child: Text(
+        '$count',
+        maxLines: 1,
+        softWrap: false,
+        style: uiStyle(
+          phone ? 12 : 11,
+          extent,
+          FontWeight.w500,
+          palette.textSecondary,
+          tabular: true,
+        ),
+      ),
+    );
+  }
+}
+
 /// A section label over the notes list: small, quiet and in sentence case,
 /// set apart by the space round it rather than by size or a rule.
 TextStyle _sectionLabel(CalcPalette palette) => chromeStyle(
-  size: 12,
+  size: 13,
   line: 16,
-  weight: AppWeight.section,
-  color: palette.textTertiary,
+  weight: AppWeight.semibold,
+  color: palette.textPrimary,
+  tabular: true,
 );
 
-/// A count or a date after a section label: the label's size, at rest.
+/// A count or a date after a section label: the label's size, a grey
+/// quieter.
 TextStyle _sectionDetail(CalcPalette palette) => chromeStyle(
   size: 12,
   line: 16,
-  weight: AppWeight.body,
-  color: palette.textTertiary,
+  weight: AppWeight.regular,
+  color: palette.textQuiet,
   tabular: true,
 );
 
@@ -1846,7 +1850,7 @@ class _NotesFilterChipState extends State<NotesFilterChip> {
                       label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: _figtree(
+                      style: uiStyle(
                         AppTypeScale.small,
                         16,
                         FontWeight.w400,
@@ -2229,7 +2233,7 @@ class _NotesFilterState extends State<_NotesFilter> {
   Widget build(BuildContext context) {
     final palette = context.palette;
     if (widget.phone) {
-      final pill = _figtree(15, 20, FontWeight.w500, palette.paperColor);
+      final pill = uiStyle(15, 20, FontWeight.w400, palette.paperColor);
       final (:text, :dot) = _label();
       return Semantics(
         button: true,
@@ -2288,7 +2292,7 @@ class _NotesFilterState extends State<_NotesFilter> {
       key: const ValueKey('notes-view'),
       tooltip: 'View',
       extent: 32,
-      radius: 8,
+      radius: AppRadii.control,
       selected: _menu.isShowing,
       onPressed: _toggle,
       icon: const KapyIcon(KapyIcons.filterRounded, size: 16),
@@ -2481,7 +2485,7 @@ class _TagPill extends StatelessWidget {
                   TagDot(tagColourOf(tag.colour.v), size: 8),
                   Text(
                     tag.name.v,
-                    style: _figtree(
+                    style: uiStyle(
                       15,
                       20,
                       FontWeight.w400,
@@ -2585,16 +2589,16 @@ class _FilterMenu extends StatelessWidget {
         header: true,
         child: Text(
           label,
-          style: _figtree(
+          style: uiStyle(
             AppTypeScale.small,
             16,
-            FontWeight.w500,
+            FontWeight.w400,
             palette.textTertiary,
           ),
         ),
       ),
     );
-    final quiet = _figtree(
+    final quiet = uiStyle(
       AppTypeScale.small,
       16,
       FontWeight.w400,
@@ -2628,8 +2632,8 @@ class _FilterMenu extends StatelessWidget {
                     : Text(
                         hiddenShortcut,
                         style: TextStyle(
-                          fontFamily: AppFonts.mono,
-                          fontFamilyFallback: AppFonts.monoFallback,
+                          fontFamily: AppFonts.ui,
+                          fontFamilyFallback: AppFonts.uiFallback,
                           fontSize: 11,
                           height: 14 / 11,
                           color: palette.textTertiary,
@@ -2837,7 +2841,7 @@ class _MenuRowFrameState extends State<_MenuRowFrame> {
           decoration: BoxDecoration(
             color: widget.fill ?? (lit ? palette.hover : null),
             border: _focused ? Border.all(color: palette.selectedBorder) : null,
-            borderRadius: BorderRadius.circular(AppRadii.compact),
+            borderRadius: BorderRadius.circular(AppRadii.control),
           ),
           child: widget.builder(lit),
         ),
@@ -2894,10 +2898,10 @@ class _ShowMenuRow extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: _figtree(
+                style: uiStyle(
                   AppTypeScale.control,
                   16,
-                  chosen ? FontWeight.w500 : FontWeight.w400,
+                  FontWeight.w400,
                   chosen ? palette.textPrimary : palette.textSubheading,
                 ),
               ),
@@ -2940,7 +2944,7 @@ class _MediaMenuRow extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: _figtree(
+                style: uiStyle(
                   AppTypeScale.control,
                   16,
                   FontWeight.w400,
@@ -2988,7 +2992,7 @@ class _WhenMenu extends StatelessWidget {
             ? null
             : Text(
                 detail,
-                style: _figtree(
+                style: uiStyle(
                   AppTypeScale.small,
                   16,
                   FontWeight.w400,
@@ -3054,7 +3058,7 @@ class _TagsMenuState extends State<_TagsMenu> {
     final filter = widget.filter;
     final every = shelf.listed();
     final query = _query.text.trim().toLowerCase();
-    final quiet = _figtree(
+    final quiet = uiStyle(
       AppTypeScale.small,
       16,
       FontWeight.w400,
@@ -3075,10 +3079,10 @@ class _TagsMenuState extends State<_TagsMenu> {
           ),
           child: Text(
             all ? 'all' : 'any',
-            style: _figtree(
+            style: uiStyle(
               AppTypeScale.small,
               16,
-              on ? FontWeight.w500 : FontWeight.w400,
+              FontWeight.w400,
               on ? palette.textPrimary : palette.textSecondary,
             ),
           ),
@@ -3099,10 +3103,10 @@ class _TagsMenuState extends State<_TagsMenu> {
               ?widget.back,
               Text(
                 'No tags yet',
-                style: _figtree(
+                style: uiStyle(
                   AppTypeScale.control,
                   16,
-                  FontWeight.w500,
+                  FontWeight.w400,
                   palette.textPrimary,
                 ),
               ),
@@ -3135,7 +3139,7 @@ class _TagsMenuState extends State<_TagsMenu> {
                     padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
                       color: palette.cardBackground,
-                      borderRadius: BorderRadius.circular(AppRadii.compact),
+                      borderRadius: BorderRadius.circular(AppRadii.control),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -3168,7 +3172,7 @@ class _TagsMenuState extends State<_TagsMenu> {
                       key: const ValueKey('tag-filter-find'),
                       controller: _query,
                       onChanged: (_) => setState(() {}),
-                      style: _figtree(
+                      style: uiStyle(
                         AppTypeScale.control,
                         16,
                         FontWeight.w400,
@@ -3287,7 +3291,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _hovering ? palette.hover : null,
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              borderRadius: BorderRadius.circular(AppRadii.control),
             ),
             child: Row(
               children: [
@@ -3308,7 +3312,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
                           widget.label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: _figtree(
+                          style: uiStyle(
                             AppTypeScale.control,
                             16,
                             FontWeight.w400,
@@ -3339,7 +3343,7 @@ class _TagFilterRowState extends State<_TagFilterRow> {
                 else
                   Text(
                     '${widget.count}',
-                    style: _figtree(
+                    style: uiStyle(
                       AppTypeScale.small,
                       16,
                       FontWeight.w400,
@@ -3484,10 +3488,10 @@ class _FilterPopoverState extends State<_FilterPopover> {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: _figtree(
+                  style: uiStyle(
                     AppTypeScale.control,
                     20,
-                    chosen ? FontWeight.w500 : FontWeight.w400,
+                    FontWeight.w400,
                     chosen ? palette.textPrimary : palette.textSubheading,
                   ),
                 ),
@@ -3504,7 +3508,7 @@ class _FilterPopoverState extends State<_FilterPopover> {
     text,
     maxLines: 1,
     overflow: TextOverflow.ellipsis,
-    style: _figtree(
+    style: uiStyle(
       AppTypeScale.small,
       16,
       FontWeight.w400,
@@ -3516,7 +3520,7 @@ class _FilterPopoverState extends State<_FilterPopover> {
     padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
     child: Text(
       text,
-      style: _figtree(12, 16, FontWeight.w500, context.palette.textTertiary),
+      style: uiStyle(12, 16, FontWeight.w400, context.palette.textTertiary),
     ),
   );
 
@@ -3557,13 +3561,13 @@ class _FilterPopoverState extends State<_FilterPopover> {
           border: Border.all(
             color: on ? palette.tonalKeyBackground : palette.controlBorder,
           ),
-          borderRadius: BorderRadius.circular(AppRadii.dialog),
+          borderRadius: BorderRadius.circular(AppRadii.surface),
         ),
         child: Center(
           widthFactor: 1,
           child: Text(
             label,
-            style: _figtree(
+            style: uiStyle(
               AppTypeScale.control,
               18,
               FontWeight.w400,
@@ -3695,7 +3699,7 @@ class _FilterPopoverState extends State<_FilterPopover> {
         child: Text(
           'No tags yet. Open a note and choose + Tag next to its date.',
           key: const ValueKey('tags-filter-empty'),
-          style: _figtree(
+          style: uiStyle(
             AppTypeScale.control,
             20,
             FontWeight.w400,
@@ -3720,10 +3724,10 @@ class _FilterPopoverState extends State<_FilterPopover> {
           ),
           child: Text(
             all ? 'all' : 'any',
-            style: _figtree(
+            style: uiStyle(
               AppTypeScale.control,
               18,
-              on ? FontWeight.w500 : FontWeight.w400,
+              FontWeight.w400,
               on ? palette.textPrimary : palette.textSecondary,
             ),
           ),
@@ -3812,16 +3816,16 @@ class _FilterPopoverState extends State<_FilterPopover> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final title = _figtree(
+    final title = uiStyle(
       AppTypeScale.control,
       20,
-      FontWeight.w500,
+      FontWeight.w400,
       palette.textPrimary,
     );
-    final link = _figtree(
+    final link = uiStyle(
       AppTypeScale.control,
       20,
-      FontWeight.w500,
+      FontWeight.w400,
       palette.accentText,
     );
     return Material(
@@ -3866,9 +3870,9 @@ class _FilterPopoverState extends State<_FilterPopover> {
                               'Filter',
                               style: link.copyWith(
                                 color: palette.textSecondary,
-                                fontWeight: AppWeight.font(AppWeight.button),
+                                fontWeight: AppWeight.font(AppWeight.regular),
                                 fontVariations: AppWeight.wght(
-                                  AppWeight.button,
+                                  AppWeight.regular,
                                 ),
                               ),
                             ),

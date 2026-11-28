@@ -13,20 +13,18 @@ import '../compact_icon_button.dart';
 extension KapyAiColors on CalcPalette {
   bool get _dark => brightness == Brightness.dark;
 
-  /// The picker and a chat under the pointer: #2A2722 dark, #FCFAF4 light.
+  /// The picker and a chat under the pointer.
   Color get kapyMenu => _dark ? controlBackground : editorBackground;
 
-  /// The question bubble, the chip, a pressed button and the open chat:
-  /// #35312B dark, #EFEADD light.
+  /// The question bubble, the chip, a pressed button and the open chat.
   Color get kapyHighlight => _dark ? separator : controlBackground;
 
-  /// Errors and Delete: #D98A7A dark, #B4533F light. The theme's error red is
-  /// the alarm of a failed save; this is the quieter red of the design.
+  /// Errors and Delete: the design's red, #EB534E dark and #C0332E light.
   Color get kapyRed =>
-      _dark ? const Color(0xFFD98A7A) : const Color(0xFFB4533F);
+      _dark ? const Color(0xFFEB534E) : const Color(0xFFC0332E);
 }
 
-/// Figtree at [size] on a [line] px line.
+/// The interface face at [size] on a [line] px line.
 TextStyle kapyText(
   double size,
   double line,
@@ -39,6 +37,7 @@ TextStyle kapyText(
   height: line / size,
   fontWeight: AppWeight.font(AppWeight.axisOf(weight)),
   fontVariations: AppWeight.wght(AppWeight.axisOf(weight)),
+  letterSpacing: AppTracking.of(size),
   color: color,
 );
 
@@ -184,7 +183,7 @@ class KapyAiButton extends StatelessWidget {
       child: Text(
         label,
         maxLines: 1,
-        style: kapyText(13, 16, foreground, weight: FontWeight.w500),
+        style: kapyText(13, 16, foreground, weight: FontWeight.w400),
       ),
     );
   }

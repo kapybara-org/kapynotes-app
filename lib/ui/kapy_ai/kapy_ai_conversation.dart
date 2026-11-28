@@ -72,12 +72,7 @@ class KapyAiEmpty extends StatelessWidget {
                     Text(
                       'Ask about anything in your notes',
                       textAlign: TextAlign.center,
-                      style: kapyText(
-                        14.5,
-                        20,
-                        palette.textPrimary,
-                        weight: FontWeight.w500,
-                      ),
+                      style: handAccent(palette),
                     ),
                     const SizedBox(height: 18),
                     for (final suggestion in suggestions) ...[
@@ -638,7 +633,7 @@ class _NoteRow extends StatelessWidget {
     final title = this.title;
     return Material(
       type: MaterialType.transparency,
-      borderRadius: BorderRadius.circular(AppRadii.compact),
+      borderRadius: BorderRadius.circular(AppRadii.control),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         key: ValueKey('kapy-ai-read-$noteId'),
@@ -941,7 +936,7 @@ class KapyAiNotice extends StatelessWidget {
                       13.5,
                       16,
                       palette.textPrimary,
-                      weight: FontWeight.w500,
+                      weight: FontWeight.w400,
                     ),
                   ),
                 ),

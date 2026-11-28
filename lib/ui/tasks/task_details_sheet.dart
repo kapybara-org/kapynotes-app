@@ -210,7 +210,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                 style: uiStyle(
                   phone ? 16 : 13,
                   phone ? 22 : 20,
-                  FontWeight.w500,
+                  FontWeight.w400,
                   palette.accentText,
                 ),
               ),
@@ -237,7 +237,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
         onPressed: widget.onOpenNote,
         child: Text(
           'Open in note',
-          style: uiStyle(13, 16, FontWeight.w500, palette.accentText),
+          style: uiStyle(13, 16, FontWeight.w400, palette.accentText),
         ),
       ),
     );
@@ -305,7 +305,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
               children: [
                 Text(
                   'Details',
-                  style: uiStyle(13, 18, FontWeight.w500, palette.textPrimary),
+                  style: uiStyle(13, 18, FontWeight.w400, palette.textPrimary),
                 ),
                 const Expanded(child: WindowDragArea(child: SizedBox.expand())),
                 TextButton(
@@ -318,7 +318,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                     style: uiStyle(
                       13,
                       18,
-                      FontWeight.w500,
+                      FontWeight.w400,
                       palette.textSecondary,
                     ),
                   ),
@@ -337,7 +337,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
                     style: uiStyle(
                       15,
                       24,
-                      FontWeight.w500,
+                      FontWeight.w400,
                       palette.textPrimary,
                     ),
                   ),
@@ -409,7 +409,7 @@ class TaskDetailPicture extends StatelessWidget {
       child: Align(
         alignment: Alignment.centerLeft,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppRadii.compact),
+          borderRadius: BorderRadius.circular(AppRadii.control),
           child: SizedBox(width: width ?? size, height: size, child: child),
         ),
       ),
@@ -543,7 +543,7 @@ class PhoneTaskPage extends StatelessWidget {
                                         uiStyle(
                                           18,
                                           26,
-                                          FontWeight.w500,
+                                          FontWeight.w400,
                                           done
                                               ? palette.textTertiary
                                               : palette.textPrimary,
@@ -607,7 +607,6 @@ class _PhoneTaskBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final sage = Theme.of(context).colorScheme.primary;
     final done = item.line.done;
     final tick = editable
         ? () => unawaited(tasks.setDone(item, done: !done))
@@ -630,18 +629,18 @@ class _PhoneTaskBox extends StatelessWidget {
                 width: 20,
                 height: 20,
                 decoration: BoxDecoration(
-                  color: done ? sage : null,
+                  color: done ? palette.accentFill : null,
                   border: Border.all(
-                    color: done ? sage : palette.checkboxBorder,
+                    color: done ? palette.accentFill : palette.checkboxBorder,
                     width: 1.5,
                   ),
-                  borderRadius: BorderRadius.circular(5),
+                  shape: BoxShape.circle,
                 ),
                 child: done
                     ? KapyIcon(
                         KapyIcons.checkRounded,
                         size: 14,
-                        color: palette.paperColor,
+                        color: palette.onAccent,
                       )
                     : null,
               ),

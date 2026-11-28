@@ -16,6 +16,7 @@ import '../context_menu.dart';
 import '../sidebar.dart' show PhoneFiltersButton, SidebarSearchField;
 import '../note_day_scope.dart';
 import '../notes_grouping.dart' show dayShown;
+import '../page_turn.dart';
 import '../sidebar_timestamp.dart';
 import 'task_choice.dart';
 import 'task_choice_cards.dart';
@@ -569,17 +570,23 @@ class TasksScreenState extends State<TasksScreen> {
             });
             return const SizedBox.shrink();
           }
-          return PhoneTaskPage(
-            item: current,
-            tasks: _tasks,
-            label: widget.labelOf(current.note),
-            images: widget.images,
-            onBack: () => Navigator.of(context).pop(),
-            onOpenNote: () {
-              Navigator.of(context).pop();
-              final open = widget.onOpenTask;
-              open == null ? widget.onOpenNote(current.note.id) : open(current);
-            },
+          // A drag right goes back to the list, as the page's arrow does.
+          return PageTurn(
+            onBack: () => unawaited(Navigator.of(context).maybePop()),
+            child: PhoneTaskPage(
+              item: current,
+              tasks: _tasks,
+              label: widget.labelOf(current.note),
+              images: widget.images,
+              onBack: () => Navigator.of(context).pop(),
+              onOpenNote: () {
+                Navigator.of(context).pop();
+                final open = widget.onOpenTask;
+                open == null
+                    ? widget.onOpenNote(current.note.id)
+                    : open(current);
+              },
+            ),
           );
         },
       ),
@@ -768,7 +775,7 @@ class TasksScreenState extends State<TasksScreen> {
               child: _ticked.isEmpty
                   ? Text(
                       'Nothing on the list.',
-                      style: taskText(13, 18, ink.quiet),
+                      style: handAccent(context.palette),
                     )
                   : null,
             ),
@@ -930,7 +937,7 @@ class TasksScreenState extends State<TasksScreen> {
             children: [
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final titleStyle = handStyle(
+                  final titleStyle = uiStyle(
                     32,
                     40,
                     FontWeight.w700,
@@ -968,7 +975,7 @@ class TasksScreenState extends State<TasksScreen> {
               Text(
                 'Newest first, by the day each was finished. Unticking one '
                 'puts it back at the end of the list.',
-                style: uiStyle(13, 18, FontWeight.w500, palette.textSecondary),
+                style: uiStyle(13, 18, FontWeight.w400, palette.textSecondary),
               ),
             ],
           ),
@@ -986,7 +993,7 @@ class TasksScreenState extends State<TasksScreen> {
                 Flexible(
                   child: Text(
                     SidebarTimestamp.doneDay(day, now: now),
-                    style: handStyle(
+                    style: uiStyle(
                       15,
                       22,
                       FontWeight.w600,
@@ -1299,8 +1306,8 @@ class _AddRow extends StatelessWidget {
                   child: Text(
                     focused ? '↵' : shortcut ?? '',
                     style: TextStyle(
-                      fontFamily: AppFonts.mono,
-                      fontFamilyFallback: AppFonts.monoFallback,
+                      fontFamily: AppFonts.ui,
+                      fontFamilyFallback: AppFonts.uiFallback,
                       fontSize: 11,
                       height: 14 / 11,
                       color: ink.quiet,
@@ -1345,7 +1352,7 @@ class _NotePicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
     final target = this.target;
-    final radius = phone ? AppRadii.control : AppRadii.compact;
+    final radius = phone ? AppRadii.control : AppRadii.control;
     return Tooltip(
       message: 'Add to a note',
       child: InkWell(
@@ -1837,7 +1844,7 @@ class _DoneRow extends StatelessWidget {
                           style: uiStyle(
                             16,
                             28,
-                            FontWeight.w500,
+                            FontWeight.w400,
                             palette.textMuted,
                           ),
                         ),
@@ -1879,7 +1886,7 @@ class _DoneRow extends StatelessWidget {
                 textAlign: TextAlign.right,
                 maxLines: 1,
                 softWrap: false,
-                style: uiStyle(12.5, 16, FontWeight.w500, palette.textTertiary),
+                style: uiStyle(12.5, 16, FontWeight.w400, palette.textTertiary),
               ),
             ),
           ],
@@ -1906,7 +1913,6 @@ class _Box extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final accent = Theme.of(context).colorScheme.primary;
     return Semantics(
       checked: done,
       label: label,
@@ -1921,17 +1927,17 @@ class _Box extends StatelessWidget {
             width: 20,
             height: 20,
             decoration: BoxDecoration(
-              color: done ? accent : palette.editorBackground,
+              color: done ? palette.accentFill : palette.editorBackground,
               border: done
                   ? null
                   : Border.all(color: palette.checkboxBorder, width: 1.5),
-              borderRadius: BorderRadius.circular(AppRadii.compact),
+              shape: BoxShape.circle,
             ),
             child: done
                 ? KapyIcon(
                     KapyIcons.checkRounded,
                     size: 14,
-                    color: palette.paperColor,
+                    color: palette.onAccent,
                   )
                 : null,
           ),
@@ -2120,13 +2126,13 @@ class _PhoneTaskRow extends StatelessWidget {
                               width: 20,
                               height: 20,
                               decoration: BoxDecoration(
-                                color: ink.sage,
+                                color: context.palette.accentFill,
                                 borderRadius: BorderRadius.circular(5),
                               ),
                               child: KapyIcon(
                                 KapyIcons.checkRounded,
                                 size: 14,
-                                color: palette.paperColor,
+                                color: palette.onAccent,
                               ),
                             ),
                           ),
@@ -2271,8 +2277,8 @@ class TasksBandActions extends StatelessWidget {
           ChecklistPie(
             done: done,
             total: total,
-            fill: ink.sage,
-            check: context.palette.paperColor,
+            fill: context.palette.accentFill,
+            check: context.palette.onAccent,
           ),
           const SizedBox(width: 6),
           ExcludeSemantics(

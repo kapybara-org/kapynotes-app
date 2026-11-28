@@ -176,7 +176,8 @@ void main() {
     }
     expect(day(15), findsNothing);
     expect(day(23), findsNothing);
-    expect(find.text('November'), findsOneWidget);
+    expect(find.text('Nov'), findsOneWidget);
+    expect(find.text('November'), findsNothing);
     expect(find.text('Thu 19'), findsOneWidget);
     expect(dotsOf(day(16)), findsNothing);
     expect(dotsOf(day(17)), findsOneWidget);
@@ -272,9 +273,28 @@ void main() {
     expect(day(22), findsNothing);
   });
 
-  testWidgets('a week across two months names both, in full', (tester) async {
+  testWidgets('the month says three letters, and its full name to a screen '
+      'reader', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await pumpStrip(tester);
+    final month = find.byKey(const ValueKey('day-strip-month'));
+    expect(
+      find.descendant(of: month, matching: find.text('Nov')),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('November'), findsOneWidget);
+    expect(find.byTooltip('Pick a day'), findsOneWidget);
+
     await pumpStrip(tester, today: DateTime(2026, 12, 2));
-    expect(find.text('November–December'), findsOneWidget);
+    expect(find.bySemanticsLabel('November to December'), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('a week across two months names both, in three letters each', (
+    tester,
+  ) async {
+    await pumpStrip(tester, today: DateTime(2026, 12, 2));
+    expect(find.text('Nov–Dec'), findsOneWidget);
     expect(day(29), findsOneWidget);
     expect(day(3, month: 12), findsOneWidget);
   });
@@ -419,8 +439,8 @@ void main() {
     final forward = find.byKey(const ValueKey('day-strip-forward'));
     final month = find.byKey(const ValueKey('day-strip-month'));
     final date = find.byKey(const ValueKey('day-strip-date'));
-    // Seven days from Sun 29 November say "November–December", and fewer
-    // around Wed 2 December only "December".
+    // Seven days from Sun 29 November say "Nov–Dec", and fewer around Wed 2
+    // December only "Dec".
     for (var room = 200.0; room <= 760; room += 12) {
       for (final compact in [false, true]) {
         await pumpStrip(

@@ -35,6 +35,15 @@ class KapyModel {
     label: 'Kapy AI Cloud',
   );
 
+  /// The device's own translator: what a translation made on this device
+  /// keeps as its model. Never offered in the picker and never asked a
+  /// question, so no answer engine is behind it.
+  static const KapyModel translator = KapyModel(
+    kind: KapyModelKind.device,
+    id: 'translator',
+    label: 'Translator on this device',
+  );
+
   final KapyModelKind kind;
 
   /// Stable across launches: 'apple', 'gemma', 'cloud', or the account's own

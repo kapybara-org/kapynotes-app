@@ -3347,7 +3347,7 @@ void main() {
       expect(label.style!.color, palette.textTertiary);
       expect(
         label.style!.fontVariations,
-        contains(const FontVariation('wght', 520)),
+        contains(const FontVariation('wght', 400)),
       );
 
       final row = find.byKey(ValueKey('member-row-${alice.userId}'));
@@ -3662,8 +3662,8 @@ void main() {
       await tester.pumpAndSettle();
 
       // The row keeps one menu affordance. Sharing itself still lives in the
-      // title bar, where it acts on the note that is open rather than whichever
-      // row happens to be under the pointer.
+      // page's More, where it acts on the note that is open rather than
+      // whichever row happens to be under the pointer.
       expect(find.byKey(ValueKey('share-note-${shared.id}')), findsNothing);
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       addTearDown(mouse.removePointer);

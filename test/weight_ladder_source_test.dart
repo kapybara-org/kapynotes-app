@@ -7,10 +7,6 @@ import 'package:flutter_test/flutter_test.dart';
 /// Everything else that sets a fontWeight takes the ladder: chromeStyle,
 /// ladder(), or AppWeight.font with AppWeight.wght beside it.
 const Map<String, (int, String)> ladderExceptions = {
-  'lib/core/theme.dart|fontWeight: FontWeight.w300,': (
-    3,
-    'The display cut, under 400, which AppWeight.axisOf leaves alone.',
-  ),
   'lib/ui/instant_capture.dart|fontWeight: FontWeight.w300,': (
     1,
     "Quick capture's light 300 in the system mono face, under 400, which "
@@ -25,17 +21,8 @@ const Map<String, (int, String)> ladderExceptions = {
     1,
     'The writing: a paragraph style keeps the Writing font body weight.',
   ),
-  'lib/ui/editor/editor_formatting.dart|'
-      'fontWeight: strong ? FontWeight.w600 : FontWeight.w400,': (
-    1,
-    "The note title in Newsreader's static cut, which has no wght axis.",
-  ),
-  'lib/ui/editor/editor_formatting.dart|'
-      'fontWeight: strong ? FontWeight.w600 : EditorMetrics.titleWeight,': (
-    1,
-    'The note title in the Writing font the person chose; the writing '
-        "keeps its own weights, not the interface ladder's.",
-  ),
+  'lib/ui/editor/editor_formatting.dart|fontWeight: EditorMetrics.titleWeight,':
+      (1, 'The note title, 26 semibold, in the writing face.'),
   'lib/ui/editor/editor_formatting.dart|fontWeight: FontWeight.w600,': (
     1,
     'The writing: a Markdown heading in the Writing font.',
@@ -223,7 +210,7 @@ final lit = TextStyle(
 final style = TextStyle(
   fontSize: 13,
   height: 18 / 13,
-  fontWeight: AppWeight.font(AppWeight.section),
+  fontWeight: AppWeight.font(AppWeight.regular),
   color: ink,
 );
 ''',
@@ -235,15 +222,15 @@ final style = TextStyle(
   test('wght set without AppWeight.bold outside theme.dart is caught', () {
     const skipped = '''
 final style = TextStyle(
-  fontWeight: AppWeight.named(AppWeight.section),
-  fontVariations: AppWeight.variations(AppWeight.section),
+  fontWeight: AppWeight.named(AppWeight.regular),
+  fontVariations: AppWeight.variations(AppWeight.regular),
 );
 ''';
     const wrapped = '''
 final style = TextStyle(
-  fontWeight: AppWeight.named(AppWeight.bold(AppWeight.section)),
+  fontWeight: AppWeight.named(AppWeight.bold(AppWeight.regular)),
   fontVariations: AppWeight.variations(
-    AppWeight.bold(AppWeight.section),
+    AppWeight.bold(AppWeight.regular),
   ),
 );
 ''';
@@ -256,8 +243,8 @@ final style = TextStyle(
     expect(
       ladderViolations({
         'lib/ui/planted.dart': '''
-final style = _figtree(13, 18, FontWeight.w500, palette.textPrimary);
-TextStyle _figtree(double size, double line, FontWeight weight, Color color) =>
+final style = _chrome(13, 18, FontWeight.w500, palette.textPrimary);
+TextStyle _chrome(double size, double line, FontWeight weight, Color color) =>
     chromeStyle(
       size: size,
       line: line,

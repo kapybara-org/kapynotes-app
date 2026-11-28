@@ -75,15 +75,41 @@ void main() {
     // it, which nothing else would ever take down, so ask for it to go, and
     // ask again each second in case a request lands mid-animation and is
     // lost.
-    for (var i = 0; i < 150 && tester.view.viewInsets.bottom != 0; i++) {
-      if (i % 10 == 0) {
-        await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    Future<bool> down(int tenths) async {
+      for (var i = 0; i < tenths && tester.view.viewInsets.bottom != 0; i++) {
+        if (i % 10 == 0) {
+          await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+        }
+        await tester.pump(const Duration(milliseconds: 100));
       }
-      await tester.pump(const Duration(milliseconds: 100));
+      return tester.view.viewInsets.bottom == 0;
+    }
+
+    if (!await down(50)) {
+      // Flutter can be left holding a keyboard's height that Android has put
+      // away (KAP-324: 883 px while the input method said it was hidden), and
+      // a hide that finds nothing to hide brings no new height. A field that
+      // raises the keyboard makes Android send the real height, and taking
+      // the field away puts the keyboard down.
+      await deviceAction(
+        'warn:phone_format_bar_test: the inset stayed at '
+        '${tester.view.viewInsets.bottom} with nothing focused, so a field '
+        'raises the keyboard and puts it down again (KAP-324)',
+      );
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: TextField(autofocus: true))),
+      );
+      for (var i = 0; i < 30; i++) {
+        if (i == 5) {
+          await SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+        }
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
     }
     expect(
-      tester.view.viewInsets.bottom,
-      0,
+      await down(150),
+      isTrue,
       reason:
           'the last case\'s keyboard is still going down; mounting over it '
           'would have the editor let go when it finally does',
@@ -335,10 +361,16 @@ void main() {
       ['Photo', 'Video', 'Voice note', 'File'],
     );
 
+    final route = ModalRoute.of(tester.element(sheet))!;
     await tester.tap(find.byKey(const ValueKey('attach-voice')));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(recordings, 1);
+    await tester.pump();
+    expect(route.isActive, isFalse, reason: 'the sheet did not close on tap');
+    // It slides away over a few frames, which a busy simulator can stretch.
+    for (var i = 0; i < 25 && sheet.evaluate().isNotEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
     expect(sheet, findsNothing);
+    expect(recordings, 1);
   });
 
   testWidgets('Hide keyboard puts the keyboard and the bar away', (

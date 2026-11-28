@@ -519,8 +519,8 @@ class _ImageTransferCover extends StatelessWidget {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: AppTypeScale.caption,
-                    fontWeight: AppWeight.font(AppWeight.rowTitle),
-                    fontVariations: AppWeight.wght(AppWeight.rowTitle),
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                   ),
                 ),
               ],
@@ -627,7 +627,7 @@ class _RemoteImage extends StatelessWidget {
                   key: const ValueKey('image-downloading'),
                   decoration: BoxDecoration(
                     color: palette.editorBackground.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(AppRadii.dialog),
+                    borderRadius: BorderRadius.circular(AppRadii.surface),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
@@ -658,9 +658,9 @@ class _RemoteImage extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: AppTypeScale.body,
-                                fontWeight: AppWeight.font(AppWeight.rowTitle),
+                                fontWeight: AppWeight.font(AppWeight.regular),
                                 fontVariations: AppWeight.wght(
-                                  AppWeight.rowTitle,
+                                  AppWeight.regular,
                                 ),
                                 color: palette.textSubheading,
                               ),
@@ -690,8 +690,8 @@ class _RemoteImage extends StatelessWidget {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: AppTypeScale.control,
-                            fontWeight: AppWeight.font(AppWeight.rowTitle),
-                            fontVariations: AppWeight.wght(AppWeight.rowTitle),
+                            fontWeight: AppWeight.font(AppWeight.regular),
+                            fontVariations: AppWeight.wght(AppWeight.regular),
                             color: palette.textSubheading,
                           ),
                         ),

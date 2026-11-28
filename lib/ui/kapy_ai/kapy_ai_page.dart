@@ -84,7 +84,11 @@ class _KapyAiPageState extends State<KapyAiPage> {
           builder: (context, _) => Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              PhoneListTitle(title: 'Kapy AI', trailing: widget.account),
+              PhoneListTitle(
+                title: 'Kapy AI',
+                trailing: widget.account,
+                handwritten: true,
+              ),
               SidebarSearchField(
                 phone: true,
                 placeholder: 'Search chats',

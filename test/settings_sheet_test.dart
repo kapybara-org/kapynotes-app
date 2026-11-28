@@ -2,7 +2,6 @@ import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/desktop_integration.dart';
-import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
@@ -155,7 +154,7 @@ void main() {
 
     // The whole point of the list: none of the panes are on this screen.
     expect(find.text('Daily separators'), findsNothing);
-    expect(find.text('PAPER AND TEXT'), findsNothing);
+    expect(find.text('Paper and text'), findsNothing);
   });
 
   testWidgets('pushes one category and comes back to the list', (tester) async {
@@ -165,14 +164,14 @@ void main() {
 
     // The title says where you are, and only that category is here.
     expect(find.text('Appearance'), findsOneWidget);
-    expect(find.text('PAPER AND TEXT'), findsOneWidget);
+    expect(find.text('Paper and text'), findsOneWidget);
     expect(find.byKey(const ValueKey('transparency-setting')), findsNothing);
     expect(find.byKey(const ValueKey('settings-section-notes')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('settings-sheet-back')));
     await tester.pumpAndSettle();
 
-    expect(find.text('PAPER AND TEXT'), findsNothing);
+    expect(find.text('Paper and text'), findsNothing);
     expect(
       find.byKey(const ValueKey('settings-section-notes')),
       findsOneWidget,
@@ -190,7 +189,7 @@ void main() {
     expect(style('Done').color, palette.textPrimary);
 
     await _openCategory(tester, 'appearance');
-    expect(style('Appearance').fontFamily, WritingFont.handwritten.fontFamily);
+    expect(style('Appearance').fontFamily, AppFonts.ui);
     expect(style('Done').color, palette.accentText);
   });
 
@@ -383,10 +382,10 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
 
     expect(SettingsMetrics.titleSize, 14);
-    expect(SettingsMetrics.subtitleSize, 13);
+    expect(SettingsMetrics.subtitleSize, 11.5);
     expect(
       SettingsMetrics.titleSize - SettingsMetrics.subtitleSize,
-      1,
+      greaterThan(1),
       reason: 'the hierarchy should be clear without miniaturising subtitles',
     );
   });
@@ -413,8 +412,11 @@ void main() {
     expect(subtitle.getMaxIntrinsicWidth(double.infinity), greaterThan(380));
   });
 
-  testWidgets('desktop settings subtitles stay on one line', (tester) async {
+  testWidgets('desktop settings subtitles wrap to a second line', (
+    tester,
+  ) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await tester.pumpWidget(
       MaterialApp(
         theme: KapyTheme.dark(),
@@ -431,8 +433,7 @@ void main() {
     final subtitle = tester.widget<Text>(
       find.text('Restore your cursor position when you return to the app'),
     );
-    expect(subtitle.maxLines, 1);
-    expect(subtitle.softWrap, isFalse);
+    expect(subtitle.maxLines, 2);
     expect(subtitle.overflow, TextOverflow.ellipsis);
   });
 
@@ -441,8 +442,8 @@ void main() {
     await _openSettings(tester);
     await _openCategory(tester, 'voice');
 
-    expect(find.text('VOICE NOTES'), findsOneWidget);
-    expect(find.text('TRANSCRIPTION'), findsOneWidget);
+    expect(find.text('Voice notes'), findsOneWidget);
+    expect(find.text('Transcription'), findsOneWidget);
     // The cloud and this device are one mutually exclusive choice, so they
     // are two halves of one control rather than two rows.
     for (final key in ['transcribe-with-cloud', 'transcribe-with-device']) {
@@ -461,7 +462,7 @@ void main() {
       find.byKey(const ValueKey('local-summary-line')),
       200,
     );
-    expect(find.text('SUMMARIES'), findsOneWidget);
+    expect(find.text('Summaries'), findsOneWidget);
   });
 
   testWidgets('opens straight on a pane when sent to one', (tester) async {
@@ -469,7 +470,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await _openCategory(tester, 'voice');
-    expect(find.text('TRANSCRIPTION'), findsOneWidget);
+    expect(find.text('Transcription'), findsOneWidget);
   });
 
   testWidgets('notes settings does not offer the welcome note', (tester) async {

@@ -104,8 +104,8 @@ class NoteFooter extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: AppTypeScale.caption,
-                              fontWeight: AppWeight.font(AppWeight.body),
-                              fontVariations: AppWeight.wght(AppWeight.body),
+                              fontWeight: AppWeight.font(AppWeight.regular),
+                              fontVariations: AppWeight.wght(AppWeight.regular),
                               color: palette.textSecondary,
                             ),
                           ),
@@ -158,8 +158,8 @@ class _ReadOnlyStatus extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontSize: AppTypeScale.caption,
-              fontWeight: AppWeight.font(AppWeight.rowTitle),
-              fontVariations: AppWeight.wght(AppWeight.rowTitle),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               color: palette.textSecondary,
             ),
           ),

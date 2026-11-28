@@ -444,6 +444,112 @@ void main() {
     });
   });
 
+  group('the drawer at its tallest', () {
+    // Nothing the call said, so the answer cites no moment and the window
+    // stays on the tab it was on.
+    final long = List.filled(
+      150,
+      'Nothing in this answer was said in the call.',
+    ).join(' ');
+    Finder private(String type) => find.byWidgetPredicate(
+      (widget) => widget.runtimeType.toString() == type,
+    );
+    final speakerBar = private('_SpeakerBar');
+    final switchRow = private('_SwitchRow');
+
+    /// Opens a long answer from Earlier, so the drawer is as tall as it goes.
+    Future<void> openLong(WidgetTester tester) async {
+      await tester.tap(_earlier);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('voice-ask-earlier-c1')));
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: _drawer, matching: find.text(long)),
+        findsOneWidget,
+      );
+    }
+
+    for (final asSheet in [false, true]) {
+      testWidgets(
+        'leaves the speakers row whole and tappable on the transcript${asSheet ? ', on a phone' : ''}',
+        (tester) async {
+          if (asSheet) {
+            tester.view
+              ..physicalSize = const Size(390, 844)
+              ..devicePixelRatio = 1;
+            addTearDown(tester.view.reset);
+          }
+          final ai = FakeKapyAi(
+            chatList: [_chat('c1', 'What did we decide?', answer: long)],
+          );
+          final window = _window(ai, asSheet: asSheet, onChanged: (_) {});
+          if (asSheet) {
+            await tester.pumpWidget(window);
+          } else {
+            await _show(tester, window);
+          }
+          await tester.tap(find.text('Transcript'));
+          await tester.pumpAndSettle();
+          final before = tester.getRect(speakerBar);
+
+          await openLong(tester);
+          expect(tester.getRect(speakerBar), before, reason: 'nothing moves');
+          expect(
+            tester.getRect(_drawer).top,
+            before.bottom + 8,
+            reason: 'a solid band below the row, then the drawer',
+          );
+          expect(
+            find
+                .descendant(of: speakerBar, matching: find.text('Arjun'))
+                .hitTestable(),
+            findsOneWidget,
+          );
+          await tester.tap(
+            find.descendant(of: speakerBar, matching: find.text('Arjun')),
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(TextField), findsWidgets, reason: 'rename opens');
+        },
+      );
+    }
+
+    testWidgets('stops a solid band below the tabs on the summary', (
+      tester,
+    ) async {
+      final ai = FakeKapyAi(
+        chatList: [_chat('c1', 'What did we decide?', answer: long)],
+      );
+      await _show(tester, _window(ai));
+      final tabs = tester.getRect(switchRow);
+      await openLong(tester);
+      expect(tester.getRect(switchRow), tabs, reason: 'nothing moves');
+      expect(tester.getRect(_drawer).top, tabs.bottom + 8);
+      expect(
+        find.text('Show the annual plan first.').hitTestable(),
+        findsNothing,
+        reason: 'no point shows above the drawer',
+      );
+      final fade = find.byWidgetPredicate(
+        (widget) => widget is OverflowBox && widget.maxHeight == 24,
+      );
+      final shown = tester.getRect(
+        find.ancestor(of: fade, matching: find.byType(ClipRect)).first,
+      );
+      final band = find.descendant(
+        of: fade,
+        matching: find.byType(DecoratedBox),
+      );
+      expect(shown.height, 8);
+      expect(tester.getRect(band).bottom, shown.bottom);
+      final gradient =
+          (tester.widget<DecoratedBox>(band).decoration as BoxDecoration)
+                  .gradient!
+              as LinearGradient;
+      expect(gradient.stops!.last, lessThanOrEqualTo(2 / 3), reason: 'solid');
+    });
+  });
+
   group('Earlier', () {
     final past = [
       _chat('c2', 'When is the page due?', answer: 'Friday.', minute: 29),
@@ -567,9 +673,9 @@ void main() {
       await _show(tester, _window(FakeKapyAi(), onRewrite: write));
       final labels = [
         'What did we decide?',
-        'Create X Post',
+        'Create X post',
         'What are the next steps?',
-        'Create LinkedIn Post',
+        'Create LinkedIn post',
         'What did Arjun ask for?',
         'Your own words…',
       ];
@@ -600,11 +706,11 @@ void main() {
             onInsert: (_) {},
           ),
         );
-        await tester.tap(find.text('Create X Post'));
+        await tester.tap(find.text('Create X post'));
         await tester.pumpAndSettle();
         expect(asked.single, contains('260 characters'));
         expect(
-          find.descendant(of: _drawer, matching: find.text('Create X Post')),
+          find.descendant(of: _drawer, matching: find.text('Create X post')),
           findsOneWidget,
         );
         expect(find.text('Post number 1.'), findsOneWidget);
@@ -642,9 +748,9 @@ void main() {
         expect(saved!.takes.single.text, 'Post number 1.');
         expect(_drawer, findsNothing);
 
-        await tester.ensureVisible(find.text('Create LinkedIn Post'));
+        await tester.ensureVisible(find.text('Create LinkedIn post'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Create LinkedIn Post'));
+        await tester.tap(find.text('Create LinkedIn post'));
         await tester.pumpAndSettle();
         expect(asked.last, contains('LinkedIn'));
         expect(saved!.takes.last.kind, VoiceTakeKind.linkedin);
@@ -738,7 +844,7 @@ void main() {
       await tester.tap(_earlier);
       await tester.pumpAndSettle();
       final rows = [
-        'Create X Post',
+        'Create X post',
         'What did Arjun ask for?',
         'A two-line update for the team',
       ];
@@ -749,7 +855,7 @@ void main() {
           reason: rows[i],
         );
       }
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
       expect(find.text('Reworking our pricing page.'), findsOneWidget);
       expect(find.byKey(const ValueKey('voice-ask-again')), findsOneWidget);
@@ -769,9 +875,9 @@ void main() {
       );
       expect(find.text('What did we decide?'), findsNothing);
       expect(find.text('Your own words…'), findsNothing);
-      expect(find.text('Create LinkedIn Post'), findsOneWidget);
+      expect(find.text('Create LinkedIn post'), findsOneWidget);
       expect(_hint(tester), 'What should it create?');
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
       expect(saved!.takes.single.kind, VoiceTakeKind.x);
     });
@@ -783,7 +889,7 @@ void main() {
         tester,
         _window(ai, onRewrite: write, onChanged: (next) => saved = next),
       );
-      await tester.tap(find.text('Create X Post'));
+      await tester.tap(find.text('Create X post'));
       await tester.pumpAndSettle();
       expect(saved!.takes.single.text, 'Post number 1.');
       expect(find.textContaining('No credits left'), findsNothing);
@@ -1267,6 +1373,51 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Arjun: पहले सालाना प्लान।'), findsOneWidget);
+    });
+
+    testWidgets('one made on this device says so, and from what into what', (
+      tester,
+    ) async {
+      final at = DateTime(2026, 11, 27, 10, 50);
+      final translated = KapyChat(
+        id: 't1',
+        title: 'Transcript in English',
+        createdAt: at,
+        updatedAt: at,
+        model: KapyModel.cloud,
+        recording: _link,
+        messages: [
+          KapyMessage(
+            id: 't1-q',
+            role: KapyRole.user,
+            text: 'Translate the transcript to English',
+            at: at,
+          ),
+          KapyMessage(
+            id: 't1-a0',
+            role: KapyRole.assistant,
+            text: '[0:00] Me: Thanks for coming.',
+            at: at,
+            model: KapyModel.translator,
+          ),
+        ],
+      );
+      final ai = FakeKapyAi(chatList: [translated]);
+      await _show(tester, _window(ai, ref: _recording(lang: 'es')));
+      await tester.tap(_earlier);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('voice-ask-earlier-t1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Me: Thanks for coming.'), findsOneWidget);
+      expect(
+        find.text('Translated on this device · Spanish → English'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('voice-ask-model')),
+        findsNothing,
+        reason: 'the translator is not a model to pick',
+      );
     });
   });
 }

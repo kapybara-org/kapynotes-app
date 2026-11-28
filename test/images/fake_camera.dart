@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:kapy_notes/images/camera_capture.dart';
+import 'package:kapy_notes/images/desktop_camera.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
@@ -36,6 +37,9 @@ class FakeCameraPlatform extends CameraPlatform {
 
   /// What the camera was asked to do, in order.
   final List<String> calls = [];
+
+  /// What the last recording was started with.
+  VideoCaptureOptions? capture;
   FlashMode flash = FlashMode.off;
   int videoBytes = 1024;
 
@@ -103,6 +107,7 @@ class FakeCameraPlatform extends CameraPlatform {
   @override
   Future<void> startVideoCapturing(VideoCaptureOptions options) async {
     calls.add('startVideo');
+    capture = options;
   }
 
   @override
@@ -220,4 +225,101 @@ class FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   Future<void> dispose(int playerId) async {
     await _events.remove(playerId)?.close();
   }
+}
+
+const builtInCamera = DesktopCameraDevice(
+  id: 'built-in',
+  name: 'FaceTime HD Camera',
+);
+const usbCamera = DesktopCameraDevice(id: 'usb', name: 'USB Camera');
+
+/// A computer's camera with nothing behind it, for the camera window. Photos
+/// and videos it "takes" are small files where the window asks.
+class FakeDesktopCamera implements DesktopCamera {
+  List<DesktopCameraDevice> devices = const [builtInCamera, usbCamera];
+
+  /// Thrown by listing the cameras while set.
+  DesktopCameraTrouble? listTrouble;
+
+  /// Thrown by every opening while set.
+  DesktopCameraTrouble? openTrouble;
+
+  /// Whether an opening with sound fails, as a refused microphone makes it.
+  bool microphoneOff = false;
+
+  /// How big a video is once stopped, unless it already grew bigger.
+  int videoBytes = 1024;
+
+  /// What the window asked for, in order.
+  final List<String> calls = [];
+
+  /// Where the recording going on is written.
+  String? recordingPath;
+
+  @override
+  Future<List<DesktopCameraDevice>> cameras() async {
+    if (listTrouble case final trouble?) throw DesktopCameraException(trouble);
+    return devices;
+  }
+
+  @override
+  Future<DesktopCameraSession> open(
+    DesktopCameraDevice device, {
+    required bool video,
+    required bool sound,
+  }) async {
+    calls.add(
+      'open ${device.id} ${video ? 'video' : 'photo'}${sound ? ' sound' : ''}',
+    );
+    if (openTrouble case final trouble?) throw DesktopCameraException(trouble);
+    if (sound && microphoneOff) {
+      throw const DesktopCameraException(DesktopCameraTrouble.accessOff);
+    }
+    return _FakeDesktopSession(this);
+  }
+
+  @override
+  Future<void> openPrivacySettings({required bool microphone}) async =>
+      calls.add('settings ${microphone ? 'microphone' : 'camera'}');
+}
+
+class _FakeDesktopSession implements DesktopCameraSession {
+  _FakeDesktopSession(this.camera);
+
+  final FakeDesktopCamera camera;
+
+  @override
+  Widget preview() => const SizedBox.expand(key: ValueKey('fake-preview'));
+
+  @override
+  double get aspectRatio => 16 / 9;
+
+  @override
+  Future<XFile> takePhoto(String path) async {
+    camera.calls.add('photo');
+    File(path).writeAsBytesSync(List.filled(64, 1));
+    return XFile(path);
+  }
+
+  @override
+  Future<void> startRecording(String path) async {
+    camera.calls.add('start');
+    camera.recordingPath = path;
+    File(path).writeAsBytesSync(const [1]);
+  }
+
+  @override
+  Future<XFile> stopRecording() async {
+    camera.calls.add('stop');
+    final path = camera.recordingPath!;
+    camera.recordingPath = null;
+    final file = File(path);
+    if (file.lengthSync() < camera.videoBytes) {
+      file.writeAsBytesSync(List.filled(camera.videoBytes, 1));
+    }
+    return XFile(path);
+  }
+
+  @override
+  Future<void> close() async => camera.calls.add('close');
 }

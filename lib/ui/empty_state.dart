@@ -1,6 +1,5 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../core/editor_font.dart';
 import '../core/theme.dart';
 import 'app_logo.dart';
 import 'keycap.dart';
@@ -27,7 +26,6 @@ class EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     if (drawings) {
-      const handwritten = WritingFont.handwritten;
       return Container(
         color: palette.paperColor,
         alignment: Alignment.center,
@@ -41,20 +39,7 @@ class EmptyState extends StatelessWidget {
               color: palette.textTertiary,
             ),
             const SizedBox(height: 10),
-            Text(
-              'No drawing open',
-              style: TextStyle(
-                fontFamily: handwritten.fontFamily,
-                fontFamilyFallback: handwritten.fontFamilyFallback,
-                fontSize: 16,
-                fontWeight: AppWeight.font(AppWeight.button),
-                fontVariations: AppWeight.wght(
-                  AppWeight.button,
-                  extra: handwritten.fontVariations ?? const [],
-                ),
-                color: palette.textPrimary,
-              ),
-            ),
+            Text('No drawing open', style: handAccent(palette)),
             const SizedBox(height: 6),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -66,8 +51,8 @@ class EmptyState extends StatelessWidget {
                       : 'Start one with New drawing or',
                   style: TextStyle(
                     fontSize: AppTypeScale.small,
-                    fontWeight: AppWeight.font(AppWeight.body),
-                    fontVariations: AppWeight.wght(AppWeight.body),
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                     color: palette.textTertiary,
                   ),
                 ),
@@ -103,8 +88,8 @@ class EmptyState extends StatelessWidget {
             'No note selected',
             style: TextStyle(
               fontSize: AppTypeScale.title,
-              fontWeight: AppWeight.font(AppWeight.body),
-              fontVariations: AppWeight.wght(AppWeight.body),
+              fontWeight: AppWeight.font(AppWeight.regular),
+              fontVariations: AppWeight.wght(AppWeight.regular),
               color: palette.textPrimary,
             ),
           ),
@@ -130,8 +115,8 @@ class EmptyState extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               textStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
                 fontSize: AppTypeScale.control,
-                fontWeight: AppWeight.font(AppWeight.body),
-                fontVariations: AppWeight.wght(AppWeight.body),
+                fontWeight: AppWeight.font(AppWeight.regular),
+                fontVariations: AppWeight.wght(AppWeight.regular),
               ),
             ),
           ),

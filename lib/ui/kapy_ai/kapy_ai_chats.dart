@@ -106,13 +106,8 @@ class _KapyAiChatsState extends State<KapyAiChats> {
                       Padding(
                         padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
                         child: Text(
-                          label.toUpperCase(),
-                          style: kapyText(
-                            11,
-                            14,
-                            palette.textTertiary,
-                            weight: FontWeight.w500,
-                          ).copyWith(letterSpacing: 0.44),
+                          label,
+                          style: kapyText(12, 16, palette.textSecondary),
                         ),
                       ),
                       for (final chat in rows)
@@ -183,7 +178,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
                         13,
                         16,
                         open ? palette.textPrimary : palette.textSubheading,
-                        weight: FontWeight.w400,
+                        weight: FontWeight.w500,
                       ),
                     ),
                   ),

@@ -1368,21 +1368,20 @@ void main() {
       final fill = card.decoration! as BoxDecoration;
       expect(fill.borderRadius, BorderRadius.circular(12));
       expect(fill.color, KapyTheme.darkPalette.cardBackground);
-      expect(fill.color, const Color(0xFF24221E));
       await settle(tester);
     });
 
     testWidgets('the note picker sits inside Add a task at its right end: a '
-        '32 high, radius 9 control on the 6% fill, in a 44 high, radius 9, '
+        '32 high, radius 7 control on the lifted fill, in a 44 high, radius 7, '
         '4% field', (tester) async {
       await setUpTasks(tester, errands);
       await pumpScreen(tester, phone: true);
 
-      const palette = KapyTheme.darkPalette;
+      final palette = KapyTheme.darkPalette;
       final row = find.byKey(const ValueKey('tasks-add-row'));
       final field = tester.widget<Container>(row).decoration! as BoxDecoration;
       expect(tester.getSize(row).height, 44);
-      expect(field.borderRadius, BorderRadius.circular(9));
+      expect(field.borderRadius, BorderRadius.circular(AppRadii.control));
       expect(field.color, palette.cardBackground);
       final chip = find
           .descendant(
@@ -1393,9 +1392,8 @@ void main() {
       final control =
           tester.widget<Container>(chip).decoration! as BoxDecoration;
       expect(tester.getSize(chip).height, 32);
-      expect(control.borderRadius, BorderRadius.circular(9));
-      // 6% over the 4% field, as the spec composes it.
-      expect(control.color, const Color(0xFF2F2D29));
+      expect(control.borderRadius, BorderRadius.circular(AppRadii.control));
+      expect(control.color, TaskInk.of(tester.element(chip)).lifted);
       final outer = tester.getRect(row);
       final inner = tester.getRect(chip);
       expect(outer.contains(inner.topLeft), isTrue);

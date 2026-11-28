@@ -115,7 +115,8 @@ class McpClientSetup {
   );
 }
 
-const String _relay = r'''// Kapy Notes for Claude Desktop. Carries MCP messages between Claude and
+const String _relay =
+    r'''// Kapy Notes for Claude Desktop. Carries MCP messages between Claude and
 // Kapy Notes, which answers on this computer only (127.0.0.1).
 const url = process.env.KAPY_NOTES_URL;
 const token = process.env.KAPY_NOTES_TOKEN;

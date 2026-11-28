@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -9,34 +10,29 @@ import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/layout_prefs.dart';
 
 void main() {
-  test('dark theme keeps a restrained warm-neutral palette', () {
-    const palette = KapyTheme.darkPalette;
+  test('dark theme is the design system neutral ladder', () {
+    final palette = KapyTheme.darkPalette;
 
-    expect(palette.editorBackground, const Color(0xFF1C1A17));
+    expect(palette.editorBackground, const Color(0xFF1A1A1A));
     expect(palette.gutterBackground, palette.editorBackground);
-    expect(palette.textPrimary, const Color(0xFFE2DCCF));
+    expect(palette.textPrimary, const Color(0xFFEDEDED));
     expect(palette.paperFiber, Colors.transparent);
 
     // Names and figures stay in the note's ink; only the operators, the
-    // units and comments step back, to T3.
+    // units and comments step back.
     expect(
       {palette.number, palette.keyword, palette.function, palette.variable},
       {palette.textPrimary},
     );
-    expect(palette.textTertiary, const Color(0xFF968E7F));
+    expect(palette.textTertiary, const Color(0xFF8F8F8F));
     expect(
       {palette.operator, palette.unit, palette.currency, palette.comment},
       {palette.textTertiary},
     );
-    // The rail is the crisp surface, and wells are the 4% step off it, opaque.
     expect(palette.railBackground, palette.sidebarBackground);
-    expect(palette.wellBackground, const Color(0xFF24221E));
-    // D01's Notes · Folders track and account circle keep their own raised
-    // fill and line; other themes draw them on their own colours.
-    expect(palette.raisedBackground, const Color(0xFF2A2722));
-    expect(palette.raisedBorder, const Color(0xFF312D27));
-    expect(KapyTheme.lightPalette.raisedBackground, isNull);
-    expect(KapyTheme.lightPalette.raisedBorder, isNull);
+    expect(palette.raisedBackground, isNull);
+    expect(palette.raisedBorder, isNull);
+    // A result is a grey chip: the note's ink on #262626.
     expect(
       {
         palette.chipNumber,
@@ -45,22 +41,41 @@ void main() {
         palette.chipBoolean,
         palette.chipOther,
       },
-      {const Color(0xFFB3C79C)},
+      {palette.textPrimary},
     );
-    expect(KapyTheme.dark().colorScheme.primary, const Color(0xFF7D9468));
-    expect(KapyTheme.dark().textTheme.bodyMedium?.fontWeight, FontWeight.w400);
-    expect(KapyTheme.dark().textTheme.titleMedium?.fontWeight, FontWeight.w400);
-    expect(KapyTheme.dark().shadowColor, Colors.transparent);
-    expect(KapyTheme.dark().dialogTheme.elevation, 0);
-    expect(KapyTheme.dark().popupMenuTheme.elevation, 0);
+    expect(palette.resultPillBackground, const Color(0xFF262626));
+    final theme = KapyTheme.dark();
+    expect(theme.colorScheme.primary, const Color(0xFFE8772E));
+    expect(theme.colorScheme.onPrimary, const Color(0xFFFFFFFF));
+    expect(theme.colorScheme.error, const Color(0xFFEB534E));
+    expect(theme.colorScheme.errorContainer, const Color(0xFF291919));
+    expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
+    expect(theme.textTheme.titleMedium?.fontWeight, FontWeight.w400);
+    expect(theme.textTheme.displayLarge?.fontWeight, FontWeight.w400);
+    expect(theme.dialogTheme.titleTextStyle?.fontWeight, FontWeight.w600);
+    expect(theme.shadowColor, Colors.transparent);
+    expect(theme.dialogTheme.elevation, 0);
+    expect(theme.popupMenuTheme.elevation, 0);
     expect(
-      (KapyTheme.dark().tooltipTheme.decoration! as BoxDecoration).boxShadow,
+      (theme.tooltipTheme.decoration! as BoxDecoration).boxShadow,
       anyOf(isNull, isEmpty),
     );
   });
 
-  test('interactive primitives are rounded, emphatic, and flat', () {
+  test('the radii are the design system', () {
+    expect(AppRadii.control, 7);
+    expect(AppRadii.group, 8);
+    expect(AppRadii.surface, 12);
+    expect(AppRadii.card, 14);
+    expect(AppRadii.phoneList, 18);
+    final dialog =
+        KapyTheme.dark().dialogTheme.shape! as RoundedRectangleBorder;
+    expect(dialog.borderRadius, BorderRadius.circular(AppRadii.surface));
+  });
+
+  test('controls are flat, borderless and orange where they are on', () {
     final theme = KapyTheme.dark();
+    final palette = KapyTheme.darkPalette;
     final filled = theme.filledButtonTheme.style!;
     final outlined = theme.outlinedButtonTheme.style!;
     final segmented = theme.segmentedButtonTheme.style!;
@@ -70,29 +85,82 @@ void main() {
     expect(filled.minimumSize!.resolve({})!.height, 36);
     expect(filled.visualDensity, VisualDensity.standard);
     expect(filled.padding!.resolve({})!.vertical, greaterThanOrEqualTo(16));
-    expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w500);
+    expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w400);
+    expect(filled.backgroundColor!.resolve({}), palette.accentFill);
+    expect(filled.foregroundColor!.resolve({}), palette.onAccent);
     expect(
       (filled.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
       BorderRadius.circular(AppRadii.control),
     );
-    expect(outlined.side!.resolve({})!.width, 1);
+    // A quiet button is a fill with no border, and focus rings it in orange.
+    expect(outlined.side!.resolve({}), BorderSide.none);
+    expect(outlined.backgroundColor!.resolve({}), palette.controlBackground);
+    // Keyboard focus is the shared accent ring, not a second border.
+    expect(outlined.side!.resolve({WidgetState.focused}), BorderSide.none);
     expect(outlined.minimumSize!.resolve({})!.height, 36);
-    expect(outlined.visualDensity, VisualDensity.standard);
-    expect(outlined.padding!.resolve({})!.vertical, greaterThanOrEqualTo(16));
+    expect(
+      theme.textButtonTheme.style!.foregroundColor!.resolve({}),
+      palette.accentText,
+    );
+    expect(segmented.side!.resolve({}), BorderSide.none);
     expect(
       segmented.backgroundColor!.resolve({WidgetState.selected}),
-      theme.colorScheme.primary,
-    );
-    expect(
-      segmented.foregroundColor!.resolve({WidgetState.selected}),
-      theme.colorScheme.onPrimary,
+      palette.segmentSelected,
     );
     expect(segmented.iconSize!.resolve({}), AppControlMetrics.iconControl);
-    expect(theme.inputDecorationTheme.filled, isTrue);
+    final field = theme.inputDecorationTheme;
+    expect(field.filled, isTrue);
     expect(
-      (theme.inputDecorationTheme.border! as OutlineInputBorder).borderRadius,
+      (field.border! as OutlineInputBorder).borderRadius,
       BorderRadius.circular(AppRadii.control),
     );
+    expect(field.enabledBorder!.borderSide.color, Colors.transparent);
+    expect(field.focusedBorder!.borderSide.color, palette.accent);
+
+    final switches = theme.switchTheme;
+    expect(switches.thumbColor!.resolve({}), const Color(0xFFFFFFFF));
+    expect(
+      switches.trackColor!.resolve({WidgetState.selected}),
+      palette.accentFill,
+    );
+    expect(switches.trackColor!.resolve({}), palette.switchTrackOff);
+    final checkbox = theme.checkboxTheme;
+    expect(checkbox.shape, const CircleBorder());
+    expect(
+      checkbox.fillColor!.resolve({WidgetState.selected}),
+      palette.accentFill,
+    );
+    expect(
+      (checkbox.side! as WidgetStateProperty<BorderSide?>).resolve({})!.color,
+      palette.checkboxBorder,
+    );
+    expect(theme.chipTheme.shape, const StadiumBorder());
+    expect(theme.chipTheme.side, BorderSide.none);
+    expect(theme.dividerTheme.color, palette.pageBorder);
+  });
+
+  test('three weights: regular, medium for row titles, semibold for '
+      'headings', () {
+    expect(AppWeight.regular, 400);
+    expect(AppWeight.medium, 500);
+    expect(AppWeight.semibold, 600);
+    expect(AppWeight.axisOf(FontWeight.w500), AppWeight.medium);
+    expect(AppWeight.named(AppWeight.medium), FontWeight.w500);
+    expect(AppWeight.axisOf(FontWeight.w700), AppWeight.semibold);
+    expect(AppWeight.named(AppWeight.regular), FontWeight.w400);
+    expect(AppWeight.named(AppWeight.semibold), FontWeight.w600);
+    expect(AppWeight.named(700), FontWeight.w700);
+  });
+
+  test('the handwritten accent is one quiet line in Shantell Sans', () {
+    final palette = KapyTheme.darkPalette;
+    final style = handAccent(palette);
+    expect(style.fontFamily, 'Shantell Sans');
+    expect(style.fontSize, 17);
+    expect(style.height, 24 / 17);
+    expect(style.fontWeight, FontWeight.w400);
+    expect(style.color, palette.textSecondary);
+    expect(style.letterSpacing, 0);
   });
 
   test('Windows keeps readable sizes for small interface copy', () {
@@ -101,8 +169,8 @@ void main() {
 
     final theme = KapyTheme.dark();
 
-    // Figtree, as everywhere, with Segoe UI drawing whatever it lacks.
-    expect(theme.textTheme.bodyMedium?.fontFamily, AppFonts.ui);
+    // Geist, bundled, with Segoe UI drawing whatever it lacks.
+    expect(theme.textTheme.bodyMedium?.fontFamily, 'Geist');
     expect(theme.textTheme.bodyMedium?.fontFamilyFallback?.first, 'Segoe UI');
     expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
     expect(theme.textTheme.bodySmall?.fontWeight, FontWeight.w400);
@@ -205,8 +273,8 @@ void main() {
   });
 
   test('the Riverbank tokens copy and blend like every other colour', () {
-    const dark = KapyTheme.darkPalette;
-    const light = KapyTheme.lightPalette;
+    final dark = KapyTheme.darkPalette;
+    final light = KapyTheme.lightPalette;
     final tokens = <String, Color Function(CalcPalette)>{
       'railBackground': (p) => p.railBackground,
       'railBorder': (p) => p.railBorder,
@@ -254,25 +322,34 @@ void main() {
     );
   });
 
-  test('the interface is set in Figtree on every platform', () {
-    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+  test('the interface is Geist on every platform, and each device draws what '
+      'it lacks', () {
+    addTearDown(() {
+      AppPlatform.debugTargetPlatformOverride = null;
+      debugDefaultTargetPlatformOverride = null;
+    });
 
     for (final platform in [
       TargetPlatform.macOS,
-      TargetPlatform.windows,
       TargetPlatform.iOS,
+      TargetPlatform.windows,
       TargetPlatform.android,
+      TargetPlatform.linux,
     ]) {
+      const face = 'Geist';
       AppPlatform.debugTargetPlatformOverride = platform;
+      debugDefaultTargetPlatformOverride = platform;
       final text = KapyTheme.light().textTheme;
       for (final style in [text.bodyMedium, text.labelLarge, text.titleSmall]) {
-        expect(style?.fontFamily, AppFonts.ui, reason: '$platform');
+        expect(style?.fontFamily, face, reason: '$platform');
         expect(
           style?.fontFamilyFallback?.first,
           AppPlatform.uiFontFamily,
-          reason: 'the system face draws what Figtree lacks on $platform',
+          reason: 'the system face draws what the interface face lacks',
         );
       }
+      expect(WritingFont.clean.fontFamily, face, reason: '$platform');
+      expect(WritingFont.mixed.fontFamily, face, reason: '$platform');
     }
   });
 
@@ -282,6 +359,13 @@ void main() {
       final pubspec = File('pubspec.yaml').readAsStringSync();
 
       expect(pubspec, contains('- family: ${AppFonts.ui}\n'));
+      expect(pubspec, contains('- family: ${AppFonts.pixel}\n'));
+      expect(pubspec, contains('- family: ${AppFonts.hand}\n'));
+      // San Francisco's licence keeps it out of the bundle, and the faces
+      // the design system replaced are gone with their files.
+      for (final gone in ['Figtree', 'Newsreader', 'SF Pro', 'Inter']) {
+        expect(pubspec, isNot(contains(gone)), reason: gone);
+      }
       expect(pubspec, contains('- family: ${AppFonts.mono}\n'));
       for (final file in RegExp(r'(assets/fonts/\S+)').allMatches(pubspec)) {
         expect(File(file[1]!).existsSync(), isTrue, reason: file[1]);
@@ -299,10 +383,10 @@ void main() {
     ]);
   });
 
-  test('mixed editor face writes in Figtree at 16', () {
+  test('mixed editor face writes in the interface face at 16', () {
     expect(WritingFont.mixed.label, 'Mixed');
-    expect(WritingFont.mixed.fontFamily, 'Figtree');
-    expect(WritingFont.mixed.fontFamilyFallback, AppPlatform.uiFontFallback);
+    expect(WritingFont.mixed.fontFamily, AppFonts.ui);
+    expect(WritingFont.mixed.fontFamilyFallback, AppFonts.uiFallback);
     expect(WritingFont.mixed.editorSize, 16);
   });
 
