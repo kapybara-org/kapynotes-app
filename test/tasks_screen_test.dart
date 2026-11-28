@@ -1539,7 +1539,7 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('the card with First on your list is radius 12 on the 4% fill, '
+    testWidgets('the card with First on your list is radius 12 on the raised fill, '
         '14 in at the top and 16 at the sides and bottom', (tester) async {
       await setUpTasks(tester, errands);
       await pumpScreen(tester, phone: true);
@@ -1563,13 +1563,13 @@ void main() {
       );
       final fill = card.decoration! as BoxDecoration;
       expect(fill.borderRadius, BorderRadius.circular(12));
-      expect(fill.color, KapyTheme.darkPalette.cardBackground);
+      expect(fill.color, KapyTheme.darkPalette.wellBackground);
       await settle(tester);
     });
 
     testWidgets('the note picker sits inside Add a task at its right end: a '
         '32 high, radius 7 control on the lifted fill, in a 44 high, radius 7, '
-        '4% field', (tester) async {
+        'raised field', (tester) async {
       await setUpTasks(tester, errands);
       await pumpScreen(tester, phone: true);
       addFocus.requestFocus();
@@ -1581,7 +1581,7 @@ void main() {
       final field = tester.widget<Container>(row).decoration! as BoxDecoration;
       expect(tester.getSize(row).height, 44);
       expect(field.borderRadius, BorderRadius.circular(AppRadii.control));
-      expect(field.color, palette.cardBackground);
+      expect(field.color, palette.wellBackground);
       final chip = find
           .descendant(
             of: find.byKey(const ValueKey('tasks-note-picker')),

@@ -52,19 +52,18 @@ void main() {
         final palette = themed.extension<CalcPalette>()!;
         final ink = await inkUnder(tester, themed);
         final reason = '${theme.name}, increaseContrast: $increaseContrast';
-        expect(ink.card, palette.cardBackground, reason: reason);
-        expect(ink.raised, palette.selectedBackground, reason: reason);
+        expect(ink.card, palette.wellBackground, reason: reason);
+        expect(ink.card, isNot(palette.cardBackground), reason: reason);
         expect(ink.rowHover, palette.hover, reason: reason);
         expect(ink.text, palette.textPrimary, reason: reason);
-        expect(ink.secondary, palette.textSecondary, reason: reason);
         expect(ink.quiet, palette.textTertiary, reason: reason);
-        expect(ink.sage, palette.accentText, reason: reason);
         expect(ink.hairline, palette.separator, reason: reason);
         if (increaseContrast) {
           expect(ink.edge, palette.controlBorder, reason: reason);
           expect(ink.keyEdge, palette.checkboxBorder, reason: reason);
         }
         for (final derived in [
+          ink.raised,
           ink.lifted,
           ink.button,
           ink.chip,
@@ -107,6 +106,58 @@ void main() {
     }
   });
 
+  testWidgets('every word on a Tasks card or on a lift over it reads at '
+      '4.5 : 1 or better, in every theme, light and dark', (tester) async {
+    double contrast(Color a, Color b) {
+      final (hi, lo) = a.computeLuminance() > b.computeLuminance()
+          ? (a, b)
+          : (b, a);
+      return (hi.computeLuminance() + 0.05) / (lo.computeLuminance() + 0.05);
+    }
+
+    for (final dark in [false, true]) {
+      for (final theme in AppTheme.values) {
+        for (final increaseContrast in [false, true]) {
+          final ink = await inkUnder(
+            tester,
+            dark
+                ? KapyTheme.dark(
+                    theme: theme,
+                    increaseContrast: increaseContrast,
+                  )
+                : KapyTheme.light(
+                    theme: theme,
+                    increaseContrast: increaseContrast,
+                  ),
+          );
+          final reason =
+              '${theme.name}, dark: $dark, increaseContrast: $increaseContrast';
+          for (final words in [ink.text, ink.secondary, ink.quiet, ink.sage]) {
+            expect(
+              contrast(words, ink.card),
+              greaterThanOrEqualTo(4.5),
+              reason: reason,
+            );
+          }
+          for (final lift in [ink.raised, ink.lifted, ink.button, ink.chip]) {
+            for (final words in [ink.text, ink.secondary, ink.quietOnLift]) {
+              expect(
+                contrast(words, lift),
+                greaterThanOrEqualTo(4.5),
+                reason: reason,
+              );
+            }
+          }
+          expect(
+            contrast(ink.doneInk, ink.doneFill),
+            greaterThanOrEqualTo(4.5),
+            reason: reason,
+          );
+        }
+      }
+    }
+  });
+
   testWidgets('in dark, Increase contrast strengthens the cards\' edges', (
     tester,
   ) async {
@@ -134,17 +185,18 @@ void main() {
   ) async {
     final palette = KapyTheme.darkPalette;
     final ink = await inkUnder(tester, KapyTheme.dark());
-    expect(ink.card, palette.cardBackground);
-    expect(ink.raised, palette.selectedBackground);
-    expect(ink.lifted, const Color(0xFF272727));
+    expect(ink.card, palette.wellBackground);
+    expect(ink.raised, const Color(0xFF303030));
+    expect(ink.lifted, const Color(0xFF323232));
     expect(ink.rowHover, palette.hover);
-    expect(ink.button, const Color(0xFF292929));
-    expect(ink.chip, const Color(0xFF2B2B2B));
+    expect(ink.button, const Color(0xFF343434));
+    expect(ink.chip, const Color(0xFF363636));
     expect(ink.text, palette.textPrimary);
     expect(ink.secondary, palette.textSecondary);
     expect(ink.quiet, palette.textTertiary);
     expect(ink.sage, palette.accentText);
-    expect(ink.doneFill, const Color(0xFF3B291D));
+    expect(ink.doneFill, const Color(0xFF372D27));
+    expect(ink.doneInk, palette.accentText);
     expect(ink.edge, const Color(0x14EDEDED));
     expect(ink.keyEdge, const Color(0x24EDEDED));
     expect(ink.hairline, palette.separator);
@@ -157,17 +209,17 @@ void main() {
       tester,
       KapyTheme.dark(theme: AppTheme.midnight),
     );
-    expect(ink.card, const Color(0xFF0D0D0D));
-    expect(ink.raised, const Color(0xFF191919));
-    expect(ink.lifted, const Color(0xFF1A1A1A));
+    expect(ink.card, const Color(0xFF191919));
+    expect(ink.raised, const Color(0xFF242424));
+    expect(ink.lifted, const Color(0xFF262626));
     expect(ink.rowHover, const Color(0xFF191919));
-    expect(ink.button, const Color(0xFF1D1D1D));
-    expect(ink.chip, const Color(0xFF1F1F1F));
+    expect(ink.button, const Color(0xFF282828));
+    expect(ink.chip, const Color(0xFF2A2A2A));
     expect(ink.text, const Color(0xFFEDEDED));
     expect(ink.secondary, const Color(0xFFA3A3A3));
     expect(ink.quiet, const Color(0xFF8F8F8F));
     expect(ink.sage, const Color(0xFFE8772E));
-    expect(ink.doneFill, const Color(0xFF301E12));
+    expect(ink.doneFill, const Color(0xFF2C211B));
     expect(ink.edge, const Color(0x14EDEDED));
     expect(ink.keyEdge, const Color(0x24EDEDED));
     expect(ink.hairline, const Color(0xFF212121));
