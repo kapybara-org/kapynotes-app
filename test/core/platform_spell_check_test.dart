@@ -49,6 +49,61 @@ void main() {
     },
   );
 
+  for (final platform in [
+    TargetPlatform.macOS,
+    TargetPlatform.iOS,
+    TargetPlatform.android,
+  ]) {
+    test(
+      "leaves the app's own name unmarked on ${platform.name} (KAP-463)",
+      () async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        const text = 'Welcome to Kapy Notes, a smple note by kapynotes';
+        final results = [
+          for (final (word, suggestions) in [
+            ('Kapy', ['Kay', 'Happy']),
+            ('smple', ['simple']),
+            ('kapynotes', ['keynotes']),
+          ])
+            {
+              'startIndex': text.indexOf(word),
+              'endIndex': text.indexOf(word) + word.length,
+              'suggestions': suggestions,
+            },
+        ];
+        if (platform == TargetPlatform.macOS) {
+          messenger.setMockMethodCallHandler(channel, (_) async => results);
+        } else {
+          messenger.setMockMethodCallHandler(
+            SystemChannels.spellCheck,
+            (_) async => results,
+          );
+          addTearDown(
+            () => messenger.setMockMethodCallHandler(
+              SystemChannels.spellCheck,
+              null,
+            ),
+          );
+        }
+        final service = PlatformSpellCheckService(quietPeriod: Duration.zero);
+        addTearDown(service.dispose);
+
+        final spans = await service.fetchSpellCheckSuggestions(
+          const Locale('en', 'US'),
+          text,
+        );
+
+        expect(
+          [
+            for (final span in spans!)
+              text.substring(span.range.start, span.range.end),
+          ],
+          ['smple'],
+        );
+      },
+    );
+  }
+
   test(
     'ignores malformed native ranges instead of disturbing typing',
     () async {

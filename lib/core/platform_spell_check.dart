@@ -61,7 +61,7 @@ class PlatformSpellCheckService implements SpellCheckService {
 
     Future<void> check() async {
       _quietTimer = null;
-      final spans = await _fetchNow(locale, text);
+      final spans = _withoutOwnName(await _fetchNow(locale, text), text);
       if (!completer.isCompleted) {
         completer.complete(
           !_disposed && generation == _requestGeneration ? spans : null,
@@ -161,6 +161,23 @@ class PlatformSpellCheckService implements SpellCheckService {
       return const [];
     }
   }
+
+  /// The app's own name, which no system dictionary knows and which opens the
+  /// welcome note, is not a misspelling.
+  static const _ownNames = {'kapy', 'kapynotes'};
+
+  static List<SuggestionSpan>? _withoutOwnName(
+    List<SuggestionSpan>? spans,
+    String text,
+  ) => spans
+      ?.where(
+        (span) =>
+            span.range.end > text.length ||
+            !_ownNames.contains(
+              text.substring(span.range.start, span.range.end).toLowerCase(),
+            ),
+      )
+      .toList(growable: false);
 
   /// Stops the quiet-period work owned by an editor that is leaving.
   void dispose() {
