@@ -274,11 +274,6 @@ class EditorWorkspace {
   /// pane: a second blank next to the first is only another thing to close.
   bool get canSplit => paneCount < maxPanes && selectedNoteId != null;
 
-  /// Starts a held-key walk through the recently used notes. See
-  /// [EditorWorkspacePreviewSession].
-  EditorWorkspacePreviewSession beginPreviewSession() =>
-      EditorWorkspacePreviewSession._(this);
-
   /// Restores the tabs that still hold notes, and the folders' tabs, which
   /// [reconcileFolders] checks once the folders are read. Then it brings
   /// [openingNoteId] forward: in its tab where it has one, in a new tab in
@@ -1279,115 +1274,5 @@ class EditorWorkspace {
       // caret writes by coalescing those pixels into one disk write.
       _store.put(storeKey, value);
     }
-  }
-}
-
-/// A held-key walk through the recently used notes. Each step shows another
-/// note without counting it as shown, and only the note the walk ends on
-/// counts. A note open in a tab comes forward there; any other note shows in
-/// the pane that was focused when the walk began, in place of its note or
-/// folder. Every step starts again from how the walk found the tabs, so a
-/// walk never leaves notes behind in other panes, and cancelling puts it all
-/// back.
-class EditorWorkspacePreviewSession {
-  EditorWorkspacePreviewSession._(this._workspace)
-    : _start = _workspace.frontTab,
-      _startNotes = [...?_workspace.frontTab?.noteIds],
-      _startFolder = _workspace.frontTab?.folderId,
-      _anchor = _workspace.activePane,
-      _anchorNote = _workspace.selectedNoteId,
-      _actives = {for (final tab in _workspace._tabs) tab: tab._active};
-
-  final EditorWorkspace _workspace;
-
-  /// The tab in front when the walk began, and its notes or folder then.
-  final EditorTab? _start;
-  final List<String> _startNotes;
-  final String? _startFolder;
-
-  /// The pane a note with no tab shows in, and the note it held.
-  final int _anchor;
-  final String? _anchorNote;
-
-  /// Each tab's focused pane when the walk began.
-  final Map<EditorTab, int> _actives;
-  bool _finished = false;
-
-  bool get isActive => !_finished;
-
-  /// Whether the notes the walk began with, and the notes on screen, still
-  /// all belong to the collection being walked.
-  bool canContinueWith(Iterable<String> noteIds) {
-    if (_finished) return false;
-    final available = noteIds.toSet();
-    return _startNotes.every(available.contains) &&
-        _workspace.openNoteIds.every(available.contains);
-  }
-
-  /// The notes on screen that a step to [noteId] would take off it.
-  Set<String> displacedBy(String noteId) {
-    if (_finished) return const {};
-    return _workspace.openNoteIds.difference(_screenFor(noteId));
-  }
-
-  /// The notes a step to [noteId] leaves on screen.
-  Set<String> _screenFor(String noteId) {
-    if (_startNotes.contains(noteId)) return _startNotes.toSet();
-    for (final tab in _workspace._tabs) {
-      if (tab != _start && tab._paneOf(noteId) >= 0) return tab.noteIds.toSet();
-    }
-    return {
-      for (final id in _startNotes)
-        if (id != _anchorNote) id,
-      noteId,
-    };
-  }
-
-  /// Shows [noteId] without writing it down. False once the walk is over, or
-  /// where the tab it began in has closed.
-  bool preview(String noteId) {
-    final start = _start;
-    if (_finished || start == null || !_workspace._tabs.contains(start)) {
-      return false;
-    }
-    _restore();
-    if (!_workspace._reveal(noteId)) {
-      start._folderId = null;
-      start._panes[_anchor]._noteId = noteId;
-    }
-    return true;
-  }
-
-  /// Keeps the note the walk ended on, and counts it as shown.
-  bool commit() {
-    if (_finished) return false;
-    _finished = true;
-    if (_workspace.selectedNoteId case final id?) _workspace._forgetClosed(id);
-    _workspace
-      .._settle()
-      .._useFront()
-      .._persist();
-    return true;
-  }
-
-  /// Puts every tab back as the walk found it.
-  bool cancel() {
-    if (_finished) return false;
-    _finished = true;
-    _restore();
-    return true;
-  }
-
-  void _restore() {
-    final start = _start;
-    if (start == null || !_workspace._tabs.contains(start)) return;
-    if (_anchor < start._panes.length) {
-      start._panes[_anchor]._noteId = _anchorNote;
-    }
-    start._folderId = _startFolder;
-    for (final MapEntry(key: tab, value: active) in _actives.entries) {
-      if (active < tab._panes.length) tab._active = active;
-    }
-    _workspace._front = _workspace._tabs.indexOf(start);
   }
 }

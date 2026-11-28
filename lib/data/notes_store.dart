@@ -1505,6 +1505,10 @@ class NotesStore extends ChangeNotifier {
 
   Future<void> flush() => _store.flush();
 
+  /// Whether the notes are on disk, on their way there, or failed to get
+  /// there last time.
+  ValueListenable<StoreWrite> get writes => _store.writes;
+
   void _replace(int index, Note replacement, {bool toFront = false}) {
     if (toFront) {
       final remaining = List<Note>.of(_notes)..removeAt(index);

@@ -38,6 +38,10 @@ class VoicePrefs extends ChangeNotifier {
   static const String _transcriptEngineKey = 'voice.transcriptEngine.v1';
   static const String _summaryInstructionKey = 'voice.summaryInstruction.v1';
   static const String _modelTermsKey = 'voice.modelTerms.v1';
+  static const String _liveKey = 'voice.liveTranslation.v1';
+  static const String _liveToKey = 'voice.liveTranslateTo.v1';
+  static const String _liveLockScreenKey = 'voice.liveOnLockScreen.v1';
+  static const String _liveFoldedKey = 'voice.liveTextFolded.v1';
   static const String _removeNoiseKey = 'voice.removeNoise.v1';
   static const String _noiseOffKey = 'voice.noiseOff.v1';
 
@@ -48,6 +52,25 @@ class VoicePrefs extends ChangeNotifier {
   TranscriptEngine _transcriptEngine = TranscriptEngine.cloud;
   String? _summaryInstruction;
   Map<String, int> _modelTerms = const {};
+  bool _liveTranslation = false;
+  String? _liveTranslateTo;
+  bool _liveOnLockScreen = true;
+  bool _liveTextFolded = false;
+
+  /// Live translation while recording. Off until the person turns it on in
+  /// Settings, and until then nothing about a recording changes.
+  bool get liveTranslation => _liveTranslation;
+
+  /// ISO-639-1: the language live translation writes in.
+  String? get liveTranslateTo => _liveTranslateTo;
+
+  /// Whether the live words may show on a locked phone (the Live Activity,
+  /// the recording notification). Off keeps them to the unlocked app.
+  bool get liveOnLockScreen => _liveOnLockScreen;
+
+  /// The live text card folded to its one-line tab, remembered on this
+  /// device for the next recording.
+  bool get liveTextFolded => _liveTextFolded;
   bool _removeNoise = false;
   Set<String> _noiseOff = const {};
 
@@ -134,6 +157,11 @@ class VoicePrefs extends ChangeNotifier {
         ? instruction
         : null;
 
+    _liveTranslation = _store.data[_liveKey] == true;
+    final liveTo = _store.data[_liveToKey];
+    _liveTranslateTo = liveTo is String && liveTo.isNotEmpty ? liveTo : null;
+    _liveOnLockScreen = _store.data[_liveLockScreenKey] != false;
+    _liveTextFolded = _store.data[_liveFoldedKey] == true;
     _removeNoise = _store.data[_removeNoiseKey] == true;
 
     final noiseOff = _store.data[_noiseOffKey];
@@ -181,6 +209,35 @@ class VoicePrefs extends ChangeNotifier {
     if (next == _language) return;
     _language = next;
     _store.putNow(_languageKey, next);
+    notifyListeners();
+  }
+
+  set liveTranslation(bool value) {
+    if (value == _liveTranslation) return;
+    _liveTranslation = value;
+    _store.putNow(_liveKey, value);
+    notifyListeners();
+  }
+
+  set liveTranslateTo(String? value) {
+    final next = (value != null && value.isNotEmpty) ? value : null;
+    if (next == _liveTranslateTo) return;
+    _liveTranslateTo = next;
+    _store.putNow(_liveToKey, next);
+    notifyListeners();
+  }
+
+  set liveOnLockScreen(bool value) {
+    if (value == _liveOnLockScreen) return;
+    _liveOnLockScreen = value;
+    _store.putNow(_liveLockScreenKey, value);
+    notifyListeners();
+  }
+
+  set liveTextFolded(bool value) {
+    if (value == _liveTextFolded) return;
+    _liveTextFolded = value;
+    _store.putNow(_liveFoldedKey, value);
     notifyListeners();
   }
 

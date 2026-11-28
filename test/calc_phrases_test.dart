@@ -249,7 +249,7 @@ void main() {
     test('still converts the money total of a note that has money', () {
       expect(
         _engine().evaluateDocument('\$10\n4\ntotal in eur')[2]!.text,
-        '5.00 EUR',
+        '7.00 EUR',
       );
     });
 

@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kapy_notes/calc/contribution.dart';
 import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
@@ -79,6 +80,7 @@ Widget harness(
   bool ensureKeyboardVisible = false,
   bool readOnly = false,
   TargetPlatform? platform,
+  bool phone = false,
   ValueChanged<String>? onBodyChanged,
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
   ValueChanged<TextEdit?>? onEdit,
@@ -109,6 +111,7 @@ Widget harness(
     autofocus: autofocus,
     ensureKeyboardVisible: ensureKeyboardVisible,
     readOnly: readOnly,
+    phone: phone,
     onDocumentChanged: (body, formats, attachments, edit) {
       onBodyChanged?.call(body);
       onFormatsChanged?.call(formats);
@@ -3612,6 +3615,97 @@ total to usd''';
     );
   });
 
+  for (final (device, size, platform) in const [
+    ('desktop', Size(1000, 700), TargetPlatform.macOS),
+    ('phone', Size(390, 844), TargetPlatform.iOS),
+  ]) {
+    Future<void> pumpAt(WidgetTester tester, String body) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      await tester.pumpWidget(
+        harness(body, platform: platform, phone: device == 'phone'),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    String headerTotal(WidgetTester tester) => tester
+        .widget<Text>(find.byKey(const ValueKey('note-total')))
+        .textSpan!
+        .toPlainText();
+
+    Decoration headerMark(WidgetTester tester) => tester
+        .widget<DecoratedBox>(
+          find
+              .ancestor(
+                of: find.byKey(const ValueKey('note-total')),
+                matching: find.byType(DecoratedBox),
+              )
+              .first,
+        )
+        .decoration;
+
+    CountNote? countOn(WidgetTester tester, String text) =>
+        tester.widget<ResultChip>(chipWithText(text)).result.count;
+
+    testWidgets('counts plain numbers in a money total, on a $device', (
+      tester,
+    ) async {
+      await pumpAt(tester, 'Flat\n5000 eur\nrent: 1200\nfood: 300');
+      expect(headerTotal(tester), 'Total: 6,500.00 EUR');
+      expect(headerMark(tester), isNot(isA<DashedOutline>()));
+      expect(countOn(tester, '1,200'), isNull, reason: 'rent is counted');
+      expect(countOn(tester, '300'), isNull, reason: 'food is counted');
+
+      await tester.enterNote('Flat\n5000 eur\nrent 1200\nfood 300\ntotal');
+      await tester.pumpAndSettle();
+      expect(chipWithText('1,200'), findsOneWidget, reason: 'rent 1200');
+      expect(chipWithText('300'), findsOneWidget, reason: 'food 300');
+      expect(chipWithText('6,500.00 EUR'), findsOneWidget);
+      expect(countOn(tester, '6,500.00 EUR')!.mark, isFalse);
+      expect(find.byKey(const ValueKey('note-total')), findsNothing);
+    });
+
+    testWidgets('marks a total that leaves a line out, on a $device', (
+      tester,
+    ) async {
+      await pumpAt(tester, 'Flat\n5000 eur\nrent: 1200\nboxes = 4 kg');
+      expect(headerTotal(tester), 'Total: 6,200.00 EUR');
+      expect(headerMark(tester), isA<DashedOutline>());
+      expect(countOn(tester, '4 kg')!.mark, isTrue);
+
+      await tester.enterNote('Flat\n5000 eur\nrent: 1200\nboxes = 4 kg\ntotal');
+      await tester.pumpAndSettle();
+      expect(countOn(tester, '6,200.00 EUR')!.mark, isTrue);
+      final box = tester.widget<AnimatedContainer>(
+        find.descendant(
+          of: chipWithText('6,200.00 EUR'),
+          matching: find.byType(AnimatedContainer),
+        ),
+      );
+      final fill = (box.decoration! as BoxDecoration).borderRadius!;
+      final dash = box.foregroundDecoration! as DashedOutline;
+      expect(dash.outset, 3);
+      expect(
+        dash.radius,
+        (fill as BorderRadius).topLeft.x + 3,
+        reason: 'the dash rings the fill',
+      );
+    });
+
+    testWidgets('leaves sentences above a total without a result, on a '
+        '$device', (tester) async {
+      await pumpAt(
+        tester,
+        'Plan\nMeeting at 3\nChapter 12\nNov 27\nrent 100\ntotal',
+      );
+      expect(find.byType(ResultChip), findsNWidgets(2));
+      expect(chipWithText('100'), findsNWidgets(2));
+    });
+  }
+
   testWidgets('writes the total hover only once the total is hovered', (
     tester,
   ) async {
@@ -4065,6 +4159,8 @@ total to usd''';
     ) async {
       final node = await pumpFocused(tester);
       await setKeyboard(tester, 300);
+      // Up and still: a keyboard that is still moving is still coming up.
+      await tester.pump(const Duration(seconds: 1));
       expect(node.hasFocus, isTrue);
 
       // Android's Back is swallowed by the IME: the keyboard goes, and all the
@@ -4105,6 +4201,36 @@ total to usd''';
       );
     });
 
+    // A slow phone (CI, Android, runs 45992261717 and 46042569829): Android
+    // started the keyboard's slide, called it off and started it again from
+    // the bottom, and the second slide reached the app only after more than
+    // half a second. Read as a dismissal, the zero in between took the focus,
+    // and that put the keyboard away just after it opened (KAP-324).
+    testWidgets('a keyboard that slides in slowly keeps the note', (
+      tester,
+    ) async {
+      final node = await pumpFocused(tester);
+      tester.testTextInput.log.clear();
+      for (final height in [40.0, 120.0]) {
+        await setKeyboard(tester, height);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await setKeyboard(tester, 0);
+      await tester.pump(const Duration(milliseconds: 800));
+      for (final height in [60.0, 300.0, 600.0, 883.0]) {
+        await setKeyboard(tester, height);
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pump(const Duration(seconds: 4));
+
+      expect(node.hasFocus, isTrue);
+      expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
+      expect(
+        tester.testTextInput.log.map((call) => call.method),
+        isNot(contains('TextInput.hide')),
+      );
+    });
+
     // The editor lets go only once the keyboard has stayed down, so by then
     // the reader may have moved on to another field. That one keeps it.
     testWidgets('a field that takes the focus after Back keeps it', (
@@ -4112,6 +4238,7 @@ total to usd''';
     ) async {
       final node = await pumpFocused(tester);
       await setKeyboard(tester, 300);
+      await tester.pump(const Duration(seconds: 1));
       await setKeyboard(tester, 0);
       await tester.pump(const Duration(milliseconds: 200));
 
@@ -4233,6 +4360,7 @@ total to usd''';
     ) async {
       final node = await pumpFocused(tester);
       await setKeyboard(tester, 300);
+      await tester.pump(const Duration(seconds: 1));
 
       // Backgrounding takes the keyboard with it. The note is still open and
       // still the one being written in, so the caret belongs where it is.

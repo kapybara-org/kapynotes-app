@@ -30,11 +30,15 @@ class CalcScope {
 
   /// The total is in the unit of the first amount that has one, and holds
   /// the amounts of that kind. Bare numbers add up apart from them and are
-  /// the total only while no amount has a unit.
+  /// the total while no amount has a unit. A total in money also takes in
+  /// the bare numbers that are not counts of something, which [_plainSum]
+  /// holds: `rent: 1200` under `5 lakh INR` is 1,200 INR.
   CalcValue? _unitSum;
   int _unitCount = 0;
   CalcValue? _bareSum;
   int _bareCount = 0;
+  CalcValue? _plainSum;
+  int _plainCount = 0;
 
   /// Whether an amount has come off the total since it was last added up.
   bool _stale = false;
@@ -100,12 +104,35 @@ class CalcScope {
 
   CalcValue? get _total {
     if (_stale) _addUp();
-    return _unitSum ?? _bareSum;
+    final sum = _unitSum;
+    if (sum == null) return _bareSum;
+    if (!_inMoney || _plainSum == null) return sum;
+    return Arith.add(sum, _plainSum!);
   }
 
   int get _totalCount {
     if (_stale) _addUp();
-    return _unitSum != null ? _unitCount : _bareCount;
+    if (_unitSum == null) return _bareCount;
+    return _inMoney ? _unitCount + _plainCount : _unitCount;
+  }
+
+  bool get _inMoney => switch (_unitSum) {
+    QuantityValue(:final unit) => unit.isCurrency,
+    _ => false,
+  };
+
+  /// Whether [entry], live and joined, is in a total of [total]'s kind.
+  static bool _adds(CountedAmount entry, CalcValue? total) => switch (total) {
+    QuantityValue(:final unit) =>
+      entry.amount is QuantityValue || (unit.isCurrency && !entry.counts),
+    _ => entry.amount is! QuantityValue,
+  };
+
+  /// Whether the total left out an amount it could not join, as `5 kg` in a
+  /// total in euros is.
+  bool get leavesOut {
+    if (_stale) _addUp();
+    return _entries.any((entry) => entry.live && !entry.joined);
   }
 
   /// Whether the line being traced read `prev`, `sum`, `total` or `avg`:
@@ -126,7 +153,12 @@ class CalcScope {
   /// A line that adds nothing still updates `prev`; one that redefines a
   /// name, or takes earlier amounts as its input, takes their place in the
   /// total, and a name stands for every amount it was built from.
-  void record(int line, CalcValue value, Contribution claim) {
+  void record(
+    int line,
+    CalcValue value,
+    Contribution claim, {
+    bool counts = false,
+  }) {
     _prev = value;
     if (claim.skipped case final reason?) _skipped[line] = CountNote(reason);
     final name = claim.defines;
@@ -145,8 +177,17 @@ class CalcScope {
         _retire(entry, 'replaced by a later $name');
       }
     }
+    for (final operand in claim.operands) {
+      for (final entry in liveOwner(operand)) {
+        if (entry.counts || entry.amount is QuantityValue) continue;
+        entry.counts = true;
+        _stale = true;
+      }
+    }
     final amount = claim.amount;
-    final entry = amount == null ? null : CountedAmount(line, amount, name);
+    final entry = amount == null
+        ? null
+        : CountedAmount(line, amount, name, counts: counts);
     if (entry != null) {
       _entries.add(entry);
       if (!_stale) _join(entry);
@@ -179,6 +220,8 @@ class CalcScope {
     _unitCount = 0;
     _bareSum = null;
     _bareCount = 0;
+    _plainSum = null;
+    _plainCount = 0;
     // Money first: the total is in the first currency amount, and only a
     // note with no money totals in the first unit it has.
     QuantityValue? first;
@@ -209,6 +252,10 @@ class CalcScope {
     if (amount is! QuantityValue) {
       _bareSum = _bareSum == null ? amount : Arith.add(_bareSum!, amount);
       _bareCount++;
+      if (!entry.counts) {
+        _plainSum = _plainSum == null ? amount : Arith.add(_plainSum!, amount);
+        _plainCount++;
+      }
       return;
     }
     final sum = _unitSum;
@@ -226,7 +273,8 @@ class CalcScope {
   }
 
   /// What the total says about each line it left out or could not join,
-  /// by line. A bare number is left out of a total that has a unit.
+  /// by line. A bare number is left out of a total that has a unit, unless
+  /// the total is in money and the number counts nothing.
   Map<int, CountNote> notes() {
     final total = _total;
     final notes = {..._skipped};
@@ -240,7 +288,7 @@ class CalcScope {
           "Not in the total: ${amount.unit.format()} doesn't add to $into",
           mark: true,
         );
-      } else if (total is QuantityValue && entry.amount is! QuantityValue) {
+      } else if (total is QuantityValue && !_adds(entry, total)) {
         notes[entry.line] = CountNote(
           "Not in the total: it has no unit, so it doesn't add to ${total.unit.format()}",
           mark: true,
@@ -252,13 +300,10 @@ class CalcScope {
 
   /// The amounts in the total, in line order.
   List<CountedAmount> get counted {
-    final unit = _total is QuantityValue;
+    final total = _total;
     return [
       for (final entry in _entries)
-        if (entry.live &&
-            entry.joined &&
-            (entry.amount is QuantityValue) == unit)
-          entry,
+        if (entry.live && entry.joined && _adds(entry, total)) entry,
     ];
   }
 
