@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:kapy_notes/data/blob_store.dart';
+import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/ui/editor/note_image_view.dart';
 import 'package:kapy_notes/ui/editor/slash_commands.dart';
@@ -133,6 +134,93 @@ void main() {
 
       expect(menu, findsNothing);
       expect(chosen, isEmpty);
+    }, variant: desktop);
+  });
+
+  group('the camera on a Mac or PC', () {
+    final cameras = TargetPlatformVariant({
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+    });
+
+    testWidgets('a click on Media, then on Camera, opens the camera', (
+      tester,
+    ) async {
+      var opened = 0;
+      final chosen = <SlashCommandType>[];
+      final desk = Desk(tester);
+      await desk.open(
+        '',
+        images: store,
+        onSlashCommandChosen: chosen.add,
+        cameraAcquirer: (_) async {
+          opened++;
+          return const [];
+        },
+      );
+      await desk.type('/');
+      expect(find.byKey(const ValueKey('slash-command-camera')), findsNothing);
+
+      await desk.clickKey('slash-command-media');
+      expect(menu, findsOneWidget);
+      expect(chosen, isEmpty);
+      await desk.clickKey('slash-command-camera');
+
+      expect(chosen, [SlashCommandType.camera]);
+      expect(opened, 1);
+      expect(menu, findsNothing);
+      expect(desk.text, '');
+    }, variant: cameras);
+
+    testWidgets('/cam and Enter open the camera', (tester) async {
+      var opened = 0;
+      final desk = Desk(tester);
+      await desk.open(
+        '',
+        images: store,
+        cameraAcquirer: (_) async {
+          opened++;
+          return const [];
+        },
+      );
+      await desk.type('/cam');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(opened, 1);
+      expect(desk.text, '');
+    }, variant: cameras);
+
+    testWidgets('its key opens the camera from the note', (tester) async {
+      var opened = 0;
+      final desk = Desk(tester);
+      await desk.open(
+        'a note',
+        images: store,
+        cameraAcquirer: (_) async {
+          opened++;
+          return const [];
+        },
+      );
+      final binding = desk.shortcuts.bindingFor(ShortcutAction.openCamera)!;
+      final mac = defaultTargetPlatform == TargetPlatform.macOS;
+      expect(binding.logicalKey, LogicalKeyboardKey.keyP);
+      expect(binding.shift, isTrue);
+      expect(binding.meta, mac);
+      expect(binding.control, !mac);
+      await desk.chord(ShortcutAction.openCamera);
+      expect(opened, 1);
+    }, variant: cameras);
+
+    testWidgets('without a camera there is no Media and the key does nothing', (
+      tester,
+    ) async {
+      final desk = Desk(tester);
+      await desk.open('', images: store);
+      await desk.chord(ShortcutAction.openCamera);
+      await desk.type('/');
+      expect(find.byKey(const ValueKey('slash-command-media')), findsNothing);
+      expect(find.byKey(const ValueKey('slash-command-camera')), findsNothing);
+      expect(find.byKey(const ValueKey('slash-command-image')), findsOneWidget);
     }, variant: desktop);
   });
 

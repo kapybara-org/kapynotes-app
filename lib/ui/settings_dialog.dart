@@ -2494,6 +2494,7 @@ class _SettingsDialogState extends State<SettingsDialog>
     bool shows(ShortcutAction action) =>
         (action != ShortcutAction.toggleKapyAi || kapyAiAvailable) &&
         (action != ShortcutAction.openMenuBarPanel || AppPlatform.isMacOS) &&
+        (action != ShortcutAction.openCamera || AppPlatform.hasDesktopCamera) &&
         (filter.isEmpty ||
             _shortcutLabel(action).toLowerCase().contains(filter) ||
             _keys(action).toLowerCase() == filter);
@@ -3529,6 +3530,7 @@ extension on ShortcutAction {
     ShortcutAction.zoomOut ||
     ShortcutAction.resetZoom => _ShortcutGroup.window,
     ShortcutAction.pasteAsPlainText ||
+    ShortcutAction.openCamera ||
     ShortcutAction.insertImage ||
     ShortcutAction.insertVideo ||
     ShortcutAction.insertFile ||

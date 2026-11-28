@@ -177,6 +177,7 @@ class NoteEditor extends StatefulWidget {
     this.onImagePrepared,
     this.onImagesRejected,
     this.videoAcquirer,
+    this.cameraAcquirer,
     this.videoIngestor,
     this.videoAttachmentMaxBytes,
     this.fileAcquirer,
@@ -286,6 +287,10 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<ImageBatch>? onImagesRejected;
 
   final VideoFileAcquirer? videoAcquirer;
+
+  /// The camera window on a Mac or PC, or null where there is none. What it
+  /// keeps goes in where the caret is.
+  final Future<List<XFile>> Function(BuildContext context)? cameraAcquirer;
   final VideoBatchIngestor? videoIngestor;
 
   /// Read when a selection is made rather than when the editor is built, so
@@ -3121,6 +3126,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  /// Opens the camera, and puts the photo or video kept there where the
+  /// caret is, the way the phone camera's land.
+  Future<void> openCameraAndInsert() async {
+    final acquire = widget.cameraAcquirer;
+    if (acquire == null || widget.readOnly || widget.images == null) return;
+    final files = await acquire(context);
+    if (files.isEmpty || !mounted) return;
+    await insertDroppedMedia(files);
+  }
+
   Future<void> pickAndInsertVideos() async {
     final store = widget.images;
     if (store == null || !_beginVideoAction()) return;
@@ -3419,6 +3434,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Set<SlashCommandType> get _availableSlashCommands => {
     SlashCommandType.checklist,
     SlashCommandType.bulletedList,
+    if (widget.images != null && widget.cameraAcquirer != null)
+      SlashCommandType.camera,
     if (widget.images != null && !_imageActionBusy) SlashCommandType.image,
     if (widget.onRecordVoice != null && !widget.voiceActionBusy)
       SlashCommandType.voiceNote,
@@ -3514,6 +3531,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       markdownEnabled: widget.markdownEnabled,
       hints: {
         for (final (command, action) in const [
+          (SlashCommandType.camera, ShortcutAction.openCamera),
           (SlashCommandType.image, ShortcutAction.insertImage),
           (SlashCommandType.voiceNote, ShortcutAction.recordVoiceNote),
           (SlashCommandType.video, ShortcutAction.insertVideo),
@@ -3747,6 +3765,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             selectionInBlock: const TextSelection.collapsed(offset: 4),
           ),
         );
+        break;
+      case SlashCommandType.camera:
+        if (typed) _consumeSlashCommand(range);
+        await openCameraAndInsert();
         break;
       case SlashCommandType.image:
         if (typed) _consumeSlashCommand(range);
@@ -8867,6 +8889,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           ?.activator:
                       widget.onRecordVoice!,
                 if (!widget.readOnly && widget.images != null) ...{
+                  if (widget.cameraAcquirer != null)
+                    ?widget.shortcuts
+                        .bindingFor(ShortcutAction.openCamera)
+                        ?.activator: () =>
+                        unawaited(openCameraAndInsert()),
                   ?widget.shortcuts
                       .bindingFor(ShortcutAction.insertImage)
                       ?.activator: () =>

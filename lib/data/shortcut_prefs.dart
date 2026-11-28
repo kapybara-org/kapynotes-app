@@ -39,6 +39,7 @@ enum ShortcutAction {
   zoomIn,
   zoomOut,
   resetZoom,
+  openCamera,
   insertImage,
   insertVideo,
   insertFile,
@@ -90,6 +91,7 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.zoomIn => 'Zoom in',
     ShortcutAction.zoomOut => 'Zoom out',
     ShortcutAction.resetZoom => 'Reset zoom',
+    ShortcutAction.openCamera => 'Open the camera',
     ShortcutAction.insertImage => 'Add an image',
     ShortcutAction.insertVideo => 'Add a video',
     ShortcutAction.insertFile => 'Attach a file',
@@ -154,6 +156,8 @@ extension ShortcutActionCopy on ShortcutAction {
     ShortcutAction.zoomIn => 'Make everything in the window one step larger',
     ShortcutAction.zoomOut => 'Make everything in the window one step smaller',
     ShortcutAction.resetZoom => 'Return the window to its usual size',
+    ShortcutAction.openCamera =>
+      'Take a photo or record a video for the note',
     ShortcutAction.insertImage => 'Choose a picture or take a photo',
     ShortcutAction.insertVideo => 'Choose a video to play in the note',
     ShortcutAction.insertFile =>
@@ -859,10 +863,8 @@ class ShortcutPrefs extends ChangeNotifier {
       // the system-wide keys use: Ctrl+Alt is AltGr on international layouts
       // and opens a terminal on Ubuntu. Windows switches input language on
       // Alt+Shift only when both are let go with no other key pressed, so
-      // Alt+Shift+T leaves the layout alone. Not P for pin: Cmd+Shift+P is the
-      // chord the settings pane's own test rebinds onto, and a default that
-      // occupies it would be refused there by [conflictFor] — see the
-      // defaults-do-not-collide test.
+      // Alt+Shift+T leaves the layout alone. Not P for pin: Cmd+Shift+P opens
+      // the camera.
       ShortcutAction.toggleAlwaysOnTop => ShortcutBinding(
         logicalKey: LogicalKeyboardKey.keyT,
         physicalKey: PhysicalKeyboardKey.keyT,
@@ -922,6 +924,14 @@ class ShortcutPrefs extends ChangeNotifier {
         physicalKey: PhysicalKeyboardKey.digit0,
         meta: useMeta,
         control: !useMeta,
+      ),
+      // P for photo: ⌘⇧C is Checklist, and nothing else here holds P.
+      ShortcutAction.openCamera => ShortcutBinding(
+        logicalKey: LogicalKeyboardKey.keyP,
+        physicalKey: PhysicalKeyboardKey.keyP,
+        meta: useMeta,
+        control: !useMeta,
+        shift: true,
       ),
       // Shift keeps this distinct from Italic while retaining the mnemonic.
       ShortcutAction.insertImage => ShortcutBinding(
