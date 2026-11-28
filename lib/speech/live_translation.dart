@@ -106,6 +106,11 @@ abstract class LiveTranslationEngine {
   /// Fires once if the session ends on its own.
   Stream<LiveTranslationStop> get stops;
 
+  /// Each of [texts] translated on the device from [from] into [to], with
+  /// no session and no microphone, in order. Null when the device can't:
+  /// the pair isn't on it, or there's no translator here at all.
+  Future<List<String>?> translate(String from, String to, List<String> texts);
+
   /// Android only, where the live session records the file: true when the
   /// system took the microphone, false once capture runs again.
   Stream<bool> get interruptions;
@@ -236,6 +241,25 @@ class PlatformLiveTranslation implements LiveTranslationEngine {
       'to': to,
       'path': ?path,
     });
+  }
+
+  @override
+  Future<List<String>?> translate(
+    String from,
+    String to,
+    List<String> texts,
+  ) async {
+    final answer = await _ask<List<Object?>>('translate', {
+      'from': from,
+      'to': to,
+      'texts': texts,
+    });
+    if (answer == null ||
+        answer.length != texts.length ||
+        answer.any((text) => text is! String)) {
+      return null;
+    }
+    return List<String>.from(answer);
   }
 
   @override

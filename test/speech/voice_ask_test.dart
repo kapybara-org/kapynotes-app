@@ -1374,5 +1374,50 @@ void main() {
       );
       expect(find.text('Arjun: पहले सालाना प्लान।'), findsOneWidget);
     });
+
+    testWidgets('one made on this device says so, and from what into what', (
+      tester,
+    ) async {
+      final at = DateTime(2026, 11, 27, 10, 50);
+      final translated = KapyChat(
+        id: 't1',
+        title: 'Transcript in English',
+        createdAt: at,
+        updatedAt: at,
+        model: KapyModel.cloud,
+        recording: _link,
+        messages: [
+          KapyMessage(
+            id: 't1-q',
+            role: KapyRole.user,
+            text: 'Translate the transcript to English',
+            at: at,
+          ),
+          KapyMessage(
+            id: 't1-a0',
+            role: KapyRole.assistant,
+            text: '[0:00] Me: Thanks for coming.',
+            at: at,
+            model: KapyModel.translator,
+          ),
+        ],
+      );
+      final ai = FakeKapyAi(chatList: [translated]);
+      await _show(tester, _window(ai, ref: _recording(lang: 'es')));
+      await tester.tap(_earlier);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('voice-ask-earlier-t1')));
+      await tester.pumpAndSettle();
+      expect(find.text('Me: Thanks for coming.'), findsOneWidget);
+      expect(
+        find.text('Translated on this device · Spanish → English'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('voice-ask-model')),
+        findsNothing,
+        reason: 'the translator is not a model to pick',
+      );
+    });
   });
 }

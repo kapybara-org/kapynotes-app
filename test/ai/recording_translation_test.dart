@@ -334,4 +334,64 @@ void main() {
       expect(stitchTranslation(['[0:00] a', '[0:10] b']), '[0:00] a\n[0:10] b');
     });
   });
+
+  group('a line at a time on the device', () {
+    test('only the words go, and each line keeps its lead', () async {
+      final voice = _voice(_spaced(2, said: (i) => 'Line $i'));
+      final given = <String>[];
+      final part = [
+        '[0:00] Sanjay: Line 0',
+        '[0:10] Arjun: Line 1',
+        'the rest of a long one',
+        '[1:02:03] Sanjay: Arjun: no, I said',
+      ].join('\n');
+      final translated = await translateLines(part, voice, (words) async {
+        given.addAll(words);
+        return [for (final text in words) 'ES $text\n- and more'];
+      });
+      expect(given, [
+        'Line 0',
+        'Line 1',
+        'the rest of a long one',
+        'Arjun: no, I said',
+      ]);
+      expect(
+        translated,
+        [
+          '[0:00] Sanjay: ES Line 0 - and more',
+          '[0:10] Arjun: ES Line 1 - and more',
+          'ES the rest of a long one - and more',
+          '[1:02:03] Sanjay: ES Arjun: no, I said - and more',
+        ].join('\n'),
+      );
+      expect(translatedPart(part, translated!), translated);
+    });
+
+    test('a summary keeps its title line and its points', () async {
+      final voice = _voice(_spaced(1));
+      final part = translationParts(voice, TranslateScope.summary).single;
+      final translated = await translateLines(
+        part,
+        voice,
+        (words) async => [for (final text in words) 'ES $text'],
+      );
+      expect(
+        translated,
+        'ES Pricing call\n- ES Annual plan first\n- ES Ship on Friday',
+      );
+      expect(translatedPart(part, translated!), translated);
+    });
+
+    test('nothing back, or not a line each, is nothing', () async {
+      final voice = _voice(_spaced(1));
+      expect(
+        await translateLines('[0:00] a', voice, (_) async => null),
+        isNull,
+      );
+      expect(
+        await translateLines('[0:00] a\n[0:10] b', voice, (_) async => ['x']),
+        isNull,
+      );
+    });
+  });
 }

@@ -100,6 +100,20 @@ class FakeLiveEngine implements LiveTranslationEngine {
     if (path != null) await File(path).writeAsBytes(const [0xFF, 0xF1]);
   }
 
+  /// What [translate] answers: null, as a device without the pair does,
+  /// unless a test gives it a translator.
+  List<String>? Function(List<String> texts) translator = (_) => null;
+
+  @override
+  Future<List<String>?> translate(
+    String from,
+    String to,
+    List<String> texts,
+  ) async {
+    calls.add('translate $from $to');
+    return translator(texts);
+  }
+
   @override
   Future<void> pause() async => calls.add('pause');
 
@@ -418,6 +432,39 @@ void main() {
         ('Hola a todos', true, 'Hello everyone'),
       ]);
       expect(stops, [LiveTranslationStop.denied]);
+    });
+
+    test('translates texts, and reads a refusal as not here', () async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      final asked = <MethodCall>[];
+      Object? Function(MethodCall call) answer = (call) => [
+        for (final text in (call.arguments as Map)['texts'] as List) 'EN $text',
+      ];
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        asked.add(call);
+        return answer(call);
+      });
+      final live = PlatformLiveTranslation();
+
+      expect(await live.translate('es', 'en', ['Hola', 'Adiós']), [
+        'EN Hola',
+        'EN Adiós',
+      ]);
+      expect(asked.single.method, 'translate');
+      expect(asked.single.arguments, {
+        'from': 'es',
+        'to': 'en',
+        'texts': ['Hola', 'Adiós'],
+      });
+
+      answer = (_) => throw PlatformException(code: 'unsupported');
+      expect(await live.translate('es', 'en', ['Hola']), isNull);
+      answer = (_) => ['one'];
+      expect(await live.translate('es', 'en', ['Hola', 'Adiós']), isNull);
+      answer = (_) => ['one', 2];
+      expect(await live.translate('es', 'en', ['Hola', 'Adiós']), isNull);
+      messenger.setMockMethodCallHandler(channel, null);
+      expect(await live.translate('es', 'en', ['Hola']), isNull);
     });
   });
 }
