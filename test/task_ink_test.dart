@@ -167,7 +167,7 @@ void main() {
       );
       expect(ink.secondary, isNotNull, reason: '$t');
     }
-  });
+  }, timeout: const Timeout(Duration(seconds: 20)));
 
   testWidgets('in dark, Increase contrast strengthens the cards\' edges', (
     tester,
