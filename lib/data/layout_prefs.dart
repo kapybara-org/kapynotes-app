@@ -822,11 +822,15 @@ class LayoutPrefs extends ChangeNotifier {
   double? keyboardRoom(double width) => _keyboardRooms['${width.round()}'];
 
   /// Records the room [keyboardRoom] offers back, per width, so a phone on
-  /// its side and upright each keep their own.
+  /// its side and upright each keep their own. No room forgets the width's.
   void rememberKeyboardRoom(double width, double room) {
     final key = '${width.round()}';
-    if (_keyboardRooms[key] == room) return;
-    _keyboardRooms[key] = room;
+    if (room <= 0) {
+      if (_keyboardRooms.remove(key) == null) return;
+    } else {
+      if (_keyboardRooms[key] == room) return;
+      _keyboardRooms[key] = room;
+    }
     _store.put(_keyboardRoomKey, Map.of(_keyboardRooms));
   }
 

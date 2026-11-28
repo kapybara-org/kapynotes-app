@@ -123,7 +123,8 @@ class NoteField extends StatefulWidget {
   final double? Function(double width)? keyboardRoom;
 
   /// Hears how much of the field's height a keyboard took once it has come
-  /// up and held still, to be offered back as [keyboardRoom].
+  /// up and held still, to be offered back as [keyboardRoom], or zero when
+  /// the room offered was held and no keyboard came.
   final void Function(double width, double room)? onKeyboardRoom;
 
   @override
@@ -1734,8 +1735,9 @@ class NoteFieldState extends State<NoteField>
   }
 
   /// Once the keyboard has held still, it is up, and the room it took is
-  /// reported; or, if it stays down, it isn't coming. Either way nothing is
-  /// held for it any more.
+  /// reported; or, if it stays down, it isn't coming, as with one plugged in,
+  /// and no room is reported, so the next note opens with none held. Either
+  /// way nothing is held for it any more.
   void _waitForKeyboardToHold() {
     _keyboardStillTimer?.cancel();
     _keyboardStillTimer = Timer(
@@ -1745,11 +1747,14 @@ class NoteFieldState extends State<NoteField>
         final down = _keyboardDown;
         final scroll = widget.scrollController;
         if (down != null &&
-            _keyboard > 0 &&
             scroll.hasClients &&
             down.width == MediaQuery.sizeOf(context).width) {
-          final room = down.height - scroll.position.viewportDimension;
-          if (room > 0) widget.onKeyboardRoom?.call(down.width, room);
+          final room = _keyboard > 0
+              ? down.height - scroll.position.viewportDimension
+              : 0.0;
+          if (room > 0 || _keyboardExpected > 0) {
+            widget.onKeyboardRoom?.call(down.width, room);
+          }
         }
         _keyboardDown = null;
         if (_keyboardExpected > 0) setState(() => _keyboardExpected = 0);

@@ -224,7 +224,7 @@ void main() {
   }, variant: phones);
 
   testWidgets('a keyboard that never comes, as with one plugged in, has its '
-      'room held for 5 s and then none', (tester) async {
+      'room held for 5 s and then none, and not held again', (tester) async {
     await _pump(tester);
     await _open(tester);
     await _home(tester);
@@ -239,6 +239,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(gap(), greaterThanOrEqualTo(0));
     expect(gap(), lessThan(40));
-    expect(prefs.keyboardRoom(_phone.width), room);
+    expect(prefs.keyboardRoom(_phone.width), isNull);
+    expect((LayoutPrefs(store)..load()).keyboardRoom(_phone.width), isNull);
+
+    await _home(tester);
+    await tester.tap(find.widgetWithText(NoteRow, _title));
+    await tester.pumpAndSettle();
+    expect(gap(), lessThan(40), reason: 'the plugged-in keyboard opens again');
   }, variant: phones);
 }
