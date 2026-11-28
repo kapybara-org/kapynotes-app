@@ -3130,13 +3130,13 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         progress.error(
           first == null
               ? 'Could not add that file'
-              : '${first.name} ${describeFileRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes)}',
+              : '${first.name} ${describeFileRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes, bytes: first.bytes)}',
         );
       } else if (rejected > 0) {
         final first = batch.rejections.first;
         progress.success(
           'Added $added ${added == 1 ? 'file' : 'files'}; '
-          '${first.name} ${describeFileRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes)}'
+          '${first.name} ${describeFileRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes, bytes: first.bytes)}'
           '${rejected > 1 ? ' (and ${rejected - 1} more)' : ''}',
           icon: KapyIcons.warningRounded,
         );
@@ -3261,12 +3261,14 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         progress.error(
           first == null
               ? 'Could not add that video'
-              : '${first.name} ${describeVideoRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes)}',
+              : '${first.name} ${describeVideoRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes, bytes: first.bytes)}',
         );
       } else if (rejected > 0) {
+        final first = batch.rejections.first;
         progress.success(
           'Added $added ${added == 1 ? 'video' : 'videos'}; '
-          '$rejected could not be added',
+          '${first.name} ${describeVideoRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes, bytes: first.bytes)}'
+          '${rejected > 1 ? ' (and ${rejected - 1} more)' : ''}',
           icon: KapyIcons.warningRounded,
         );
       } else {

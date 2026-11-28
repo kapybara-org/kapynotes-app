@@ -263,7 +263,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('This video is larger than the 1 MB attachment limit.'),
+      find.text(
+        'This video is too big to add (1 MB). Notes can hold videos up to '
+        '1 MB. Try a shorter clip.',
+      ),
       findsOneWidget,
     );
     expect(tester.widget<FilledButton>(useVideo).onPressed, isNull);

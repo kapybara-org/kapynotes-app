@@ -27,7 +27,7 @@ class FileBatch {
   const FileBatch({required this.files, required this.rejections});
 
   final List<NoteFileRef> files;
-  final List<({String name, FileRejection reason})> rejections;
+  final List<({String name, FileRejection reason, int bytes})> rejections;
 }
 
 /// Copies picked or dropped files into the blob store and describes them.
@@ -46,7 +46,7 @@ Future<FileBatch> ingestFileAttachments(
   int limit = fileSelectionLimit,
 }) async {
   final files = <NoteFileRef>[];
-  final rejections = <({String name, FileRejection reason})>[];
+  final rejections = <({String name, FileRejection reason, int bytes})>[];
   final maxBytes = maxFileSourceBytesFor(attachmentMaxBytes);
 
   for (final file in picked.take(limit)) {
@@ -54,16 +54,20 @@ Future<FileBatch> ingestFileAttachments(
     try {
       if (file.path.isNotEmpty &&
           await FileSystemEntity.isDirectory(file.path)) {
-        rejections.add((name: name, reason: FileRejection.directory));
+        rejections.add((name: name, reason: FileRejection.directory, bytes: 0));
         continue;
       }
       final length = await file.length();
       if (length <= 0) {
-        rejections.add((name: name, reason: FileRejection.empty));
+        rejections.add((name: name, reason: FileRejection.empty, bytes: 0));
         continue;
       }
       if (length > maxBytes) {
-        rejections.add((name: name, reason: FileRejection.tooLarge));
+        rejections.add((
+          name: name,
+          reason: FileRejection.tooLarge,
+          bytes: length,
+        ));
         continue;
       }
 
@@ -74,13 +78,17 @@ Future<FileBatch> ingestFileAttachments(
       final stored = await store.fileFor(hash);
       final bytes = stored == null ? 0 : await stored.length();
       if (bytes <= 0) {
-        rejections.add((name: name, reason: FileRejection.empty));
+        rejections.add((name: name, reason: FileRejection.empty, bytes: 0));
         continue;
       }
       if (bytes > maxBytes) {
         // Left for the sweep rather than deleted here: the same bytes may
         // already sit in another note under this very hash.
-        rejections.add((name: name, reason: FileRejection.tooLarge));
+        rejections.add((
+          name: name,
+          reason: FileRejection.tooLarge,
+          bytes: bytes,
+        ));
         continue;
       }
 
@@ -96,7 +104,7 @@ Future<FileBatch> ingestFileAttachments(
       );
     } catch (error) {
       debugPrint('KapyNotes: could not add file $name: $error');
-      rejections.add((name: name, reason: FileRejection.unreadable));
+      rejections.add((name: name, reason: FileRejection.unreadable, bytes: 0));
     }
   }
 
@@ -104,18 +112,30 @@ Future<FileBatch> ingestFileAttachments(
     rejections.add((
       name: sanitizeFileName(displayNameOf(file)),
       reason: FileRejection.tooMany,
+      bytes: 0,
     ));
   }
   return FileBatch(files: files, rejections: rejections);
 }
 
+/// The photo library's iPhone picker copies a clip to a temporary file named
+/// "image_picker_" and a long random id before its real name.
+final RegExp _pickerCopyPrefix = RegExp(
+  r'^image_picker_[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}-\d+-[0-9A-Fa-f]{16}',
+);
+
 /// Pickers normally give a display name; some document providers give only a
-/// path, which still ends in one.
+/// path, which still ends in one. A picker's temporary copy is named by what
+/// it was copied from.
 String displayNameOf(XFile file) {
-  if (file.name.isNotEmpty) return file.name;
-  final path = file.path.replaceAll('\\', '/');
-  final slash = path.lastIndexOf('/');
-  return slash < 0 ? path : path.substring(slash + 1);
+  var name = file.name;
+  if (name.isEmpty) {
+    final path = file.path.replaceAll('\\', '/');
+    final slash = path.lastIndexOf('/');
+    name = slash < 0 ? path : path.substring(slash + 1);
+  }
+  final original = name.replaceFirst(_pickerCopyPrefix, '');
+  return original.isEmpty ? name : original;
 }
 
 /// The picker's MIME type when it gave a real one, else one guessed from the
@@ -162,9 +182,11 @@ const Map<String, String> _mimeByExtension = {
 String describeFileRejection(
   FileRejection reason, {
   int attachmentMaxBytes = freeAttachmentMaxBytes,
+  int bytes = 0,
 }) => switch (reason) {
   FileRejection.tooLarge =>
-    'is larger than the ${attachmentMaxBytes ~/ (1024 * 1024)} MB attachment limit',
+    'is too big to add (${formatFileSize(bytes)}). Notes can hold files up to '
+        '${attachmentMaxBytes ~/ (1024 * 1024)} MB. Try a smaller file',
   FileRejection.tooMany =>
     'is beyond the $fileSelectionLimit-file selection limit',
   FileRejection.unreadable => 'could not be read',

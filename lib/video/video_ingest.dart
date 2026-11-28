@@ -8,6 +8,7 @@ import '../core/platform.dart';
 import '../data/blob_store.dart';
 import '../data/attachment_limits.dart';
 import '../data/note_attachment.dart';
+import '../files/file_ingest.dart' show displayNameOf, formatFileSize;
 import '../sync/aead.dart';
 import '../sync/sealed_box.dart';
 import 'mp4_video_metadata.dart';
@@ -42,7 +43,7 @@ class VideoBatch {
   const VideoBatch({required this.videos, required this.rejections});
 
   final List<NoteVideoRef> videos;
-  final List<({String name, VideoRejection reason})> rejections;
+  final List<({String name, VideoRejection reason, int bytes})> rejections;
 
   bool get isEmpty => videos.isEmpty;
 }
@@ -84,36 +85,48 @@ Future<VideoBatch> ingestVideoFiles(
   int attachmentMaxBytes = freeAttachmentMaxBytes,
 }) async {
   final videos = <NoteVideoRef>[];
-  final rejections = <({String name, VideoRejection reason})>[];
+  final rejections = <({String name, VideoRejection reason, int bytes})>[];
 
   for (final file in files.take(limit)) {
     // Native pickers normally supply a display name, but some document
     // providers expose only a path. The path still carries the container
     // suffix and is safer than rejecting a playable file as nameless.
-    final name = _videoFileName(file);
+    final name = displayNameOf(file);
     final extension = extensionForVideoFilename(name);
     if (extension == null) {
-      rejections.add((name: name, reason: VideoRejection.unsupported));
+      rejections.add((
+        name: name,
+        reason: VideoRejection.unsupported,
+        bytes: 0,
+      ));
       continue;
     }
 
     try {
       final length = await file.length();
       if (length == 0) {
-        rejections.add((name: name, reason: VideoRejection.empty));
+        rejections.add((name: name, reason: VideoRejection.empty, bytes: 0));
         continue;
       }
       if (length > maxVideoSourceBytesFor(attachmentMaxBytes)) {
-        rejections.add((name: name, reason: VideoRejection.tooLarge));
+        rejections.add((
+          name: name,
+          reason: VideoRejection.tooLarge,
+          bytes: length,
+        ));
         continue;
       }
       final bytes = await file.readAsBytes();
       if (bytes.isEmpty) {
-        rejections.add((name: name, reason: VideoRejection.empty));
+        rejections.add((name: name, reason: VideoRejection.empty, bytes: 0));
         continue;
       }
       if (bytes.length > maxVideoSourceBytesFor(attachmentMaxBytes)) {
-        rejections.add((name: name, reason: VideoRejection.tooLarge));
+        rejections.add((
+          name: name,
+          reason: VideoRejection.tooLarge,
+          bytes: bytes.length,
+        ));
         continue;
       }
 
@@ -121,7 +134,11 @@ Future<VideoBatch> ingestVideoFiles(
       final stored = await store.fileFor(hash);
       final metadata = stored == null ? null : await metadataReader(stored);
       if (metadata == null) {
-        rejections.add((name: name, reason: VideoRejection.unreadable));
+        rejections.add((
+          name: name,
+          reason: VideoRejection.unreadable,
+          bytes: 0,
+        ));
         continue;
       }
 
@@ -139,20 +156,19 @@ Future<VideoBatch> ingestVideoFiles(
       );
     } catch (error) {
       debugPrint('KapyNotes: could not add video $name: $error');
-      rejections.add((name: name, reason: VideoRejection.unreadable));
+      rejections.add((name: name, reason: VideoRejection.unreadable, bytes: 0));
     }
   }
 
   for (final file in files.skip(limit)) {
     rejections.add((
-      name: _videoFileName(file),
+      name: displayNameOf(file),
       reason: VideoRejection.tooMany,
+      bytes: 0,
     ));
   }
   return VideoBatch(videos: videos, rejections: rejections);
 }
-
-String _videoFileName(XFile file) => file.name.isEmpty ? file.path : file.name;
 
 String? extensionForVideoFilename(String name) {
   final dot = name.lastIndexOf('.');
@@ -173,9 +189,11 @@ String mimeForVideoFilename(String name) {
 String describeVideoRejection(
   VideoRejection reason, {
   int attachmentMaxBytes = freeAttachmentMaxBytes,
+  int bytes = 0,
 }) => switch (reason) {
   VideoRejection.tooLarge =>
-    'is larger than the ${attachmentMaxBytes ~/ (1024 * 1024)} MB attachment limit',
+    'is too big to add (${formatFileSize(bytes)}). Notes can hold videos up to '
+        '${attachmentMaxBytes ~/ (1024 * 1024)} MB. Try a shorter clip',
   VideoRejection.tooMany => 'is beyond the 10-video selection limit',
   VideoRejection.unsupported => 'is not an MP4, M4V, or MOV video',
   VideoRejection.unreadable => 'is not a video this device can play',

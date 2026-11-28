@@ -115,8 +115,48 @@ void main() {
       describeVideoRejection(
         VideoRejection.tooLarge,
         attachmentMaxBytes: proAttachmentMaxBytes,
+        bytes: 300 * 1024 * 1024,
       ),
-      'is larger than the 100 MB attachment limit',
+      'is too big to add (300 MB). Notes can hold videos up to 100 MB. '
+      'Try a shorter clip',
+    );
+  });
+
+  test('a five-minute clip from the iPhone library is refused by its own '
+      'name and size, and never read into memory', () async {
+    final pickerDirectory = await Directory.systemTemp.createTemp('picker');
+    addTearDown(() => pickerDirectory.delete(recursive: true));
+    final clip = File(
+      '${pickerDirectory.path}/image_picker_2B55E2FD-4F1A-4C6A-9F05-3D9C5E3C1B1E-'
+      '1234-0000A1B2C3D4E5F6IMG_0042.MOV',
+    );
+    final handle = await clip.open(mode: FileMode.write);
+    await handle.truncate(300 * 1024 * 1024);
+    await handle.close();
+    var metadataReads = 0;
+
+    final batch = await ingestVideoFiles(
+      [XFile(clip.path)],
+      store: store,
+      metadataReader: (_) async {
+        metadataReads++;
+        return null;
+      },
+    );
+
+    expect(batch.videos, isEmpty);
+    expect(batch.rejections.single, (
+      name: 'IMG_0042.MOV',
+      reason: VideoRejection.tooLarge,
+      bytes: 300 * 1024 * 1024,
+    ));
+    expect(metadataReads, 0);
+    expect(await store.totalBytes(), 0);
+    final first = batch.rejections.single;
+    expect(
+      '${first.name} ${describeVideoRejection(first.reason, bytes: first.bytes)}',
+      'IMG_0042.MOV is too big to add (300 MB). Notes can hold videos up to '
+          '25 MB. Try a shorter clip',
     );
   });
 
