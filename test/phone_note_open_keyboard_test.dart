@@ -254,6 +254,23 @@ void main() {
     expect(prefs.keyboardRoom(_phone.width), closeTo(room - 60, 0.01));
   }, variant: phones);
 
+  testWidgets('a keyboard put away with the note still open gives back the '
+      'room held for it at once', (tester) async {
+    await _pump(tester);
+    await _open(tester);
+    await _home(tester);
+
+    await _open(tester, keyboard: _keyboard - 60);
+    final open = tester.widget<NoteField>(noteField).scrollController;
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pump(const Duration(milliseconds: 16));
+    final down = open.position.maxScrollExtent;
+    await tester.pump(const Duration(seconds: 6));
+    await tester.pumpAndSettle();
+    expect(open.position.maxScrollExtent, down);
+    expect(prefs.keyboardRoom(_phone.width), greaterThan(0));
+  }, variant: phones);
+
   testWidgets('a keyboard that never comes, as with one plugged in, has its '
       'room held for 5 s and then none, and not held again', (tester) async {
     await _pump(tester);

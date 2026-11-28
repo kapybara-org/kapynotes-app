@@ -196,7 +196,7 @@ class NoteFieldState extends State<NoteField>
   /// take, reserved below the note until it has come up.
   double _keyboardExpected = 0;
 
-  /// Whether a keyboard has come up since the field took focus.
+  /// Whether a keyboard has started up since the field took focus.
   bool _keyboardCame = false;
 
   /// How long the keyboard holds still before it counts as up.
@@ -1715,7 +1715,9 @@ class NoteFieldState extends State<NoteField>
     final keyboard = View.of(context).viewInsets.bottom;
     if (keyboard > _keyboard && widget.focusNode.hasFocus) _scheduleReveal();
     _keyboard = keyboard;
-    if (_keyboardDown != null) _waitForKeyboardToHold();
+    if (_keyboardDown == null) return;
+    if (keyboard > 0) _keyboardCame = true;
+    _waitForKeyboardToHold();
   }
 
   /// Taking focus with no keyboard up, notes the field's height to measure
@@ -1748,6 +1750,10 @@ class NoteFieldState extends State<NoteField>
   void _waitForKeyboardToHold() {
     _keyboardStillTimer?.cancel();
     final up = _keyboard > 0;
+    if (!up && _keyboardCame) {
+      _releaseKeyboardRoom();
+      return;
+    }
     _keyboardStillTimer = Timer(
       up ? _keyboardStillAfter : _keyboardLateAfter,
       () {
@@ -1760,7 +1766,6 @@ class NoteFieldState extends State<NoteField>
             ? down.height - scroll.position.viewportDimension
             : 0.0;
         if (room > 0) {
-          _keyboardCame = true;
           widget.onKeyboardRoom?.call(down.width, room);
         } else if (sameWidth && !_keyboardCame && _keyboardExpected > 0) {
           widget.onKeyboardRoom?.call(down.width, 0);
