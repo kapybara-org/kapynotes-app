@@ -103,18 +103,10 @@ class _KapyAiPageState extends State<KapyAiPage> {
                   onTapOutside: (_) => _searchFocus.unfocus(),
                   // The well's own placeholder line, so it is the height
                   // and grey Notes' and Folders' are (KAP-462).
-                  style: uiStyle(
-                    AppTypeScale.row,
-                    22,
-                    FontWeight.w400,
-                    palette.textPrimary,
-                  ),
+                  style: SidebarSearchField.phoneLine(palette.textPrimary),
                   decoration: InputDecoration.collapsed(
                     hintText: 'Search chats',
-                    hintStyle: uiStyle(
-                      AppTypeScale.row,
-                      22,
-                      FontWeight.w400,
+                    hintStyle: SidebarSearchField.phoneLine(
                       palette.textSecondary,
                     ),
                   ),

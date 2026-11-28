@@ -115,6 +115,8 @@ class PhoneTitleBar extends StatelessWidget {
   /// into the room around it, so the circle keeps its place.
   static const double _reach = 6;
 
+  static const double height = 48;
+
   /// S's tap target, the same on every tab.
   static const double avatarTarget = 32 + 2 * _reach;
 
@@ -124,7 +126,7 @@ class PhoneTitleBar extends StatelessWidget {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: Container(
-        height: 48,
+        height: height,
         padding: EdgeInsets.only(
           left: leading == null ? 20 : 6,
           right: trailing.isEmpty ? 20 : 20 - _reach,

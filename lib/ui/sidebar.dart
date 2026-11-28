@@ -2668,6 +2668,20 @@ class SidebarSearchField extends StatefulWidget {
   final ShortcutBinding? shortcut;
   final String placeholder;
 
+  /// The line a phone's placeholder and field are set on.
+  static TextStyle phoneLine(Color color) =>
+      uiStyle(AppTypeScale.row, 22, FontWeight.w400, color);
+
+  /// How tall a phone's well stands with the room round it at [scaler]: 44
+  /// at least, and taller as its line grows with the text size.
+  static double phoneExtent(TextScaler scaler) =>
+      4 +
+      math.max(
+        44,
+        12 + scaler.scale(AppTypeScale.row) * 22 / AppTypeScale.row,
+      ) +
+      6;
+
   @override
   State<SidebarSearchField> createState() => _SidebarSearchFieldState();
 }
@@ -2840,10 +2854,7 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
                     searching ? query : placeholder,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: uiStyle(
-                      AppTypeScale.row,
-                      22,
-                      FontWeight.w400,
+                    style: SidebarSearchField.phoneLine(
                       searching ? palette.textPrimary : palette.textSecondary,
                     ),
                   ),

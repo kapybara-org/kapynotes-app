@@ -18,7 +18,9 @@ import '../sync/sync_service.dart';
 import 'context_menu.dart';
 import 'focus_ring.dart';
 import 'installed_version.dart';
+import 'phone_home_header.dart' show PhoneTitleBar;
 import 'profile_avatar.dart';
+import 'sidebar.dart' show SidebarSearchField;
 import 'window_drag_area.dart';
 
 /// What the notes list beside the spaces rail can show.
@@ -769,9 +771,10 @@ class _PhoneSpacesState extends State<PhoneSpaces>
   final _bar = GlobalKey();
   final _page = GlobalKey();
 
-  /// The tab left, as it was last drawn, fading out over the one chosen. The
-  /// header frame and the paper are the same on every tab, so only what
-  /// differs between them changes (KAP-462).
+  /// The tab left, as it was last drawn, fading out over the one chosen
+  /// below its header and search well. Those are the same frame on every
+  /// tab, so their words change at once rather than showing both tabs' at
+  /// half strength, and only the page under them crossfades (KAP-462).
   ui.Image? _leaving;
   late final _fade =
       AnimationController(
@@ -846,12 +849,21 @@ class _PhoneSpacesState extends State<PhoneSpaces>
           RepaintBoundary(key: _page, child: widget.child),
           if (_leaving case final leaving?)
             IgnorePointer(
-              child: FadeTransition(
-                opacity: ReverseAnimation(_fade),
-                child: RawImage(
-                  image: leaving,
-                  scale: View.of(context).devicePixelRatio,
-                  fit: BoxFit.fill,
+              child: ClipRect(
+                clipper: _Below(
+                  MediaQuery.paddingOf(context).top +
+                      PhoneTitleBar.height +
+                      SidebarSearchField.phoneExtent(
+                        MediaQuery.textScalerOf(context),
+                      ),
+                ),
+                child: FadeTransition(
+                  opacity: ReverseAnimation(_fade),
+                  child: RawImage(
+                    image: leaving,
+                    scale: View.of(context).devicePixelRatio,
+                    fit: BoxFit.fill,
+                  ),
                 ),
               ),
             ),
@@ -925,6 +937,19 @@ class _PhoneSpacesState extends State<PhoneSpaces>
     if (box == null) return null;
     return box.localToGlobal(Offset.zero) & box.size;
   }
+}
+
+/// What lies below [top]: the page under a tab's header and search well.
+class _Below extends CustomClipper<Rect> {
+  const _Below(this.top);
+
+  final double top;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(0, top, size.width, size.height);
+
+  @override
+  bool shouldReclip(_Below oldClipper) => oldClipper.top != top;
 }
 
 /// One of the bar's destinations: its icon over its name in a 46 pt pill,

@@ -30,6 +30,7 @@ import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_parts.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_settings.dart';
 import 'package:kapy_notes/ui/page_pane.dart';
+import 'package:kapy_notes/ui/phone_home_header.dart' show PhoneTitleBar;
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
@@ -2469,6 +2470,20 @@ void main() {
             );
             await pumpTabs(tester, size: size, platform: platform);
             final notes = shared(tester, 'notes');
+            // The fade cuts at this line, under the header and the well.
+            final search = notes['search']! as Rect;
+            expect(
+              search.bottom,
+              MediaQuery.paddingOf(
+                    tester.element(find.byType(PhoneSpaces)),
+                  ).top +
+                  PhoneTitleBar.height +
+                  SidebarSearchField.phoneExtent(
+                    MediaQuery.textScalerOf(
+                      tester.element(find.byType(SidebarSearchField)),
+                    ),
+                  ),
+            );
             for (final other in ['folders', 'kapyAi', 'notes']) {
               await tap(tester, find.byKey(ValueKey('bar-$other')));
               final now = shared(tester, other);
@@ -2482,7 +2497,7 @@ void main() {
       }
 
       testWidgets('the tab left fades out over the one chosen in 150 ms, '
-          'under the bar', (tester) async {
+          'below the header and search well and under the bar', (tester) async {
         await pumpTabs(
           tester,
           size: const Size(390, 844),
@@ -2503,6 +2518,14 @@ void main() {
               .first,
         );
         expect(fade.opacity.value, closeTo(0.5, 0.01));
+        final clip = tester.widget<ClipRect>(
+          find.ancestor(of: leaving, matching: find.byType(ClipRect)).first,
+        );
+        expect(
+          clip.clipper!.getClip(const Size(390, 844)).top,
+          tester.getRect(find.byType(SidebarSearchField)).bottom,
+          reason: "the header's and the well's words change at once",
+        );
         expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
         expect(tester.getRect(find.byKey(const ValueKey('phone-bar'))), bar);
         await tester.pump(const Duration(milliseconds: 80));
