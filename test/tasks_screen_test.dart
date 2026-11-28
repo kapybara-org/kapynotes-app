@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/appearance.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/core/toast.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_days.dart';
 import 'package:kapy_notes/data/notes_store.dart';
@@ -667,14 +668,18 @@ void main() {
         expect(inPair('right', 'Pick'), findsOneWidget);
         expect(find.text('or'), findsOneWidget);
         expect(find.text('2 of 4 seen'), findsOneWidget);
-        expect(find.byKey(const ValueKey('tasks-pair-explain')), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('tasks-pair-explain')),
+          findsOneWidget,
+        );
         expect(
           find.text('Nothing comes off your list.'),
           findsOneWidget,
           reason: 'Up next has nothing in it until the first pick',
         );
+        expect(find.text('Stop choosing'), findsOneWidget);
         expect(
-          find.text('Stop choosing and start Send the report'),
+          find.bySemanticsLabel('Stop choosing and start Send the report'),
           findsOneWidget,
         );
         expect(find.text('↵'), findsOneWidget);
@@ -701,7 +706,9 @@ void main() {
       expect(inPair('right', 'Call the garage'), findsOneWidget);
       expect(find.text('3 of 4 seen'), findsOneWidget);
       expect(
-        find.text('Nothing comes off your list. Earlier picks wait in Up next.'),
+        find.text(
+          'Nothing comes off your list. Earlier picks wait in Up next.',
+        ),
         findsOneWidget,
       );
       expect(box('Book flights'), findsOneWidget);
@@ -744,16 +751,21 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('on the last pair Stop choosing goes, the count says Last one '
-        'and the foot says the pick becomes Do now', (tester) async {
+    testWidgets('on the last pair Stop choosing stays, the count says Last '
+        'one and the foot says the pick becomes Do now', (tester) async {
+      final semantics = tester.ensureSemantics();
       await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
       await pumpScreen(tester, explainPair: false);
-      expect(find.byKey(const ValueKey('tasks-start')), findsNothing);
-      expect(find.text('Your pick becomes Do now.'), findsOneWidget);
+      expect(find.text('Stop choosing'), findsOneWidget);
+      expect(find.semantics.byLabel('Stop choosing and start One'), findsOne);
+      expect(
+        find.text('Nothing comes off your list. Your pick becomes Do now.'),
+        findsOneWidget,
+      );
       expect(find.text('Last one'), findsOneWidget);
-      expect(find.textContaining(' seen'), findsNothing);
-      final screen = tester.state<TasksScreenState>(find.byType(TasksScreen));
-      expect(screen.startEarly(), isFalse);
+      expect(find.semantics.byLabel(RegExp(' seen')), findsNothing);
+      expect(find.semantics.byLabel(RegExp('Last one')), findsOne);
+      semantics.dispose();
 
       await tester.tap(find.byKey(const ValueKey('tasks-pair-right')));
       await settle(tester);
@@ -763,19 +775,47 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('Stop choosing names the whole task, on up to two lines', (
-      tester,
-    ) async {
+    testWidgets('Stop choosing is one quiet line under the foot, a 44 pt '
+        'target on a phone, with ↵ on a desktop; screen readers hear the '
+        'whole task it starts', (tester) async {
       await setUpTasks(
         tester,
         'Errands\n☐ Ask Ana which Sintra palace to skip\n☐ B\n☐ C',
       );
-      await pumpScreen(tester);
-      const label =
-          'Stop choosing and start Ask Ana which Sintra palace to skip';
-      expect(find.text(label), findsOneWidget);
-      expect(tester.widget<Text>(find.text(label)).maxLines, 2);
-      expect(find.bySemanticsLabel(label), findsOneWidget);
+      for (final phone in [false, true]) {
+        await pumpScreen(tester, phone: phone);
+        final start = find.byKey(const ValueKey('tasks-start'));
+        final label = find.descendant(
+          of: start,
+          matching: find.text('Stop choosing'),
+        );
+        final reason = 'phone: $phone';
+        expect(label, findsOneWidget, reason: reason);
+        expect(
+          find.bySemanticsLabel(
+            'Stop choosing and start Ask Ana which Sintra palace to skip',
+          ),
+          findsOneWidget,
+          reason: reason,
+        );
+        expect(
+          tester.widget<Text>(label).style!.color,
+          TaskInk.of(tester.element(label)).quiet,
+          reason: reason,
+        );
+        expect(tester.getSize(label).height, phone ? 18 : 16, reason: reason);
+        expect(tester.getSize(start).height, phone ? 44 : 28, reason: reason);
+        expect(
+          tester.getTopLeft(label).dx,
+          tester.getTopLeft(find.textContaining('Nothing comes off')).dx,
+          reason: reason,
+        );
+        expect(
+          find.descendant(of: start, matching: find.text('↵')),
+          phone ? findsNothing : findsOneWidget,
+          reason: reason,
+        );
+      }
       await settle(tester);
     });
 
@@ -1028,6 +1068,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('1 finished today'), findsOneWidget);
+    expect(
+      find.text('Done one'),
+      findsOneWidget,
+      reason: 'the done row names it, so the finished line does not',
+    );
+    expect(box('Done one'), findsOneWidget);
     expect(find.byKey(const ValueKey('tasks-pair')), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('tasks-finished-today')));
@@ -1149,9 +1195,10 @@ void main() {
     });
   });
 
-  testWidgets('the add row adds at the end, says so, and keeps the field for '
-      'the next one; Escape leaves it', (tester) async {
-    await setUpTasks(tester, 'Errands\n☐ One');
+  testWidgets('the add row adds at the end and keeps the field for the next '
+      'one; a new row in sight shows where it went by its wash alone, so '
+      'nothing moves; Escape leaves it', (tester) async {
+    await setUpTasks(tester, 'Errands\n☐ One\n☐ Two');
     await pumpScreen(tester);
     expect(addFocus.hasFocus, isFalse);
     expect(find.text('No note'), findsOneWidget);
@@ -1168,21 +1215,165 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byKey(const ValueKey('tasks-added-notice')), findsOneWidget);
+    expect(find.text('Added to the end of the list'), findsNothing);
     expect(addFocus.hasFocus, isTrue);
     expect(
       [for (final i in tasks.read().open) i.words],
-      ['One', 'Book the dentist'],
+      ['One', 'Two', 'Book the dentist'],
     );
     expect(tasks.read().home?.body, 'Tasks\n☐ Book the dentist');
+    final added = tester.getTopLeft(box('Book the dentist'));
 
     await settle(tester);
-    expect(find.byKey(const ValueKey('tasks-added-notice')), findsNothing);
+    expect(tester.getTopLeft(box('Book the dentist')), added);
+    expect(find.text('Added to the end of the list'), findsNothing);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
     expect(addFocus.hasFocus, isFalse);
     await settle(tester);
+  });
+
+  testWidgets('a task added below the fold says so in a toast, and the list '
+      'stays where it is', (tester) async {
+    await setUpTasks(
+      tester,
+      ['Errands', for (var i = 1; i <= 14; i++) '☐ Errand $i'].join('\n'),
+    );
+    await pumpScreen(tester, size: const Size(900, 420));
+    final first = tester.getTopLeft(find.text('Errand 1').first);
+
+    addFocus.requestFocus();
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const ValueKey('tasks-add-field')),
+      'Book the dentist',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Added to the end of the list'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Errand 1').first), first);
+    Toast.debugTimeUp();
+    await settle(tester);
+  });
+
+  group('a task done today stays in Today', () {
+    Future<void> tick(WidgetTester tester, String words) async {
+      await tester.tap(box(words));
+      await settle(tester);
+    }
+
+    double top(WidgetTester tester, String words) =>
+        tester.getTopLeft(box(words)).dy;
+
+    testWidgets('ticked, a row keeps its place for the visit, checked in the '
+        'quiet ink, and nothing under the pointer moves', (tester) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester);
+      final rows = {
+        for (final words in ['Call the garage', 'Pay the rent'])
+          words: top(tester, words),
+      };
+
+      await tick(tester, 'Call the garage');
+      expect(tasks.read().open.length, 3);
+      expect(
+        tester.widget<Semantics>(box('Call the garage')).properties.checked,
+        isTrue,
+      );
+      final ink = TaskInk.of(tester.element(box('Call the garage')));
+      expect(
+        tester
+            .widget<Text>(
+              find.descendant(
+                of: find.byKey(ValueKey(tasks.read().done.single.id)),
+                matching: find.text('Call the garage'),
+              ),
+            )
+            .style
+            ?.color,
+        ink.quiet,
+      );
+      for (final MapEntry(key: words, value: y) in rows.entries) {
+        expect(top(tester, words), y, reason: words);
+      }
+
+      await tick(tester, 'Call the garage');
+      expect(tasks.read().open.length, 4);
+      for (final MapEntry(key: words, value: y) in rows.entries) {
+        expect(top(tester, words), y, reason: words);
+      }
+      await settle(tester);
+    });
+
+    testWidgets('on the next visit the day\'s done tasks sit at the end, '
+        'earliest first, until the day ends; unticking one brings it back', (
+      tester,
+    ) async {
+      await setUpTasks(tester, '$errands\n☐ Book flights again');
+      await pumpScreen(tester);
+      await tick(tester, 'Pay the rent');
+      clock = clock.add(const Duration(minutes: 5));
+      await tick(tester, 'Call the garage');
+
+      await pumpScreen(tester, filter: const TaskFilter.done());
+      await pumpScreen(tester);
+      final garage = top(tester, 'Call the garage');
+      final rent = top(tester, 'Pay the rent');
+      expect(rent, lessThan(garage));
+      for (final item in tasks.read().open) {
+        if (box(item.words).evaluate().isEmpty) continue;
+        expect(top(tester, item.words), lessThan(rent), reason: item.words);
+      }
+
+      await tick(tester, 'Pay the rent');
+      expect(tasks.read().open.map((i) => i.words), contains('Pay the rent'));
+      expect(top(tester, 'Pay the rent'), rent);
+
+      clock = DateTime(clock.year, clock.month, clock.day + 1, 8);
+      await pumpScreen(tester, filter: const TaskFilter.done());
+      await pumpScreen(tester);
+      expect(box('Call the garage'), findsNothing);
+      await settle(tester);
+    });
+
+    testWidgets('the visit ends when the app goes to the background', (
+      tester,
+    ) async {
+      await setUpTasks(tester, errands);
+      await pumpScreen(tester);
+      final rent = top(tester, 'Pay the rent');
+      await tick(tester, 'Call the garage');
+      expect(top(tester, 'Pay the rent'), rent);
+
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await settle(tester);
+      expect(top(tester, 'Pay the rent'), lessThan(rent));
+      expect(top(tester, 'Call the garage'), greaterThan(rent - 1));
+      await settle(tester);
+    });
+
+    testWidgets('with everything done, the done rows stay under "Nothing left '
+        'to do today."', (tester) async {
+      await setUpTasks(tester, 'Errands\n☐ One');
+      await pumpScreen(tester);
+      await tasks.finish(tasks.read().open.single);
+      await settle(tester);
+      expect(find.text('Nothing left to do today.'), findsOneWidget);
+      expect(find.text('Nothing on the list.'), findsNothing);
+      expect(box('One'), findsOneWidget);
+      await settle(tester);
+    });
   });
 
   testWidgets('nothing on the list says so, with no pair', (tester) async {
@@ -1290,12 +1481,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(
-        find.text(
-          'Nothing comes off your list.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('Nothing comes off your list.'), findsOneWidget);
       final left = tester.getRect(
         find.byKey(const ValueKey('tasks-pair-left')),
       );
@@ -1364,7 +1550,17 @@ void main() {
         findsOneWidget,
       );
       final card = tester.widget<Container>(pair);
-      expect(card.padding, const EdgeInsets.fromLTRB(16, 14, 16, 16));
+      expect(
+        card.padding,
+        const EdgeInsets.fromLTRB(16, 14, 16, 3),
+        reason:
+            'Stop choosing\'s 44 pt target holds the other 13 at the bottom',
+      );
+      expect(
+        tester.getRect(pair).bottom -
+            tester.getRect(find.text('Stop choosing')).bottom,
+        16,
+      );
       final fill = card.decoration! as BoxDecoration;
       expect(fill.borderRadius, BorderRadius.circular(12));
       expect(fill.color, KapyTheme.darkPalette.cardBackground);
@@ -1376,6 +1572,9 @@ void main() {
         '4% field', (tester) async {
       await setUpTasks(tester, errands);
       await pumpScreen(tester, phone: true);
+      addFocus.requestFocus();
+      await tester.pump();
+      await tester.pump();
 
       final palette = KapyTheme.darkPalette;
       final row = find.byKey(const ValueKey('tasks-add-row'));
@@ -1402,6 +1601,70 @@ void main() {
       await settle(tester);
     });
 
+    testWidgets('at SE width a tap moves nothing on the card: the last pair '
+        'keeps Stop choosing and its foot wraps like the one before; then a '
+        'new task in sight shows by its wash alone, with no notice line', (
+      tester,
+    ) async {
+      await setUpTasks(tester, 'Errands\n☐ One\n☐ Two\n☐ Three');
+      await pumpScreen(
+        tester,
+        phone: true,
+        size: const Size(320, 568),
+        explainPair: false,
+      );
+      final pair = find.byKey(const ValueKey('tasks-pair'));
+      final start = find.byKey(const ValueKey('tasks-start'));
+      Finder foot(String text) =>
+          find.descendant(of: pair, matching: find.text(text));
+      final before = foot(
+        'Nothing comes off your list. Earlier picks wait in Up next.',
+      );
+      expect(before, findsOneWidget);
+      final card = tester.getRect(pair);
+      final footHeight = tester.getSize(before).height;
+      final startRect = tester.getRect(start);
+
+      await tester.tap(find.byKey(const ValueKey('tasks-pair-left')));
+      await settle(tester);
+      expect(find.text('Last one'), findsOneWidget);
+      final last = foot(
+        'Nothing comes off your list. Your pick becomes Do now.',
+      );
+      expect(last, findsOneWidget);
+      expect(tester.getSize(last).height, footHeight);
+      expect(tester.getRect(start), startRect);
+      expect(tester.getRect(pair), card);
+
+      await tester.tap(find.byKey(const ValueKey('tasks-pair-left')));
+      await settle(tester);
+      final doNow = tester.getRect(find.byKey(const ValueKey('tasks-do-now')));
+      final rows = {
+        for (final i in tasks.read().open)
+          if (!i.doNow) i.id: tester.getTopLeft(words(i)),
+      };
+
+      addFocus.requestFocus();
+      await tester.pump();
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('tasks-add-field')),
+        'Four',
+      );
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Added to the end of the list'), findsNothing);
+      expect(tester.getRect(find.byKey(const ValueKey('tasks-do-now'))), doNow);
+      for (final MapEntry(:key, :value) in rows.entries) {
+        final row = tasks.read().open.firstWhere((i) => i.id == key);
+        expect(tester.getTopLeft(words(row)), value);
+      }
+      expect(words(item('Four')), findsOneWidget);
+      await settle(tester);
+    });
+
     testWidgets('Do now puts Done first, then Not finished', (tester) async {
       await setUpTasks(tester, errands);
       tasks.doNow(tasks.read().open[0]);
@@ -1416,28 +1679,27 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('a checked row stays, struck through, and unchecks again', (
-      tester,
-    ) async {
+    testWidgets('a checked row stays in its place, checked in the quiet ink, '
+        'and unchecks again where it is', (tester) async {
       await setUpTasks(tester, errands);
       await pumpScreen(tester, phone: true);
       final rent = item('Pay the rent');
+      final at = tester.getTopLeft(phoneBox(rent));
+      final ink = TaskInk.of(tester.element(phoneBox(rent)));
 
       await tester.tap(phoneBox(rent));
       await settle(tester);
       expect(tasks.read().open.length, 3);
-      expect(
-        tester.widget<Text>(words(rent)).style?.decoration,
-        TextDecoration.lineThrough,
-      );
+      final done = tester.widget<Text>(words(rent));
+      expect(done.style?.decoration, isNot(TextDecoration.lineThrough));
+      expect(done.style?.color, ink.quiet);
+      expect(tester.getTopLeft(phoneBox(rent)), at);
 
       await tester.tap(phoneBox(rent));
       await settle(tester);
       expect(tasks.read().open.length, 4);
-      expect(
-        tester.widget<Text>(words(item('Pay the rent'))).style?.decoration,
-        isNot(TextDecoration.lineThrough),
-      );
+      expect(tasks.read().open.last.words, 'Pay the rent');
+      expect(tester.getTopLeft(phoneBox(item('Pay the rent'))), at);
       await settle(tester);
     });
 
@@ -1658,10 +1920,8 @@ void main() {
       await settle(tester);
     });
 
-    testWidgets('Increase contrast outlines the add row, its note chip and '
-        'Stop choosing in the theme\'s contrast line, and moves nothing', (
-      tester,
-    ) async {
+    testWidgets('Increase contrast outlines the add row and its note chip in '
+        'the theme\'s contrast line, and moves nothing', (tester) async {
       await canonical(tester);
       for (final phone in [false, true]) {
         final rects = <bool, List<Rect>>{};
@@ -1672,13 +1932,14 @@ void main() {
           );
           await pumpScreen(tester, phone: phone, theme: theme);
           await settle(tester);
+          if (phone) {
+            addFocus.requestFocus();
+            await tester.pump();
+            await tester.pump();
+          }
           final line = theme.extension<CalcPalette>()!.controlBorder;
           rects[increaseContrast] = [];
-          for (final key in [
-            'tasks-add-row',
-            'tasks-note-picker',
-            'tasks-start',
-          ]) {
+          for (final key in ['tasks-add-row', 'tasks-note-picker']) {
             final control = find
                 .descendant(
                   of: find.byKey(ValueKey(key)),
@@ -1766,6 +2027,38 @@ void main() {
       await golden(tester, 'd4_after_done');
       await settle(tester);
     });
+
+    for (final phone in [false, true]) {
+      for (final dark in [true, false]) {
+        final name =
+            'd6_done_today_${phone ? 'phone' : 'desktop'}_'
+            '${dark ? 'dark' : 'light'}';
+        testWidgets('D6 the day\'s done tasks stay at the end of Today, '
+            'checked and quiet: $name', (tester) async {
+          await canonical(tester);
+          clock = DateTime(2026, 11, 19, 9, 30);
+          await tester.runAsync(
+            () => tasks.setDone(item('Call Arjun'), done: true),
+          );
+          clock = DateTime(2026, 11, 19, 9, 40);
+          await tester.runAsync(
+            () => tasks.setDone(item('Book the room'), done: true),
+          );
+          await pumpScreen(
+            tester,
+            phone: phone,
+            theme: dark ? KapyTheme.dark() : KapyTheme.light(),
+            size: phone ? null : const Size(760, 900),
+          );
+          await settle(tester);
+          await expectLater(
+            find.byType(TasksScreen),
+            matchesGoldenFile('goldens/tasks_$name.png'),
+          );
+          await settle(tester);
+        });
+      }
+    }
 
     testWidgets('D5 evening, done for today', (tester) async {
       await canonical(tester, at: DateTime(2026, 11, 19, 18, 40));

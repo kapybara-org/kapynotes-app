@@ -7,6 +7,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/platform.dart';
 import '../../core/theme.dart';
+import '../../core/toast.dart';
 import '../../data/blob_store.dart';
 import '../../data/note.dart';
 import '../../data/task_board.dart';
@@ -55,6 +56,9 @@ String? get doneShortcutLabel => !AppPlatform.hasPointer
 /// that chooses what to work on next, Do now, or the evening's close; then
 /// Up next and the rest of the list in the order tasks were added. There are
 /// no dates to plan by and no sort: the method needs the one fixed order.
+/// The parts of Today a row can be held in for a visit.
+enum _Part { upNext, rest, done }
+
 class TasksScreen extends StatefulWidget {
   const TasksScreen({
     super.key,
@@ -135,7 +139,7 @@ class TasksScreen extends StatefulWidget {
   State<TasksScreen> createState() => TasksScreenState();
 }
 
-class TasksScreenState extends State<TasksScreen> {
+class TasksScreenState extends State<TasksScreen> with WidgetsBindingObserver {
   late final _words = widget.words ?? TextEditingController();
 
   /// A phone's search over the page: the rows, the pair and Do now keep
@@ -143,10 +147,14 @@ class TasksScreenState extends State<TasksScreen> {
   final _search = TextEditingController();
   final _searchFocus = FocusNode(debugLabel: 'tasks-search');
 
-  /// Tasks a phone checked off on this visit, by the place they held in the
-  /// rest of the list, so their rows stay, struck through, until the screen
-  /// is left.
-  final Map<String, (int, TaskItem)> _ticked = {};
+  /// Rows ticked or unticked on this visit, by the part of the list they sat
+  /// in and their place there, so nothing moves under the pointer until the
+  /// visit ends.
+  final Map<String, (_Part, int)> _held = {};
+
+  /// The day this visit opened on. Today shows that day's done tasks until
+  /// the visit ends, even past midnight.
+  late DateTime _visitDay = _dayOf(_tasks.now());
 
   /// The note the add row writes into, once chosen in its picker; until then
   /// the sidebar's filter decides.
@@ -157,12 +165,17 @@ class TasksScreenState extends State<TasksScreen> {
   String? _sheetId;
   int _sheetIndex = 0;
   final _listFocus = FocusNode(debugLabel: 'tasks-list');
-  bool _notice = false;
-  Timer? _noticeTimer;
+  final _washKey = GlobalKey();
+  final _composerKey = GlobalKey();
+
+  /// A phone's add field rose with the keyboard, so the keyboard going away
+  /// puts the field away too.
+  bool _composerRose = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.addFocus.addListener(_focusChanged);
     widget.controller.sheetRequest.addListener(_takeSheetRequest);
     _search.addListener(_focusChanged);
@@ -204,15 +217,37 @@ class TasksScreenState extends State<TasksScreen> {
     if (oldWidget.filter != widget.filter) {
       _tasks.forgetPair();
       _targetChosen = false;
+      _endVisit();
     }
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.hidden) setState(_endVisit);
+  }
+
+  /// The Scaffold keeps the keyboard out of this page's insets, so a phone's
+  /// add field reads them from the view, and rebuilds as they change.
+  @override
+  void didChangeMetrics() {
+    if (widget.phone && widget.addFocus.hasFocus) setState(() {});
+  }
+
+  /// A visit ends when the app goes to the background or Today leaves for
+  /// another view: the rows held in place settle, and the day starts over.
+  void _endVisit() {
+    _held.clear();
+    _visitDay = _dayOf(_tasks.now());
+  }
+
+  static DateTime _dayOf(DateTime at) => DateTime(at.year, at.month, at.day);
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.controller.sheetRequest.removeListener(_takeSheetRequest);
     _listFocus.dispose();
     widget.addFocus.removeListener(_focusChanged);
-    _noticeTimer?.cancel();
     if (widget.words == null) _words.dispose();
     _search.dispose();
     _searchFocus.dispose();
@@ -322,7 +357,7 @@ class TasksScreenState extends State<TasksScreen> {
   /// shows.
   bool startEarly() {
     final pair = _pair;
-    if (pair == null || pair.pairsLeft == 0) return false;
+    if (pair == null) return false;
     _tasks.startWith(pair.left);
     return true;
   }
@@ -340,14 +375,29 @@ class TasksScreenState extends State<TasksScreen> {
     _words.clear();
     final id = await _tasks.add(words, noteId: _addInto);
     if (!mounted) return;
-    _noticeTimer?.cancel();
-    setState(() {
-      _washId = id;
-      _notice = true;
+    setState(() => _washId = id);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final row = _washKey.currentContext;
+      if (!mounted || row == null || _inSight(row)) return;
+      Toast.show(context, 'Added to the end of the list');
     });
-    _noticeTimer = Timer(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _notice = false);
-    });
+  }
+
+  /// Whether a row shows whole on screen, above the keyboard and a phone's
+  /// add field, so its wash alone says where a new task went.
+  bool _inSight(BuildContext row) {
+    final box = row.findRenderObject() as RenderBox?;
+    final view = Scrollable.maybeOf(row)?.context.findRenderObject();
+    if (box == null || view is! RenderBox) return true;
+    final screen = MediaQueryData.fromView(View.of(row));
+    final top = box.localToGlobal(Offset.zero).dy;
+    final viewTop = view.localToGlobal(Offset.zero).dy;
+    final fold = math.min(
+      viewTop + view.size.height,
+      screen.size.height - screen.viewInsets.bottom,
+    );
+    final cover = _composerKey.currentContext?.size?.height ?? 0;
+    return top >= viewTop && top + box.size.height <= fold - cover;
   }
 
   Future<void> _remove(TaskItem item) async {
@@ -502,6 +552,24 @@ class TasksScreenState extends State<TasksScreen> {
         },
       );
       final details = _detailsOf(board);
+      final addable = switch (_addTarget) {
+        final target? => _tasks.canEdit(target),
+        null => true,
+      };
+      if (widget.phone && !widget.sheet && !widget.filter.done && addable) {
+        return Stack(
+          fit: StackFit.passthrough,
+          children: [
+            page,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _composer(context, board),
+            ),
+          ],
+        );
+      }
       if (widget.phone || (widget.toolbar == null && details == null)) {
         return page;
       }
@@ -641,33 +709,42 @@ class TasksScreenState extends State<TasksScreen> {
   String? _labelOf(TaskBoard board, TaskItem item) =>
       board.isHome(item) ? null : widget.labelOf(item.note);
 
-  Widget _row(TaskBoard board, TaskItem item, {bool upNext = false}) {
+  /// A task's row. A row in [part] of Today holds its place once ticked or
+  /// unticked, so nothing moves under the pointer; an evening card's rows
+  /// pass no part.
+  Widget _row(TaskBoard board, TaskItem item, {_Part? part, int index = 0}) {
+    final done = item.line.done;
+    final onTick = _tasks.canEdit(item.note)
+        ? () => _tick(item, part, index)
+        : null;
+    final menu = done
+        ? const <TaskMenuChoice?>[]
+        : _menuFor(item, upNext: part == _Part.upNext);
+    final key = item.id == _washId ? _washKey : ValueKey(item.id);
     if (widget.phone) {
       return _PhoneTaskRow(
-        key: ValueKey(item.id),
+        key: key,
         item: item,
-        done: false,
+        done: done,
         now: _tasks.now(),
         label: _labelOf(board, item),
-        menu: _menuFor(item, upNext: upNext),
-        onTick: _tasks.canEdit(item.note)
-            ? () => _tick(item, done: true)
-            : null,
+        wash: item.id == _washId,
+        menu: menu,
+        onTick: onTick,
         onOpen: () => _openSheet(item),
         onKeep: () => _tasks.keep(item),
         onRemove: () => unawaited(_remove(item)),
       );
     }
     return _TaskRow(
-      key: ValueKey(item.id),
+      key: key,
       item: item,
+      done: done,
       now: _tasks.now(),
       label: _labelOf(board, item),
       wash: item.id == _washId,
-      menu: _menuFor(item, upNext: upNext),
-      onTick: _tasks.canEdit(item.note)
-          ? () => unawaited(_tasks.setDone(item, done: true))
-          : null,
+      menu: menu,
+      onTick: onTick,
       onOpenNote: () => widget.onOpenNote(item.note.id),
       onOpen: () => _openSheet(item),
       onKeep: () => _tasks.keep(item),
@@ -680,29 +757,32 @@ class TasksScreenState extends State<TasksScreen> {
     final phone = widget.phone;
     final now = _tasks.now();
     final open = _open(board);
-    final today = DateTime(now.year, now.month, now.day);
     final finished = [
-      for (final item in board.done.reversed)
+      for (final item in board.done)
         if ((_noteId == null || item.note.id == _noteId) &&
-            !item.doneAt!.isBefore(today))
+            !item.doneAt!.isBefore(_visitDay))
           item,
-    ];
+    ]..sort((a, b) => a.doneAt!.compareTo(b.doneAt!));
     final choice = _choice;
     final stage = choice.stage;
     String? labelOf(TaskItem item) => _labelOf(board, item);
     bool matches(TaskItem item) => _matches(board, item);
     final searching = _query.isNotEmpty;
-    final upNext = choice.upNext.where(matches).toList();
-    final phoneRest = [
-      if (phone)
-        for (final row in _phoneRest(board, choice.rest))
-          if (matches(row.$1)) row,
+    final onStage = <String>{
+      ...switch (stage) {
+        PairStage(:final left, :final right) => [left.id, right.id],
+        DoNowStage(:final item) => [item.id],
+        EveningStage(:final left) => [for (final item in left) item.id],
+        EmptyStage() => const <String>[],
+      },
+    };
+    List<(int, TaskItem)> shown(Iterable<TaskItem> live, _Part part) => [
+      for (final (index, item) in _place(board, live, part, onStage).indexed)
+        if (matches(item)) (index, item),
     ];
-    final rest = [
-      if (!phone)
-        for (final item in choice.rest)
-          if (matches(item)) item,
-    ];
+    final upNext = shown(choice.upNext, _Part.upNext);
+    final rest = shown(choice.rest, _Part.rest);
+    final done = shown(finished, _Part.done);
     final waiting = _waiting(board).where(matches).toList();
     final staged = switch (stage) {
       PairStage(:final left, :final right) => matches(left) || matches(right),
@@ -730,54 +810,30 @@ class TasksScreenState extends State<TasksScreen> {
                 style: taskText(13, 18, ink.quiet),
               ),
             )
-          else
-            _AddRow(
-              phone: phone,
-              controller: _words,
-              focus: widget.addFocus,
-              shortcut: widget.newTaskShortcut,
-              target: _addTarget,
-              labelOf: widget.labelOf,
-              choices: _pickerNotes(board),
-              onChoose: (noteId) => setState(() {
-                _target = noteId;
-                _targetChosen = true;
-              }),
-              onSubmit: () => unawaited(_add()),
-              onLeave: _listFocus.requestFocus,
-            ),
-          AnimatedSize(
-            duration: const Duration(milliseconds: 160),
-            child: _notice
-                ? Padding(
-                    padding: EdgeInsets.only(left: phone ? 14 : 12, top: 8),
-                    child: Text(
-                      'Added to the end of the list',
-                      key: const ValueKey('tasks-added-notice'),
-                      style: taskText(12, 16, ink.sage, 500),
-                    ),
-                  )
-                : const SizedBox(width: double.infinity),
-          ),
+          else if (!phone)
+            _addRow(board),
         ],
         const SizedBox(height: 14),
         if (searching &&
             !staged &&
             upNext.isEmpty &&
             rest.isEmpty &&
-            phoneRest.isEmpty &&
+            done.isEmpty &&
             waiting.isEmpty)
           _noMatch(ink),
         if (staged)
           switch (stage) {
             EmptyStage() => Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 0),
-              child: _ticked.isEmpty
-                  ? Text(
-                      'Nothing on the list.',
-                      style: handAccent(context.palette),
-                    )
-                  : null,
+              child: Text(
+                done.isNotEmpty
+                    ? 'Nothing left to do today.'
+                    : phone && !widget.sheet
+                    ? 'Nothing on the list. Tap + to add a task.'
+                    : 'Nothing on the list.',
+                key: const ValueKey('tasks-empty'),
+                style: handAccent(context.palette),
+              ),
             ),
             PairStage() => TaskPairCard(
               pair: stage,
@@ -816,15 +872,16 @@ class TasksScreenState extends State<TasksScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: TaskFinishedLine(
-              finished: finished,
+              count: finished.length,
               onPressed: widget.onOpenDone,
             ),
           ),
         if (upNext.isNotEmpty) ...[
           _Heading('Up next', phone: phone),
-          for (final item in upNext) _row(board, item, upNext: true),
+          for (final (index, item) in upNext)
+            _row(board, item, part: _Part.upNext, index: index),
         ],
-        if (rest.isNotEmpty || phoneRest.isNotEmpty)
+        if (rest.isNotEmpty || done.isNotEmpty)
           Container(
             margin: EdgeInsets.only(
               top: upNext.isEmpty ? (phone ? 12 : 12) : (phone ? 4 : 0),
@@ -838,24 +895,10 @@ class TasksScreenState extends State<TasksScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                for (final (item, done) in phoneRest)
-                  done
-                      ? _PhoneTaskRow(
-                          key: ValueKey(item.id),
-                          item: item,
-                          done: true,
-                          now: now,
-                          label: labelOf(item),
-                          menu: const [],
-                          onTick: _tasks.canEdit(item.note)
-                              ? () => _tick(item, done: false)
-                              : null,
-                          onOpen: () => _openSheet(item),
-                          onKeep: () {},
-                          onRemove: () {},
-                        )
-                      : _row(board, item),
-                for (final item in rest) _row(board, item),
+                for (final (index, item) in rest)
+                  _row(board, item, part: _Part.rest, index: index),
+                for (final (index, item) in done)
+                  _row(board, item, part: _Part.done, index: index),
               ],
             ),
           ),
@@ -871,30 +914,90 @@ class TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  /// The rest of the list, with the tasks a phone checked off on this visit
-  /// back in the places they held.
-  List<(TaskItem, bool)> _phoneRest(TaskBoard board, List<TaskItem> rest) {
-    final rows = [for (final item in rest) (item, false)];
-    final ids = {for (final item in board.open) item.id};
-    final ticked = _ticked.values.toList()..sort((a, b) => a.$1 - b.$1);
-    for (final (index, item) in ticked) {
-      if (ids.contains(item.id)) continue;
-      rows.insert(math.min(index, rows.length), (item, true));
+  /// [live]'s rows for [part] of Today, with the rows held on this visit back
+  /// in the places they held, as they are now. A held task that the pair or
+  /// Do now shows stays there instead.
+  List<TaskItem> _place(
+    TaskBoard board,
+    Iterable<TaskItem> live,
+    _Part part,
+    Set<String> staged,
+  ) {
+    final rows = [
+      for (final item in live)
+        if (!_held.containsKey(item.id)) item,
+    ];
+    final held = [
+      for (final MapEntry(key: id, value: (at, index)) in _held.entries)
+        if (at == part) (index, id),
+    ]..sort((a, b) => a.$1 - b.$1);
+    for (final (index, id) in held) {
+      final item = board.byId(id);
+      if (item == null || staged.contains(id)) continue;
+      rows.insert(math.min(index, rows.length), item);
     }
     return rows;
   }
 
-  void _tick(TaskItem item, {required bool done}) {
-    final rest = _choice.rest;
-    setState(() {
-      if (done) {
-        final at = rest.indexWhere((row) => row.id == item.id);
-        _ticked[item.id] = (at < 0 ? 0 : at, item);
-      } else {
-        _ticked.remove(item.id);
-      }
-    });
-    unawaited(_tasks.setDone(item, done: done));
+  void _tick(TaskItem item, _Part? part, int index) {
+    if (part != null) {
+      setState(() => _held.putIfAbsent(item.id, () => (part, index)));
+    }
+    unawaited(_tasks.setDone(item, done: !item.line.done));
+  }
+
+  Widget _addRow(TaskBoard board) => _AddRow(
+    phone: widget.phone,
+    controller: _words,
+    focus: widget.addFocus,
+    shortcut: widget.newTaskShortcut,
+    target: _addTarget,
+    labelOf: widget.labelOf,
+    choices: _pickerNotes(board),
+    onChoose: (noteId) => setState(() {
+      _target = noteId;
+      _targetChosen = true;
+    }),
+    onSubmit: () => unawaited(_add()),
+    onLeave: _listFocus.requestFocus,
+  );
+
+  /// A phone's add field: docked over the keyboard while a task is being
+  /// written, so the list never moves for it. It stays built, out of sight,
+  /// so the + can focus it.
+  Widget _composer(BuildContext context, TaskBoard board) {
+    final focused = widget.addFocus.hasFocus;
+    final keyboard = MediaQueryData.fromView(
+      View.of(context),
+    ).viewInsets.bottom;
+    if (focused && keyboard > 0) _composerRose = true;
+    if (focused && _composerRose && keyboard == 0) {
+      _composerRose = false;
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => widget.addFocus.unfocus(),
+      );
+    }
+    if (!focused) _composerRose = false;
+    return Offstage(
+      offstage: !focused,
+      child: Container(
+        key: _composerKey,
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+        decoration: BoxDecoration(
+          color: context.palette.paperColor,
+          border: Border(
+            top: BorderSide(
+              color: TaskInk.of(context).hairline,
+              width: AppHairline.of(context),
+            ),
+          ),
+        ),
+        child: TapRegion(
+          onTapOutside: (_) => widget.addFocus.unfocus(),
+          child: _addRow(board),
+        ),
+      ),
+    );
   }
 
   /// The notes the add row can write into: the ones with tasks that this
@@ -1488,6 +1591,7 @@ class _TaskRow extends StatefulWidget {
   const _TaskRow({
     super.key,
     required this.item,
+    required this.done,
     required this.now,
     required this.label,
     required this.wash,
@@ -1500,6 +1604,9 @@ class _TaskRow extends StatefulWidget {
   });
 
   final TaskItem item;
+
+  /// Ticked today: checked, in the quiet ink, with nothing to do but untick.
+  final bool done;
   final DateTime now;
 
   /// The note's name on its mark; null for a task with no note.
@@ -1532,7 +1639,9 @@ class _TaskRowState extends State<_TaskRow> {
     final ink = TaskInk.of(context);
     final item = widget.item;
     final label = widget.label;
-    final stale = taskIsStale(item, widget.now);
+    final done = widget.done;
+    final stale = !done && taskIsStale(item, widget.now);
+    final hovered = _hovered && !done;
     final quiet = taskText(12, 16, ink.quiet);
     final touch = !AppPlatform.hasPointer;
     final row = ConstrainedBox(
@@ -1550,7 +1659,7 @@ class _TaskRowState extends State<_TaskRow> {
                     : item.words,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: taskText(13, 18, stale ? ink.quiet : ink.text),
+                style: taskText(13, 18, done || stale ? ink.quiet : ink.text),
               ),
             );
             final scaler = MediaQuery.textScalerOf(context);
@@ -1584,7 +1693,11 @@ class _TaskRowState extends State<_TaskRow> {
             );
             return Row(
               children: [
-                _RowBox(onPressed: widget.onTick, label: item.words),
+                _RowBox(
+                  onPressed: widget.onTick,
+                  label: item.words,
+                  checked: done,
+                ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: under || below
@@ -1608,14 +1721,14 @@ class _TaskRowState extends State<_TaskRow> {
                 ),
                 if (stale) ...[
                   if (!below) ...[const SizedBox(width: 10), keep],
-                ] else if (_hovered) ...[
+                ] else if (hovered) ...[
                   const SizedBox(width: 10),
                   Text(
                     'Added ${SidebarTimestamp.shortDay(DateTime.fromMillisecondsSinceEpoch(item.entry.addedAt), now: widget.now)}',
                     style: quiet,
                   ),
                 ],
-                if (_hovered && !stale) ...[
+                if (hovered && !stale) ...[
                   const SizedBox(width: 8),
                   Tooltip(
                     message: 'More',
@@ -1647,7 +1760,7 @@ class _TaskRowState extends State<_TaskRow> {
                     ),
                   ),
                 ],
-                if (item.entry.enteredAt != 0 && !stale && !_hovered)
+                if (item.entry.enteredAt != 0 && !stale && !hovered && !done)
                   Tooltip(
                     message: 'Not finished, moved to the end',
                     child: Padding(
@@ -1659,7 +1772,7 @@ class _TaskRowState extends State<_TaskRow> {
                       ),
                     ),
                   ),
-                if (!_hovered && !stale) TaskDetailsIcon(item: item),
+                if (!hovered && !stale) TaskDetailsIcon(item: item),
                 const SizedBox(width: 16),
                 if (!under)
                   SizedBox(
@@ -1690,7 +1803,9 @@ class _TaskRowState extends State<_TaskRow> {
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
         child: GestureDetector(
-          onSecondaryTapUp: (details) => _openMenu(details.globalPosition),
+          onSecondaryTapUp: widget.menu.isEmpty
+              ? null
+              : (details) => _openMenu(details.globalPosition),
           child: TweenAnimationBuilder<double>(
             tween: Tween(begin: widget.wash ? 1 : 0, end: 0),
             duration: const Duration(seconds: 2),
@@ -1703,7 +1818,7 @@ class _TaskRowState extends State<_TaskRow> {
                         context.palette.tonalBackground,
                         wash,
                       )
-                    : _hovered
+                    : hovered
                     ? ink.rowHover
                     : null,
                 borderRadius: BorderRadius.circular(6),
@@ -1723,6 +1838,7 @@ class _RowBox extends StatelessWidget {
   const _RowBox({
     required this.onPressed,
     required this.label,
+    this.checked = false,
     this.phone = false,
     this.boxKey,
   });
@@ -1731,6 +1847,7 @@ class _RowBox extends StatelessWidget {
   final Key? boxKey;
   final VoidCallback? onPressed;
   final String label;
+  final bool checked;
   final bool phone;
 
   @override
@@ -1738,7 +1855,7 @@ class _RowBox extends StatelessWidget {
     final ink = TaskInk.of(context);
     final size = phone ? 20.0 : 16.0;
     return Semantics(
-      checked: false,
+      checked: checked,
       label: label,
       button: true,
       enabled: onPressed != null,
@@ -1759,12 +1876,19 @@ class _RowBox extends StatelessWidget {
                 width: size,
                 height: size,
                 decoration: BoxDecoration(
-                  border: Border.all(
-                    color: ink.quiet,
-                    width: phone ? 1.5 : 1.25,
-                  ),
+                  color: checked ? context.palette.accentFill : null,
+                  border: checked
+                      ? null
+                      : Border.all(color: ink.quiet, width: phone ? 1.5 : 1.25),
                   borderRadius: BorderRadius.circular(phone ? 5 : 4),
                 ),
+                child: checked
+                    ? KapyIcon(
+                        KapyIcons.checkRounded,
+                        size: phone ? 14 : 12,
+                        color: context.palette.onAccent,
+                      )
+                    : null,
               ),
             ),
           ),
@@ -2031,6 +2155,7 @@ class _PhoneTaskRow extends StatelessWidget {
     required this.done,
     required this.now,
     required this.label,
+    required this.wash,
     required this.menu,
     required this.onTick,
     required this.onOpen,
@@ -2042,6 +2167,9 @@ class _PhoneTaskRow extends StatelessWidget {
   final bool done;
   final DateTime now;
   final String? label;
+
+  /// Just added: a sage wash that fades.
+  final bool wash;
   final List<TaskMenuChoice?> menu;
 
   /// Null on a note shared to view only: the box is faint and takes no tap.
@@ -2053,7 +2181,6 @@ class _PhoneTaskRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
-    final palette = context.palette;
     final stale = !done && taskIsStale(item, now);
     final meta = taskText(13, 18, ink.quiet);
     Widget link(String text, VoidCallback onPressed, {bool strong = false}) =>
@@ -2087,113 +2214,87 @@ class _PhoneTaskRow extends StatelessWidget {
         for (final entry in menu.nonNulls)
           CustomSemanticsAction(label: entry.label): entry.onSelected,
       },
-      child: InkWell(
-        key: ValueKey('phone-task-${item.id}'),
-        onTap: onOpen,
-        child: GestureDetector(
-          onLongPressStart: done || menu.isEmpty
-              ? null
-              : (details) => unawaited(
-                  _showTaskMenu(
-                    context,
-                    details.globalPosition,
-                    menu,
-                    phone: true,
-                  ),
-                ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Row(
-              children: [
-                if (done)
-                  Semantics(
-                    checked: true,
-                    label: item.words,
-                    button: true,
-                    excludeSemantics: true,
-                    onTap: onTick,
-                    child: GestureDetector(
-                      key: ValueKey('phone-task-box-${item.id}'),
-                      behavior: HitTestBehavior.opaque,
-                      onTap: onTick,
-                      child: SizedBox.square(
-                        dimension: 44,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Opacity(
-                            opacity: onTick == null ? lockedBoxOpacity : 1,
-                            child: Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: context.palette.accentFill,
-                                borderRadius: BorderRadius.circular(5),
-                              ),
-                              child: KapyIcon(
-                                KapyIcons.checkRounded,
-                                size: 14,
-                                color: palette.onAccent,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: wash ? 1 : 0, end: 0),
+        duration: const Duration(seconds: 2),
+        curve: Curves.easeIn,
+        builder: (context, wash, child) => DecoratedBox(
+          decoration: BoxDecoration(
+            color: wash > 0
+                ? context.palette.tonalBackground.withValues(alpha: wash)
+                : null,
+            borderRadius: BorderRadius.circular(AppRadii.control),
+          ),
+          child: child,
+        ),
+        child: InkWell(
+          key: ValueKey('phone-task-${item.id}'),
+          onTap: onOpen,
+          child: GestureDetector(
+            onLongPressStart: done || menu.isEmpty
+                ? null
+                : (details) => unawaited(
+                    _showTaskMenu(
+                      context,
+                      details.globalPosition,
+                      menu,
+                      phone: true,
                     ),
-                  )
-                else
+                  ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
                   _RowBox(
                     boxKey: ValueKey('phone-task-box-${item.id}'),
                     onPressed: onTick,
                     label: item.words,
+                    checked: done,
                     phone: true,
                   ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          item.words,
-                          style:
-                              taskText(
-                                16,
-                                22,
-                                done || stale ? ink.quiet : ink.text,
-                              ).copyWith(
-                                decoration: done
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                              ),
-                        ),
-                        Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 6,
-                          children: [
-                            Text(label ?? 'No note', style: meta),
-                            if (item.entry.enteredAt != 0 && !done)
-                              Tooltip(
-                                message: 'Not finished, moved to the end',
-                                child: KapyIcon(
-                                  KapyIcons.undoRounded,
-                                  size: 14,
-                                  color: ink.quiet,
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            item.words,
+                            style: taskText(
+                              16,
+                              22,
+                              done || stale ? ink.quiet : ink.text,
+                            ),
+                          ),
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 6,
+                            children: [
+                              Text(label ?? 'No note', style: meta),
+                              if (item.entry.enteredAt != 0 && !done)
+                                Tooltip(
+                                  message: 'Not finished, moved to the end',
+                                  child: KapyIcon(
+                                    KapyIcons.undoRounded,
+                                    size: 14,
+                                    color: ink.quiet,
+                                  ),
                                 ),
-                              ),
-                            if (stale) ...[
-                              Text('·  Still want this?', style: meta),
-                              link('Keep', onKeep, strong: true),
-                              link('Remove', onRemove),
+                              if (stale) ...[
+                                Text('·  Still want this?', style: meta),
+                                link('Keep', onKeep, strong: true),
+                                link('Remove', onRemove),
+                              ],
                             ],
-                          ],
-                        ),
-                      ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                TaskDetailsIcon(item: item),
-              ],
+                  TaskDetailsIcon(item: item),
+                ],
+              ),
             ),
           ),
         ),

@@ -77,12 +77,17 @@ class DocumentEvaluation {
   /// counted nothing. It is worked out only when asked, since a note is read
   /// on every keystroke and the hover is seen rarely.
   final String Function()? describeTotal;
+
+  /// Whether the total left out a line it could not join, which its readout
+  /// marks as a line's result is marked.
+  final bool totalLeavesOut;
   final DigitGrouping grouping;
 
   const DocumentEvaluation({
     required this.results,
     required this.total,
     this.describeTotal,
+    this.totalLeavesOut = false,
     this.grouping = DigitGrouping.international,
   });
 
@@ -107,11 +112,15 @@ class _EvaluatedLine {
   /// aggregate such as `total` or `prev`.
   final bool readsAggregate;
 
+  /// Whether the line counts things it names, as `7 nights` does.
+  final bool counts;
+
   const _EvaluatedLine({
     required this.result,
     required this.isAggregateReadout,
     this.node,
     this.readsAggregate = false,
+    this.counts = false,
   });
 
   /// The same outcome, marked as worked out from the total.
@@ -120,6 +129,16 @@ class _EvaluatedLine {
     isAggregateReadout: isAggregateReadout,
     node: node,
     readsAggregate: true,
+    counts: counts,
+  );
+
+  /// The same outcome, marked as a count of what the line names.
+  _EvaluatedLine counting() => _EvaluatedLine(
+    result: result,
+    isAggregateReadout: isAggregateReadout,
+    node: node,
+    readsAggregate: readsAggregate,
+    counts: true,
   );
 
   /// The same outcome on line [line].
@@ -135,6 +154,7 @@ class _EvaluatedLine {
     isAggregateReadout: isAggregateReadout,
     node: node,
     readsAggregate: readsAggregate,
+    counts: counts,
   );
 }
 
@@ -206,9 +226,10 @@ class CalcEngine {
     );
     final results = <int, LineResult>{};
     final pass = _memo.begin(body);
+    final cover = _coverByTotal(pass.lines, titled: titled);
 
     for (var i = 0; i < pass.lines.length; i++) {
-      final evaluated = _evaluateLine(pass, i, evaluator, scope);
+      final evaluated = _evaluateLine(pass, i, evaluator, scope, cover[i]);
       if (evaluated == null || (titled && i == 0)) continue;
       results[i] = evaluated.result;
       // Aggregate readouts, including conversions such as `total to usd`,
@@ -224,6 +245,7 @@ class CalcEngine {
             owner: scope.liveOwner,
             isVariable: scope.defines,
           ),
+          counts: evaluated.counts,
         );
       }
     }
@@ -236,10 +258,11 @@ class CalcEngine {
       final result = results[line];
       if (result != null) results[line] = result.withCount(note);
     });
+    final leavesOut = scope.leavesOut;
     if (describe != null) {
       results.updateAll(
         (_, result) => result.isTotal
-            ? result.withCount(CountNote.lazy(describe))
+            ? result.withCount(CountNote.lazy(describe, mark: leavesOut))
             : result,
       );
     }
@@ -249,6 +272,7 @@ class CalcEngine {
           ? null
           : scope.runningSum,
       describeTotal: describe,
+      totalLeavesOut: leavesOut,
       grouping: grouping,
     );
   }
@@ -272,7 +296,9 @@ class CalcEngine {
     final rates = <String>[];
     if (unit != null && unit.isCurrency) {
       for (final entry in counted) {
-        final other = (entry.amount as QuantityValue).unit;
+        final amount = entry.amount;
+        if (amount is! QuantityValue) continue;
+        final other = amount.unit;
         if (other == unit || !converted.add(other.format())) continue;
         final one = Arith.convert(QuantityValue(1, unit), other);
         final rate = (one as QuantityValue).value
@@ -332,20 +358,28 @@ class CalcEngine {
 
   /// Line [index] of [pass]: an earlier reading of the same text where it
   /// holds in [scope], otherwise a fresh one, remembered for next time.
+  /// [cover] is whether a total line closes the line's block.
   _EvaluatedLine? _evaluateLine(
     _Pass pass,
     int index,
     Evaluator evaluator,
     CalcScope scope,
+    _Cover cover,
   ) {
-    final reading = _memo.reuse(pass, index, scope);
+    final reading = _memo.reuse(pass, index, scope, cover);
     if (reading != null) return reading.at(index);
     scope.beginTrace();
-    var evaluated = _readLine(pass.lines[index], index, evaluator, scope);
+    var evaluated = _readLine(
+      pass.lines[index],
+      index,
+      evaluator,
+      scope,
+      cover,
+    );
     if (evaluated != null && scope.tracedReadsAggregate) {
       evaluated = evaluated.readingAggregate();
     }
-    _memo.remember(pass, index, scope.endTrace(), evaluated);
+    _memo.remember(pass, index, cover, scope.endTrace(), evaluated);
     return evaluated;
   }
 
@@ -354,6 +388,7 @@ class CalcEngine {
     int index,
     Evaluator evaluator,
     CalcScope scope,
+    _Cover cover,
   ) {
     final prepared = _prepare(rawLine, scope);
     if (prepared == null) return null;
@@ -363,7 +398,39 @@ class CalcEngine {
         _labelledAssignment(source, index, evaluator, scope) ??
         _explicitLabel(source, index, evaluator, scope) ??
         _labelledArithmetic(source, index, evaluator, scope) ??
-        _labelledAmount(source, index, evaluator, scope);
+        _labelledAmount(source, index, evaluator, scope, cover: cover);
+  }
+
+  /// A line that reads the note's total, as `total`, `= sum` or
+  /// `total in eur` do.
+  static final _totalLine = RegExp(
+    r'^=?\s*(?:total|sum)(?:\s+(?:in|to|as|into)\s+\S+)?\s*=?$',
+    caseSensitive: false,
+  );
+
+  /// For each line, whether a total line closes the block it is in: comes
+  /// after it with no blank line between. With [titled], the line under the
+  /// title starts a block, since the title is a heading of its own.
+  static List<_Cover> _coverByTotal(
+    List<String> lines, {
+    required bool titled,
+  }) {
+    final cover = List.filled(lines.length, _Cover.none);
+    var closed = false;
+    for (var i = lines.length - 1; i >= 0; i--) {
+      final line = lines[i].trim();
+      if (line.isEmpty) {
+        closed = false;
+        continue;
+      }
+      if (closed) {
+        cover[i] = i == 0 || (titled && i == 1) || lines[i - 1].trim().isEmpty
+            ? _Cover.top
+            : _Cover.inside;
+      }
+      if (line.length <= 24 && _totalLine.hasMatch(line)) closed = true;
+    }
+    return cover;
   }
 
   /// Reads `mailboxes = domains * 5 mail boxes` or `fee: $2/mailbox`: an
@@ -617,12 +684,18 @@ class CalcEngine {
   ///
   /// [head] is an assignment the amount is given to, `name =`, kept in front
   /// of whatever is evaluated.
+  ///
+  /// The one place a bare trailing number is taken is a block a total line
+  /// closes, [cover]: there `rent 1200` above `total` is an amount in the
+  /// list. Even there a label that ends the way a sentence, a date or a
+  /// numbering does, `Meeting at 3`, `Nov 27`, `Chapter 12`, is refused.
   _EvaluatedLine? _labelledAmount(
     String source,
     int index,
     Evaluator evaluator,
     CalcScope scope, {
     String head = '',
+    _Cover cover = _Cover.none,
   }) {
     final tokens = Lexer(source)
         .tokenize()
@@ -649,9 +722,77 @@ class CalcEngine {
       if (kind == ResultKind.currency || kind == ResultKind.unit) {
         return evaluated;
       }
+      if (cover != _Cover.none &&
+          evaluated.result.value is NumberValue &&
+          _namesAPlainAmount(tokens, i, scope, heading: cover == _Cover.top)) {
+        return evaluated;
+      }
     }
     return null;
   }
+
+  /// Whether the words before [at] in [tokens] name the plain number from
+  /// [at] on: only words before it, the last of them none that would make
+  /// the number a time, a date or a place in a sequence.
+  bool _namesAPlainAmount(
+    List<Token> tokens,
+    int at,
+    CalcScope scope, {
+    required bool heading,
+  }) {
+    if (tokens[at].type != TokenType.number ||
+        (heading && _isThisYearish(tokens[at].text, scope))) {
+      return false;
+    }
+    for (final token in tokens.skip(at)) {
+      if (token.type != TokenType.number &&
+          token.type != TokenType.identifier) {
+        return false;
+      }
+    }
+    Token? last;
+    for (final token in tokens.take(at)) {
+      if (token.type == TokenType.identifier &&
+          !token.text.contains(RegExp(r'[0-9]'))) {
+        last = token;
+      } else if (token.type != TokenType.operator ||
+          !const ['-', '−'].contains(token.text)) {
+        return false;
+      }
+    }
+    return last != null && !_notAmountLabel(last.text.toLowerCase());
+  }
+
+  /// Last words of a label that make the number after it something other
+  /// than an amount: a time or a date (`at 3`, `Nov 27`, `Monday 4`), or a
+  /// place in a sequence (`Chapter 12`, `Room 4`).
+  static bool _notAmountLabel(String word) =>
+      _sequenceWords.contains(word) || _dateWord.hasMatch(word);
+
+  /// Whether [text] is a year within five of this one, which on the first
+  /// line of a block is a heading, `Goa trip 2026`, rather than an amount.
+  /// `rent 2000` there, and any amount further down, is still read. The
+  /// answer moves with the clock, so the line is not remembered.
+  bool _isThisYearish(String text, CalcScope scope) {
+    if (!RegExp(r'^[0-9]{4}$').hasMatch(text)) return false;
+    scope.markUnrepeatable();
+    return (int.parse(text) - _now().year).abs() <= 5;
+  }
+
+  static final _sequenceWords =
+      ('at on by in from to until till since before after around about for of '
+              'chapter page room step day week month year part version item '
+              'line no number level floor seat table gate platform row round '
+              'phase episode season lesson section scene question')
+          .split(' ')
+          .toSet();
+
+  static final _dateWord = RegExp(
+    r'^(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|'
+    r'aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|'
+    r'mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:rs?(?:day)?)?|'
+    r'fri(?:day)?|sat(?:urday)?|sun(?:day)?)$',
+  );
 
   static bool _couldStartAmount(Token token, Token? next) {
     if (token.type == TokenType.number || token.type == TokenType.lparen) {
@@ -788,7 +929,7 @@ class CalcEngine {
     // A comparison that happens to be followed by words is not a quantity.
     final kind = evaluated.result.value.kind;
     if (kind == ResultKind.boolean || kind == ResultKind.other) return null;
-    return evaluated;
+    return evaluated.counting();
   }
 
   /// Whether [token] is the end of something with an amount in it, and so
@@ -936,17 +1077,24 @@ class CalcEngine {
   }
 }
 
+/// Where a total line closing a line's block puts the line: in no such
+/// block, on the block's first line, or further down it.
+enum _Cover { none, top, inside }
+
 /// One reading of a line's text in one scope: what the line read and wrote
 /// there, and what it gave.
 class _Reading {
   final ScopeTrace trace;
+
+  /// Where a total line closing the line's block put it when it was read.
+  final _Cover cover;
   _EvaluatedLine? outcome;
 
   /// The last pass that used this reading, which is what [_LineMemo] forgets
   /// by.
   int used;
 
-  _Reading(this.trace, this.outcome, this.used);
+  _Reading(this.trace, this.cover, this.outcome, this.used);
 
   /// The outcome, as line [index] of the note.
   _EvaluatedLine? at(int index) {
@@ -1064,15 +1212,18 @@ class _LineMemo {
     return (head: head, tail: tail, from: from, to: to);
   }
 
-  /// A reading of line [index] that holds in [scope], already redone there.
-  _Reading? reuse(_Pass pass, int index, CalcScope scope) {
+  /// A reading of line [index] that holds in [scope], already redone there,
+  /// and was read under the same [cover].
+  _Reading? reuse(_Pass pass, int index, CalcScope scope, _Cover cover) {
     final hint = pass.readings[index];
-    if (hint != null && scope.reuse(hint.trace)) {
+    if (hint != null && hint.cover == cover && scope.reuse(hint.trace)) {
       return hint..used = pass.number;
     }
     pass.readings[index] = null;
     for (final reading in _readings[pass.lines[index]] ?? const <_Reading>[]) {
-      if (!identical(reading, hint) && scope.reuse(reading.trace)) {
+      if (!identical(reading, hint) &&
+          reading.cover == cover &&
+          scope.reuse(reading.trace)) {
         pass.readings[index] = reading;
         return reading..used = pass.number;
       }
@@ -1085,11 +1236,12 @@ class _LineMemo {
   void remember(
     _Pass pass,
     int index,
+    _Cover cover,
     ScopeTrace? trace,
     _EvaluatedLine? outcome,
   ) {
     if (trace == null) return;
-    final reading = _Reading(trace, outcome, pass.number);
+    final reading = _Reading(trace, cover, outcome, pass.number);
     final readings = _readings[pass.lines[index]] ??= [];
     if (readings.length < _readingsPerText) {
       _size++;

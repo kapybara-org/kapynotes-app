@@ -476,7 +476,7 @@ void main() {
       (tester) async {
         await pumpPhone(tester, editable: editable, narrowed: true);
         expect(
-          find.byKey(const ValueKey('tasks-add-row')),
+          find.byKey(const ValueKey('tasks-add-row'), skipOffstage: false),
           editable ? findsOneWidget : findsNothing,
         );
         expect(

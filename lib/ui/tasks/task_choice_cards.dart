@@ -251,7 +251,7 @@ class _TaskPairCardState extends State<TaskPairCard> {
         phone: phone,
       ),
       keyLabel: '←',
-      marked: _startLit && !last,
+      marked: _startLit,
       onPressed: widget.onKeep,
       phone: phone,
     );
@@ -273,6 +273,30 @@ class _TaskPairCardState extends State<TaskPairCard> {
     final quiet = phone
         ? taskText(13, 18, ink.quiet)
         : taskText(12, 16, ink.quiet);
+    Widget count(String label, {required bool pie}) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (pie) ...[
+          ExcludeSemantics(
+            child: ChecklistPie(
+              done: pair.seen,
+              total: pair.total,
+              fill: ink.quiet,
+              check: ink.card,
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Text(
+          label,
+          style: taskText(
+            12,
+            16,
+            ink.quiet,
+          ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+        ),
+      ],
+    );
     final head = Row(
       children: [
         Expanded(
@@ -287,28 +311,25 @@ class _TaskPairCardState extends State<TaskPairCard> {
           ),
         ),
         const SizedBox(width: 8),
-        if (!last) ...[
-          ExcludeSemantics(
-            child: ChecklistPie(
-              done: pair.seen,
-              total: pair.total,
-              fill: ink.quiet,
-              check: ink.card,
+        Stack(
+          alignment: Alignment.centerRight,
+          children: [
+            Visibility(
+              visible: false,
+              maintainState: true,
+              maintainAnimation: true,
+              maintainSize: true,
+              child: count('${pair.total} of ${pair.total} seen', pie: true),
             ),
-          ),
-          const SizedBox(width: 6),
-        ],
-        Text(
-          last
-              ? 'Last one'
-              : pair.joined
-              ? '${pair.seen} of ${pair.total} new'
-              : '${pair.seen} of ${pair.total} seen',
-          style: taskText(
-            12,
-            16,
-            ink.quiet,
-          ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
+            count(
+              last
+                  ? 'Last one'
+                  : pair.joined
+                  ? '${pair.seen} of ${pair.total} new'
+                  : '${pair.seen} of ${pair.total} seen',
+              pie: !last,
+            ),
+          ],
         ),
       ],
     );
@@ -322,28 +343,26 @@ class _TaskPairCardState extends State<TaskPairCard> {
     );
     final foot = Text(
       last
-          ? 'Your pick becomes Do now.'
+          ? 'Nothing comes off your list. Your pick becomes Do now.'
           : explain
           ? 'Nothing comes off your list.'
           : 'Nothing comes off your list. Earlier picks wait in Up next.',
       style: quiet,
     );
-    final start = last
-        ? null
-        : _StopButton(
-            task: pair.left.words,
-            onPressed: widget.onStart,
-            onLit: (lit) {
-              if (lit != _startLit) setState(() => _startLit = lit);
-            },
-            phone: phone,
-          );
+    final start = _StopButton(
+      task: pair.left.words,
+      onPressed: widget.onStart,
+      onLit: (lit) {
+        if (lit != _startLit) setState(() => _startLit = lit);
+      },
+      phone: phone,
+    );
     final done = widget.justDone;
     return Container(
       key: const ValueKey('tasks-pair'),
       padding: phone
-          ? const EdgeInsets.fromLTRB(16, 14, 16, 16)
-          : const EdgeInsets.all(16),
+          ? const EdgeInsets.fromLTRB(16, 14, 16, 3)
+          : const EdgeInsets.fromLTRB(16, 16, 16, 10),
       decoration: BoxDecoration(
         color: ink.card,
         borderRadius: BorderRadius.circular(phone ? 12 : 10),
@@ -425,30 +444,11 @@ class _TaskPairCardState extends State<TaskPairCard> {
                   spacing: phone ? 0 : 4,
                   children: [left, or, right],
                 ),
-              if (beside)
-                Row(
-                  children: [
-                    Expanded(child: foot),
-                    if (start != null) ...[
-                      const SizedBox(width: 12),
-                      Flexible(
-                        child: Align(
-                          alignment: Alignment.centerRight,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 340),
-                            child: start,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                )
-              else
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  spacing: phone ? 8 : 10,
-                  children: [foot, ?start],
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: phone ? 0 : 4,
+                children: [foot, start],
+              ),
             ],
           );
         },
@@ -601,9 +601,9 @@ class TaskKey extends StatelessWidget {
   }
 }
 
-/// "Stop choosing and start" and the task's name: your pick so far becomes
-/// Do now. The whole name wraps to a second line before anything is cut,
-/// and with larger text it is never cut.
+/// "Stop choosing", a quiet line under the foot: your pick so far becomes Do
+/// now. Screen readers hear the task it starts. On a phone it keeps a 44 pt
+/// target around its one small line.
 /// While it is hovered or focused, [onLit] has the pair outline that task.
 class _StopButton extends StatefulWidget {
   const _StopButton({
@@ -638,11 +638,10 @@ class _StopButtonState extends State<_StopButton> {
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
     final phone = widget.phone;
-    final label = 'Stop choosing and start ${widget.task}';
-    final radius = phone ? 8.0 : 6.0;
+    final color = _hovered || _focused ? ink.secondary : ink.quiet;
     return Semantics(
       button: true,
-      label: label,
+      label: 'Stop choosing and start ${widget.task}',
       excludeSemantics: true,
       onTap: widget.onPressed,
       child: Actions(
@@ -665,47 +664,45 @@ class _StopButtonState extends State<_StopButton> {
               behavior: HitTestBehavior.opaque,
               onTap: widget.onPressed,
               child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: phone ? 44 : 32),
-                child: Center(
+                constraints: BoxConstraints(minHeight: phone ? 44 : 28),
+                child: Align(
+                  alignment: Alignment.centerLeft,
                   widthFactor: 1,
                   heightFactor: 1,
-                  child: Container(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: phone ? 14 : 12,
-                      vertical: phone ? 8 : 7,
-                    ),
-                    decoration: BoxDecoration(
-                      color: ink.lifted,
-                      borderRadius: BorderRadius.circular(radius),
-                    ),
-                    foregroundDecoration: _focused
-                        ? BoxDecoration(
-                            border: Border.all(color: ink.sage),
-                            borderRadius: BorderRadius.circular(radius),
-                          )
-                        : taskContrastEdge(context, radius),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            label,
-                            maxLines:
-                                MediaQuery.textScalerOf(context).scale(1) > 1
-                                ? null
-                                : 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: phone
-                                ? taskText(15, 20, ink.text, 500)
-                                : taskText(13, 18, ink.text, 460),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      if (_focused)
+                        Positioned(
+                          left: -6,
+                          right: -6,
+                          top: -3,
+                          bottom: -3,
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              border: Border.all(color: ink.sage),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ),
                         ),
-                        if (!phone && AppPlatform.hasPointer) ...[
-                          const SizedBox(width: 8),
-                          const TaskKey('↵'),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'Stop choosing',
+                              style: phone
+                                  ? taskText(13, 18, color)
+                                  : taskText(12, 16, color),
+                            ),
+                          ),
+                          if (!phone && AppPlatform.hasPointer) ...[
+                            const SizedBox(width: 8),
+                            const TaskKey('↵'),
+                          ],
                         ],
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1087,21 +1084,22 @@ class TaskEveningCard extends StatelessWidget {
   }
 }
 
-/// "5 finished today" and their names, under the evening card; opens Done.
+/// "5 finished today" under the evening card; opens Done. The tasks
+/// themselves are the done rows at the end of Today.
 class TaskFinishedLine extends StatelessWidget {
   const TaskFinishedLine({
     super.key,
-    required this.finished,
+    required this.count,
     required this.onPressed,
   });
 
-  final List<TaskItem> finished;
+  final int count;
   final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
     final ink = TaskInk.of(context);
-    final title = '${finished.length} finished today';
+    final title = '$count finished today';
     return Semantics(
       button: true,
       label: title,
@@ -1121,16 +1119,7 @@ class TaskFinishedLine extends StatelessWidget {
               KapyIcon(KapyIcons.checkRounded, size: 16, color: ink.quiet),
               const SizedBox(width: 10),
               Text(title, style: taskText(13, 18, ink.secondary, 460)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  [for (final item in finished) item.words].join(', '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: taskText(12, 16, ink.quiet),
-                ),
-              ),
-              const SizedBox(width: 10),
+              const Spacer(),
               KapyIcon(
                 KapyIcons.chevronRightRounded,
                 size: 14,

@@ -1082,6 +1082,27 @@ void main() {
     );
   });
 
+  // Plain numbers in a total in money, `rent 1200` above `total`, and the
+  // dashed mark on a line the total cannot join and on the total itself.
+  testWidgets('desktop dark, a money total with plain numbers', (tester) async {
+    await pumpForGolden(
+      tester,
+      size: const Size(760, 520),
+      brightness: Brightness.dark,
+    );
+    goldenNotes.updateBody(
+      goldenNotes.notes
+          .firstWhere((note) => note.title == 'Lisbon trip budget')
+          .id,
+      'Flat move\ndeposit = 2000 eur\nrent 1200\nfood 300\nboxes = 4 kg\ntotal',
+    );
+    await tester.pumpAndSettle();
+    await expectLater(
+      find.byType(KapyNotesApp),
+      matchesGoldenFile('goldens/desktop_dark_money_total.png'),
+    );
+  });
+
   testWidgets('desktop dark narrow, notes list over the page', (tester) async {
     // The window a new install opens at, too narrow for the list beside the
     // page: the rail and the page stay, and the list opens over the page.
@@ -2001,6 +2022,24 @@ void main() {
 
       // As M09 draws it: a note given a day two days on, so the menu opens
       // on Move to another day and Remove day.
+      // The header's total marked for the line it cannot join, with the
+      // plain numbers counted in euros.
+      if (phone == 'iphone') {
+        testWidgets('phone page, a money total with plain numbers, $name', (
+          tester,
+        ) async {
+          await pumpPhone(tester);
+          // The page a phone opens on.
+          goldenNotes.updateBody(
+            goldenNotes.notes.firstWhere((note) => note.title == 'Today').id,
+            'Flat move\ndeposit = 2000 eur\nrent: 1200\nfood: 300\n'
+            'boxes = 4 kg',
+          );
+          await tester.pumpAndSettle();
+          await matches('money_total');
+        });
+      }
+
       testWidgets('phone page menu, $name', (tester) async {
         await pumpPhone(tester, withDays: true);
         final body = openNoteBody(tester);
