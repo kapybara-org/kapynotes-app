@@ -45,7 +45,6 @@ Future<void> pumpLaunch(
   String? action,
   VoiceRecordingController? recording,
   LostImageRetriever? lostImageRetriever,
-  bool systemPicker = false,
   bool settle = true,
   Duration answerAfter = Duration.zero,
 }) async {
@@ -62,12 +61,10 @@ Future<void> pumpLaunch(
       prefs: prefs,
       shortcuts: shortcuts,
       recording: recording,
-      imageAcquirer: systemPicker
-          ? null
-          : (_) async {
-              imageRequests.add('camera');
-              return const [];
-            },
+      cameraAcquirer: (_) async {
+        imageRequests.add('camera');
+        return const [];
+      },
       lostImageRetriever: lostImageRetriever,
     ),
   );
@@ -439,24 +436,29 @@ void main() {
     expect(notes.notes.single.id, 'last');
   });
 
-  testWidgets('a Capture photo taken while Android killed the app lands in '
+  testWidgets('a Photos choice made while Android killed the app lands in '
       'its note', (tester) async {
     final folder = await tester.runAsync(
       () => Directory.systemTemp.createTemp('kapy_lost_photo_'),
     );
     addTearDown(() => folder!.delete(recursive: true));
-    final camera = _KilledCamera();
+    final picker = _KilledPicker();
     final platform = ImagePickerPlatform.instance;
-    ImagePickerPlatform.instance = camera;
+    ImagePickerPlatform.instance = picker;
     addTearDown(() => ImagePickerPlatform.instance = platform);
     notes = NotesStore(store, blobs: BlobStore(directory: folder!));
 
-    await pumpLaunch(tester, action: 'capture', systemPicker: true);
-    await tester.tap(find.text('Camera'));
+    await pumpLaunch(tester, action: 'continueWriting');
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('format-attach')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('attach-photos')));
     await tester.pump();
-    expect(camera.opened, 1);
+    expect(picker.opened, 1);
 
-    // Android reclaims the process while its camera is in front. All that
+    // Android reclaims the process while its library is in front. All that
     // survives is what was saved before the camera opened.
     final saved = Map.of(store.data);
     expect(saved['pendingImageNote.v1'], 'last');
@@ -467,18 +469,13 @@ void main() {
     rates = RatesRepository(store);
     shortcuts = ShortcutPrefs(store);
     final photo = img.Image(width: 32, height: 24, numChannels: 3);
-    camera.lost = XFile.fromData(
+    picker.lost = XFile.fromData(
       Uint8List.fromList(img.encodePng(photo, level: 1)),
       name: 'photo.png',
       mimeType: 'image/png',
     );
 
-    await pumpLaunch(
-      tester,
-      action: 'capture',
-      systemPicker: true,
-      settle: false,
-    );
+    await pumpLaunch(tester, action: 'capture', settle: false);
     for (var i = 0; i < 100 && notes.byId('last')!.attachments.isEmpty; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 20)),
@@ -487,28 +484,26 @@ void main() {
     }
     await tester.pump(const Duration(seconds: 5));
 
-    expect(camera.opened, 1, reason: 'the returning photo does not reopen it');
+    expect(picker.opened, 1, reason: 'the returning photo does not reopen it');
+    expect(imageRequests, isEmpty, reason: 'nor does it open the camera');
     expect(notes.notes.single.id, 'last');
     expect(notes.byId('last')!.attachments, hasLength(1));
     expect(store.data['pendingImageNote.v1'], isNull);
   });
 }
 
-/// A camera Android never returns from: the process dies while it is open,
-/// and the photo waits in image_picker's lost-data store for the next launch.
-class _KilledCamera extends ImagePickerPlatform
+/// A photo library Android never returns from: the process dies while it is
+/// open, and the photo waits in image_picker's lost-data store for the next
+/// launch.
+class _KilledPicker extends ImagePickerPlatform
     with MockPlatformInterfaceMixin {
   int opened = 0;
   XFile? lost;
 
   @override
-  Future<XFile?> getImageFromSource({
-    required ImageSource source,
-    ImagePickerOptions options = const ImagePickerOptions(),
-  }) {
-    expect(source, ImageSource.camera);
+  Future<List<XFile>> getMedia({required MediaOptions options}) {
     opened++;
-    return Completer<XFile?>().future;
+    return Completer<List<XFile>>().future;
   }
 
   @override

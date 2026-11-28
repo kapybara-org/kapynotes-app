@@ -242,8 +242,13 @@ class _ResultChipState extends State<ResultChip> {
         color: fill,
         borderRadius: BorderRadius.circular(radius),
       ),
+      // A total's dash sits on the page around its fill, where it shows.
       foregroundDecoration: widget.result.count?.mark == true
-          ? _DashedOutline(ink.withValues(alpha: 0.45), radius)
+          ? DashedOutline(
+              (total ? palette.resultPillText : ink).withValues(alpha: 0.45),
+              total ? radius + 3 : radius,
+              outset: total ? 3 : 0,
+            )
           : null,
       child: pill
           ? Row(
@@ -303,23 +308,26 @@ class _ResultChipState extends State<ResultChip> {
 }
 
 /// A thin dashed outline: the quietest way to say that a result is not in the
-/// note's total.
-class _DashedOutline extends Decoration {
-  const _DashedOutline(this.color, this.radius);
+/// note's total, or that a total left a line out. [outset] draws it that far
+/// outside the box, so marking text moves nothing.
+class DashedOutline extends Decoration {
+  const DashedOutline(this.color, this.radius, {this.outset = 0});
 
   final Color color;
   final double radius;
+  final double outset;
 
   @override
   BoxPainter createBoxPainter([VoidCallback? onChanged]) =>
-      _DashedOutlinePainter(color, radius);
+      _DashedOutlinePainter(color, radius, outset);
 }
 
 class _DashedOutlinePainter extends BoxPainter {
-  _DashedOutlinePainter(this.color, this.radius);
+  _DashedOutlinePainter(this.color, this.radius, this.outset);
 
   final Color color;
   final double radius;
+  final double outset;
 
   @override
   void paint(Canvas canvas, Offset offset, ImageConfiguration configuration) {
@@ -328,7 +336,7 @@ class _DashedOutlinePainter extends BoxPainter {
     final outline = Path()
       ..addRRect(
         RRect.fromRectAndRadius(
-          (offset & size).deflate(0.5),
+          (offset & size).inflate(outset).deflate(0.5),
           Radius.circular(radius),
         ),
       );

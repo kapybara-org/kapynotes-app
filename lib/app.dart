@@ -107,6 +107,7 @@ class KapyNotesApp extends StatefulWidget {
     this.kapyAi,
     this.titleModel,
     this.imageAcquirer,
+    this.cameraAcquirer,
     this.lostImageRetriever,
     this.hiddenNotesGate,
     this.deepLinks,
@@ -164,6 +165,7 @@ class KapyNotesApp extends StatefulWidget {
 
   /// Native image boundaries, injectable for launch and recovery tests.
   final ImageFileAcquirer? imageAcquirer;
+  final MediaFileAcquirer? cameraAcquirer;
   final LostImageRetriever? lostImageRetriever;
 
   /// Injectable so UI tests can cross the authentication boundary without a
@@ -924,6 +926,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
                   summarizer: _summarizer,
                   transcriber: _transcriber,
                   imageAcquirer: widget.imageAcquirer,
+                  cameraAcquirer: widget.cameraAcquirer,
                   lostImageRetriever: widget.lostImageRetriever,
                   hiddenNotesGate: _hiddenNotesGate,
                   kapyAi: _kapyAi,

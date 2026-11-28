@@ -8,12 +8,14 @@ import '../ai/retrieval.dart';
 import '../data/note.dart';
 import '../data/note_attachment.dart';
 import '../data/notes_store.dart';
+import '../data/tags.dart';
 import '../data/task_board.dart';
 import '../ui/notes_grouping.dart';
 import '../ui/sidebar_timestamp.dart';
 import 'recap_digest.dart';
 import 'recap_lines.dart';
 import 'recap_period.dart';
+import 'recap_record.dart';
 
 enum RecapSource { note, voice, taskDone, taskOpen }
 
@@ -40,17 +42,27 @@ class RecapItem {
   final String? taskId;
 }
 
+/// A note hidden at [at], which a recap made before then may have read.
+typedef RecapHidden = ({String id, DateTime at});
+
 /// What a period gives a recap made with Kapy AI, chosen on the device: its
 /// visible notes, each recording in them as its summary and transcript, and
 /// its tasks done and still open. Never a hidden or archived note, nor
 /// anything in one.
 class RecapMaterial {
-  RecapMaterial._(this.period, this.items, this.edited);
+  RecapMaterial._(
+    this.period,
+    this.items,
+    this.edited,
+    this.hidden,
+    this.tagColours,
+  );
 
   factory RecapMaterial.gather(
     RecapPeriod period, {
     required NotesStore store,
     required TaskBoard tasks,
+    required TagStore tags,
     required DateTime Function(DateTime) displayTime,
     DateTime? Function(Note note)? ownDay,
   }) {
@@ -123,9 +135,21 @@ class RecapMaterial {
       final bySource = a.source.index.compareTo(b.source.index);
       return bySource != 0 ? bySource : a.note.edited.compareTo(b.note.edited);
     });
-    return RecapMaterial._(period, List.unmodifiable(items), {
-      for (final note in held.keys) note.id: note.updatedAt,
-    });
+    final hidden = <RecapHidden>[
+      for (final note in store.allNotes)
+        if (note.hiddenAt case final at?) (id: note.id, at: at),
+    ];
+    return RecapMaterial._(
+      period,
+      List.unmodifiable(items),
+      {for (final note in held.keys) note.id: note.updatedAt},
+      List.unmodifiable(hidden),
+      {
+        for (final note in held.keys)
+          for (final tag in tags.tagsOf(note.id))
+            recapTopicName(tag.name.v).toLowerCase(): tag.colour.v,
+      },
+    );
   }
 
   final RecapPeriod period;
@@ -133,6 +157,15 @@ class RecapMaterial {
 
   /// The period's notes, and when each was last edited.
   final Map<String, DateTime> edited;
+
+  /// Every hidden note, which a recap of the period made before it was
+  /// hidden may have read.
+  final List<RecapHidden> hidden;
+
+  /// The colour of each tag the period's notes carry, by its name as a
+  /// recap's record keeps it ([recapTopicName]), in lower case: one of
+  /// [tagColours] or [noTagColour].
+  final Map<String, String> tagColours;
 
   List<RecapItem> within(DateTime first, DateTime last) => [
     for (final item in items)

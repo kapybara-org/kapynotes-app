@@ -13,6 +13,7 @@
 // the software keyboard never appears and the first case says so.
 import 'dart:io';
 
+import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -27,6 +28,7 @@ import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../test/images/fake_camera.dart';
 import 'screenshot.dart';
 
 class _MemoryStore extends LocalStore {
@@ -68,6 +70,7 @@ void main() {
     WidgetTester tester,
     String body, {
     bool again = false,
+    bool dark = true,
   }) async {
     await tester.pumpWidget(const SizedBox.shrink());
     // Each case starts with the keyboard down, whatever the last one left.
@@ -116,7 +119,7 @@ void main() {
     );
     await tester.pumpWidget(
       MaterialApp(
-        theme: KapyTheme.dark(),
+        theme: dark ? KapyTheme.dark() : KapyTheme.light(),
         home: Scaffold(
           body: NoteEditor(
             key: ValueKey(body),
@@ -175,7 +178,7 @@ void main() {
               'warn:phone_format_bar_test: the inset went to zero under a '
               'keyboard Android still shows (KAP-324), so the note opens again',
             );
-            return open(tester, body, again: true);
+            return open(tester, body, again: true, dark: dark);
           }
           return;
         }
@@ -335,7 +338,7 @@ void main() {
     );
   });
 
-  testWidgets('Attach leads the bar and offers Photo, Video, Voice note and '
+  testWidgets('Attach leads the bar and offers Camera, Photos, Voice note and '
       'File', (tester) async {
     await open(tester, 'Trip budget');
     final bar = tester.getRect(find.byKey(_bar));
@@ -358,7 +361,7 @@ void main() {
         ))
           (tile.title! as Text).data,
       ],
-      ['Photo', 'Video', 'Voice note', 'File'],
+      ['Camera', 'Photos', 'Voice note', 'File'],
     );
 
     final route = ModalRoute.of(tester.element(sheet))!;
@@ -372,6 +375,37 @@ void main() {
     expect(sheet, findsNothing);
     expect(recordings, 1);
   });
+
+  for (final dark in [true, false]) {
+    final look = dark ? 'dark' : 'light';
+    testWidgets('Camera in the attach sheet opens the camera, and closing it '
+        'leaves the note as it was, $look', (tester) async {
+      final directory = Directory.systemTemp.createTempSync('attach-camera');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final previous = CameraPlatform.instance;
+      CameraPlatform.instance = FakeCameraPlatform(directory);
+      addTearDown(() => CameraPlatform.instance = previous);
+
+      await open(tester, 'Trip budget', dark: dark);
+      await tap(tester, 'format-attach');
+      var inset = -1.0;
+      for (var i = 0; i < 30 && tester.view.viewInsets.bottom != inset; i++) {
+        inset = tester.view.viewInsets.bottom;
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      await screenshot('attach-sheet-$look', device: true);
+
+      await tester.tap(find.byKey(const ValueKey('attach-camera')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('camera-shutter')), findsOneWidget);
+      await screenshot('attach-camera-$look');
+
+      await tester.tap(find.byKey(const ValueKey('camera-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('camera-shutter')), findsNothing);
+      expect(field(tester).controller.text, 'Trip budget');
+    });
+  }
 
   testWidgets('Hide keyboard puts the keyboard and the bar away', (
     tester,

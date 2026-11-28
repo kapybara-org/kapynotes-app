@@ -48,6 +48,10 @@ import 'package:kapy_notes/data/stamped.dart';
 import 'package:kapy_notes/data/writing_streak.dart';
 import 'package:kapy_notes/images/camera_capture.dart';
 import 'package:kapy_notes/images/image_picker.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart'
+    show ImagePickerPlatform, MediaOptions, XFile;
+import 'package:plugin_platform_interface/plugin_platform_interface.dart'
+    show MockPlatformInterfaceMixin;
 import 'package:kapy_notes/speech/summarizer.dart';
 import 'package:kapy_notes/speech/transcriber.dart';
 import 'package:kapy_notes/sync/account.dart';
@@ -168,6 +172,7 @@ Future<void> pumpApp(
   bool firstRun = false,
   HiddenNotesGate? hiddenNotesGate,
   ImageFileAcquirer? imageAcquirer,
+  MediaFileAcquirer? cameraAcquirer,
   Account? account,
   TagStore? tags,
   FolderStore? folders,
@@ -204,6 +209,7 @@ Future<void> pumpApp(
     desktopIntegration: desktopIntegration,
     hiddenNotesGate: hiddenNotesGate,
     imageAcquirer: imageAcquirer,
+    cameraAcquirer: cameraAcquirer,
     account: account,
     tags: tags,
     folders: folders,
@@ -3213,9 +3219,7 @@ void main() {
     expect(prefs.editorTextScale, 1);
   });
 
-  testWidgets('Settings shows the zoom and steps it', (
-    tester,
-  ) async {
+  testWidgets('Settings shows the zoom and steps it', (tester) async {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
     await pumpApp(tester);
@@ -3228,7 +3232,10 @@ void main() {
       find.descendant(of: row, matching: find.text('The whole window')),
       findsOneWidget,
     );
-    expect(find.descendant(of: row, matching: find.text('100%')), findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('100%')),
+      findsOneWidget,
+    );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('note-text-size-setting')),
@@ -3238,11 +3245,17 @@ void main() {
     );
 
     await tester.tap(
-      find.descendant(of: row, matching: find.byKey(const ValueKey('stepper-up'))),
+      find.descendant(
+        of: row,
+        matching: find.byKey(const ValueKey('stepper-up')),
+      ),
     );
     await tester.pumpAndSettle();
     expect(prefs.zoom, 1.1);
-    expect(find.descendant(of: row, matching: find.text('110%')), findsOneWidget);
+    expect(
+      find.descendant(of: row, matching: find.text('110%')),
+      findsOneWidget,
+    );
     expect(prefs.editorTextScale, 1);
   });
 
@@ -3260,7 +3273,8 @@ void main() {
       for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
         AppPlatform.debugTargetPlatformOverride = platform;
         for (final listShown in [true, false]) {
-          final reason = '${(zoom * 100).round()}%, ${platform.name}, list '
+          final reason =
+              '${(zoom * 100).round()}%, ${platform.name}, list '
               '${listShown ? 'shown' : 'hidden'}';
           await pumpApp(tester, sidebarVisible: listShown);
           prefs.zoom = zoom;
@@ -3287,7 +3301,10 @@ void main() {
           await tester.ensureVisible(zoomRow);
           await tester.pumpAndSettle();
           for (final words in ['Zoom', 'The whole window']) {
-            final text = find.descendant(of: zoomRow, matching: find.text(words));
+            final text = find.descendant(
+              of: zoomRow,
+              matching: find.text(words),
+            );
             expect(
               tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
               isFalse,
@@ -7969,6 +7986,94 @@ void main() {
     },
   );
 
+  testWidgets("a phone's Photos row does not close an unlocked hidden note", (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final library = _HeldLibrary();
+    final platform = ImagePickerPlatform.instance;
+    ImagePickerPlatform.instance = library;
+    addTearDown(() => ImagePickerPlatform.instance = platform);
+    await notes.load();
+    notes.create(body: 'Visible note');
+    final private = notes.create(body: 'Private note');
+    notes.hide(private.id);
+    await pumpApp(
+      tester,
+      size: const Size(390, 844),
+      hiddenNotesGate: _HiddenGate(),
+    );
+    await showNotesList(tester);
+    await showInFilter(tester, NotesShow.hidden);
+    await tester.tap(find.widgetWithText(NoteRow, 'Private note'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NoteField));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('format-attach')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('attach-photos')));
+    await tester.pump();
+    expect(library.opened, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(openNoteBody(tester), 'Private note');
+
+    library.held.complete(const []);
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
+  });
+
+  testWidgets("a phone's Camera row does not close an unlocked hidden note", (
+    tester,
+  ) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final held = Completer<List<XFile>>();
+    var opened = 0;
+    await notes.load();
+    notes.create(body: 'Visible note');
+    final private = notes.create(body: 'Private note');
+    notes.hide(private.id);
+    await pumpApp(
+      tester,
+      size: const Size(390, 844),
+      hiddenNotesGate: _HiddenGate(),
+      cameraAcquirer: (_) {
+        opened++;
+        return held.future;
+      },
+    );
+    await showNotesList(tester);
+    await showInFilter(tester, NotesShow.hidden);
+    await tester.tap(find.widgetWithText(NoteRow, 'Private note'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(NoteField));
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('format-attach')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('attach-camera')));
+    await tester.pump();
+    expect(opened, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(openNoteBody(tester), 'Private note');
+
+    held.complete(const []);
+    await tester.pumpAndSettle();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(NoteRow, 'Private note'), findsNothing);
+  });
+
   testWidgets('settings does not name a hidden startup note', (tester) async {
     await notes.load();
     final private = notes.create(body: 'Private startup note');
@@ -10805,6 +10910,10 @@ void main() {
             await pumpHome(tester, also: trip);
             await tester.tap(tasksTitle);
             await tester.pumpAndSettle();
+            if (opener == 'tasks-note-picker') {
+              await tester.tap(find.byKey(const ValueKey('phone-new')));
+              await tester.pumpAndSettle();
+            }
             await tester.tap(find.byKey(ValueKey(opener)));
             await tester.pumpAndSettle();
             final items = find.byWidgetPredicate(
@@ -15119,8 +15228,13 @@ void main() {
       );
       await showNotesList(tester);
       final tasksTitle = find.byKey(const ValueKey('home-title-tasks'));
-      final field = find.byKey(const ValueKey('tasks-add-field'));
+      final field = find.byKey(
+        const ValueKey('tasks-add-field'),
+        skipOffstage: false,
+      );
       await tester.tap(tasksTitle);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('phone-new')));
       await tester.pumpAndSettle();
       await tester.enterText(field, 'Buy sta');
       await tester.pumpAndSettle();
@@ -15133,6 +15247,40 @@ void main() {
       await tester.tap(tasksTitle);
       await tester.pumpAndSettle();
       expect(tester.widget<TextField>(field).controller!.text, 'Buy sta');
+    });
+    testWidgets("the phone's add field goes away with the keyboard", (
+      tester,
+    ) async {
+      AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
+      await notes.load();
+      notes.create(body: 'Groceries\nOat milk');
+      await pumpApp(
+        tester,
+        size: const Size(393, 852),
+        tasks: TaskLibrary(
+          notes: notes,
+          store: store,
+          storage: MemoryDocStorage(),
+        ),
+      );
+      await showNotesList(tester);
+      final field = find.byKey(
+        const ValueKey('tasks-add-field'),
+        skipOffstage: false,
+      );
+      await tester.tap(find.byKey(const ValueKey('home-title-tasks')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('phone-new')));
+      await tester.pumpAndSettle();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      expect(field.hitTestable(), findsOneWidget);
+
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(field).focusNode!.hasFocus, isFalse);
+      expect(field.hitTestable(), findsNothing);
     });
     testWidgets("Android's Back closes a note's slash menu before the page", (
       tester,
@@ -15992,4 +16140,16 @@ class _AndroidScaler extends TextScaler {
 
   @override
   int get hashCode => name.hashCode;
+}
+
+/// A photo library that stays in front until the test closes it.
+class _HeldLibrary extends ImagePickerPlatform with MockPlatformInterfaceMixin {
+  int opened = 0;
+  final held = Completer<List<XFile>>();
+
+  @override
+  Future<List<XFile>> getMedia({required MediaOptions options}) {
+    opened++;
+    return held.future;
+  }
 }
