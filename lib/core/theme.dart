@@ -2151,11 +2151,17 @@ class KapyTheme {
         ),
         prefixIconColor: palette.textTertiary,
         suffixIconColor: palette.textTertiary,
-        border: fieldBorder(Colors.transparent),
-        enabledBorder: fieldBorder(Colors.transparent),
-        focusedBorder: fieldBorder(accent, width: 1.25),
-        errorBorder: fieldBorder(scheme.error),
-        focusedErrorBorder: fieldBorder(scheme.error, width: 1.25),
+        border: WidgetStateInputBorder.resolveWith((states) {
+          final focused = states.contains(WidgetState.focused);
+          final width = focused ? 1.25 : 1.0;
+          if (states.contains(WidgetState.error)) {
+            return fieldBorder(scheme.error, width: width);
+          }
+          return fieldBorder(
+            focused ? accent : Colors.transparent,
+            width: width,
+          );
+        }),
       ),
       switchTheme: SwitchThemeData(
         materialTapTargetSize: tapTarget,

@@ -110,12 +110,25 @@ void main() {
     expect(segmented.iconSize!.resolve({}), AppControlMetrics.iconControl);
     final field = theme.inputDecorationTheme;
     expect(field.filled, isTrue);
+    // One stateful border, so a field that brings its own, such as
+    // InputDecoration.collapsed's none, keeps it when focused.
+    final border = field.border! as WidgetStateInputBorder;
     expect(
-      (field.border! as OutlineInputBorder).borderRadius,
+      (border.resolve({}) as OutlineInputBorder).borderRadius,
       BorderRadius.circular(AppRadii.control),
     );
-    expect(field.enabledBorder!.borderSide.color, Colors.transparent);
-    expect(field.focusedBorder!.borderSide.color, palette.accent);
+    expect(border.resolve({}).borderSide.color, Colors.transparent);
+    expect(
+      border.resolve({WidgetState.focused}).borderSide.color,
+      palette.accent,
+    );
+    expect(border.resolve({WidgetState.focused}).borderSide.width, 1.25);
+    expect(
+      border.resolve({WidgetState.error}).borderSide.color,
+      theme.colorScheme.error,
+    );
+    expect(field.enabledBorder, isNull);
+    expect(field.focusedBorder, isNull);
 
     final switches = theme.switchTheme;
     expect(switches.thumbColor!.resolve({}), const Color(0xFFFFFFFF));
@@ -137,6 +150,51 @@ void main() {
     expect(theme.chipTheme.shape, const StadiumBorder());
     expect(theme.chipTheme.side, BorderSide.none);
     expect(theme.dividerTheme.color, palette.pageBorder);
+  });
+
+  testWidgets('a collapsed field stays borderless when focused, and a plain '
+      'one rings in orange', (tester) async {
+    final collapsed = FocusNode();
+    final plain = FocusNode();
+    addTearDown(collapsed.dispose);
+    addTearDown(plain.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Material(
+          child: Column(
+            children: [
+              TextField(
+                key: const ValueKey('collapsed'),
+                focusNode: collapsed,
+                decoration: const InputDecoration.collapsed(hintText: 'Ask'),
+              ),
+              TextField(key: const ValueKey('plain'), focusNode: plain),
+            ],
+          ),
+        ),
+      ),
+    );
+    InputDecoration decorationOf(String key) => tester
+        .widget<InputDecorator>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(InputDecorator),
+          ),
+        )
+        .decoration;
+
+    collapsed.requestFocus();
+    await tester.pump();
+    final quiet = decorationOf('collapsed');
+    expect(quiet.focusedBorder, isNull);
+    expect(quiet.border, InputBorder.none);
+
+    plain.requestFocus();
+    await tester.pump();
+    final ring = (decorationOf('plain').border! as WidgetStateInputBorder)
+        .resolve({WidgetState.focused});
+    expect(ring.borderSide.color, KapyTheme.lightPalette.accent);
   });
 
   test('three weights: regular, medium for row titles, semibold for '
