@@ -246,7 +246,7 @@ class _ResultChipState extends State<ResultChip> {
       foregroundDecoration: widget.result.count?.mark == true
           ? DashedOutline(
               (total ? palette.resultPillText : ink).withValues(alpha: 0.45),
-              radius,
+              total ? radius + 3 : radius,
               outset: total ? 3 : 0,
             )
           : null,

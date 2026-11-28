@@ -3679,6 +3679,20 @@ total to usd''';
       await tester.enterNote('Flat\n5000 eur\nrent: 1200\nboxes = 4 kg\ntotal');
       await tester.pumpAndSettle();
       expect(countOn(tester, '6,200.00 EUR')!.mark, isTrue);
+      final box = tester.widget<AnimatedContainer>(
+        find.descendant(
+          of: chipWithText('6,200.00 EUR'),
+          matching: find.byType(AnimatedContainer),
+        ),
+      );
+      final fill = (box.decoration! as BoxDecoration).borderRadius!;
+      final dash = box.foregroundDecoration! as DashedOutline;
+      expect(dash.outset, 3);
+      expect(
+        dash.radius,
+        (fill as BorderRadius).topLeft.x + 3,
+        reason: 'the dash rings the fill',
+      );
     });
 
     testWidgets('leaves sentences above a total without a result, on a '
