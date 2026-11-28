@@ -6769,7 +6769,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           mediaAcquirer: (_) => _acquireMedia(note.id),
-          cameraAcquirer: (context) => _openCamera(context, note.id),
+          phoneCameraAcquirer: (context) => _openCamera(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
           cameraAcquirer: AppPlatform.hasDesktopCamera
               ? (context) => _openDesktopCamera(context, note)
@@ -6871,7 +6871,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           mediaAcquirer: (_) => _acquireMedia(note.id),
-          cameraAcquirer: (context) => _openCamera(context, note.id),
+          phoneCameraAcquirer: (context) => _openCamera(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
           cameraAcquirer: AppPlatform.hasDesktopCamera
               ? (context) => _openDesktopCamera(context, note)

@@ -176,7 +176,7 @@ class NoteEditor extends StatefulWidget {
     this.clipboard = const ImageClipboard(),
     this.imageAcquirer,
     this.mediaAcquirer,
-    this.cameraAcquirer,
+    this.phoneCameraAcquirer,
     this.imageIngestor,
     this.imageFinalizer,
     this.onImagePrepared,
@@ -281,7 +281,7 @@ class NoteEditor extends StatefulWidget {
   /// Opens the in-app camera and returns what the person keeps, for the attach
   /// sheet's Camera row. Supplied by the page, which remembers the mode last
   /// used; an empty list means it was closed.
-  final MediaFileAcquirer? cameraAcquirer;
+  final MediaFileAcquirer? phoneCameraAcquirer;
 
   /// Defaults to the production compression pipeline. Tests replace only this
   /// boundary and still exercise the real footer and toast lifecycle.
@@ -2999,7 +2999,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// it leaves the note as it was.
   Future<void> takeAndInsertMedia() async {
     if (widget.images == null || widget.readOnly) return;
-    final open = widget.cameraAcquirer;
+    final open = widget.phoneCameraAcquirer;
     final files = open != null
         ? await open(context)
         : await showNoteCamera(
