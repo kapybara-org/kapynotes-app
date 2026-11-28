@@ -5,6 +5,7 @@ import 'package:kapy_notes/data/tags.dart';
 import 'package:kapy_notes/data/task_board.dart';
 import 'package:kapy_notes/recaps/recap_period.dart';
 import 'package:kapy_notes/ui/recaps/recap_rail.dart';
+import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../test_fonts.dart';
@@ -406,7 +407,14 @@ void main() {
       expect(_key('recap-drawer'), findsOneWidget);
       expect(find.byType(BottomSheet), findsNothing);
       final drawer = tester.getRect(_key('recap-drawer'));
+      final list = tester.getRect(find.byType(Sidebar));
       expect(drawer.left, greaterThanOrEqualTo(icon.right));
+      expect(
+        drawer.left,
+        closeTo(list.right + 8, 1),
+        reason: 'beside the list pane, not across its edge',
+      );
+      expect(drawer.top, icon.top - 24);
       expect(drawer.width, closeTo(372, 1));
 
       await tester.tap(_key('recap-drawer-close'));

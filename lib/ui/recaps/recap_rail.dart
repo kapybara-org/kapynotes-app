@@ -579,9 +579,15 @@ class RecapIcon extends StatelessWidget {
 
   void _open(BuildContext context) {
     final box = phone ? null : context.findRenderObject();
-    final anchor = box is RenderBox
-        ? box.localToGlobal(Offset.zero) & box.size
-        : null;
+    final pane = Scrollable.maybeOf(context)?.context.findRenderObject();
+    Rect? anchor;
+    if (box is RenderBox) {
+      final icon = box.localToGlobal(Offset.zero) & box.size;
+      final edge = pane is RenderBox
+          ? pane.localToGlobal(Offset(pane.size.width, 0)).dx
+          : icon.right;
+      anchor = Rect.fromLTRB(icon.left, icon.top, edge, icon.bottom);
+    }
     showRecapDrawer(
       context,
       period,
