@@ -92,6 +92,7 @@ import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
 import 'package:kapy_notes/ui/tag_ui.dart';
 import 'package:kapy_notes/ui/page_pane.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
+import 'package:kapy_notes/ui/page_turn.dart' show HiddenWhileTurning;
 import 'package:kapy_notes/ui/phone_home_header.dart';
 import 'package:kapy_notes/ui/window_drag_area.dart';
 
@@ -10464,6 +10465,115 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tasksPage, findsOneWidget);
+      });
+
+      testWidgets("Home's header stays put while Notes and Tasks turn under "
+          "it, Tasks' copy fading in as the turn goes (KAP-441)", (
+        tester,
+      ) async {
+        await pumpHome(tester);
+        final header = find.byType(PhoneHomeHeader);
+        final at = tester.getTopLeft(header);
+        Iterable<Element> own() => find
+            .descendant(of: find.byType(HiddenWhileTurning), matching: header)
+            .evaluate();
+        bool ownShown() => [
+          for (final element in find.byType(HiddenWhileTurning).evaluate())
+            tester
+                .widget<Visibility>(
+                  find
+                      .descendant(
+                        of: find.byElementPredicate((e) => e == element),
+                        matching: find.byType(Visibility),
+                      )
+                      .first,
+                )
+                .visible,
+        ].every((visible) => visible);
+        expect(ownShown(), isTrue);
+
+        final drag = await tester.startGesture(tester.getCenter(header));
+        await drag.moveBy(const Offset(-40, 0));
+        await drag.moveBy(const Offset(-160, 0));
+        await tester.pump();
+        expect(tasksPage, findsOneWidget, reason: 'Tasks slides in');
+        final mine = own().toSet();
+        final copies = [
+          for (final element in header.evaluate())
+            if (!mine.contains(element)) element,
+        ];
+        expect(copies, hasLength(2));
+        for (final copy in copies) {
+          expect(
+            tester.getTopLeft(find.byElementPredicate((e) => e == copy)),
+            at,
+          );
+        }
+        double opacityOf(bool tasks) => tester
+            .widget<Opacity>(
+              find
+                  .ancestor(
+                    of: find.byElementPredicate(
+                      (e) =>
+                          copies.contains(e) &&
+                          (e.widget as PhoneHomeHeader).tasks == tasks,
+                    ),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+        expect(opacityOf(true), closeTo(200 / 393, 0.02));
+        expect(opacityOf(false), closeTo(1 - 200 / 393, 0.02));
+        expect(ownShown(), isFalse, reason: "the pages' own copies hide");
+
+        await drag.up();
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+        expect(header, findsOneWidget);
+        expect(tester.getTopLeft(header), at);
+        expect(ownShown(), isTrue);
+        expect(underlineOf(tasksTitle), findsOneWidget);
+      });
+
+      testWidgets("Home's header fades back to Notes' copy as Tasks turns back "
+          'to Notes (KAP-441)', (tester) async {
+        await pumpHome(tester);
+        final header = find.byType(PhoneHomeHeader);
+        final toTasks = await tester.startGesture(tester.getCenter(header));
+        await toTasks.moveBy(const Offset(-40, 0));
+        await toTasks.moveBy(const Offset(-160, 0));
+        await toTasks.up();
+        await tester.pumpAndSettle();
+        expect(tasksPage, findsOneWidget);
+
+        final drag = await tester.startGesture(tester.getCenter(header.first));
+        await drag.moveBy(const Offset(40, 0));
+        await drag.moveBy(const Offset(160, 0));
+        await tester.pump();
+        final own = find
+            .descendant(of: find.byType(HiddenWhileTurning), matching: header)
+            .evaluate()
+            .toSet();
+        double opacityOf(bool tasks) => tester
+            .widget<Opacity>(
+              find
+                  .ancestor(
+                    of: find.byElementPredicate(
+                      (e) =>
+                          e.widget is PhoneHomeHeader &&
+                          !own.contains(e) &&
+                          (e.widget as PhoneHomeHeader).tasks == tasks,
+                    ),
+                    matching: find.byType(Opacity),
+                  )
+                  .first,
+            )
+            .opacity;
+        expect(opacityOf(true), closeTo(1 - 200 / 393, 0.02));
+        expect(opacityOf(false), closeTo(200 / 393, 0.02));
+        await drag.up();
+        await tester.pumpAndSettle();
       });
 
       testWidgets('a short slow swipe stays put, and a short fast one turns '
