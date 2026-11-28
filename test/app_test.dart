@@ -10126,6 +10126,35 @@ void main() {
         });
       }
 
+      for (final scale in [1.5, 2.0]) {
+        testWidgets('at $scale× text a pinned card takes the room of two and '
+            'keeps its title whole (KAP-468)', (tester) async {
+          for (final body in [
+            'Lisbon budget\n412.00 EUR',
+            'Reading list\nThe Overstory, Piranesi',
+          ]) {
+            notes.togglePinned(notes.create(body: body).id);
+          }
+          await pumpApp(
+            tester,
+            size: const Size(390, 844),
+            textScaler: TextScaler.linear(scale),
+          );
+          await showNotesList(tester);
+          expect(tester.takeException(), isNull);
+
+          final face = card('Reading list');
+          expect(
+            tester.getSize(face).width,
+            greaterThan(tester.getSize(scroller).width / 2),
+          );
+          final title = tester.renderObject<RenderParagraph>(
+            find.descendant(of: face, matching: find.text('Reading list')),
+          );
+          expect(title.didExceedMaxLines, isFalse);
+        });
+      }
+
       for (final scale in [1.3, 2.0, 3.1]) {
         testWidgets("at $scale× text Home's top section and its cards grow "
             'and nothing clips', (tester) async {
@@ -10172,7 +10201,7 @@ void main() {
             }
           }
 
-          final first = tester.getSize(card('Pinned 1')).height;
+          final first = tester.getSize(find.byType(PhoneCardFace).first).height;
           expect(
             first,
             greaterThanOrEqualTo((20 + 18 + 16) * scale + 12 + 3 + 12 + 12),
@@ -13711,16 +13740,49 @@ void main() {
 
       final viewAll = find.byKey(const ValueKey('sidebar-view-all-pinned'));
       expect(
-        find.descendant(of: viewAll, matching: find.text('View all 6')),
+        find.descendant(of: viewAll, matching: find.text('View all')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.descendant(of: viewAll, matching: find.byType(CountBadge)),
+          matching: find.text('6'),
+        ),
         findsOneWidget,
       );
       expect(find.bySemanticsLabel('View all 6 pinned notes'), findsOneWidget);
       semantics.dispose();
       await tester.tap(viewAll);
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('sidebar-pinned-back')), findsOneWidget);
+
+      // The Pinned list takes the list's title, with its count and a way back,
+      // and lists every pinned note as a row.
+      final bar = find.byType(SidebarWindowBar);
+      expect(
+        find.descendant(of: bar, matching: find.text('Pinned')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.descendant(of: bar, matching: find.byType(CountBadge)),
+          matching: find.text('6'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: bar,
+          matching: find.byKey(const ValueKey('sidebar-pinned-back')),
+        ),
+        findsOneWidget,
+      );
       expect(rowTitles(tester), hasLength(6));
+      expect(
+        tester.widgetList<NoteRow>(find.byType(NoteRow)).map((r) => r.style),
+        everyElement(isNot(NoteRowStyle.phoneCard)),
+      );
       expect(row, findsNothing);
+      expect(viewAll, findsNothing);
 
       await tester.tap(find.byKey(const ValueKey('sidebar-pinned-back')));
       await tester.pumpAndSettle();
@@ -13761,11 +13823,10 @@ void main() {
       tester,
     ) async {
       await notes.load();
-      for (var i = 1; i <= 3; i++) {
+      for (var i = 1; i <= 2; i++) {
         notes.togglePinned(notes.create(body: 'Pinned $i').id);
       }
       notes.create(body: 'Loose');
-      prefs.sidebarWidth = 480;
       await pumpApp(tester);
 
       expect(find.byKey(const ValueKey('desktop-pinned-row')), findsOneWidget);
@@ -13773,13 +13834,71 @@ void main() {
         tester
             .widgetList<NoteRow>(find.byType(NoteRow))
             .where((row) => row.style == NoteRowStyle.phoneCard),
-        hasLength(3),
+        hasLength(2),
       );
       expect(rowTitles(tester), contains('Loose'));
       expect(
         find.byKey(const ValueKey('sidebar-view-all-pinned')),
         findsNothing,
       );
+    });
+
+    testWidgets('at 2× text the row takes one wide card and its title stays '
+        'whole', (tester) async {
+      await notes.load();
+      for (final body in [
+        'Lisbon budget\n412.00 EUR',
+        'Reading list\nThe Overstory, Piranesi',
+      ]) {
+        notes.togglePinned(notes.create(body: body).id);
+      }
+      await pumpApp(tester, textScaler: const TextScaler.linear(2));
+      expect(tester.takeException(), isNull);
+
+      final row = find.byKey(const ValueKey('desktop-pinned-row'));
+      final cards = find.descendant(of: row, matching: find.byType(NoteRow));
+      expect(cards, findsOneWidget);
+      final title = tester.renderObject<RenderParagraph>(
+        find.descendant(of: row, matching: find.text('Reading list')),
+      );
+      expect(title.didExceedMaxLines, isFalse);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('sidebar-view-all-pinned')),
+          matching: find.text('2'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a narrow list shows one pinned card, with View all for the '
+        'rest', (tester) async {
+      await notes.load();
+      for (var i = 1; i <= 3; i++) {
+        notes.togglePinned(notes.create(body: 'Pinned $i').id);
+      }
+      prefs.sidebarWidth = 220;
+      await pumpApp(tester, size: const Size(900, 700));
+
+      final row = find.byKey(const ValueKey('desktop-pinned-row'));
+      expect(row, findsOneWidget);
+      final cards = find.descendant(of: row, matching: find.byType(NoteRow));
+      expect(cards, findsOneWidget);
+      expect(
+        tester.getRect(cards).right,
+        lessThanOrEqualTo(tester.getRect(find.byType(Sidebar)).right),
+      );
+      final viewAll = find.byKey(const ValueKey('sidebar-view-all-pinned'));
+      expect(
+        find.descendant(of: viewAll, matching: find.text('3')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(viewAll);
+      await tester.pumpAndSettle();
+      expect(rowTitles(tester), hasLength(3));
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('the list and cards switch holds for the whole list', (
@@ -13794,7 +13913,8 @@ void main() {
           .map((row) => row.style)
           .toList();
 
-      expect(styles(), [NoteRowStyle.card, NoteRowStyle.card]);
+      // Cards: Pinned's own row of cards over the rest.
+      expect(styles(), [NoteRowStyle.phoneCard, NoteRowStyle.card]);
       await tester.tap(find.byKey(const ValueKey('notes-view')));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('notes-layout-list')));

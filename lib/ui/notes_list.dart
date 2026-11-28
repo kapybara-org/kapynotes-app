@@ -417,8 +417,21 @@ class PhoneCardFace extends StatelessWidget {
     final scaler = MediaQuery.textScalerOf(context);
     double line(double size, double height) =>
         (scaler.scale(size) * height / size).ceilToDouble();
-    return 12 + line(15, 20) + 3 + line(13, 18) + 12 + line(12, 16) + 12;
+    return 12 +
+        titleLines(context) * line(15, 20) +
+        3 +
+        line(13, 18) +
+        12 +
+        line(12, 16) +
+        12;
   }
+
+  /// Whether the reader's text is large enough, 1.3 times or more, that a
+  /// title needs a second line before it is cut short (KAP-468).
+  static bool largeText(BuildContext context) =>
+      MediaQuery.textScalerOf(context).scale(15) >= 15 * 1.3;
+
+  static int titleLines(BuildContext context) => largeText(context) ? 2 : 1;
 
   final Note note;
   final NoteGlance glance;
@@ -455,7 +468,7 @@ class PhoneCardFace extends StatelessWidget {
             ),
             child: Text(
               note.title,
-              maxLines: 1,
+              maxLines: titleLines(context),
               overflow: TextOverflow.ellipsis,
               style: uiStyle(15, 20, FontWeight.w500, palette.textPrimary),
             ),
@@ -1350,7 +1363,7 @@ class NotesListHeading extends StatelessWidget {
   const NotesListHeading({
     super.key,
     required this.label,
-    required this.count,
+    this.count,
     this.noun = 'note',
     this.height = 24,
     this.leading,
@@ -1359,7 +1372,9 @@ class NotesListHeading extends StatelessWidget {
   });
 
   final String label;
-  final int count;
+
+  /// Left out where something else says it, as Pinned's View all does.
+  final int? count;
 
   /// What the list holds, for the count's spoken form: "3 drawings".
   final String noun;
@@ -1385,7 +1400,11 @@ class NotesListHeading extends StatelessWidget {
               // The count waits in the tooltip, which is also what a screen
               // reader hears after the label.
               child: Tooltip(
-                message: count == 1 ? '1 $noun' : '$count ${noun}s',
+                message: switch (count) {
+                  null => label,
+                  1 => '1 $noun',
+                  final count => '$count ${noun}s',
+                },
                 child: Semantics(
                   header: true,
                   child: Text(
@@ -1405,19 +1424,19 @@ class NotesListHeading extends StatelessWidget {
   }
 }
 
-/// "View all", at the end of the Pinned heading, a phone's a little larger.
-/// A desktop's shows how many are pinned ("View all 9") and takes Tab, with
+/// "View all", how many are pinned in a [CountBadge], and a chevron, at the
+/// end of the Pinned heading, a phone's a little larger. It takes Tab, with
 /// Enter or Space to open the list.
 class ViewAllLink extends StatefulWidget {
   const ViewAllLink({
     super.key,
     required this.onPressed,
-    this.count,
+    required this.count,
     this.phone = false,
   });
 
   final VoidCallback onPressed;
-  final int? count;
+  final int count;
   final bool phone;
 
   @override
@@ -1436,9 +1455,7 @@ class _ViewAllLinkState extends State<ViewAllLink> {
     return Semantics(
       container: true,
       button: true,
-      label: count == null
-          ? 'View all pinned notes'
-          : 'View all $count pinned notes',
+      label: 'View all $count pinned notes',
       excludeSemantics: true,
       onTap: widget.onPressed,
       child: FocusableActionDetector(
@@ -1459,12 +1476,15 @@ class _ViewAllLinkState extends State<ViewAllLink> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                count == null ? 'View all' : 'View all $count',
+                'View all',
                 style: phone
                     ? uiStyle(13, 16, FontWeight.w400, ink)
                     : uiStyle(AppTypeScale.small, 16, FontWeight.w400, ink),
               ),
-              SizedBox(width: phone ? 2 : 1),
+              const SizedBox(width: 4),
+              // Its own size, whatever height the heading's row gives it.
+              UnconstrainedBox(child: CountBadge(count, phone: phone)),
+              SizedBox(width: phone ? 4 : 2),
               KapyIcon(
                 KapyIcons.chevronRightRounded,
                 size: phone ? 14 : 12,

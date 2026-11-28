@@ -81,7 +81,7 @@ void main() {
 
   testWidgets("View all's chevron is a 12 px path chevron, and 14 on a "
       'phone', (tester) async {
-    await pump(tester, Center(child: ViewAllLink(onPressed: () {})));
+    await pump(tester, Center(child: ViewAllLink(count: 3, onPressed: () {})));
     expect(
       tester.getSize(findKapyIcon(KapyIcons.chevronRightRounded)),
       const Size.square(12),
@@ -89,11 +89,36 @@ void main() {
 
     await pump(
       tester,
-      Center(child: ViewAllLink(phone: true, onPressed: () {})),
+      Center(child: ViewAllLink(phone: true, count: 3, onPressed: () {})),
     );
     expect(
       tester.getSize(findKapyIcon(KapyIcons.chevronRightRounded)),
       const Size.square(14),
     );
+  });
+
+  testWidgets('View all carries the count in a circle, 16 on a desktop and '
+      '18 on a phone, which two digits widen into a pill', (tester) async {
+    final badge = find.descendant(
+      of: find.byType(ViewAllLink),
+      matching: find.byType(CountBadge),
+    );
+    await pump(tester, Center(child: ViewAllLink(count: 3, onPressed: () {})));
+    expect(
+      find.descendant(of: badge, matching: find.text('3')),
+      findsOneWidget,
+    );
+    expect(tester.getSize(badge).height, 16);
+    final one = tester.getSize(badge).width;
+
+    await pump(tester, Center(child: ViewAllLink(count: 12, onPressed: () {})));
+    expect(tester.getSize(badge).height, 16);
+    expect(tester.getSize(badge).width, greaterThan(one));
+
+    await pump(
+      tester,
+      Center(child: ViewAllLink(phone: true, count: 7, onPressed: () {})),
+    );
+    expect(tester.getSize(badge).height, 18);
   });
 }

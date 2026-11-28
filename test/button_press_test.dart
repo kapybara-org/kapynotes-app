@@ -251,12 +251,12 @@ void main() {
     }
     await tester.pumpAndSettle();
 
-    await press(tester, labelled('View all pinned notes'));
-    expect(labelled('View all pinned notes'), findsNothing);
+    await press(tester, labelled('View all 5 pinned notes'));
+    expect(labelled('View all 5 pinned notes'), findsNothing);
     expect(unpressable(), isEmpty);
     expect(unnamed(), isEmpty);
 
     await press(tester, tipped('Back to all notes'));
-    expect(labelled('View all pinned notes'), findsOne);
+    expect(labelled('View all 5 pinned notes'), findsOne);
   });
 }

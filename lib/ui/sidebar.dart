@@ -12,7 +12,7 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../calc/engine.dart';
 import '../data/folders.dart';
-import '../data/layout_prefs.dart' show NotesGrouping;
+import '../data/layout_prefs.dart' show LayoutPrefs, NotesGrouping;
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
 import '../sync/presence.dart';
@@ -157,6 +157,7 @@ class Sidebar extends StatelessWidget {
     this.lockedNoteIds = const {},
     required this.selectedId,
     this.width = LayoutPrefs.defaultSidebarWidth,
+    this.textScaler = TextScaler.noScaling,
     required this.query,
     required this.displayTime,
     required this.onSearch,
@@ -397,6 +398,9 @@ class Sidebar extends StatelessWidget {
   /// The list's width, which sets how many pinned cards fit Home's one row on
   /// a desktop.
   final double width;
+
+  /// The reader's text size, which widens each of those cards.
+  final TextScaler textScaler;
 
   /// Whether the list is showing every pinned note, after View all, rather
   /// than the few most recent over the rest.
@@ -1275,7 +1279,7 @@ extension on Sidebar {
       !phone && cards && !drawings && onPinnedOnlyChanged != null;
 
   /// How many pinned cards fit Home's row inside the list's margins.
-  int get _pinnedFit => DesktopPinnedRow.fit(width - 2 * 16);
+  int get _pinnedFit => DesktopPinnedRow.fit(width - 2 * 16, textScaler);
 
   List<Note> get _railOrder {
     if (folders case final folders? when folders.shown) {
@@ -1351,7 +1355,6 @@ extension on Sidebar {
       (false, false) => NoteRowStyle.row,
     };
     final margin = phone ? 20.0 : 16.0;
-    final noun = drawings ? 'drawing' : 'note';
     final onPinnedOnlyChanged = this.onPinnedOnlyChanged;
     final onOpenPinned = phone && !drawings && onPinnedOnlyChanged != null
         ? () => onPinnedOnlyChanged(true)
@@ -1525,38 +1528,8 @@ extension on Sidebar {
           ),
         );
       }
-    } else if (pinnedOnly && phone) {
-      // The Pinned page, under its own title: every pinned note as a row.
-      section(groups.pinned);
     } else if (pinnedOnly) {
-      final leave = onPinnedOnlyChanged == null
-          ? null
-          : () => onPinnedOnlyChanged(false);
-      heading(
-        CallbackShortcuts(
-          bindings: {const SingleActivator(LogicalKeyboardKey.escape): ?leave},
-          child: Focus(
-            autofocus: true,
-            child: NotesListHeading(
-              label: 'Pinned',
-              count: groups.pinned.length,
-              noun: noun,
-              height: 22,
-              leading: CompactIconButton(
-                key: const ValueKey('sidebar-pinned-back'),
-                tooltip: 'Back to all notes',
-                extent: 22,
-                foregroundColor: palette.textSecondary,
-                onPressed: onPinnedOnlyChanged == null
-                    ? null
-                    : () => onPinnedOnlyChanged(false),
-                icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
-              ),
-            ),
-          ),
-        ),
-        onAxis: false,
-      );
+      // The Pinned page, under its own title: every pinned note as a row.
       section(groups.pinned);
     } else if (phone) {
       // Home's Pinned, the one list with View all: up to five cards in a
@@ -1570,16 +1543,13 @@ extension on Sidebar {
             child: Row(
               key: const ValueKey('sidebar-pinned-heading'),
               children: [
-                Expanded(
-                  child: PhoneDayHeading(
-                    lead: 'Pinned',
-                    date: '${groups.pinned.length}',
-                    pin: true,
-                  ),
+                const Expanded(
+                  child: PhoneDayHeading(lead: 'Pinned', pin: true),
                 ),
                 ViewAllLink(
                   key: const ValueKey('sidebar-view-all-pinned'),
                   phone: true,
+                  count: groups.pinned.length,
                   onPressed: onOpenPinned,
                 ),
               ],
@@ -1634,9 +1604,8 @@ extension on Sidebar {
           NotesListHeading(
             key: const ValueKey('sidebar-pinned-heading'),
             label: 'Pinned',
-            count: groups.pinned.length,
-            noun: noun,
-            height: 16,
+            // Grows with the reader's text, so View all's count stays whole.
+            height: MediaQuery.textScalerOf(context).scale(16),
             leading: KapyIcon(
               KapyIcons.pinOutlined,
               size: 14,
@@ -2173,9 +2142,14 @@ class SidebarWindowBar extends StatelessWidget {
     this.countLabel,
     this.onAskKapy,
     this.askKapyShortcut,
+    this.onBack,
   });
 
   final String title;
+
+  /// Set on the Pinned list from View all: an arrow before the title goes
+  /// back to Home, as Esc does, and the count shows in a [CountBadge].
+  final VoidCallback? onBack;
 
   /// Said after the count in the title's tooltip, as Tasks says "10 tasks
   /// open".
@@ -2213,6 +2187,7 @@ class SidebarWindowBar extends StatelessWidget {
     final hideShortcut = this.hideShortcut;
     final onAskKapy = this.onAskKapy;
     final askKapyShortcut = this.askKapyShortcut;
+    final onBack = this.onBack;
     final desktop = AppPlatform.hasPointer;
     final titleStyle = handTitle(
       size: 22,
@@ -2221,7 +2196,7 @@ class SidebarWindowBar extends StatelessWidget {
     );
     Widget gap() => SizedBox(width: desktop ? 0 : 8);
 
-    return SizedBox(
+    final bar = SizedBox(
       height: AppControlMetrics.scaleBar(context, height),
       child: Stack(
         children: [
@@ -2233,6 +2208,23 @@ class SidebarWindowBar extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
+                  // Outside the drag region, whose double click would hold
+                  // its tap.
+                  if (onBack != null) ...[
+                    CompactIconButton(
+                      key: const ValueKey('sidebar-pinned-back'),
+                      tooltip: 'Back to all notes',
+                      extent: 24,
+                      radius: AppRadii.control,
+                      foregroundColor: palette.textSecondary,
+                      onPressed: onBack,
+                      icon: const KapyIcon(
+                        KapyIcons.chevronLeftRounded,
+                        size: 16,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   Expanded(
                     // Its own drag region, because text takes the pointer
                     // before the bar's can.
@@ -2247,15 +2239,31 @@ class SidebarWindowBar extends StatelessWidget {
                             count == 1 ? '1 $noun' : '$count ${noun}s',
                             ?countLabel,
                           ].join(' '),
-                          child: Semantics(
-                            header: true,
-                            child: Text(
-                              title,
-                              key: const ValueKey('sidebar-space-title'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: titleStyle,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Semantics(
+                                  header: true,
+                                  child: Text(
+                                    title,
+                                    key: const ValueKey('sidebar-space-title'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: titleStyle,
+                                  ),
+                                ),
+                              ),
+                              if (onBack != null) ...[
+                                const SizedBox(width: 6),
+                                ExcludeSemantics(
+                                  child: CountBadge(
+                                    count,
+                                    key: const ValueKey('sidebar-space-count'),
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                         ),
                       ),
@@ -2311,7 +2319,45 @@ class SidebarWindowBar extends StatelessWidget {
         ],
       ),
     );
+    if (onBack == null) return bar;
+    return CallbackShortcuts(
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): onBack},
+      child: _TakesFocus(child: bar),
+    );
   }
+}
+
+/// Takes focus as it appears, so Esc on the Pinned list View all opened goes
+/// back to Home rather than to the note that had focus before.
+class _TakesFocus extends StatefulWidget {
+  const _TakesFocus({required this.child});
+
+  final Widget child;
+
+  @override
+  State<_TakesFocus> createState() => _TakesFocusState();
+}
+
+class _TakesFocusState extends State<_TakesFocus> {
+  final _node = FocusNode(skipTraversal: true);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _node.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      Focus(focusNode: _node, child: widget.child);
 }
 
 /// Invitations waiting for an answer, just under the search field.
@@ -4407,18 +4453,22 @@ class DesktopPinnedRow extends StatelessWidget {
   static const double gap = 12;
   static const double minCard = 140;
 
-  /// How many cards fit a row [width] wide: at least one.
-  static int fit(double width) =>
-      math.max(1, ((width + gap) / (minCard + gap)).floor());
+  /// How many cards fit a row [width] wide, each at least [minCard] at the
+  /// reader's text size: at least one.
+  static int fit(double width, TextScaler scaler) =>
+      math.max(1, ((width + gap) / (scaler.scale(minCard) + gap)).floor());
 
   @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    spacing: gap,
-    children: [
-      for (var i = 0; i < slots; i++)
-        Expanded(child: i < children.length ? children[i] : const SizedBox()),
-    ],
+  Widget build(BuildContext context) => SizedBox(
+    height: PhoneCardFace.height(context),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: gap,
+      children: [
+        for (var i = 0; i < slots; i++)
+          Expanded(child: i < children.length ? children[i] : const SizedBox()),
+      ],
+    ),
   );
 }
 
@@ -4442,14 +4492,21 @@ class PhonePinnedCards extends StatelessWidget {
   static const double peek = 34;
 
   /// A card's width in a row [width] wide: two cards and the next one's
-  /// sliver after the margin, 160 on a 390 phone.
-  static double cardWidth(double width, double margin) =>
-      (width - margin - 2 * gap - peek) / 2;
+  /// sliver after the margin, 160 on a 390 phone. With [large] text one card
+  /// takes the room of two, so its title keeps its words (KAP-468).
+  static double cardWidth(double width, double margin, {bool large = false}) =>
+      large
+      ? width - margin - gap - peek
+      : (width - margin - 2 * gap - peek) / 2;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final width = cardWidth(constraints.maxWidth, margin);
+      final width = cardWidth(
+        constraints.maxWidth,
+        margin,
+        large: PhoneCardFace.largeText(context),
+      );
       return SizedBox(
         height: PhoneCardFace.height(context),
         child: ListView.separated(

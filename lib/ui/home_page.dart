@@ -4437,6 +4437,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
             );
             Sidebar sidebar(double width) => Sidebar(
               width: width,
+              textScaler: MediaQuery.textScalerOf(context),
               notes: _foldersShown ? _folderNotes : _visibleNotes,
               pinnedNoteIds: widget.notes.pinnedNoteIds,
               lockedNoteIds: _noteLimit?.lockedIds ?? const {},
@@ -4535,8 +4536,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               onPinnedOnlyChanged: (value) =>
                   setState(() => _pinnedOnly = value),
               windowBar: SidebarWindowBar(
-                title: _listTitle,
-                count: _matchingCount(phone: false),
+                title: _showingPinnedOnly ? 'Pinned' : _listTitle,
+                count: _showingPinnedOnly
+                    ? _visibleNotes.length
+                    : _matchingCount(phone: false),
+                onBack: _showingPinnedOnly
+                    ? () => setState(() => _pinnedOnly = false)
+                    : null,
                 noun: createNoun,
                 onCreate: _createInSpace,
                 newNoteShortcut: newNoteShortcut,
