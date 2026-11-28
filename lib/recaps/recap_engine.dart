@@ -4,6 +4,7 @@ import '../ai/kapy_chat_book.dart';
 import '../ai/retrieval.dart';
 import '../data/notes_store.dart';
 import 'recap_digest.dart';
+import 'recap_filter.dart';
 import 'recap_lines.dart';
 import 'recap_material.dart';
 import 'recap_period.dart';
@@ -120,6 +121,7 @@ class RecapEngine {
   }) async {
     final period = plan.period;
     final material = plan.material;
+    final started = _now();
     Future<RecapPiece> ask(RecapSlice slice) async {
       final items = material.within(slice.first, slice.last);
       final notes = packRecap(
@@ -165,10 +167,18 @@ class RecapEngine {
     final readable = _readable();
     final gone = <String>{};
     final digests = <ReadNote>[];
+    final read = <RecapRead>[];
+    RecapRead part(DateTime first, DateTime last, List<RecapItem> items) => (
+      first: period.indexOf(first)!,
+      last: period.indexOf(last)!,
+      notes: RecapFilter.of([for (final item in items) item.note.id]),
+    );
+
     for (final (index, slice) in plan.slices.indexed) {
       final piece = pieces[index];
+      final within = material.within(slice.first, slice.last);
       final hidden = {
-        for (final item in material.within(slice.first, slice.last))
+        for (final item in within)
           if (!readable.contains(item.note.id)) item.note.id,
       };
       if (hidden.isNotEmpty) {
@@ -178,6 +188,7 @@ class RecapEngine {
         continue;
       }
       sent.notes.addAll(piece.sent);
+      read.add(part(slice.first, slice.last, within));
       if (period.kind == RecapKind.year) sent.months.add(slice.first.month);
       digests.add(recapNote('', slice.label, piece.text, slice.last));
     }
@@ -186,6 +197,9 @@ class RecapEngine {
     final items = rest == null
         ? const <RecapItem>[]
         : material.within(rest.$1, rest.$2);
+    if (rest != null && items.isNotEmpty) {
+      read.add(part(rest.$1, rest.$2, items));
+    }
     final notes = packRecap([
       ...digests,
       ...recapNotesFor(items, _notes, today: _now()),
@@ -221,12 +235,13 @@ class RecapEngine {
       period: period,
       timeZone: timeZone,
       firstWeekday: firstWeekday,
-      madeAt: now,
+      madeAt: started,
       numbers: RecapNumbers.of(digest, material),
       fingerprint: material.fingerprint,
       digest: period.kind == RecapKind.month && over && lines.digest.isNotEmpty
           ? lines.digest
           : null,
+      read: read,
     );
     final chat = recapChat(
       recapChatOf(recaps, period),
