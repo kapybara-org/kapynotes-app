@@ -143,6 +143,7 @@ class LayoutPrefs extends ChangeNotifier {
   static const String _lastOpenedNoteKey = 'selectedNote.v1';
   static const String _recentlyOpenedNotesKey = 'recentlyOpenedNotes.v1';
   static const String _caretKey = 'caret.v1';
+  static const String _keyboardRoomKey = 'keyboardRoom.v1';
   static const String _appearanceKey = 'appearance.v1';
   static const String _themeKey = 'theme.v1';
   static const String _nightThemeKey = 'nightTheme.v1';
@@ -217,6 +218,7 @@ class LayoutPrefs extends ChangeNotifier {
   List<String> _recentlyOpenedNoteIds = const [];
   String? _defaultNoteId;
   final Map<String, ({int offset, DateTime at})> _carets = {};
+  final Map<String, double> _keyboardRooms = {};
 
   LayoutPrefs(
     this._store, {
@@ -529,6 +531,13 @@ class LayoutPrefs extends ChangeNotifier {
     _defaultNoteId = _readNoteId(_defaultNoteKey);
     _readCarets();
     _pruneCarets();
+    _keyboardRooms
+      ..clear()
+      ..addAll({
+        for (final MapEntry(:key, :value)
+            in (_store.read<Map>(_keyboardRoomKey) ?? const {}).entries)
+          if (key is String && value is num && value > 0) key: value.toDouble(),
+      });
     notifyListeners();
   }
 
@@ -805,6 +814,24 @@ class LayoutPrefs extends ChangeNotifier {
     _store.put(_caretKey, _caretsToJson());
     // No notifyListeners: nothing on screen is drawn from this, and telling
     // the whole app the cursor moved would rebuild the sidebar on every key.
+  }
+
+  /// How much of a note's height the soft keyboard took the last time it came
+  /// up in a window [width] wide, if it has: what a note opened there lays
+  /// out for before the keyboard arrives.
+  double? keyboardRoom(double width) => _keyboardRooms['${width.round()}'];
+
+  /// Records the room [keyboardRoom] offers back, per width, so a phone on
+  /// its side and upright each keep their own. No room forgets the width's.
+  void rememberKeyboardRoom(double width, double room) {
+    final key = '${width.round()}';
+    if (room <= 0) {
+      if (_keyboardRooms.remove(key) == null) return;
+    } else {
+      if (_keyboardRooms[key] == room) return;
+      _keyboardRooms[key] = room;
+    }
+    _store.put(_keyboardRoomKey, Map.of(_keyboardRooms));
   }
 
   /// Drops yesterday's positions, which [caretIn] would refuse anyway.

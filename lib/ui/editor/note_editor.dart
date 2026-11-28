@@ -218,6 +218,8 @@ class NoteEditor extends StatefulWidget {
     this.onDefaultTitleEntered,
     this.initialCaret,
     this.onCaretChanged,
+    this.keyboardRoom,
+    this.onKeyboardRoom,
     this.ensureKeyboardVisible = false,
     this.lastUpdatedAt,
     this.createdAt,
@@ -435,6 +437,10 @@ class NoteEditor extends StatefulWidget {
   /// Fires on every move, like the body does on every keystroke, and is meant
   /// to be written through a coalescing store rather than straight to disk.
   final ValueChanged<int>? onCaretChanged;
+
+  /// See [NoteField.keyboardRoom] and [NoteField.onKeyboardRoom].
+  final double? Function(double width)? keyboardRoom;
+  final void Function(double width, double room)? onKeyboardRoom;
   final bool ensureKeyboardVisible;
   final DateTime? lastUpdatedAt;
 
@@ -8741,8 +8747,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
             ),
-          ]
-          else if (!AppPlatform.isMobile)
+          ] else if (!AppPlatform.isMobile)
             SizedBox(height: MediaQuery.paddingOf(context).bottom)
           else ...[
             if (statusShown)
@@ -8978,6 +8983,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 focusNode: _focusNode,
                 scrollController: _scrollController,
                 autofocus: !widget.readOnly && widget.autofocus,
+                revealOnOpen:
+                    AppPlatform.isMobile && widget.ensureKeyboardVisible,
                 readOnly: widget.readOnly,
                 style: textStyle,
                 strut: strut,
@@ -8986,6 +8993,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 selectionOf: _tableSelectionOf,
                 adjustSpan: _adjustTaskFold,
                 found: _found(),
+                keyboardRoom: widget.keyboardRoom,
+                onKeyboardRoom: widget.onKeyboardRoom,
                 cursorWidth: EditorMetrics.cursorWidth,
                 cursorHeight: EditorMetrics.cursorHeight(
                   widget.writingFont,
