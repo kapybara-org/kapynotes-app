@@ -505,6 +505,25 @@ class _Answer extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
+              if (source != null) ...[
+                KapyIcon(
+                  kapyModelIcon(message.model!.kind),
+                  size: 12,
+                  color: palette.textTertiary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    source,
+                    key: const ValueKey('kapy-ai-source'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: kapyText(11.5, 16, palette.textTertiary),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ] else
+                const Spacer(),
               KapyAiIconButton(
                 key: const ValueKey('kapy-ai-copy'),
                 icon: KapyIcons.copyRounded,
@@ -520,17 +539,6 @@ class _Answer extends StatelessWidget {
                   Toast.show(context, 'Copied', icon: KapyIcons.copyRounded);
                 },
               ),
-              const SizedBox(width: 6),
-              if (source != null)
-                Flexible(
-                  child: Text(
-                    source,
-                    key: const ValueKey('kapy-ai-source'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: kapyText(11.5, 16, palette.textTertiary),
-                  ),
-                ),
             ],
           ),
         ],

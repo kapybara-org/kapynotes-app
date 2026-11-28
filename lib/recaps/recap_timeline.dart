@@ -134,6 +134,19 @@ class RecapFolds extends ChangeNotifier {
     }
     if (opened) notifyListeners();
   }
+
+  String? _revealed;
+
+  /// Opens the cards [holding] says fold [noteId] away, the first time it is
+  /// asked for that note, so the list being built shows the note that search,
+  /// a link or a new selection opened. Listeners aren't told: the caller is
+  /// building what they would build. Folding one of those cards afterwards
+  /// keeps it folded until another note is revealed.
+  void reveal(String? noteId, List<RecapPeriod> Function(String noteId) holding) {
+    if (noteId == null || noteId == _revealed) return;
+    _revealed = noteId;
+    _open.addAll(holding(noteId));
+  }
 }
 
 /// The notes list as the timeline's rail lays it out. Today and the rest of
@@ -169,8 +182,13 @@ class RecapTimeline {
     final visible = <String>{};
     for (final note in notes) {
       if (note.isHidden || note.isArchived) continue;
+      final own = ownDay?.call(note);
+      if (waitsForLaterDay(own, today)) continue;
       visible.add(note.id);
-      final day = noteDay(note, displayTime, ownDay: ownDay?.call(note));
+      final shown = noteDay(note, displayTime, ownDay: own);
+      // An edit from a clock ahead of this one counts as today's, as the
+      // notes list shows it.
+      final day = shown.isAfter(today) ? today : shown;
       var tally = _days[_number(day)];
       if (tally == null) {
         _days[_number(day)] = tally = _Day();

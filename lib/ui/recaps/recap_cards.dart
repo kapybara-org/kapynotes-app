@@ -1519,9 +1519,9 @@ class _Closing extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 14),
                 child: Text(
-                  'Some notes this recap used are hidden or deleted now, so what Kapy AI '
-                  'wrote was taken out. Remake it from your notes as they are '
-                  'now.',
+                  'Some notes this recap used are now hidden or deleted, so '
+                  'what Kapy AI wrote from them was taken out. Remake it from '
+                  'your notes as they are now.',
                   style: recapText(22, 30, 500, t.text),
                 ),
               )

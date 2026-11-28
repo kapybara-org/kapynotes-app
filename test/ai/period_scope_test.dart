@@ -108,8 +108,8 @@ void main() {
       expect([it.notes, it.voiceNotes], [2, 1]);
       expect(
         it.reads,
-        'Answers come only from 16–22 Nov: 2 notes, 2 tasks and 1 voice '
-        'note. Hidden notes are never used.',
+        'Answers come only from your 2 notes, 2 tasks and 1 voice note from '
+        '16–22 Nov. Hidden notes are never used.',
       );
       expect(it.narrower, isNull);
       expect(it.topic, 'Acme');
@@ -130,13 +130,29 @@ void main() {
       await world.load();
       expect(
         read(day).reads,
-        'Answers come only from Thu 19: 1 note. Hidden notes are never used.',
+        'Answers come only from your 1 note from Thu 19. Hidden notes are '
+        'never used.',
       );
       expect(
         read(day.previous).reads,
         'Answers come only from Wed 18. Hidden notes are never used.',
       );
       expect(read(day).topic, isNull);
+    });
+
+    test('one of each is said in the singular', () async {
+      world.note(
+        'launch',
+        '2026-11-19T09:00:00Z',
+        body: '${NoteAttachmentRef.placeholder}\nLaunch\n☐ Ship',
+        attachments: [recapVoice()],
+      );
+      await world.load();
+      expect(
+        read(day).reads,
+        'Answers come only from your 1 note, 1 task and 1 voice note from '
+        'Thu 19. Hidden notes are never used.',
+      );
     });
 
     test('a long period says a narrower question does better', () async {

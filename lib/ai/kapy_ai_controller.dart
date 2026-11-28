@@ -679,7 +679,8 @@ class KapyAiController extends KapyAi {
 
   KapyPeriodReader? _periods;
 
-  /// What each period held when last read, until a note changes.
+  /// What each period held when last read, until a note, a tag or a folder
+  /// changes.
   final _periodReads = <RecapPeriod, KapyPeriodRead?>{};
 
   @override
@@ -695,6 +696,12 @@ class KapyAiController extends KapyAi {
   @override
   KapyPeriodRead? readPeriod(RecapPeriod period) =>
       _periodReads.putIfAbsent(period, () => _periods?.call(period));
+
+  @override
+  void periodsChanged() {
+    _periodReads.clear();
+    _notify();
+  }
 
   @override
   bool readWhole(KapyChat chat, KapyMessage answer) =>

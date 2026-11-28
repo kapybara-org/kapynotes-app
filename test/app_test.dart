@@ -86,6 +86,7 @@ import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/back_forward.dart';
 import 'package:kapy_notes/ui/folders_ui.dart' show FolderPage, FoldersTab;
+import 'package:kapy_notes/ui/recaps/recap_rail.dart';
 import 'package:kapy_notes/ui/sidebar_timestamp.dart';
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/tag_colours.dart' show TagDots;
@@ -351,6 +352,19 @@ Finder notesToggleWithLabel(String label) => find.byWidgetPredicate(
 ///
 /// The toolbar button says which state it is in, and it is the same button on
 /// a window with the list closed and on a phone with the drawer shut.
+/// Opens every folded card on Home's timeline rail, top card first, so the
+/// notes of earlier weeks, months and years are on the list.
+Future<void> openEarlierCards(WidgetTester tester) async {
+  while (true) {
+    final folded = find.byWidgetPredicate(
+      (widget) => widget is RecapPeriodCard && !widget.open,
+    );
+    if (folded.evaluate().isEmpty) return;
+    await tester.tap(folded.first);
+    await tester.pumpAndSettle();
+  }
+}
+
 Future<void> showNotesList(WidgetTester tester) async {
   // A phone's list is under the page it opened on.
   final back = find.byKey(const ValueKey('page-home'));
@@ -4711,18 +4725,44 @@ void main() {
       );
     }
 
+    // What heads the list, top to bottom: a day's or letter's heading, and
+    // on Home's timeline rail a section's heading and each folded card.
+    // The whole library on the rail: three days, the section over October's
+    // card, and the card.
+    const wholeList = 5;
+
     List<String> headings(WidgetTester tester) => [
-      for (final heading in tester.widgetList<NotesGroupHeading>(
-        find.byType(NotesGroupHeading),
+      for (final heading in tester.widgetList(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is NotesGroupHeading ||
+              widget is RecapDayTitle ||
+              widget is RecapSectionTitle ||
+              widget is RecapPeriodCard,
+        ),
       ))
-        [heading.label, ?heading.detail].join(' '),
+        switch (heading) {
+          NotesGroupHeading() => [heading.label, ?heading.detail].join(' '),
+          RecapDayTitle() => [heading.label, ?heading.date].join(' '),
+          RecapSectionTitle() => heading.label,
+          RecapPeriodCard() => recapSpokenLabel(heading.period),
+          _ => throw StateError('not a heading'),
+        },
     ];
 
     testWidgets('notes sit under the day they were last edited, or by letter', (
       tester,
     ) async {
       await library(tester);
-      expect(headings(tester), ['Today', 'Yesterday', 'Tue 17', 'Tue 20 Oct']);
+      // October is folded into a card on the rail, under its section.
+      expect(headings(tester), [
+        'Today',
+        'Yesterday',
+        'Tue 17',
+        'Earlier in 2026',
+        'October',
+      ]);
+      expect(find.text('October plan'), findsNothing);
       expect(find.text('By date'), findsNothing, reason: 'in the View menu');
 
       await tester.tap(find.byKey(const ValueKey('notes-view')));
@@ -4774,7 +4814,7 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('notes-filter-chip')));
       await tester.pumpAndSettle();
-      expect(headings(tester), hasLength(4));
+      expect(headings(tester), hasLength(wholeList));
       expect(find.byKey(const ValueKey('notes-filter-chip')), findsNothing);
 
       // Nothing was written last week: the list says so, and offers the way
@@ -4785,7 +4825,7 @@ void main() {
       expect(find.text('No notes last week'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('sidebar-empty-action')));
       await tester.pumpAndSettle();
-      expect(headings(tester), hasLength(4));
+      expect(headings(tester), hasLength(wholeList));
     });
 
     Finder day(int date) => find.byKey(ValueKey('day-strip-2026-11-$date'));
@@ -4840,7 +4880,7 @@ void main() {
       expect(find.byType(NoteTabRow), findsNothing, reason: 'one tab');
       expect(rowOf(tester, 'Standup notes').selected, isTrue);
       expect(lit(tester), ['Standup notes']);
-      expect(headings(tester), hasLength(4));
+      expect(headings(tester), hasLength(wholeList));
       expect(whenChip, findsNothing);
       expect(
         tester.getSemantics(day(18)),
@@ -4857,7 +4897,12 @@ void main() {
 
       await tester.enterNote('Standup notes\nShip it');
       await tester.pumpAndSettle();
-      expect(headings(tester), ['Today', 'Tue 17', 'Tue 20 Oct']);
+      expect(headings(tester), [
+        'Today',
+        'Tue 17',
+        'Earlier in 2026',
+        'October',
+      ]);
       expect(lit(tester), ['Standup notes']);
       expect(tester.getSemantics(day(18)), isSemantics(isSelected: true));
 
@@ -4904,7 +4949,15 @@ void main() {
       expect(openNoteBody(tester), 'Standup notes');
 
       // The note takes the tab in front, and the day stays picked, so the
-      // way back stays too.
+      // way back stays too. October's note sits in its folded cards.
+      await tap(
+        tester,
+        find.byKey(const ValueKey('recap-card-month-2026-10-1')),
+      );
+      await tap(
+        tester,
+        find.byKey(const ValueKey('recap-card-week-2026-10-18')),
+      );
       await tap(tester, find.widgetWithText(NoteRow, 'October plan'));
       expect(openNoteBody(tester), 'October plan');
       expect(lit(tester), ['Standup notes']);
@@ -5613,8 +5666,14 @@ void main() {
           'Today',
           'Yesterday',
           'Tue 17',
-          'Tue 20 Oct',
+          'Earlier in 2026',
+          'October',
         ]);
+        // October's note is under its folded month and week.
+        for (final key in ['month-2026-10-1', 'week-2026-10-18']) {
+          await tap(tester, find.byKey(ValueKey('recap-card-$key')));
+        }
+        expect(headings(tester).last, 'Tue 20');
         expect(cardDate('Call with Arjun'), '12:00');
         expect(cardDate('Standup notes'), '17:00');
         expect(cardDate('October plan'), '8:00');
@@ -5888,7 +5947,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('notes-filter-chip')));
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('notes-filter-chip')), findsNothing);
-      expect(headings(tester), hasLength(4));
+      expect(headings(tester), hasLength(wholeList));
     });
   });
 
@@ -6912,6 +6971,7 @@ void main() {
       // Drawings live in Drawings, as they do on a window.
       await tester.tap(find.byKey(const ValueKey('bar-notes')));
       await tester.pumpAndSettle();
+      await openEarlierCards(tester);
       expect(await listed(), {'Groceries'});
       await openPhoneDrawings(tester);
       expect(await listed(), {'Floor plan'});
@@ -7782,7 +7842,13 @@ void main() {
       find.descendant(of: find.byType(Sidebar), matching: find.text('Pinned')),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey('sidebar-group-Today')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(RecapDayTitle),
+        matching: find.text('Today'),
+      ),
+      findsOneWidget,
+    );
     expect(rowTitles(), ['Reference', 'Today']);
     expect(notes.isPinned(reference.id), isTrue);
 
@@ -9511,6 +9577,7 @@ void main() {
         addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
         await pumpApp(tester, size: const Size(420, 800));
         await showNotesList(tester);
+        await openEarlierCards(tester);
 
         await tester.longPress(find.widgetWithText(NoteRow, 'First note'));
         await tester.pumpAndSettle();
@@ -9608,6 +9675,7 @@ void main() {
       expect(bar, findsOneWidget);
 
       await showNotesList(tester);
+      await openEarlierCards(tester);
       expect(find.widgetWithText(NoteRow, 'Open the list'), findsOneWidget);
       expect(bar, findsNothing);
     });
@@ -9688,6 +9756,7 @@ void main() {
       expect(tester.testTextInput.isVisible, isFalse);
       expect(find.byKey(const ValueKey('phone-bar')), findsOneWidget);
 
+      await openEarlierCards(tester);
       await tester.tap(find.widgetWithText(NoteRow, 'Lisbon trip'));
       await tester.pumpAndSettle();
       expect(find.byType(NoteEditor), findsOneWidget);
@@ -9732,6 +9801,8 @@ void main() {
       expect(find.byKey(const ValueKey('phone-bar')), findsOneWidget);
       expectNoKeys();
 
+      await openEarlierCards(tester);
+      expectNoKeys();
       await tester.tap(find.widgetWithText(NoteRow, 'Lisbon trip'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('page-more')));
@@ -9768,6 +9839,7 @@ void main() {
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(find.byType(NoteEditor), findsNothing);
+      await openEarlierCards(tester);
       expect(find.widgetWithText(NoteRow, 'Lisbon trip'), findsOneWidget);
     });
 
@@ -9807,6 +9879,7 @@ void main() {
     ) async {
       await pumpApp(tester, size: const Size(375, 667));
       await showNotesList(tester);
+      await openEarlierCards(tester);
 
       for (final item in ['notes', 'folders']) {
         final size = tester.getSize(find.byKey(ValueKey('bar-$item')));
@@ -9898,11 +9971,12 @@ void main() {
         notes.togglePinned(notes.search('Pinned 1').single.id);
         await tester.pumpAndSettle();
         expect(heading, findsNothing);
+        final today = find.byType(RecapHeading).first;
         expect(
-          find.descendant(of: first, matching: find.text('Today')),
+          find.descendant(of: today, matching: find.textContaining('Today')),
           findsOneWidget,
         );
-        expect(under(first), pinnedGap, reason: 'Today sits where Pinned did');
+        expect(under(today), pinnedGap, reason: 'Today sits where Pinned did');
 
         final drawing = notes.create(drawing: true);
         notes.updateDrawing(drawing.id, NoteDrawing.empty, title: 'Deck flow');
@@ -10896,8 +10970,8 @@ void main() {
         expect(pin.hitTestable(), findsNothing);
         expect(
           tester.getTopLeft(groceries).dx,
-          20,
-          reason: 'at rest in its card',
+          44,
+          reason: "at rest, right of the rail's column",
         );
       });
 
@@ -12321,20 +12395,28 @@ void main() {
         await tester.pumpAndSettle();
       }
 
+      // A day's heading on a page's list, or on Home's timeline rail.
       List<String> dayHeadings(WidgetTester tester) => [
         for (final heading in tester.widgetList(
-          find.byKey(const ValueKey('phone-day-heading')),
+          find.byWidgetPredicate(
+            (widget) =>
+                widget.key == const ValueKey('phone-day-heading') ||
+                widget is RecapDayTitle,
+          ),
         ))
-          [
-            for (final text in tester.widgetList<Text>(
-              find.descendant(
-                of: find.byWidget(heading),
-                matching: find.byType(Text),
-                matchRoot: true,
-              ),
-            ))
-              text.data,
-          ].join(' '),
+          if (heading is RecapDayTitle)
+            [heading.label, ?heading.date].join(' ')
+          else
+            [
+              for (final text in tester.widgetList<Text>(
+                find.descendant(
+                  of: find.byWidget(heading),
+                  matching: find.byType(Text),
+                  matchRoot: true,
+                ),
+              ))
+                text.data,
+            ].join(' '),
       ];
 
       testWidgets("a note for a later day stays off Home's days, with no "
@@ -12677,12 +12759,12 @@ void main() {
       await pumpApp(tester, size: const Size(393, 852), tags: tags);
       await showNotesList(tester);
 
-      final headings = find.byKey(const ValueKey('phone-day-heading'));
+      final headings = find.byType(RecapDayTitle);
       expect(headings, findsNWidgets(3));
       double top(Finder finder) => tester.getTopLeft(finder).dy;
       final today = find.bySemanticsLabel('Today, Thu 19');
       final yesterday = find.bySemanticsLabel('Yesterday, Wed 18');
-      final older = find.bySemanticsLabel('Sun 15 Nov');
+      final older = find.bySemanticsLabel('Sun 15');
       expect(today, findsOneWidget);
       expect(yesterday, findsOneWidget);
       expect(older, findsOneWidget);
@@ -12787,28 +12869,31 @@ void main() {
       await pumpApp(tester, size: const Size(393, 852));
       await showNotesList(tester);
 
-      final heading = find.byKey(const ValueKey('phone-day-heading'));
+      // On the rail the label and the date are one line of text: the label
+      // in the heading's own style, then 6 on, the date in a quieter span.
+      final heading = find.byType(RecapDayTitle);
       final palette = tester.element(heading).palette;
-      final today = tester.widget<Text>(
-        find.descendant(of: heading, matching: find.text('Today')),
+      final line = tester.widget<Text>(
+        find.descendant(of: heading, matching: find.byType(Text)),
       );
-      final date = find.descendant(of: heading, matching: find.text('Thu 19'));
-      expect(today.style?.fontFamily, AppFonts.ui);
-      expect(today.style?.fontSize, 17);
-      expect(today.style?.color, palette.textPrimary);
-      final style = tester.widget<Text>(date).style;
-      expect(style?.fontFamily, AppFonts.ui);
-      expect(style?.fontSize, 15);
-      expect(style?.height, 22 / 15);
-      expect(style?.color, palette.textTertiary);
+      final root = line.textSpan! as TextSpan;
+      final today = root.children![0] as TextSpan;
+      final gap = root.children![1] as WidgetSpan;
+      final date = root.children![2] as TextSpan;
+      expect(today.text, 'Today');
+      expect(line.style?.fontFamily, AppFonts.ui);
+      expect(line.style?.fontSize, 17);
+      expect(line.style?.color, palette.textPrimary);
+      expect((gap.child as SizedBox).width, 6, reason: 'the date 6 after');
+      expect(date.text, 'Thu 19');
+      expect(date.style?.fontFamily, AppFonts.ui);
+      expect(date.style?.fontSize, 15);
+      expect(date.style?.height, 22 / 15);
+      expect(date.style?.color, palette.textTertiary);
       expect(
-        tester.getTopLeft(date).dx -
-            tester
-                .getTopRight(
-                  find.descendant(of: heading, matching: find.text('Today')),
-                )
-                .dx,
-        6,
+        find.bySemanticsLabel('Today, Thu 19'),
+        findsOneWidget,
+        reason: 'read aloud as one heading',
       );
     });
 
@@ -12843,7 +12928,8 @@ void main() {
       final rects = [for (var i = 0; i < 2; i++) tester.getRect(lines.at(i))];
       for (var i = 0; i < 2; i++) {
         final line = tester.widget<Divider>(lines.at(i));
-        expect(rects[i].left + line.indent!, 36);
+        // The text starts 36 in, and the rail's 24 pt column is before it.
+        expect(rects[i].left + line.indent!, 36 + 24);
         expect(rects[i].right - line.endIndent!, 393 - 20);
       }
       expect(rects[0].top, tester.getRect(row('Morning pages')).bottom);

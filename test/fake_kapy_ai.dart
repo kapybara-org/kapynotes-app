@@ -266,6 +266,12 @@ class FakeKapyAi extends KapyAi {
   String? suggestionFor(String noteId) => suggestions[noteId];
 
   @override
+  void periodsChanged() {
+    calls.add('periodsChanged');
+    super.periodsChanged();
+  }
+
+  @override
   bool get answering => _answering;
   @override
   KapyPending? get pending => _pending;

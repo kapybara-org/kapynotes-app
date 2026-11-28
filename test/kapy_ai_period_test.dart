@@ -172,8 +172,8 @@ void main() {
       expect(find.text('Ask about this week'), findsOneWidget);
       expect(
         find.text(
-          'Answers come only from 16–22 Nov: 2 notes and 1 task. Hidden '
-          'notes are never used.',
+          'Answers come only from your 2 notes and 1 task from 16–22 Nov. '
+          'Hidden notes are never used.',
         ),
         findsOneWidget,
       );
@@ -287,6 +287,60 @@ void main() {
         'Kapy AI Cloud · 1 credit',
         'Kapy AI Cloud · 1 credit · 412 of 500 left',
       ]);
+      expect(
+        tester.widget<Text>(find.byKey(const ValueKey('kapy-ai-credits'))).data,
+        '1 credit',
+        reason: 'what is left is said once, under the latest answer',
+      );
+    });
+
+    testWidgets('each line starts with the composer’s cloud, never the recap '
+        'icon', (tester) async {
+      await _open(
+        tester,
+        chat: _chat([_question('q', 'One?'), _answer('a')], scope: _week),
+      );
+      final row = find
+          .ancestor(
+            of: find.byKey(const ValueKey('kapy-ai-source')),
+            matching: find.byType(Row),
+          )
+          .first;
+      final icons = tester
+          .widgetList<KapyIcon>(
+            find.descendant(of: row, matching: find.byType(KapyIcon)),
+          )
+          .map((icon) => icon.icon)
+          .toList();
+      expect(icons.first, KapyIcons.cloudRounded);
+      expect(icons, isNot(contains(KapyIcons.recapOutlined)));
+      expect(
+        tester.getTopLeft(find.byKey(const ValueKey('kapy-ai-copy'))).dx,
+        greaterThan(
+          tester.getTopRight(find.byKey(const ValueKey('kapy-ai-source'))).dx,
+        ),
+        reason: 'Copy sits after the line, so the cloud leads it',
+      );
+      final composer = tester
+          .widgetList<KapyIcon>(
+            find.descendant(
+              of: find.byKey(const ValueKey('kapy-ai-model-button')),
+              matching: find.byType(KapyIcon),
+            ),
+          )
+          .first;
+      expect(composer.icon, icons.first);
+    });
+
+    testWidgets('a new chat about another period still says what is left', (
+      tester,
+    ) async {
+      await _open(
+        tester,
+        period: _month,
+        chat: _chat([_question('q', 'One?'), _answer('a')], scope: _week),
+      );
+      expect(find.byKey(const ValueKey('kapy-ai-period-empty')), findsOne);
       expect(find.text('1 credit · 412 left'), findsOneWidget);
     });
 

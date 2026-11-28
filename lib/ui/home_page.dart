@@ -59,7 +59,13 @@ import 'voice_consent_sheet.dart';
 import '../ai/kapy_ai.dart';
 import '../ai/period_scope.dart';
 import '../ai/recording_translation.dart' show RecentLanguages;
+import '../recaps/recap_maker.dart';
 import '../recaps/recap_period.dart';
+import '../recaps/recap_timeline.dart' show RecapFolds;
+import '../core/file_export.dart' show FileExportOutcome;
+import '../core/text_file_export.dart';
+import 'recaps/recap_drawer.dart';
+import 'recaps/recap_rail.dart';
 import '../sync/aead.dart';
 import '../sync/sync_api.dart';
 import '../sync/account.dart';
@@ -207,6 +213,7 @@ class HomePage extends StatefulWidget {
     this.lostImageRetriever,
     required this.hiddenNotesGate,
     this.kapyAi,
+    this.recaps,
     this.titleModel,
     this.storeUpdates,
   });
@@ -298,6 +305,10 @@ class HomePage extends StatefulWidget {
   /// Kapy AI: its panel, its button beside the pin, and ⌘J. Null, or the
   /// feature not built in, leaves all three out.
   final KapyAi? kapyAi;
+
+  /// Recaps, made with [kapyAi] and kept as long as the app runs, so one
+  /// carries on after its drawer closes. Null leaves every recap icon out.
+  final RecapMaker? recaps;
 
   /// The model on this device that names new notes. Null names none.
   final TitleModel? titleModel;
@@ -589,6 +600,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _showTabOf(_selectedId);
     widget.notes.addListener(_onNotesChanged);
     widget.dayTabs?.addListener(_onDayTabsChanged);
+    widget.tags?.addListener(_onTopicsChanged);
+    widget.folders?.addListener(_onTopicsChanged);
     if (widget.folders case final folders?) {
       folders.addListener(_onFoldersChanged);
       unawaited(
@@ -643,6 +656,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     widget.notes.removeListener(_onNotesChanged);
     widget.dayTabs?.removeListener(_onDayTabsChanged);
     widget.folders?.removeListener(_onFoldersChanged);
+    widget.tags?.removeListener(_onTopicsChanged);
+    widget.folders?.removeListener(_onTopicsChanged);
     widget.account?.noteLimit?.removeListener(_onNoteLimitChanged);
     widget.account?.removeListener(_offerRecoveryKey);
     widget.account?.removeListener(_tellStorageFull);
@@ -654,6 +669,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     _kapyAi?.removeListener(_onKapyAi);
     if (_kapyAi?.periods == _readPeriod) _kapyAi?.periods = null;
     _kapyPanel.dispose();
+    _recapFolds.dispose();
     _pageSteps.dispose();
     _taskSteps.dispose();
     _taskAddFocus.dispose();
@@ -3508,6 +3524,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   /// Whether Kapy AI's panel is open, and the note it was opened from.
   final _kapyPanel = KapyAiPanelController();
 
+  /// Which of the timeline's cards are open, for as long as the app runs.
+  final _recapFolds = RecapFolds();
+
   /// Kapy AI, only where the build carries it.
   KapyAi? get _kapyAi => kapyAiAvailable ? widget.kapyAi : null;
 
@@ -3566,19 +3585,69 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     return KapyPeriodRead.gather(
       period,
       store: widget.notes,
-      tasks:
-          _taskController?.read() ??
-          TaskBoard.read(
-            entries: const [],
-            notes: const [],
-            docOf: (_) => null,
-          ),
+      tasks: _taskBoard,
       tags: tags,
       folders: folders.tree,
       displayTime: widget.prefs.displayTime,
       ownDay: widget.days == null ? null : _ownDayOf,
     );
   }
+
+  /// The tasks as Tasks reads them, or none where this build has no Tasks.
+  TaskBoard get _taskBoard =>
+      _taskController?.read() ??
+      TaskBoard.read(entries: const [], notes: const [], docOf: (_) => null);
+
+  /// Home's list on the timeline's rail, where [home] says the list is
+  /// Home's by date and nothing narrows it: a search, a filter or When.
+  /// Its recap icons are there only while Kapy AI is on to make recaps.
+  SidebarTimeline? _timeline({required bool home}) {
+    if (!home ||
+        _archiveQuery.trim().isNotEmpty ||
+        _when != NotesWhen.anyTime ||
+        filtersNarrowed(show: _show, media: _mediaFilter, tags: _tagFilter)) {
+      return null;
+    }
+    final recaps = widget.recaps;
+    return SidebarTimeline(
+      notes: widget.notes.notes,
+      tasks: _taskBoard,
+      firstWeekday: firstWeekday(context),
+      folds: _recapFolds,
+      reveal: _selectedId,
+      recaps: recaps != null && _kapyAiOn
+          ? (maker: recaps, hooks: _recapHooks)
+          : null,
+    );
+  }
+
+  /// What the recap drawer and the story viewer do, through the app's own
+  /// actions: Kapy AI about the period, opening a note, playing a voice note
+  /// from a moment, a new note, saving a card as an image, and Kapy AI's
+  /// own ways out of its limits.
+  RecapDrawerHooks get _recapHooks => RecapDrawerHooks(
+    // The drawer has closed itself by now, so the chat opens over Home.
+    onAsk: _askAbout,
+    openNote: _openTaskNote,
+    play: (quote) =>
+        unawaited(widget.player?.play(quote.hash, from: quote.at)),
+    saveAsNote: (note) => _createNote(body: note.body),
+    shareImage: (png, name) async {
+      final outcome = await TextFileExport.savePng(
+        png: png,
+        suggestedName: name,
+      );
+      if (outcome == FileExportOutcome.failed && mounted) {
+        Toast.show(context, "Couldn't save the image", isError: true);
+      }
+    },
+    onManageAccounts: () => _manageKapyAccounts(_kapyAi!),
+    onSignIn: _kapySignIn,
+    onUpgrade: _kapyUpgrade,
+  );
+
+  /// A tag or a folder changed, so a period's main topic may be another now.
+  void _onTopicsChanged() => _kapyAi?.periodsChanged();
 
   /// [openKapyAiForPeriod].
   bool _askAbout(RecapPeriod period) {
@@ -4555,6 +4624,15 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               filterChip: _notesFilterChip(space),
               grouping: widget.prefs.notesGrouping,
               ownDay: widget.days == null ? null : _ownDayOf,
+              timeline: _timeline(
+                home:
+                    space == LibrarySpace.notes &&
+                    _sidebarTab == SidebarTab.mine &&
+                    !_foldersShown &&
+                    !_specialMode &&
+                    !_showingPinnedOnly &&
+                    widget.prefs.notesGrouping == NotesGrouping.byDate,
+              ),
               ofPickedDay: switch (_workspace.dayInTabs) {
                 null => null,
                 final day =>
@@ -6021,6 +6099,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           : null,
       phone: true,
       ownDay: widget.days == null ? null : _ownDayOf,
+      timeline: _timeline(
+        home:
+            _phoneHome &&
+            !page &&
+            !tree &&
+            !pinnedPage &&
+            _sidebarTab == SidebarTab.mine,
+      ),
       // The Pinned page from View all is titled as Drawings is, and its
       // arrow goes back to Home.
       windowBar: pinnedPage

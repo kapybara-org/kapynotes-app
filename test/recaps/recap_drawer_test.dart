@@ -224,7 +224,9 @@ void main() {
 
     expect(text('Not enough credits for this one'), findsOneWidget);
     expect(
-      sentence('A day recap uses 1 credit, and you have 0 left until 1 Dec.'),
+      sentence(
+        'A day recap uses 1 credit, and you have 0 credits left until 1 Dec.',
+      ),
       findsOneWidget,
     );
     expect(text('Sign in'), findsNothing);
@@ -232,6 +234,19 @@ void main() {
     await tester.tap(text('Upgrade'));
     await tester.pumpAndSettle();
     expect(calls.went, ['upgrade']);
+  });
+
+  testWidgets('one credit short says credit in the singular', (tester) async {
+    await start(tester, left: 1);
+    await open(tester, w.week);
+
+    expect(text('Not enough credits for this one'), findsOneWidget);
+    expect(
+      sentence(
+        'A week recap uses 2 credits, and you have 1 credit left until 1 Dec.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('signed out on Free: Sign in, Upgrade and own account', (

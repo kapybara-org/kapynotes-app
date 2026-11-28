@@ -74,6 +74,9 @@ import 'ui/instant_capture.dart';
 import 'ui/mcp_pane.dart';
 import 'ui/menu_bar_panel.dart';
 import 'ui/tasks/tasks_controller.dart';
+import 'ui/notes_grouping.dart' show firstWeekday;
+import 'recaps/recap_maker.dart';
+import 'data/task_board.dart';
 import 'speech/live_translation.dart';
 import 'audio/live_text.dart';
 
@@ -255,6 +258,15 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// Kapy AI, built only in builds that carry it. Held here for the reason
   /// [_localModels] is: closing the panel must not drop a chat mid-answer.
   KapyAi? _kapyAi;
+
+  /// Recaps, made with [_kapyAi]. Held here for the same reason: a recap
+  /// carries on after its drawer closes, and its notes listener takes a
+  /// hidden or deleted note's words out of recaps already made.
+  RecapMaker? _recaps;
+
+  /// The [DateTime.weekday] weeks start on where the app is used, read from
+  /// the app's localizations as it builds.
+  int _weekStart = DateTime.monday;
   late final TitleModel? _titleModel =
       widget.titleModel ?? platformTitleModel();
   late final StoreUpdates? _storeUpdates =
@@ -408,6 +420,26 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         token: () => widget.account?.token,
       );
     }
+    final ai = _kapyAi;
+    final chats = widget.chats;
+    final tags = widget.tags;
+    final folders = widget.folders;
+    if (ai != null && chats != null && tags != null && folders != null) {
+      final days = widget.days;
+      _recaps = RecapMaker(
+        notes: widget.notes,
+        chats: chats,
+        ai: ai,
+        tags: tags,
+        local: widget.store,
+        tasks: _recapTasks,
+        folders: () => folders.tree,
+        displayTime: widget.prefs.displayTime,
+        timeZone: () => widget.prefs.timeZoneId ?? DateTime.now().timeZoneName,
+        firstWeekday: () => _weekStart,
+        ownDay: days == null ? null : (note) => days.dayOf(note.id),
+      );
+    }
     _summarizer = RoutingSummarizer(
       engineOf: () => _cloudAccess?.summaries.engine ?? SummaryEngine.cloud,
       cloud: CloudSummarizer(() => widget.account?.speech),
@@ -451,6 +483,18 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     } else {
       _hydration = _hydrateInBackground();
     }
+  }
+
+  /// The tasks as Tasks reads them, for the recap of a period.
+  TaskBoard _recapTasks() {
+    final tasks = widget.tasks;
+    return TaskBoard.read(
+      entries: tasks?.index.entries ?? const [],
+      notes: widget.notes.notes,
+      docOf: (id) => tasks != null && tasks.isLoaded
+          ? tasks.docs.get(id)?.doc
+          : null,
+    );
   }
 
   Future<void> _hydrateInBackground() async {
@@ -723,6 +767,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _cloudAccess?.dispose();
     _voicePrefs?.dispose();
     // Not the injected one: whoever passed it in owns it.
+    _recaps?.dispose();
     if (widget.kapyAi == null) _kapyAi?.dispose();
     if (widget.storeUpdates == null) _storeUpdates?.dispose();
     _localModels?.dispose();
@@ -845,6 +890,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           // Flutter side of it. Either way it costs a single palette copy
           // rather than a rebuilt ColorScheme on every frame.
           builder: (context, child) {
+            _weekStart = firstWeekday(context);
             final asks = _systemAsksForContrast;
             final solid = !_glassBehindWindow || asks;
             Widget result = FocusRing(
@@ -927,6 +973,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
                   lostImageRetriever: widget.lostImageRetriever,
                   hiddenNotesGate: _hiddenNotesGate,
                   kapyAi: _kapyAi,
+                  recaps: _recaps,
                   titleModel: _titleModel,
                   storeUpdates: _storeUpdates,
                 ),

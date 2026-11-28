@@ -29,21 +29,48 @@ class TextFileExport {
     ),
   ];
 
+  static const _pngTypes = [
+    XTypeGroup(label: 'Image', extensions: ['png'], mimeTypes: ['image/png']),
+  ];
+
   static Future<FileExportOutcome> save({
     required String contents,
     required String suggestedName,
+  }) => _save(
+    suggestedName: suggestedName,
+    types: _textTypes,
+    mimeType: 'text/plain',
+    write: (file) => file.writeAsString(contents, flush: true),
+  );
+
+  /// Saves [png], such as a recap's card shared as an image, the same way.
+  static Future<FileExportOutcome> savePng({
+    required Uint8List png,
+    required String suggestedName,
+  }) => _save(
+    suggestedName: suggestedName,
+    types: _pngTypes,
+    mimeType: 'image/png',
+    write: (file) => file.writeAsBytes(png, flush: true),
+  );
+
+  static Future<FileExportOutcome> _save({
+    required String suggestedName,
+    required List<XTypeGroup> types,
+    required String mimeType,
+    required Future<void> Function(File file) write,
   }) async {
     if (AppPlatform.isDesktop) {
       try {
         final location = await getSaveLocation(
           suggestedName: suggestedName,
-          acceptedTypeGroups: _textTypes,
+          acceptedTypeGroups: types,
         );
         if (location == null) return FileExportOutcome.cancelled;
-        await File(location.path).writeAsString(contents, flush: true);
+        await write(File(location.path));
         return FileExportOutcome.saved;
       } catch (error, stack) {
-        debugPrint('KapyNotes: could not save text file: $error\n$stack');
+        debugPrint('KapyNotes: could not save file: $error\n$stack');
         return FileExportOutcome.failed;
       }
     }
@@ -52,14 +79,14 @@ class TextFileExport {
     try {
       final directory = await getTemporaryDirectory();
       temporary = File('${directory.path}/$suggestedName');
-      await temporary.writeAsString(contents, flush: true);
+      await write(temporary);
       return (await FileExport.save(
         path: temporary.path,
         suggestedName: suggestedName,
-        mimeType: 'text/plain',
+        mimeType: mimeType,
       )).outcome;
     } catch (error, stack) {
-      debugPrint('KapyNotes: could not save text file: $error\n$stack');
+      debugPrint('KapyNotes: could not save file: $error\n$stack');
       return FileExportOutcome.failed;
     } finally {
       try {

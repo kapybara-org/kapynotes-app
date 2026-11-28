@@ -813,7 +813,8 @@ class _RecapDrawerState extends State<RecapDrawer> {
                 'Not enough credits for this one',
                 shown == null
                     ? '$costs.'
-                    : '$costs, and you have ${shown.remaining} left until '
+                    : '$costs, and you have ${credits(shown.remaining)} '
+                          'left until '
                           '${shown.resetsAt.day} '
                           '${SidebarTimestamp.monthName(shown.resetsAt).substring(0, 3)}.',
               )

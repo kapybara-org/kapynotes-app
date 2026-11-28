@@ -8,7 +8,11 @@
 //
 // The list comes a day at a time (#203): Today, Yesterday, then the older
 // day, each row under its own day with its time, and a tagged row with its
-// dot after the time. Pinned (KAP-302) is a row of cards over the days,
+// dot after the time. Home is the timeline's rail, which gives only this
+// week its own day headings and folds earlier weeks into cards, so which of
+// Yesterday and the older day sit on it depends on the weekday of the run:
+// the list opens every card, and the test reads the days as the rail names
+// them. Pinned (KAP-302) is a row of cards over the days,
 // with its count and View all, which opens every pinned note two to a row;
 // Back returns to Notes: the page's arrow and a swipe in from the left edge
 // on both phones, and Android's system back. Folders lists only folders, and
@@ -29,6 +33,7 @@ import 'package:kapy_notes/data/notes_store.dart';
 import 'package:kapy_notes/data/onboarding.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/data/tags.dart';
+import 'package:kapy_notes/ui/recaps/recap_rail.dart';
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/tag_colours.dart';
 import 'package:material_ui/material_ui.dart';
@@ -142,6 +147,14 @@ void main() {
       await tester.tap(back);
       await tester.pumpAndSettle();
     }
+    // Earlier weeks are folded into cards on the rail; open them all.
+    final folded = find.byWidgetPredicate(
+      (widget) => widget is RecapPeriodCard && !widget.open,
+    );
+    while (folded.evaluate().isNotEmpty) {
+      await tester.tap(folded.first);
+      await tester.pumpAndSettle();
+    }
   }
 
   Future<void> shot(WidgetTester tester, String name) async {
@@ -153,7 +166,11 @@ void main() {
     }
   }
 
-  final headings = find.byKey(const ValueKey('phone-day-heading'));
+  final headings = find.byWidgetPredicate(
+    (widget) =>
+        widget.key == const ValueKey('phone-day-heading') ||
+        widget is RecapDayTitle,
+  );
   final pinnedCards = find.byKey(const ValueKey('phone-pinned-cards'));
   final viewAll = find.byKey(const ValueKey('sidebar-view-all-pinned'));
   final pinnedPage = find.byKey(const ValueKey('pinned-page'));
@@ -180,8 +197,21 @@ void main() {
     expect(days, hasLength(4));
     expect(days[0], startsWith('Pinned '));
     expect(days[1], startsWith('Today '));
-    expect(days[2], startsWith('Yesterday '));
-    expect(days[3], contains(' ${older.day} '));
+    // Weeks start on Sunday, as the test locale's do. A day of an earlier
+    // week is under its card, named by its weekday and date alone.
+    final yesterday = DateTime(today.year, today.month, today.day - 1);
+    final weekStart = DateTime(
+      today.year,
+      today.month,
+      today.day - today.weekday % 7,
+    );
+    expect(
+      days[2],
+      yesterday.isBefore(weekStart)
+          ? endsWith(' ${yesterday.day}')
+          : startsWith('Yesterday '),
+    );
+    expect(days[3], endsWith(' ${older.day}'));
     final tops = [
       for (var i = 0; i < days.length; i++)
         tester.getTopLeft(headings.at(i)).dy,

@@ -689,11 +689,20 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
       _ => 'Ask about ${kapyPeriodName(period, widget.now())}…',
     };
     final usage = _ai.cloudUsage;
+    // Once the chat on screen has a Kapy AI Cloud answer, the line under it
+    // says what is left, so the composer says only what the next one costs.
+    final chat = _ai.current;
+    final counted =
+        (period == null || chat?.scope == period) &&
+        (chat?.messages.any(
+              (message) => message.model?.kind == KapyModelKind.cloud,
+            ) ??
+            false);
     final credits =
         _ai.model.kind == KapyModelKind.cloud &&
             usage != null &&
             usage.remaining > 0
-        ? '1 credit · ${usage.remaining} left'
+        ? (counted ? '1 credit' : '1 credit · ${usage.remaining} left')
         : null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),

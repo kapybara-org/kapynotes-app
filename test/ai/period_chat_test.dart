@@ -226,4 +226,17 @@ void main() {
     expect(ai.readPeriod(week)!.notes, 1);
     expect(reads, 2);
   });
+
+  test('reads a period afresh when its tags or folders change', () async {
+    final ai = await build();
+    var told = 0;
+    ai.addListener(() => told++);
+    expect(ai.readPeriod(week)!.topic, isNull);
+    world.tags.setTags('call', [world.tags.create('Acme')!.id]);
+    expect(ai.readPeriod(week)!.topic, isNull, reason: 'kept until told');
+    ai.periodsChanged();
+    expect(ai.readPeriod(week)!.topic, 'Acme');
+    expect(reads, 2);
+    expect(told, 1, reason: 'so the empty chat shows the new question');
+  });
 }

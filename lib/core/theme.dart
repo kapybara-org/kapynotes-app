@@ -140,6 +140,10 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   final Color pageBorder;
   final Color textDivider;
 
+  /// The timeline's dotted rail and the dotted line along each of its
+  /// headings, at [AppTimeline.rail] and [AppTimeline.rowLine].
+  final Color timelineLine;
+
   /// A switch's thumb while it is on, standing on the sage track.
   final Color switchThumb;
 
@@ -313,6 +317,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       pageBorder: hairline,
       paperRuling: hairline,
       textDivider: _mix(editorBackground, ink, 0.45),
+      timelineLine: hairline,
       checkboxBorder: outline,
       quoteBar: outline,
       accent: strongAccent,
@@ -389,6 +394,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.accentText,
     required this.pageBorder,
     required this.textDivider,
+    required this.timelineLine,
     required this.switchThumb,
     required this.wellBackground,
     required this.segmentSelected,
@@ -473,6 +479,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? accentText,
     Color? pageBorder,
     Color? textDivider,
+    Color? timelineLine,
     Color? switchThumb,
     Color? wellBackground,
     Color? segmentSelected,
@@ -554,6 +561,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     accentText: accentText ?? this.accentText,
     pageBorder: pageBorder ?? this.pageBorder,
     textDivider: textDivider ?? this.textDivider,
+    timelineLine: timelineLine ?? this.timelineLine,
     switchThumb: switchThumb ?? this.switchThumb,
     wellBackground: wellBackground ?? this.wellBackground,
     segmentSelected: segmentSelected ?? this.segmentSelected,
@@ -644,6 +652,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       accentText: mix(accentText, other.accentText),
       pageBorder: mix(pageBorder, other.pageBorder),
       textDivider: mix(textDivider, other.textDivider),
+      timelineLine: mix(timelineLine, other.timelineLine),
       switchThumb: mix(switchThumb, other.switchThumb),
       wellBackground: mix(wellBackground, other.wellBackground),
       segmentSelected: mix(segmentSelected, other.segmentSelected),
@@ -907,6 +916,22 @@ class AppHairline {
   /// 2x and blurs to grey at 1x, 125% and 150%.
   static double of(BuildContext context) =>
       1 / MediaQuery.devicePixelRatioOf(context);
+}
+
+/// The notes list's timeline: a dotted rail down the list, with a node
+/// where each day, week, month and year sits, and a dotted line from each
+/// heading to its recap icon. Both in [CalcPalette.timelineLine].
+class AppTimeline {
+  const AppTimeline._();
+
+  /// The rail's width, and the size and gap of its dots.
+  static const double rail = 1.5;
+
+  /// A heading's line.
+  static const double rowLine = 1;
+
+  /// The column the rail and its nodes take at the start of each row.
+  static double column({required bool phone}) => phone ? 24 : 20;
 }
 
 /// Control geometry shared by every app surface, resolved per input device.
@@ -1591,6 +1616,7 @@ class KapyTheme {
     tertiary: Color(0xFF8F8F8F),
     quiet: Color(0xFF8F8F8F),
     mark: Color(0xFF4A4A4A),
+    timeline: Color(0xFF2A2A2A),
     accent: Color(0xFFE8772E),
     onAccent: Color(0xFFFFFFFF),
     accentFill: Color(0xFFC05815),
@@ -1626,6 +1652,7 @@ class KapyTheme {
     tertiary: Color(0xFF6B6B6B),
     quiet: Color(0xFF6B6B6B),
     mark: Color(0xFFB5B5B5),
+    timeline: Color(0xFFDEDEDE),
     accent: Color(0xFFD9692A),
     onAccent: Color(0xFFFFFFFF),
     accentFill: Color(0xFFBD5A22),
@@ -2280,6 +2307,7 @@ class _Tones {
     required this.tertiary,
     required this.quiet,
     required this.mark,
+    required this.timeline,
     required this.accent,
     required this.onAccent,
     required this.accentFill,
@@ -2324,6 +2352,10 @@ class _Tones {
   /// Dots and chevrons between words, never words themselves.
   final Color mark;
 
+  /// The timeline's dotted rail and heading lines (tokens.md, replacing
+  /// #E5E5E5 there).
+  final Color timeline;
+
   final Color accent;
   final Color onAccent;
   final Color accentFill;
@@ -2350,6 +2382,7 @@ class _Tones {
         tertiary: tertiary,
         quiet: quiet,
         mark: mark,
+        timeline: move(timeline),
         accent: accent,
         onAccent: onAccent,
         accentFill: accentFill,
@@ -2441,6 +2474,7 @@ CalcPalette _fromTones(_Tones t) {
     accentText: accentText,
     pageBorder: t.hairline,
     textDivider: t.mark,
+    timelineLine: t.timeline,
     switchThumb: const Color(0xFFFFFFFF),
     wellBackground: t.raised,
     segmentSelected: t.raised,

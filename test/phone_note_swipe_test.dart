@@ -43,8 +43,12 @@ Map<String, Object?> _note(String id, String body, DateTime edited) => {
 
 Finder _row(String title) => find.widgetWithText(NoteRow, title);
 
-/// Where a closed row sits: inside the list's card, 20 in from the edge.
-const _rest = 20.0;
+/// Where a closed row sits: 20 in from the edge, then past the timeline
+/// rail's 24 pt column.
+const _rest = 44.0;
+
+/// A folder's page has no rail: its rows sit 20 in from the edge.
+const _restOffRail = 20.0;
 Finder _button(String key, String id) => find.byKey(ValueKey('swipe-$key-$id'));
 
 /// The titles of the rows on screen, top to bottom.
@@ -675,7 +679,7 @@ void main() {
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(_button('pin', 'budget').hitTestable(), findsNothing);
-      expect(tester.getTopLeft(_row('Budget')).dx, _rest);
+      expect(tester.getTopLeft(_row('Budget')).dx, _restOffRail);
       expect(page, findsOneWidget);
 
       await tester.binding.handlePopRoute();

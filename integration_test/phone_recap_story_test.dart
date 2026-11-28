@@ -6,8 +6,8 @@
 //     --target integration_test/phone_recap_story_test.dart -d <device> \
 //     --dart-define=KAPYNOTES_SYNC=false
 //
-// Nothing in the app opens a recap yet, so the viewer is opened from a bare
-// page with the app's theme, over the board's sample day.
+// The viewer is opened from a bare page with the app's theme, over the
+// board's sample day, so its cards are drawn without a recap being made.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/core/theme.dart';

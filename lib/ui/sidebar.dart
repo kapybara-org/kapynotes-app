@@ -31,8 +31,11 @@ import 'keycap.dart';
 import 'member_avatars.dart';
 import 'note_picks.dart';
 import 'note_row_swipe.dart';
+import '../recaps/recap_period.dart';
+import '../recaps/recap_timeline.dart';
 import 'notes_grouping.dart';
 import 'notes_list.dart';
+import 'recaps/recap_rail.dart';
 import 'safety_dialogs.dart';
 import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
@@ -212,6 +215,7 @@ class Sidebar extends StatelessWidget {
     this.onWhenChanged,
     this.folders,
     this.onAddNotes,
+    this.timeline,
   });
 
   /// The notes to list, already narrowed to [tab] while the tabs are shown.
@@ -325,6 +329,11 @@ class Sidebar extends StatelessWidget {
   /// Opens a person's page in Settings → Sharing, by address, from a heading
   /// in the Shared list. Null leaves the heading a label.
   final ValueChanged<String>? onOpenPerson;
+
+  /// Home's list by date on the timeline's rail: today and this week day by
+  /// day, then earlier weeks, months and years folded into cards. Null for
+  /// every other list, and while a search or a filter narrows this one.
+  final SidebarTimeline? timeline;
 
   /// Opens Settings → Sharing on Share with someone, from the empty Shared
   /// list. Null leaves the button out.
@@ -562,7 +571,16 @@ class Sidebar extends StatelessWidget {
                           ? _buildFolders(context)
                           : notes.isEmpty
                           ? _buildEmpty(context)
-                          : _sweeps(_buildBesideRail(context)),
+                          : _sweeps(
+                              switch (_timeline) {
+                                final timeline? => ListenableBuilder(
+                                  listenable: timeline.folds,
+                                  builder: (context, _) =>
+                                      _buildBesideRail(context),
+                                ),
+                                null => _buildBesideRail(context),
+                              },
+                            ),
                     ),
                   ),
                 ),
@@ -1261,11 +1279,60 @@ extension on Sidebar {
     }
     final groups = _noteGroups;
     if (pinnedOnly) return groups.pinned;
+    final timeline = _timeline;
     return [
       ..._shownPinned(groups),
       for (final key in groups.groupOrder) ...groups.byGroup[key]!,
-      ...groups.mine,
+      if (timeline == null)
+        ...groups.mine
+      else
+        for (final (_, notes) in _onRail(timeline, groups.mine).lines)
+          ...notes,
     ];
+  }
+
+  /// [timeline], unless this list isn't one it lays out.
+  SidebarTimeline? get _timeline =>
+      _specialMode ||
+          pinnedOnly ||
+          drawings ||
+          query.trim().isNotEmpty ||
+          (!phone && grouping != NotesGrouping.byDate)
+      ? null
+      : timeline;
+
+  /// The timeline's rows, each with the notes of [mine] it shows in the
+  /// list's order: a day's, and none for a card or a heading. A day whose
+  /// every note sits elsewhere, such as under Pinned, has no row. The
+  /// timeline's [SidebarTimeline.reveal] note has its cards opened, once.
+  ({RecapTimeline rail, List<(RecapRow, List<Note>)> lines}) _onRail(
+    SidebarTimeline timeline,
+    List<Note> mine,
+  ) {
+    final rail = RecapTimeline(
+      notes: timeline.notes,
+      tasks: timeline.tasks,
+      displayTime: displayTime,
+      firstWeekday: timeline.firstWeekday,
+      now: now(),
+      ownDay: ownDay,
+      making: timeline.recaps?.maker.progressOf,
+    );
+    timeline.folds.reveal(timeline.reveal, rail.holding);
+    final order = {for (final (index, note) in mine.indexed) note.id: index};
+    final lines = <(RecapRow, List<Note>)>[];
+    for (final row in rail.rows(timeline.folds)) {
+      if (row is! RecapDayRow) {
+        lines.add((row, const []));
+        continue;
+      }
+      final shown = [
+        for (final note in row.notes)
+          if (order.containsKey(note.id)) note,
+      ]..sort((a, b) => order[a.id]!.compareTo(order[b.id]!));
+      if (shown.isNotEmpty) lines.add((row, shown));
+    }
+    return (rail: rail, lines: lines);
   }
 
   /// The heading over one group of the Shared list. A tap opens the page of
@@ -1372,7 +1439,13 @@ extension on Sidebar {
       style: NoteRowStyle.phoneCard,
     );
 
-    void section(Iterable<Note> notes, {bool clockOnly = false}) {
+    // [lead] moves the section off the margin, past the timeline's rail,
+    // where a desktop's rows sit in one card a section as a phone's do.
+    void section(
+      Iterable<Note> notes, {
+      bool clockOnly = false,
+      double lead = 0,
+    }) {
       final list = notes.toList();
       Widget note(Note note) => _row(
         note,
@@ -1391,20 +1464,21 @@ extension on Sidebar {
             ? Colors.transparent
             : context.palette.pageBorder,
       );
-      if (phone && !cards) {
+      if ((phone || lead > 0) && !cards) {
         // One card a section, built a row at a time so a long folder stays
         // lazy: the first row rounds its top, the last its foot.
+        final radius = phone ? AppRadii.phoneList : AppRadii.card;
         Widget carded(
           BuildContext context,
           Widget child, {
           bool first = false,
           bool last = false,
         }) => Padding(
-          padding: EdgeInsets.symmetric(horizontal: margin),
+          padding: EdgeInsets.only(left: margin + lead, right: margin),
           child: ClipRRect(
             borderRadius: BorderRadius.vertical(
-              top: Radius.circular(first ? AppRadii.phoneList : 0),
-              bottom: Radius.circular(last ? AppRadii.phoneList : 0),
+              top: Radius.circular(first ? radius : 0),
+              bottom: Radius.circular(last ? radius : 0),
             ),
             child: ColoredBox(
               color: context.palette.cardBackground,
@@ -1451,7 +1525,7 @@ extension on Sidebar {
         final pair = list.skip(index).take(2).toList();
         rows.add(
           (context) => Padding(
-            padding: EdgeInsets.symmetric(horizontal: margin),
+            padding: EdgeInsets.only(left: margin + lead, right: margin),
             child: SizedBox(
               height: AppControlMetrics.scaleBar(
                 context,
@@ -1469,6 +1543,141 @@ extension on Sidebar {
               ),
             ),
           ),
+        );
+      }
+    }
+
+    // Home by date on the timeline's rail. Each row carries the gap over
+    // it, so the rail runs unbroken from the first node to the list's foot.
+    void onRail(SidebarTimeline timeline) {
+      final (:rail, :lines) = _onRail(timeline, groups.mine);
+      if (lines.isEmpty) return;
+      final column = AppTimeline.column(phone: phone);
+      // Every heading and card on the rail starts on the note titles' edge.
+      final axis = cards && !phone
+          ? NoteCardFace.textStart
+          : NoteListRowFace.textStart(touch: phone);
+      final ground = phone ? palette.paperColor : palette.sidebarColor;
+      final recaps = timeline.recaps;
+      String keyOf(RecapPeriod period) =>
+          '${period.kind.name}-${period.first.year}-${period.first.month}-'
+          '${period.first.day}';
+      Widget? icon(RecapPeriod period, RecapState? state, Color on) =>
+          recaps == null || state == null
+          ? null
+          : RecapIcon(
+              key: ValueKey('recap-icon-${keyOf(period)}'),
+              period: period,
+              state: state,
+              maker: recaps.maker,
+              hooks: recaps.hooks,
+              phone: phone,
+              ground: on,
+            );
+      void onTheRail(Widget? node, Widget child) => rows.add(
+        (_) => Padding(
+          padding: EdgeInsets.symmetric(horizontal: margin),
+          child: RecapRailRow(phone: phone, node: node, child: child),
+        ),
+      );
+      Widget dayTitle(DateTime day, {required bool thisWeek}) {
+        final short = SidebarTimestamp.weekdayAndDay(day);
+        if (!phone) {
+          return RecapDayTitle(
+            label: thisWeek
+                ? SidebarTimestamp.dayHeading(day, today: rail.today).$1
+                : short,
+            phone: false,
+          );
+        }
+        final lead = thisWeek
+            ? SidebarTimestamp.phoneDay(day, now: rail.today).lead
+            : null;
+        return lead == null
+            ? RecapDayTitle(label: short, phone: true)
+            : RecapDayTitle(label: lead, date: short, phone: true);
+      }
+
+      if (rows.isNotEmpty || phone) gap(phone ? 12 : 8);
+      final start = rows.length;
+      for (final (index, (row, notes)) in lines.indexed) {
+        switch (row) {
+          case RecapDayRow(:final period, :final state, :final depth):
+            if (index > 0) gap(8);
+            onTheRail(
+              RecapNode(
+                kind: RecapKind.day,
+                ground: ground,
+                today: period.first == rail.today,
+              ),
+              RecapHeading(
+                key: ValueKey('recap-heading-${keyOf(period)}'),
+                phone: phone,
+                axis: axis,
+                title: dayTitle(period.first, thisWeek: depth == 0),
+                icon: icon(period, state, ground),
+              ),
+            );
+            gap(phone ? 4 : 0);
+            section(notes, clockOnly: true, lead: column);
+          case RecapGroupRow(
+            :final period,
+            :final counts,
+            :final state,
+            :final open,
+          ):
+            if (index > 0) gap(8);
+            onTheRail(
+              RecapNode(kind: period.kind, ground: ground),
+              RecapPeriodCard(
+                key: ValueKey('recap-card-${keyOf(period)}'),
+                period: period,
+                counts: counts,
+                open: open,
+                phone: phone,
+                axis: axis,
+                onToggle: () => timeline.folds.toggle(period),
+                icon: icon(
+                  period,
+                  state,
+                  open ? ground : palette.cardBackground,
+                ),
+              ),
+            );
+          case RecapSectionRow(:final period, :final state):
+            if (index > 0) gap(phone ? 24 : 20);
+            onTheRail(
+              period == null
+                  ? null
+                  : RecapNode(kind: period.kind, ground: ground),
+              RecapHeading(
+                key: ValueKey(
+                  'recap-heading-${period == null ? 'years' : keyOf(period)}',
+                ),
+                phone: phone,
+                axis: axis,
+                title: RecapSectionTitle(
+                  recapSectionLabel(period),
+                  phone: phone,
+                ),
+                icon: period == null ? null : icon(period, state, ground),
+              ),
+            );
+            gap(phone ? 4 : 0);
+        }
+      }
+      for (var index = start; index < rows.length; index++) {
+        final row = rows[index];
+        final first = index == start;
+        rows[index] = (context) => RecapRailLine(
+          x: margin + column / 2,
+          start: first
+              ? MediaQuery.textScalerOf(
+                      context,
+                    ).scale(recapHeadingHeight(phone: phone)) /
+                    2
+              : 0,
+          child: row(context),
         );
       }
     }
@@ -1580,6 +1789,8 @@ extension on Sidebar {
           heading(const _PhoneHeading('Recent'));
           section(groups.mine);
         }
+      } else if (_timeline case final timeline?) {
+        onRail(timeline);
       } else {
         // A day at a time, newest first, under the day the note was last
         // edited, each note giving its time alone, even while others have it
@@ -1625,6 +1836,10 @@ extension on Sidebar {
         heading(_groupHeading(groups, key));
         section(groups.byGroup[key]!);
       }
+      if (_timeline case final timeline?) {
+        onRail(timeline);
+        return _fading(context, _list(rows));
+      }
       final grouped = groupNotes(
         groups.mine,
         grouping,
@@ -1645,17 +1860,16 @@ extension on Sidebar {
       }
     }
 
-    return _fading(
-      context,
-      ListView.builder(
-        physics: phone ? const AlwaysScrollableScrollPhysics() : null,
-        // A phone's list clears the floating bar and its +.
-        padding: EdgeInsets.only(top: 4, bottom: phone ? 120 : 40),
-        itemCount: rows.length,
-        itemBuilder: (context, index) => rows[index](context),
-      ),
-    );
+    return _fading(context, _list(rows));
   }
+
+  Widget _list(List<WidgetBuilder> rows) => ListView.builder(
+    physics: phone ? const AlwaysScrollableScrollPhysics() : null,
+    // A phone's list clears the floating bar and its +.
+    padding: EdgeInsets.only(top: 4, bottom: phone ? 120 : 40),
+    itemCount: rows.length,
+    itemBuilder: (context, index) => rows[index](context),
+  );
 
   /// The day [note] was given, when that is a later one, for its row to name.
   DateTime? _laterDay(Note note) {

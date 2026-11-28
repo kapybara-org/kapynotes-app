@@ -62,6 +62,7 @@ import 'package:kapy_notes/ui/folders_ui.dart' show FolderPage, TreeNoteFace;
 import 'package:kapy_notes/ui/note_tabs.dart';
 import 'package:kapy_notes/ui/notes_list.dart';
 import 'package:kapy_notes/ui/page_toolbar.dart';
+import 'package:kapy_notes/ui/recaps/recap_rail.dart' show RecapDayTitle;
 import 'package:kapy_notes/ui/sidebar.dart';
 import 'package:kapy_notes/ui/sidebar_timestamp.dart';
 import 'package:kapy_notes/ui/tag_ui.dart';
@@ -716,7 +717,10 @@ void main() {
     final now = notes.now();
     final friday = DateTime(now.year, now.month, now.day + 2);
     final list = find.byType(Sidebar);
-    final today = find.byKey(const ValueKey('sidebar-group-Today'));
+    final today = find.descendant(
+      of: find.byType(RecapDayTitle),
+      matching: find.text('Today'),
+    );
     expect(find.byKey(const ValueKey('sidebar-group-Upcoming')), findsNothing);
     expect(row('Renewal notes'), findsNothing);
     expect(

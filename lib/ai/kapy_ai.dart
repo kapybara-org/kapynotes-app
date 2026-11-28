@@ -531,6 +531,10 @@ abstract class KapyAi extends ChangeNotifier {
   /// What [period] holds now, for the empty chat and an answer's card.
   KapyPeriodRead? readPeriod(RecapPeriod period) => periods?.call(period);
 
+  /// Home calls it when what a period holds changed without a note changing,
+  /// as a tag or a folder does, so a period is read afresh.
+  void periodsChanged() => notifyListeners();
+
   /// The empty chat's third suggestion when opened from [noteId], drawn from
   /// that note ("Draft the weekly report email"). Null shows only the two
   /// that fit any note.

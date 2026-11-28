@@ -48,6 +48,7 @@ void main() {
   late _Store store;
   late NotesStore notes;
   late FakeKapyAi ai;
+  late TagStore tags;
 
   setUp(() {
     wasAvailable = kapyAiAvailable;
@@ -67,7 +68,7 @@ void main() {
     WidgetTester tester, {
     required Size size,
     required TargetPlatform platform,
-    bool tags = true,
+    bool withTags = true,
   }) async {
     AppPlatform.debugTargetPlatformOverride = platform;
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -75,6 +76,8 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await notes.load();
+    tags = TagStore(store);
+    await tags.load();
     notes.create(body: 'Call with Arjun\nPricing page by Friday');
     notes.create(body: 'Launch checklist\n☐ Write release notes');
     final prefs = LayoutPrefs(store)..load();
@@ -86,7 +89,7 @@ void main() {
         prefs: prefs,
         shortcuts: ShortcutPrefs(store)..load(),
         kapyAi: ai,
-        tags: tags ? TagStore(store) : null,
+        tags: withTags ? tags : null,
         folders: FolderStore(store),
       ),
     );
@@ -116,8 +119,8 @@ void main() {
     expect(find.text('Ask about this week'), findsOneWidget);
     expect(
       find.text(
-        'Answers come only from 16–22 Nov: 2 notes. Hidden notes are never '
-        'used.',
+        'Answers come only from your 2 notes from 16–22 Nov. Hidden notes '
+        'are never used.',
       ),
       findsOneWidget,
       reason: 'Home reads the week as its recap would',
@@ -138,6 +141,34 @@ void main() {
     expect(find.byKey(const ValueKey('kapy-ai-sheet')), findsOneWidget);
     expect(find.byKey(const ValueKey('kapy-ai-period-chip')), findsOneWidget);
     expect(find.byKey(const ValueKey('kapy-ai-about')), findsNothing);
+  });
+
+  testWidgets('the third question comes once the week has a main topic', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      size: const Size(1500, 800),
+      platform: TargetPlatform.macOS,
+    );
+    expect(openKapyAiForPeriod(underHome(tester), _week), isTrue);
+    await tester.pumpAndSettle();
+    expect(find.text('What did I get done this week?'), findsOneWidget);
+    expect(find.text('What’s still open from this week?'), findsOneWidget);
+    expect(
+      find.textContaining('What did I decide about'),
+      findsNothing,
+      reason: 'no tag or folder on the week, so no main topic',
+    );
+
+    final call = notes.notes.firstWhere(
+      (note) => note.title == 'Call with Arjun',
+    );
+    tags.setTags(call.id, [tags.create('Acme')!.id]);
+    await tester.pumpAndSettle();
+    expect(ai.calls, contains('periodsChanged'));
+    expect(find.text('What did I decide about Acme?'), findsOneWidget);
+    expect(find.text('What did I get done this week?'), findsOneWidget);
   });
 
   testWidgets('goes back to the chat about the same week', (tester) async {
@@ -170,7 +201,7 @@ void main() {
       tester,
       size: const Size(1500, 800),
       platform: TargetPlatform.macOS,
-      tags: false,
+      withTags: false,
     );
     expect(openKapyAiForPeriod(underHome(tester), _week), isFalse);
     await tester.pumpAndSettle();

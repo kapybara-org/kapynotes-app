@@ -511,6 +511,61 @@ void main() {
     );
   });
 
+  group('days as the notes list shows them', () {
+    test('leaves a note waiting for a later day off until that day', () {
+      world
+        ..note('today', '2026-11-19T05:00:00Z')
+        ..note('waits', '2026-11-03T06:00:00Z');
+      ownDays['waits'] = DateTime(2026, 11, 24);
+      return world.load().then((_) {
+        final made = timeline(now);
+        final folds = RecapFolds();
+        openAll(made, folds);
+        expect(_lay(made.rows(folds)), ['day 2026-11-19 today']);
+        expect(made.holding('waits'), isEmpty);
+        expect(made.countsOf(made.week).notes, 1);
+      });
+    });
+
+    test('puts an edit from a clock ahead of this one under today', () {
+      world
+        ..note('today', '2026-11-19T05:00:00Z')
+        ..note('ahead', '2026-11-21T05:00:00Z');
+      return world.load().then((_) {
+        final made = timeline(now);
+        expect(_lay(made.rows(RecapFolds())), ['day 2026-11-19 today,ahead']);
+        expect(made.countsOf(made.week).notes, 2);
+      });
+    });
+
+    test('reveals a note once, opening its cards without telling anyone', () {
+      world
+        ..note('today', '2026-11-19T05:00:00Z')
+        ..note('oct1', '2026-10-01T06:00:00Z')
+        ..note('nov3', '2026-11-03T06:00:00Z');
+      return world.load().then((_) {
+        final made = timeline(now);
+        final folds = RecapFolds();
+        var heard = 0;
+        folds.addListener(() => heard++);
+        folds.reveal('oct1', made.holding);
+        expect(heard, 0);
+        final october = _of(2026, 10, 1, RecapKind.month);
+        expect(folds.isOpen(october), isTrue);
+        expect(folds.isOpen(_of(2026, 9, 28, RecapKind.week)), isTrue);
+        folds.toggle(october);
+        folds.reveal('oct1', made.holding);
+        expect(folds.isOpen(october), isFalse, reason: 'folded again, it stays');
+        folds.reveal(null, made.holding);
+        folds.reveal('today', made.holding);
+        expect(folds.isOpen(october), isFalse);
+        folds.reveal('oct1', made.holding);
+        expect(folds.isOpen(october), isTrue, reason: 'revealed afresh');
+        expect(heard, 1);
+      });
+    });
+  });
+
   group('recap state', () {
     KapyChat recap(RecapPeriod period, DateTime at) => recapChat(
       null,

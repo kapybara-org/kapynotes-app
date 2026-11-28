@@ -79,8 +79,8 @@ class KapyPeriodRead {
   List<ReadNote> sent(NotesStore store, {required DateTime today}) =>
       recapNotesFor(material.items, store, today: today);
 
-  /// The empty chat's promise: "Answers come only from 17–23 Nov: 14 notes,
-  /// 12 tasks and 2 voice notes. Hidden notes are never used."
+  /// The empty chat's promise: "Answers come only from your 14 notes, 12
+  /// tasks and 2 voice notes from 17–23 Nov. Hidden notes are never used."
   String get reads {
     String count(int n, String one) => '$n ${n == 1 ? one : '${one}s'}';
     final held = [
@@ -91,8 +91,8 @@ class KapyPeriodRead {
     final list = held.length < 2
         ? held.join()
         : '${held.sublist(0, held.length - 1).join(', ')} and ${held.last}';
-    return 'Answers come only from ${period.label}'
-        '${list.isEmpty ? '' : ': $list'}. Hidden notes are never used.';
+    return 'Answers come only from ${list.isEmpty ? '' : 'your $list from '}'
+        '${period.label}. Hidden notes are never used.';
   }
 
   /// For a period with more notes than an answer reads, why a narrower
