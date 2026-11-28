@@ -185,6 +185,15 @@ drive() {
       --dart-define=KAPYNOTES_SYNC=false
       --dart-define=KAPYNOTES_DEVICE_SHOTS="$device"
       --timeout=600 --screenshot=build/screenshots)
+    # A marker sent through the tee lands in $log after anything the last run
+    # printed that the tee hasn't written yet, so once it's there, emptying
+    # $log leaves none of the last run's lines to be read as this run's.
+    local mark="== $1_test.dart run $(( tries + 1 ))" waited
+    echo "$mark" >&3
+    for (( waited = 0; waited < 50; waited++ )); do
+      grep -qxF -- "$mark" "$log" && break
+      sleep 0.1
+    done
     : > "$log"
     if [[ -n ${PHONE_APP:-} ]]; then echo "$1" > "$PHONE_TEST_FILE"; fi
     local stopped=false hang= connected=false size=0 now launched=

@@ -17,7 +17,9 @@
 # On the fake emulator, where flutter drive builds the app, each run first
 # prints a build and an install. The case checks the script's exit code, how
 # many runs it made, how long it took, what it said and what it wrote to the
-# progress file. The launch and stall limits are 3 seconds here.
+# progress file. The launch and stall limits are 3 seconds here. With SLOW_TEE
+# set, a tee that passes each line on 3 seconds late stands in for the
+# real one, and TESTS names the files to run instead of phone_about.
 #
 #   bash tool/ci/phone_screenshots_test.sh
 set -u
@@ -67,23 +69,35 @@ case $* in
 esac
 EOF
 chmod +x "$root/bin/"*
+mkdir "$root/slow"
+cat > "$root/slow/tee" <<'EOF'
+#!/bin/bash
+while IFS= read -r line; do
+  sleep 3
+  printf '%s\n' "$line"
+  printf '%s\n' "$line" >> "${@: -1}"
+done
+EOF
+chmod +x "$root/slow/tee"
 
 # check <name> <device> <plan> <exit code> <runs> <most seconds> <text>...:
-# runs phone_about_test.dart under plan, and checks the result. Each text must
+# runs phone_about_test.dart under plan, one entry per run, and checks the
+# result. Each text must
 # be in the script's output, or in the progress file after progress:; one
 # that starts with ! must not be in the output. LAUNCH, when set, replaces the
 # launch limit.
 check() {
   local name=$1 device=$2 plan=$3 want=$4 runs=$5 most=$6
   shift 6
-  local dir=$root/$name app=
+  local dir=$root/$name app= path=$root/bin:$PATH
   mkdir "$dir"
+  if [[ -n ${SLOW_TEE:-} ]]; then path=$root/slow:$path; fi
   if [[ $device != emulator-* ]]; then app=build/ios/Runner.app; fi
   local began=$SECONDS
   (
     cd "$dir" &&
-      PATH=$root/bin:$PATH FAKE_DIR=$dir FAKE_PLAN=$plan FAKE_DEVICE=$device \
-        PHONE_TESTS=phone_about PHONE_APP=$app PHONE_TEST_FILE=$dir/test-file \
+      PATH=$path FAKE_DIR=$dir FAKE_PLAN=$plan FAKE_DEVICE=$device \
+        PHONE_TESTS=${TESTS:-phone_about} PHONE_APP=$app PHONE_TEST_FILE=$dir/test-file \
         PHONE_LAUNCH_SECONDS=${LAUNCH:-3} PHONE_STALL_SECONDS=3 PHONE_RETRY_MINUTES=5 \
         PHONE_FIRST_FILE_MINUTES=1 GITHUB_STEP_SUMMARY=$dir/summary \
         bash "$script" "$device" > "$dir/out" 2>&1
@@ -168,6 +182,10 @@ ios=FAKE-UDID
     '::warning::phone_about_test.dart hung: the app never connected. Running it again' &
   # What flutter drive says as it's stopped reaches the log on Linux too, so a
   # file stopped at its limit before connecting runs once more.
+  # A file's lines that the tee is still passing on when the next file starts
+  # never reach that file's log, so the next file's launch is still watched.
+  SLOW_TEE=1 TESTS='phone_v2 phone_about' check late-lines-stay-with-their-file $ios 'pass never pass' 0 3 45 \
+    '::warning::phone_about_test.dart hung: the app never connected. Running it again' &
   LAUNCH=0 check android-stopped-before-connecting-then-pass emulator-5554 'never-term pass' 0 2 80 \
     '::error::phone_about_test.dart was still running after 1 minutes and was stopped' \
     '::warning::phone_about_test.dart hung: the app never connected. Running it again' &
