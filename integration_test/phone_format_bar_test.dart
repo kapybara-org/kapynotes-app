@@ -335,10 +335,16 @@ void main() {
       ['Photo', 'Video', 'Voice note', 'File'],
     );
 
+    final route = ModalRoute.of(tester.element(sheet))!;
     await tester.tap(find.byKey(const ValueKey('attach-voice')));
-    await tester.pump(const Duration(milliseconds: 500));
-    expect(recordings, 1);
+    await tester.pump();
+    expect(route.isActive, isFalse, reason: 'the sheet did not close on tap');
+    // It slides away over a few frames, which a busy simulator can stretch.
+    for (var i = 0; i < 25 && sheet.evaluate().isNotEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
     expect(sheet, findsNothing);
+    expect(recordings, 1);
   });
 
   testWidgets('Hide keyboard puts the keyboard and the bar away', (

@@ -68,6 +68,7 @@ class VoiceAsk extends StatefulWidget {
     super.key,
     required this.actions,
     required this.ref,
+    this.top,
     required this.page,
     this.unavailable,
     this.compact = false,
@@ -85,6 +86,10 @@ class VoiceAsk extends StatefulWidget {
 
   /// The recording, with the takes it keeps.
   final NoteVoiceRef ref;
+
+  /// The rows over the page that the drawer never covers: the transcript's
+  /// search and speakers rows.
+  final Widget? top;
 
   /// The summary or the transcript, which the drawer rises over.
   final Widget page;
@@ -403,30 +408,43 @@ class _VoiceAskState extends State<VoiceAsk> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        ?widget.top,
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) => Stack(
               children: [
                 Positioned.fill(child: widget.page),
                 if (showing)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
+                  Positioned.fill(
+                    // The fade over the page above the drawer ends in a
+                    // solid band; at its tallest only that band is left, so
+                    // no row shows cut through above it.
                     child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Container(
-                          height: 24,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                palette.surfaceBackground.withValues(alpha: 0),
-                                palette.surfaceBackground,
-                              ],
+                        Flexible(
+                          child: ClipRect(
+                            child: OverflowBox(
+                              alignment: Alignment.bottomCenter,
+                              minHeight: 24,
+                              maxHeight: 24,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    stops: const [0, 2 / 3],
+                                    colors: [
+                                      palette.surfaceBackground.withValues(
+                                        alpha: 0,
+                                      ),
+                                      palette.surfaceBackground,
+                                    ],
+                                  ),
+                                ),
+                                child: const SizedBox.expand(),
+                              ),
                             ),
                           ),
                         ),
@@ -436,7 +454,7 @@ class _VoiceAskState extends State<VoiceAsk> {
                             padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
                             child: _Drawer(
                               key: const ValueKey('voice-ask-drawer'),
-                              maxHeight: constraints.maxHeight - 32,
+                              maxHeight: constraints.maxHeight - 16,
                               child: _earlier
                                   ? _earlierList(palette, history)
                                   : chat != null
