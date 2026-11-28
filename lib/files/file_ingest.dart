@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
@@ -179,20 +180,62 @@ const Map<String, String> _mimeByExtension = {
   '.mov': 'video/quicktime',
 };
 
+/// Who a refusal is about: the file's own name, or [fallback] when a picker
+/// gave only the name of its temporary copy.
+String rejectionSubject(String name, String fallback) =>
+    name.isEmpty || name.startsWith('image_picker_') ? fallback : name;
+
+/// "big.mp4 (300 MB) is too big to add. Videos can be up to 25 MB. Try a
+/// shorter clip." Said alike for a video, a file and the camera's review.
+/// [others] more were refused for the same reason.
+String tooBigMessage({
+  required String subject,
+  required int bytes,
+  required int others,
+  required String kind,
+  required int attachmentMaxBytes,
+  required String adjective,
+  required String noun,
+}) {
+  final what = others > 0
+      ? '$subject and $others ${others == 1 ? 'other' : 'others'} are too big'
+      : bytes > 0
+      ? '$subject (${formatSizeOver(bytes, attachmentMaxBytes)}) is too big'
+      : '$subject is too big';
+  final advice = others > 0 ? '$adjective ${noun}s' : 'a $adjective $noun';
+  return '$what to add. $kind can be up to '
+      '${attachmentMaxBytes ~/ (1024 * 1024)} MB. Try $advice.';
+}
+
+/// What a toast says for a file that could not be added. [others] more were
+/// refused for the same reason.
 String describeFileRejection(
   FileRejection reason, {
-  int attachmentMaxBytes = freeAttachmentMaxBytes,
+  String name = '',
+  int others = 0,
   int bytes = 0,
-}) => switch (reason) {
-  FileRejection.tooLarge =>
-    'is too big to add (${formatFileSize(bytes)}). Notes can hold files up to '
-        '${attachmentMaxBytes ~/ (1024 * 1024)} MB. Try a smaller file',
-  FileRejection.tooMany =>
-    'is beyond the $fileSelectionLimit-file selection limit',
-  FileRejection.unreadable => 'could not be read',
-  FileRejection.empty => 'is empty',
-  FileRejection.directory => 'is a folder. Zip it first to attach it',
-};
+  int attachmentMaxBytes = freeAttachmentMaxBytes,
+}) {
+  final subject = rejectionSubject(name, 'This file');
+  final more = others > 0 ? ' $others more could not be added.' : '';
+  return switch (reason) {
+    FileRejection.tooLarge => tooBigMessage(
+      subject: subject,
+      bytes: bytes,
+      others: others,
+      kind: 'Files',
+      attachmentMaxBytes: attachmentMaxBytes,
+      adjective: 'smaller',
+      noun: 'file',
+    ),
+    FileRejection.tooMany =>
+      '$subject is beyond the $fileSelectionLimit-file selection limit.$more',
+    FileRejection.unreadable => '$subject could not be read.$more',
+    FileRejection.empty => '$subject is empty.$more',
+    FileRejection.directory =>
+      '$subject is a folder. Zip it first to attach it.$more',
+  };
+}
 
 /// "12 KB", "3.4 MB". For a chip, so one decimal at most and never "0 B" for
 /// something that exists.
@@ -204,6 +247,15 @@ String formatFileSize(int bytes) {
   if (bytes < mb) return '${(bytes / kb).ceil()} KB';
   if (bytes < gb) return _oneDecimal(bytes / mb, 'MB');
   return _oneDecimal(bytes / gb, 'GB');
+}
+
+/// A refused size, rounded up a tenth so that it always reads as more than the
+/// limit it was refused by.
+String formatSizeOver(int bytes, int limit) {
+  const tenth = 1024 * 1024 / 10;
+  return formatFileSize(
+    ((math.max(bytes, limit + 1) / tenth).ceil() * tenth).ceil(),
+  );
 }
 
 String _oneDecimal(double value, String unit) {

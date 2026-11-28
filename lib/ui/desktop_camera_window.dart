@@ -618,7 +618,11 @@ class _DesktopCameraWindowState extends State<DesktopCameraWindow>
   List<Widget> _buildReview(XFile captured) {
     final palette = context.palette;
     final note = _tooLarge
-        ? 'This video ${describeVideoRejection(VideoRejection.tooLarge, attachmentMaxBytes: widget.attachmentMaxBytes, bytes: _sizeOf(captured.path))}.'
+        ? describeVideoRejection(
+            VideoRejection.tooLarge,
+            attachmentMaxBytes: widget.attachmentMaxBytes,
+            bytes: _sizeOf(captured.path),
+          )
         : _reviewNote;
     return [
       _Picture(

@@ -201,11 +201,21 @@ void main() {
       expect(
         describeFileRejection(
           first.reason,
-          attachmentMaxBytes: 25 * 1024 * 1024,
+          name: 'report.pdf',
           bytes: 300 * 1024 * 1024,
         ),
-        'is too big to add (300 MB). Notes can hold files up to 25 MB. Try a '
-        'smaller file',
+        'report.pdf (300 MB) is too big to add. Files can be up to 25 MB. Try '
+        'a smaller file.',
+      );
+      expect(
+        describeFileRejection(
+          first.reason,
+          name: 'report.pdf',
+          others: 3,
+          bytes: 300 * 1024 * 1024,
+        ),
+        'report.pdf and 3 others are too big to add. Files can be up to 25 '
+        'MB. Try smaller files.',
       );
     });
 

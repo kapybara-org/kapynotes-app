@@ -61,6 +61,10 @@ class Toast {
   /// How long a toast with an action stays: time enough to reach it.
   static const Duration actionLifetime = Duration(seconds: 4);
 
+  /// How long a result of several sentences stays: time enough to read what
+  /// to do about it.
+  static const Duration longLifetime = Duration(seconds: 6);
+
   /// How wide a phone's card grows. A phone's is narrower, so its card runs
   /// the width of its bar and +; from 720 pt, two panes and no bar, the card
   /// stops here, centred.
@@ -227,6 +231,7 @@ class Toast {
     String message, {
     required KapyIconData? icon,
     required bool isError,
+    Duration? duration,
   }) {
     if (overlay == null || !overlay.mounted || generation != _generation) {
       return;
@@ -237,7 +242,7 @@ class Toast {
       icon: icon,
       isError: isError,
       progress: false,
-      duration: const Duration(milliseconds: 1800),
+      duration: duration ?? const Duration(milliseconds: 1800),
     );
   }
 
@@ -279,20 +284,23 @@ class ToastProgress {
   final OverlayState? _overlay;
   final int _generation;
 
-  void success(String message, {KapyIconData? icon}) => Toast._complete(
-    _overlay,
-    _generation,
-    message,
-    icon: icon,
-    isError: false,
-  );
+  void success(String message, {KapyIconData? icon, Duration? duration}) =>
+      Toast._complete(
+        _overlay,
+        _generation,
+        message,
+        icon: icon,
+        isError: false,
+        duration: duration,
+      );
 
-  void error(String message) => Toast._complete(
+  void error(String message, {Duration? duration}) => Toast._complete(
     _overlay,
     _generation,
     message,
     icon: KapyIcons.errorOutlined,
     isError: true,
+    duration: duration,
   );
 
   /// Removes the waiting state without replacing it, for a cancelled picker or

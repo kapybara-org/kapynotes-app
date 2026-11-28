@@ -318,8 +318,8 @@ void main() {
 
     expect(
       tester.widget<Text>(note).data,
-      'This video is too big to add (26 MB). Notes can hold videos up to '
-      '25 MB. Try a shorter clip.',
+      'This video (26 MB) is too big to add. Videos can be up to 25 MB. Try a '
+      'shorter clip.',
     );
     expect(tester.widget<TonalButton>(use).onPressed, isNull);
     await tester.tap(use);

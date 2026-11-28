@@ -8,7 +8,8 @@ import '../core/platform.dart';
 import '../data/blob_store.dart';
 import '../data/attachment_limits.dart';
 import '../data/note_attachment.dart';
-import '../files/file_ingest.dart' show displayNameOf, formatFileSize;
+import '../files/file_ingest.dart'
+    show displayNameOf, rejectionSubject, tooBigMessage;
 import '../sync/aead.dart';
 import '../sync/sealed_box.dart';
 import 'mp4_video_metadata.dart';
@@ -186,16 +187,33 @@ String mimeForVideoFilename(String name) {
   };
 }
 
+/// What a toast says for a video that could not be added. [others] more were
+/// refused for the same reason.
 String describeVideoRejection(
   VideoRejection reason, {
-  int attachmentMaxBytes = freeAttachmentMaxBytes,
+  String name = '',
+  int others = 0,
   int bytes = 0,
-}) => switch (reason) {
-  VideoRejection.tooLarge =>
-    'is too big to add (${formatFileSize(bytes)}). Notes can hold videos up to '
-        '${attachmentMaxBytes ~/ (1024 * 1024)} MB. Try a shorter clip',
-  VideoRejection.tooMany => 'is beyond the 10-video selection limit',
-  VideoRejection.unsupported => 'is not an MP4, M4V, or MOV video',
-  VideoRejection.unreadable => 'is not a video this device can play',
-  VideoRejection.empty => 'is empty',
-};
+  int attachmentMaxBytes = freeAttachmentMaxBytes,
+}) {
+  final subject = rejectionSubject(name, 'This video');
+  final more = others > 0 ? ' $others more could not be added.' : '';
+  return switch (reason) {
+    VideoRejection.tooLarge => tooBigMessage(
+      subject: subject,
+      bytes: bytes,
+      others: others,
+      kind: 'Videos',
+      attachmentMaxBytes: attachmentMaxBytes,
+      adjective: 'shorter',
+      noun: 'clip',
+    ),
+    VideoRejection.tooMany =>
+      '$subject is beyond the 10-video selection limit.$more',
+    VideoRejection.unsupported =>
+      '$subject is not an MP4, M4V, or MOV video.$more',
+    VideoRejection.unreadable =>
+      '$subject is not a video this device can play.$more',
+    VideoRejection.empty => '$subject is empty.$more',
+  };
+}

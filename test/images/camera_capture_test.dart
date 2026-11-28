@@ -264,8 +264,8 @@ void main() {
 
     expect(
       find.text(
-        'This video is too big to add (1 MB). Notes can hold videos up to '
-        '1 MB. Try a shorter clip.',
+        'This video (1.1 MB) is too big to add. Videos can be up to 1 MB. Try a '
+        'shorter clip.',
       ),
       findsOneWidget,
     );

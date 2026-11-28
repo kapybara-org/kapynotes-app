@@ -969,7 +969,11 @@ class _CameraCapturePageState extends State<CameraCapturePage>
 
   Widget _buildReview(XFile file) {
     final note = _tooLarge
-        ? 'This video ${describeVideoRejection(VideoRejection.tooLarge, attachmentMaxBytes: widget.attachmentMaxBytes, bytes: _sizeOf(file))}.'
+        ? describeVideoRejection(
+            VideoRejection.tooLarge,
+            attachmentMaxBytes: widget.attachmentMaxBytes,
+            bytes: _sizeOf(file),
+          )
         : _reviewNote;
     return SafeArea(
       child: Column(

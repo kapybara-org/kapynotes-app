@@ -3125,20 +3125,32 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       insertFileRefs(batch.files);
       final added = batch.files.length;
       final rejected = batch.rejections.length;
+      final first = batch.rejections.firstOrNull;
+      final sameReason =
+          first != null &&
+          batch.rejections.every((r) => r.reason == first.reason);
+      final why = first == null
+          ? null
+          : describeFileRejection(
+              first.reason,
+              name: first.name,
+              others: sameReason ? rejected - 1 : 0,
+              bytes: first.bytes,
+              attachmentMaxBytes: attachmentMaxBytes,
+            );
+      final rest = sameReason || first == null
+          ? ''
+          : ' ${rejected - 1} more could not be added.';
       if (added == 0) {
-        final first = batch.rejections.firstOrNull;
         progress.error(
-          first == null
-              ? 'Could not add that file'
-              : '${first.name} ${describeFileRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes, bytes: first.bytes)}',
+          why == null ? 'Could not add that file' : '$why$rest',
+          duration: Toast.longLifetime,
         );
       } else if (rejected > 0) {
-        final first = batch.rejections.first;
         progress.success(
-          'Added $added ${added == 1 ? 'file' : 'files'}; '
-          '${first.name} ${describeFileRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes, bytes: first.bytes)}'
-          '${rejected > 1 ? ' (and ${rejected - 1} more)' : ''}',
+          'Added $added ${added == 1 ? 'file' : 'files'}. $why$rest',
           icon: KapyIcons.warningRounded,
+          duration: Toast.longLifetime,
         );
       } else {
         progress.success(added == 1 ? 'File added' : '$added files added');
@@ -3256,20 +3268,32 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       insertVideos(batch.videos);
       final added = batch.videos.length;
       final rejected = batch.rejections.length;
+      final first = batch.rejections.firstOrNull;
+      final sameReason =
+          first != null &&
+          batch.rejections.every((r) => r.reason == first.reason);
+      final why = first == null
+          ? null
+          : describeVideoRejection(
+              first.reason,
+              name: first.name,
+              others: sameReason ? rejected - 1 : 0,
+              bytes: first.bytes,
+              attachmentMaxBytes: attachmentMaxBytes,
+            );
+      final rest = sameReason || first == null
+          ? ''
+          : ' ${rejected - 1} more could not be added.';
       if (added == 0) {
-        final first = batch.rejections.firstOrNull;
         progress.error(
-          first == null
-              ? 'Could not add that video'
-              : '${first.name} ${describeVideoRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes, bytes: first.bytes)}',
+          why == null ? 'Could not add that video' : '$why$rest',
+          duration: Toast.longLifetime,
         );
       } else if (rejected > 0) {
-        final first = batch.rejections.first;
         progress.success(
-          'Added $added ${added == 1 ? 'video' : 'videos'}; '
-          '${first.name} ${describeVideoRejection(first.reason, attachmentMaxBytes: attachmentMaxBytes, bytes: first.bytes)}'
-          '${rejected > 1 ? ' (and ${rejected - 1} more)' : ''}',
+          'Added $added ${added == 1 ? 'video' : 'videos'}. $why$rest',
           icon: KapyIcons.warningRounded,
+          duration: Toast.longLifetime,
         );
       } else {
         progress.success(added == 1 ? 'Video added' : '$added videos added');

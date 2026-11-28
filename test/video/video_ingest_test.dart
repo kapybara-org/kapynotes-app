@@ -114,12 +114,61 @@ void main() {
     expect(
       describeVideoRejection(
         VideoRejection.tooLarge,
+        name: 'clip.mp4',
         attachmentMaxBytes: proAttachmentMaxBytes,
         bytes: 300 * 1024 * 1024,
       ),
-      'is too big to add (300 MB). Notes can hold videos up to 100 MB. '
-      'Try a shorter clip',
+      'clip.mp4 (300 MB) is too big to add. Videos can be up to 100 MB. '
+      'Try a shorter clip.',
     );
+  });
+
+  test('a refusal says which others were left out with it, and falls back '
+      'to "This video" when a picker gave no real name', () {
+    expect(
+      describeVideoRejection(
+        VideoRejection.tooLarge,
+        name: 'big.mp4',
+        others: 2,
+        bytes: 300 * 1024 * 1024,
+      ),
+      'big.mp4 and 2 others are too big to add. Videos can be up to 25 MB. '
+      'Try shorter clips.',
+    );
+    expect(
+      describeVideoRejection(
+        VideoRejection.tooLarge,
+        name:
+            'image_picker_2B55E2FD-4F1A-4C6A-9F05-3D9C5E3C1B1E-1234-'
+            '0000A1B2C3D4E5F6',
+        bytes: 300 * 1024 * 1024,
+      ),
+      'This video (300 MB) is too big to add. Videos can be up to 25 MB. '
+      'Try a shorter clip.',
+    );
+    expect(
+      describeVideoRejection(VideoRejection.empty, name: 'a.mov', others: 1),
+      'a.mov is empty. 1 more could not be added.',
+    );
+  });
+
+  test('a clip just over the limit never reads as the limit itself', () {
+    for (final bytes in [
+      maxVideoSourceBytesFor(freeAttachmentMaxBytes) + 1,
+      freeAttachmentMaxBytes + 1,
+      freeAttachmentMaxBytes + 40000,
+    ]) {
+      expect(
+        describeVideoRejection(
+          VideoRejection.tooLarge,
+          name: 'a.mp4',
+          bytes: bytes,
+        ),
+        'a.mp4 (25.1 MB) is too big to add. Videos can be up to 25 MB. Try a '
+        'shorter clip.',
+        reason: '$bytes',
+      );
+    }
   });
 
   test('a five-minute clip from the iPhone library is refused by its own '
@@ -154,9 +203,13 @@ void main() {
     expect(await store.totalBytes(), 0);
     final first = batch.rejections.single;
     expect(
-      '${first.name} ${describeVideoRejection(first.reason, bytes: first.bytes)}',
-      'IMG_0042.MOV is too big to add (300 MB). Notes can hold videos up to '
-          '25 MB. Try a shorter clip',
+      describeVideoRejection(
+        first.reason,
+        name: first.name,
+        bytes: first.bytes,
+      ),
+      'IMG_0042.MOV (300 MB) is too big to add. Videos can be up to 25 MB. '
+      'Try a shorter clip.',
     );
   });
 
