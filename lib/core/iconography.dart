@@ -266,6 +266,10 @@ class KapyIcons {
     0xE027,
     HugeIcons.strokeRoundedFlashOff,
   );
+  static const flashlightRounded = KapyIconData(
+    0xE0ED,
+    HugeIcons.strokeRoundedFlashlight,
+  );
   static const formatBoldRounded = KapyIconData(
     0xE028,
     HugeIcons.strokeRoundedTextBold,
@@ -297,6 +301,10 @@ class KapyIcons {
   static const imageOutlined = KapyIconData(
     0xE031,
     HugeIcons.strokeRoundedImage01,
+  );
+  static const mediaOutlined = KapyIconData(
+    0xE0F5,
+    HugeIcons.strokeRoundedImagePlay,
   );
   static const infoOutlined = KapyIconData(
     0xE032,
@@ -335,6 +343,14 @@ class KapyIcons {
     HugeIcons.strokeRoundedSidebarLeft,
   );
   static const micRounded = KapyIconData(0xE03D, HugeIcons.strokeRoundedMic01);
+  static const voiceIdRounded = KapyIconData(
+    0xE0F4,
+    HugeIcons.strokeRoundedVoiceId,
+  );
+  static const micOffRounded = KapyIconData(
+    0xE0EE,
+    HugeIcons.strokeRoundedMicOff01,
+  );
   static const moreVerticalRounded = KapyIconData(
     0xE069,
     HugeIcons.strokeRoundedMoreVertical,
@@ -674,5 +690,9 @@ class KapyIcons {
   static const linkedin = KapyIconData(
     0xE0F3,
     HugeIcons.strokeRoundedLinkedin01,
+  );
+  static const translateRounded = KapyIconData(
+    0xE0F4,
+    HugeIcons.strokeRoundedTranslate,
   );
 }

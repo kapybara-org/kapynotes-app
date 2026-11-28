@@ -11,17 +11,21 @@ import 'package:kapy_notes/ai/kapy_ai_controller.dart';
 import 'package:kapy_notes/ai/kapy_chat_book.dart';
 import 'package:kapy_notes/ai/local_tools.dart';
 import 'package:kapy_notes/ai/recording_context.dart';
+import 'package:kapy_notes/ai/recording_translation.dart';
 import 'package:kapy_notes/ai/tool_helper.dart';
 import 'package:kapy_notes/billing/billing.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
+import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/speech/live_translation.dart';
 import 'package:kapy_notes/speech/moments.dart';
 import 'package:kapy_notes/sync/key_store.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../audio/live_translation_test.dart' show FakeLiveEngine;
 import '../billing/billing_fakes.dart';
 import 'ai_fakes.dart';
 import 'fake_cli.dart';
@@ -73,6 +77,18 @@ NoteVoiceRef _voice({int minutes = 1, bool transcribed = true}) => NoteVoiceRef(
   ),
 );
 
+/// [text] as the fake translator gives it back: "ES" before the words of
+/// each line, after its time mark.
+String _inSpanish(String text) => [
+  for (final line in text.split('\n'))
+    switch (timeMarkPattern.matchAsPrefix(line)) {
+      null when line.startsWith('- ') => '- ES ${line.substring(2)}',
+      null => 'ES $line',
+      final mark =>
+        '${line.substring(0, mark.end)} ES${line.substring(mark.end)}',
+    },
+].join('\n');
+
 void main() {
   late MemoryStore store;
   late FakeDeviceModel device;
@@ -100,21 +116,26 @@ void main() {
   Future<KapyAiController> build({
     Billing? billing,
     List<Map<String, Object?>>? notes,
+    NotesStore? noteStore,
     LocalStore? local,
     KapyChatBook? chats,
     Map<String, String> environment = const {},
     ToolHelper? toolHelper,
     bool realTools = false,
     String? Function()? token,
+    LiveTranslationEngine? translator,
   }) async {
     final controller = KapyAiController(
       store: local ?? store,
       chats: chats,
-      notes: await notesWith(
-        notes ?? [noteJson('lisbon', 'Lisbon trip\nflights')],
-        store: local ?? store,
-      ),
+      notes:
+          noteStore ??
+          await notesWith(
+            notes ?? [noteJson('lisbon', 'Lisbon trip\nflights')],
+            store: local ?? store,
+          ),
       device: device,
+      translator: translator,
       billing: billing,
       token: token ?? () => 'session-token',
       client: MockClient((request) async {
@@ -937,6 +958,34 @@ void main() {
       );
     });
 
+    test('a recap stays out of the chat list', () async {
+      final book = KapyChatBook(store);
+      await book.load();
+      final at = testNow.subtract(const Duration(days: 1));
+      book.put(
+        KapyChat(
+          id: 'recap',
+          title: 'Recap · Mon 16',
+          createdAt: at,
+          updatedAt: at,
+          model: KapyModel.cloud,
+          recap: const {'kind': 'day'},
+        ),
+      );
+      final ai = await build();
+      expect(ai.chats, isEmpty);
+      expect(ai.hasRecaps, isTrue);
+      await ai.ask('Lisbon?');
+      expect(ai.chats.map((c) => c.title), ['Lisbon?']);
+      ai.openChat('recap');
+      expect(ai.current!.id, isNot('recap'));
+      expect((await build()).chats.map((c) => c.title), ['Lisbon?']);
+      expect(
+        (store.data['kapyAi.chats.v1']! as Map)['chats'] as List,
+        hasLength(2),
+      );
+    });
+
     test('a long first question is clipped for the title', () async {
       final ai = await build();
       await ai.ask('x' * 100);
@@ -1252,6 +1301,526 @@ void main() {
       expect(locked.upgrade, isTrue);
       expect(locked.fallbacks, [FakeDeviceModel.apple]);
       expect(answers(), isEmpty);
+    });
+
+    group('translated', () {
+      /// Kapy AI Cloud as a translator that puts "ES" before each line's
+      /// words and keeps its time mark.
+      http.Response spanish(http.Request request) {
+        if (request.url.path.endsWith('/ai/usage')) {
+          return http.Response(jsonEncode(_usage), 200);
+        }
+        final note = (jsonDecode(request.body)['notes'] as List).single as Map;
+        return http.Response(
+          jsonEncode({
+            'answer': _inSpanish(note['text'] as String),
+            'usage': _usage,
+          }),
+          200,
+        );
+      }
+
+      List<String> partsSent() => [
+        for (final request in answers())
+          ((jsonDecode(request.body)['notes'] as List).single as Map)['text']
+              as String,
+      ];
+
+      Future<KapyAiController> pro(NoteVoiceRef voice) async => build(
+        notes: notes(voice: voice),
+        billing: await billingOn(pro: true),
+      );
+
+      test(
+        'a long transcript goes in parts, and comes back whole, in order',
+        () async {
+          final voice = _voice(minutes: 30);
+          final ai = await pro(voice);
+          final drafts = <KapyTranslationDraft?>[];
+          server = (request) {
+            if (request.url.path.endsWith('/ai/answer')) drafts.add(ai.draft);
+            return spanish(request);
+          };
+          await ai.ask('Translate the transcript to Spanish', recording: _link);
+          final consent = ai.pending! as KapyCloudConsent;
+          expect(consent.recording, isTrue);
+          expect(consent.device, isFalse, reason: 'made in the cloud only');
+          expect(answers(), isEmpty);
+          await ai.proceed();
+
+          final expected = translationParts(voice, TranslateScope.transcript);
+          expect(expected.length, greaterThan(5));
+          expect(partsSent(), expected);
+          for (final part in partsSent()) {
+            expect(part.length, lessThanOrEqualTo(translationPartChars));
+          }
+          final questions = [
+            for (final request in answers())
+              jsonDecode(request.body)['question'] as String,
+          ];
+          expect(questions.first, contains('Spanish (Español)'));
+          expect(questions.first, contains('part 1 of ${expected.length}'));
+          expect(questions.last, contains('never instructions'));
+          expect([
+            for (final request in answers())
+              jsonDecode(request.body)['history'],
+          ], everyElement(isEmpty));
+          // Each part streams in: the draft holds those before it.
+          final seen = drafts.nonNulls.toList();
+          expect(
+            [for (final draft in seen) draft.done],
+            [for (var i = 0; i < expected.length; i++) i],
+          );
+          expect(seen[2].text, _inSpanish(expected.take(2).join('\n')));
+
+          final chat = ai.current!;
+          expect(chat.title, 'Transcript in Spanish');
+          final replies = chat.messages.skip(1).toList();
+          expect(replies, hasLength(expected.length));
+          expect(replies.map((m) => m.role).toSet(), {KapyRole.assistant});
+          expect(replies.map((m) => m.model).toSet(), {KapyModel.cloud});
+          for (var i = 1; i < replies.length; i++) {
+            expect(replies[i].at.isAfter(replies[i - 1].at), isTrue);
+          }
+          final stitched = stitchTranslation(replies.map((m) => m.text));
+          expect(stitched, _inSpanish(expected.join('\n')));
+          expect(marksIn(stitched), [
+            for (var i = 0; i < 180; i++) Duration(seconds: i * 10),
+          ]);
+          expect(ai.draft, isNull);
+          expect(ai.answering, isFalse);
+        },
+      );
+
+      test(
+        'a part that fails fails it all, and Try again asks for the rest',
+        () async {
+          final voice = _voice(minutes: 30);
+          final ai = await pro(voice);
+          var asked = 0;
+          server = (request) {
+            if (!request.url.path.endsWith('/ai/usage') && ++asked == 3) {
+              return http.Response(jsonEncode({'error': 'model failed'}), 502);
+            }
+            return spanish(request);
+          };
+          await ai.ask('Translate the transcript to Spanish', recording: _link);
+          await ai.proceed();
+          final failed = ai.pending! as KapyFailed;
+          expect(failed.retry, isTrue);
+          expect(failed.fallbacks, isNot(contains(FakeDeviceModel.apple)));
+          expect(ai.current!.messages, hasLength(1), reason: 'no half kept');
+          expect(ai.draft, isNull);
+          expect(answers(), hasLength(3));
+
+          await ai.proceed();
+          expect(ai.pending, isNull);
+          final expected = translationParts(voice, TranslateScope.transcript);
+          expect(answers(), hasLength(expected.length + 1));
+          expect(partsSent().skip(3), expected.skip(2), reason: 'the rest');
+          expect(
+            stitchTranslation(ai.current!.messages.skip(1).map((m) => m.text)),
+            _inSpanish(expected.join('\n')),
+          );
+        },
+      );
+
+      test(
+        'Try again starts over when the recording changed after a part failed',
+        () async {
+          final noteStore = await notesWith(
+            notes(voice: _voice(minutes: 30)),
+            store: store,
+          );
+          final ai = await build(
+            noteStore: noteStore,
+            billing: await billingOn(pro: true),
+          );
+          var asked = 0;
+          server = (request) {
+            if (!request.url.path.endsWith('/ai/usage') && ++asked == 3) {
+              return http.Response(jsonEncode({'error': 'model failed'}), 502);
+            }
+            return spanish(request);
+          };
+          await ai.ask('Translate the transcript to Spanish', recording: _link);
+          await ai.proceed();
+          expect(ai.pending, isA<KapyFailed>());
+
+          final changed = _voice(minutes: 20);
+          noteStore.updateAttachment('standup', _link.hash, (_) => changed);
+          await ai.proceed();
+          expect(ai.pending, isNull);
+          final expected = translationParts(changed, TranslateScope.transcript);
+          expect(partsSent().skip(3), expected, reason: 'every part again');
+          expect(
+            stitchTranslation(ai.current!.messages.skip(1).map((m) => m.text)),
+            _inSpanish(expected.join('\n')),
+          );
+        },
+      );
+
+      test('offline or out of answers, it offers no device model', () async {
+        final ai = await pro(_voice(minutes: 2));
+        server = (_) => throw http.ClientException('no route');
+        await ai.ask('Translate the transcript to Spanish', recording: _link);
+        await ai.proceed();
+        expect((ai.pending! as KapyOffline).fallback, isNull);
+
+        server = (_) => http.Response(
+          jsonEncode({
+            'error': 'limit reached',
+            'usage': {..._usage, 'remaining': 0},
+          }),
+          429,
+        );
+        await ai.proceed();
+        expect((ai.pending! as KapyLimitReached).fallback, isNull);
+        expect(ai.current!.messages, hasLength(1));
+      });
+
+      test('a transcript with no words says so', () async {
+        final ai = await pro(
+          _voice().copyWith(
+            transcript: VoiceTranscript(
+              lang: 'en',
+              engine: 'test',
+              at: 0,
+              segments: const [TranscriptSegment(s: 0, e: 1000, t: ' ')],
+            ),
+          ),
+        );
+        server = spanish;
+        await ai.ask('Translate the transcript to Spanish', recording: _link);
+        await ai.proceed();
+        expect(
+          (ai.pending! as KapyFailed).message,
+          "This recording's transcript has no words to translate.",
+        );
+        expect(answers(), isEmpty);
+      });
+
+      test('a reply that loses a time mark is a part that failed', () async {
+        final ai = await pro(_voice(minutes: 2));
+        server = (request) => request.url.path.endsWith('/ai/usage')
+            ? http.Response(jsonEncode(_usage), 200)
+            : http.Response(
+                jsonEncode({'answer': 'Hablaron del plan.', 'usage': _usage}),
+                200,
+              );
+        await ai.ask('Translate the transcript to Spanish', recording: _link);
+        await ai.proceed();
+        expect(
+          (ai.pending! as KapyFailed).message,
+          "Part of the translation didn't come back whole. Try again.",
+        );
+        expect(ai.current!.messages, hasLength(1));
+      });
+
+      test('the summary goes as its title and points', () async {
+        final ai = await pro(_voice());
+        await ai.ask('Translate the summary to Spanish', recording: _link);
+        server = spanish;
+        await ai.proceed();
+        expect(partsSent(), ['Pricing call\n- Annual plan first']);
+        expect(ai.current!.title, 'Summary in Spanish');
+        expect(
+          ai.current!.messages.last.text,
+          'ES Pricing call\n- ES Annual plan first',
+        );
+      });
+
+      test('is never made on the device: Free sees the Pro card', () async {
+        final ai = await build(
+          notes: notes(),
+          billing: await billingOn(pro: false),
+        );
+        expect(ai.model.kind, KapyModelKind.device);
+        await ai.ask('Translate the transcript to Spanish', recording: _link);
+        final locked = ai.pending! as KapyCloudLocked;
+        expect(locked.upgrade, isTrue);
+        expect(locked.fallbacks, isEmpty);
+        expect(device.asked, isEmpty);
+        expect(answers(), isEmpty);
+
+        // A question in the same window still goes to the device.
+        ai.newChat();
+        await ai.ask('What did we decide?', recording: _link);
+        expect(device.asked, hasLength(1));
+      });
+
+      group('by the device translator', () {
+        late FakeLiveEngine engine;
+        late List<String> given;
+
+        setUp(() {
+          given = [];
+          engine = FakeLiveEngine()
+            ..translator = (texts) {
+              given.addAll(texts);
+              return [for (final text in texts) 'ES $text'];
+            };
+        });
+
+        /// [text] as the fake translator gives it back: "ES" before each
+        /// line's words, after its time and speaker, or its "- ".
+        String onDevice(String text) => text.replaceAllMapped(
+          RegExp(r'^(?:\[[\d:]+\] (?:Sanjay: |Arjun: )?|- )?', multiLine: true),
+          (lead) => '${lead[0]}ES ',
+        );
+
+        test(
+          'needs no Pro, sign-in or consent, and keeps every mark and name',
+          () async {
+            final voice = _voice(minutes: 30);
+            final ai = await build(
+              notes: notes(voice: voice),
+              billing: await billingOn(pro: false),
+              token: () => null,
+              translator: engine,
+            );
+            final drafts = <int>[];
+            ai.addListener(() {
+              if (ai.draft case final draft?) drafts.add(draft.done);
+            });
+            await ai.ask(
+              'Translate the transcript to Spanish',
+              recording: _link,
+            );
+            expect(ai.pending, isNull);
+            expect(sent, isEmpty, reason: 'nothing left the device');
+            expect(device.asked, isEmpty, reason: 'not the answer model');
+
+            final expected = translationParts(voice, TranslateScope.transcript);
+            expect(expected.length, greaterThan(5));
+            expect(engine.calls, [for (final _ in expected) 'translate en es']);
+            expect(drafts.toSet().toList(), [
+              for (var i = 0; i < expected.length; i++) i,
+            ]);
+            for (final words in given) {
+              expect(words, isNot(startsWith('[')));
+              expect(words, isNot(matches(r'^(Sanjay|Arjun): ')));
+            }
+
+            final chat = ai.current!;
+            expect(chat.title, 'Transcript in Spanish');
+            final replies = chat.messages.skip(1).toList();
+            expect(replies, hasLength(expected.length));
+            expect(replies.map((m) => m.model).toSet(), {KapyModel.translator});
+            final stitched = stitchTranslation(replies.map((m) => m.text));
+            expect(stitched, onDevice(expected.join('\n')));
+            expect(
+              stitched.split('\n')[1],
+              startsWith('[0:10] Arjun: ES Can we split'),
+            );
+            expect(marksIn(stitched), [
+              for (var i = 0; i < 180; i++) Duration(seconds: i * 10),
+            ]);
+            expect(ai.draft, isNull);
+            expect(ai.answering, isFalse);
+          },
+        );
+
+        test('the summary keeps its title line and its points', () async {
+          final ai = await build(notes: notes(), translator: engine);
+          await ai.ask('Translate the summary to Spanish', recording: _link);
+          expect(given, ['Pricing call', 'Annual plan first']);
+          expect(
+            ai.current!.messages.last.text,
+            'ES Pricing call\n- ES Annual plan first',
+          );
+          expect(ai.current!.messages.last.model, KapyModel.translator);
+        });
+
+        test('a pair not on the device goes to the cloud as before', () async {
+          engine.translator = (_) => null;
+          final voice = _voice(minutes: 2);
+          final cloud = await build(
+            notes: notes(voice: voice),
+            billing: await billingOn(pro: true),
+            translator: engine,
+          );
+          server = spanish;
+          await cloud.ask(
+            'Translate the transcript to Spanish',
+            recording: _link,
+          );
+          expect(cloud.pending, isA<KapyCloudConsent>());
+          expect(engine.calls, ['translate en es'], reason: 'asked once');
+          expect(cloud.current!.messages, hasLength(1));
+          await cloud.proceed();
+          final replies = cloud.current!.messages.skip(1);
+          expect(replies.map((m) => m.model).toSet(), {KapyModel.cloud});
+          expect(
+            stitchTranslation(replies.map((m) => m.text)),
+            _inSpanish(
+              translationParts(voice, TranslateScope.transcript).join('\n'),
+            ),
+          );
+        });
+
+        test(
+          'the translation pair alone is enough, without the speech model',
+          () async {
+            engine.status = LivePairStatus.downloadable;
+            final ai = await build(
+              notes: notes(),
+              billing: await billingOn(pro: false),
+              translator: engine,
+            );
+            await ai.ask('Translate the summary to Spanish', recording: _link);
+            expect(engine.calls, ['translate en es']);
+            expect(ai.pending, isNull);
+            expect(ai.current!.messages.last.model, KapyModel.translator);
+          },
+        );
+
+        test(
+          'a translator that gives up hands the whole of it to the cloud',
+          () async {
+            final voice = _voice(minutes: 30);
+            var calls = 0;
+            engine.translator = (texts) =>
+                ++calls == 3 ? null : [for (final text in texts) 'ES $text'];
+            final ai = await build(
+              notes: notes(voice: voice),
+              billing: await billingOn(pro: true),
+              translator: engine,
+            );
+            server = spanish;
+            await ai.ask(
+              'Translate the transcript to Spanish',
+              recording: _link,
+            );
+            expect(
+              ai.pending,
+              isA<KapyCloudConsent>(),
+              reason: "the cloud's own gates hold it",
+            );
+            expect(ai.current!.messages, hasLength(1));
+            expect(answers(), isEmpty);
+            await ai.proceed();
+            final expected = translationParts(voice, TranslateScope.transcript);
+            expect(partsSent(), expected, reason: 'every part, not the rest');
+            final replies = ai.current!.messages.skip(1);
+            expect(replies.map((m) => m.model).toSet(), {KapyModel.cloud});
+            expect(
+              stitchTranslation(replies.map((m) => m.text)),
+              _inSpanish(expected.join('\n')),
+            );
+          },
+        );
+
+        test('into the language it was spoken in, it is never asked', () async {
+          final ai = await build(
+            notes: notes(),
+            billing: await billingOn(pro: true),
+            translator: engine,
+          );
+          await ai.ask('Translate the transcript to English', recording: _link);
+          expect(engine.calls, isEmpty);
+          expect(ai.pending, isA<KapyCloudConsent>());
+        });
+
+        group('saved after recording', () {
+          test(
+            'keeps the transcript in that language once, and opens nothing',
+            () async {
+              final voice = _voice(minutes: 2);
+              final ai = await build(
+                notes: notes(voice: voice),
+                translator: engine,
+              );
+              await ai.ask('What did we decide?', recording: _link);
+              final open = ai.current!;
+              var notified = 0;
+              ai.addListener(() {
+                notified++;
+                expect(ai.answering, isFalse);
+                expect(ai.draft, isNull);
+              });
+
+              await ai.keepTranscriptTranslation('standup', _link.hash, 'es');
+              expect(ai.current!.id, open.id);
+              expect(ai.current!.messages, open.messages);
+              expect(ai.pending, isNull);
+              expect(notified, greaterThan(0));
+              final kept = ai.chats
+                  .where((chat) => chat.title == 'Transcript in Spanish')
+                  .single;
+              expect(kept.recording, _link);
+              expect(kept.messages.first.role, KapyRole.user);
+              expect(
+                kept.messages.first.text,
+                'Translate the transcript to Spanish',
+              );
+              final replies = kept.messages.skip(1).toList();
+              expect(replies.map((m) => m.model).toSet(), {
+                KapyModel.translator,
+              });
+              expect(replies.first.at.isAfter(kept.messages.first.at), isTrue);
+              expect(
+                stitchTranslation(replies.map((m) => m.text)),
+                onDevice(
+                  translationParts(voice, TranslateScope.transcript).join('\n'),
+                ),
+              );
+              expect(sent, isEmpty);
+
+              final translated = engine.calls.length;
+              await ai.keepTranscriptTranslation('standup', _link.hash, 'es');
+              expect(engine.calls, hasLength(translated));
+              expect(
+                ai.chats.where((chat) => chat.recording == _link),
+                hasLength(2),
+                reason: 'the question and the one translation',
+              );
+            },
+          );
+
+          test('one already asked for is not made again', () async {
+            final translate = engine.translator;
+            engine.translator = (_) => null;
+            final ai = await build(
+              notes: notes(),
+              billing: await billingOn(pro: true),
+              translator: engine,
+            );
+            await ai.ask(
+              'Translate the transcript to Spanish',
+              recording: _link,
+            );
+            expect(ai.pending, isA<KapyCloudConsent>());
+            engine.translator = translate;
+            await ai.keepTranscriptTranslation('standup', _link.hash, 'es');
+            expect(ai.chats.where((c) => c.recording == _link), hasLength(1));
+            expect(given, isEmpty);
+          });
+
+          test(
+            'without the pair, or with no translator, nothing is kept',
+            () async {
+              engine.translator = (_) => null;
+              final ai = await build(notes: notes(), translator: engine);
+              await ai.keepTranscriptTranslation('standup', _link.hash, 'es');
+              expect(ai.chats, isEmpty);
+              expect(engine.calls, ['translate en es']);
+
+              final bare = await build(notes: notes());
+              await bare.keepTranscriptTranslation('standup', _link.hash, 'es');
+              expect(bare.chats, isEmpty);
+            },
+          );
+
+          test('with Kapy AI switched off, nothing is kept', () async {
+            final ai = await build(notes: notes(), translator: engine);
+            ai.enabled = false;
+            await ai.keepTranscriptTranslation('standup', _link.hash, 'es');
+            expect(ai.chats, isEmpty);
+            expect(engine.calls, isEmpty);
+          });
+        });
+      });
     });
 
     test(

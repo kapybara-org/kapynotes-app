@@ -173,22 +173,10 @@ class NotesFoldersSwitch extends StatelessWidget {
                         borderRadius: BorderRadius.circular(AppRadii.control),
                       )
                     : null,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    KapyIcon(
-                      forFolders
-                          ? KapyIcons.folderOutlined
-                          : KapyIcons.noteOutlined,
-                      size: 14,
-                      color: colour,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      forFolders ? 'Folders' : 'Notes',
-                      style: _chrome(13, 16, FontWeight.w400, colour),
-                    ),
-                  ],
+                alignment: Alignment.center,
+                child: Text(
+                  forFolders ? 'Folders' : 'Notes',
+                  style: _chrome(13, 16, FontWeight.w400, colour),
                 ),
               ),
             ),
@@ -204,18 +192,23 @@ class NotesFoldersSwitch extends StatelessWidget {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-      child: Container(
-        key: const ValueKey('notes-folders-switch'),
-        height: 32,
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: palette.cardBackground,
-          borderRadius: BorderRadius.circular(9),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [segment(false), segment(true)],
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ColoredBox(
+            color: palette.separator,
+            child: SizedBox(height: AppHairline.of(context)),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            key: const ValueKey('notes-folders-switch'),
+            height: AppControlMetrics.scaleBar(context, 32),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [segment(false), segment(true)],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_page.dart';
+import 'package:kapy_notes/ui/kapy_ai/kapy_ai_picker.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'fake_kapy_ai.dart';
@@ -13,26 +14,54 @@ import 'test_fonts.dart';
 
 final _now = DateTime(2026, 11, 19, 9);
 
-KapyChat _chat(String id, String title, DateTime at) => KapyChat(
+KapyChat _chat(
+  String id,
+  String title,
+  DateTime at, {
+  List<KapyMessage> messages = const [],
+}) => KapyChat(
   id: id,
   title: title,
   createdAt: at,
   updatedAt: at,
   model: KapyModel.cloud,
-  messages: const [],
+  messages: messages,
 );
 
+KapyMessage _said(KapyRole role, String text) =>
+    KapyMessage(id: '$role-$text', role: role, text: text, at: _now);
+
 List<KapyChat> get _chats => [
-  _chat('a', 'What is left on Call with Arjun', DateTime(2026, 11, 19, 8, 58)),
+  _chat(
+    'a',
+    'What is left on Call with Arjun',
+    DateTime(2026, 11, 19, 8, 58),
+    messages: [
+      _said(KapyRole.user, 'What is left on Call with Arjun?'),
+      _said(KapyRole.assistant, 'Send the deck and book the room.'),
+    ],
+  ),
   _chat('b', 'What did I plan for this week?', DateTime(2026, 11, 19, 7, 40)),
-  _chat('c', 'Find my notes about Lisbon', DateTime(2026, 11, 18, 18, 20)),
+  _chat(
+    'c',
+    'Find my notes about Lisbon',
+    DateTime(2026, 11, 18, 18, 20),
+    messages: [
+      _said(KapyRole.user, 'Find my notes about Lisbon'),
+      _said(
+        KapyRole.assistant,
+        '\n\n- **Four days** in [May](kapy://note/9), from the _Lisbon trip_ note',
+      ),
+    ],
+  ),
   _chat('d', 'Price of 40 seats a month', DateTime(2026, 11, 17, 10)),
   _chat('e', 'Summarise the offsite notes', DateTime(2026, 11, 14, 16)),
   _chat('f', 'Budget for the October trip', DateTime(2026, 10, 9, 12)),
 ];
 
-FakeKapyAi _ai({bool pro = true}) =>
-    FakeKapyAi(pro: pro, chatList: _chats)..set(model: KapyModel.cloud);
+FakeKapyAi _ai({bool pro = true, List<KapyChat>? chats}) =>
+    FakeKapyAi(pro: pro, chatList: chats ?? _chats)
+      ..set(model: KapyModel.cloud);
 
 final _account = SizedBox.square(
   key: ValueKey('account'),
@@ -57,10 +86,8 @@ Future<void> _pump(
   WidgetTester tester,
   FakeKapyAi ai, {
   VoidCallback? onOpenChat,
-  VoidCallback? onManage,
   double textScale = 1,
   Size size = const Size(393, 852),
-  double keyboard = 0,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -73,7 +100,6 @@ Future<void> _pump(
         data: MediaQueryData(
           size: size,
           padding: const EdgeInsets.only(top: 62, bottom: 34),
-          viewInsets: EdgeInsets.only(bottom: keyboard),
           textScaler: TextScaler.linear(textScale),
         ),
         child: Scaffold(
@@ -81,7 +107,6 @@ Future<void> _pump(
           body: KapyAiPage(
             kapyAi: ai,
             onOpenChat: onOpenChat ?? () {},
-            onManageAccounts: onManage ?? () {},
             account: _account,
             now: () => _now,
           ),
@@ -92,6 +117,11 @@ Future<void> _pump(
   );
   await tester.pump();
 }
+
+List<String> _shown(WidgetTester tester) => [
+  for (final text in tester.widgetList<Text>(find.byType(Text)))
+    if (text.data != null) text.data!,
+];
 
 void main() {
   setUpAll(loadTestFonts);
@@ -114,63 +144,67 @@ void main() {
     expect(title.fontVariations, contains(const FontVariation('wght', 500)));
   });
 
-  testWidgets('groups past chats newest first, each with its time', (
+  testWidgets('heads it as Notes is: its name and the account, then search', (
     tester,
   ) async {
     await _pump(tester, _ai());
 
-    final shown = [
-      for (final text in tester.widgetList<Text>(find.byType(Text)))
-        if (text.data != null) text.data!,
-    ];
     expect(
-      shown,
+      tester.widget<Text>(find.byKey(const ValueKey('phone-list-title'))).data,
+      'Kapy AI',
+    );
+    expect(find.byKey(const ValueKey('account')), findsOneWidget);
+    expect(find.byKey(const ValueKey('sidebar-search-box')), findsOneWidget);
+    expect(find.text('Search chats'), findsOneWidget);
+    expect(find.text('New chat'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is KapyIcon && widget.icon == KapyIcons.sparklesOutlined,
+      ),
+      findsNothing,
+    );
+    expect(find.text('Ask Kapy AI'), findsNothing);
+  });
+
+  testWidgets('lists past chats a day at a time, newest first, each with its '
+      'time and how its last answer starts', (tester) async {
+    await _pump(tester, _ai());
+
+    expect(
+      _shown(tester),
       containsAllInOrder([
         'Today',
+        'Thu 19',
         'What is left on Call with Arjun',
         '8:58',
+        'Send the deck and book the room.',
         'What did I plan for this week?',
         '7:40',
         'Yesterday',
+        'Wed 18',
         'Find my notes about Lisbon',
         '18:20',
-        'Previous 7 days',
+        'Four days in May, from the Lisbon trip note',
+        'Tue 17 Nov',
         'Price of 40 seats a month',
-        'Tue 17',
+        '10:00',
+        'Sat 14 Nov',
         'Summarise the offsite notes',
-        'Sat 14',
-        'October',
+        '16:00',
+        'Fri 9 Oct',
         'Budget for the October trip',
-        '9 Oct',
-        'Chats sync across your devices',
+        '12:00',
       ]),
     );
-    expect(find.text('Kapy AI Cloud'), findsOneWidget);
-    expect(find.byKey(const ValueKey('account')), findsOneWidget);
-
-    List<FontVariation>? wghtOf(String label) =>
-        tester.widget<Text>(find.text(label)).style?.fontVariations;
-    for (final label in ['Yesterday', 'Previous 7 days', 'October']) {
-      expect(wghtOf(label), [const FontVariation('wght', 600)], reason: label);
-    }
-    final dispatcher = tester.binding.platformDispatcher;
-    dispatcher.accessibilityFeaturesTestValue = FakeAccessibilityFeatures.allOn;
-    addTearDown(dispatcher.clearAccessibilityFeaturesTestValue);
-    await _pump(tester, _ai());
-    for (final label in ['Yesterday', 'Previous 7 days', 'October']) {
-      expect(wghtOf(label), [const FontVariation('wght', 700)], reason: label);
-    }
-  });
-
-  testWidgets('says where chats are kept when they do not sync', (
-    tester,
-  ) async {
-    final ai = _ai()..syncing = false;
-    await _pump(tester, ai);
-    expect(find.textContaining('Sign in to sync them'), findsOneWidget);
-
-    await _pump(tester, _ai(pro: false));
-    expect(find.textContaining('Pro syncs them'), findsOneWidget);
+    expect(find.byKey(const ValueKey('phone-day-heading')), findsNWidgets(5));
+    // A chat with no answer yet has no second line.
+    final row = find.byKey(const ValueKey('kapy-ai-page-chat-b'));
+    expect(
+      find.descendant(of: row, matching: find.byType(Text)),
+      findsNWidgets(2),
+    );
+    expect(find.textContaining('sync'), findsNothing);
   });
 
   testWidgets('a chat opens through Kapy AI, then the conversation shows', (
@@ -184,111 +218,6 @@ void main() {
     expect(ai.calls, ['openChat:c']);
     expect(ai.current?.id, 'c');
     expect(opened, 1);
-  });
-
-  testWidgets('New chat starts one and shows it', (tester) async {
-    final ai = _ai()..openChat('a');
-    ai.calls.clear();
-    var opened = 0;
-    await _pump(tester, ai, onOpenChat: () => opened++);
-
-    await tester.tap(find.byKey(const ValueKey('kapy-ai-page-new-chat')));
-    expect(ai.calls, ['newChat']);
-    expect(ai.current, isNull);
-    expect(opened, 1);
-  });
-
-  testWidgets('a question asked here starts a new chat, never the last one', (
-    tester,
-  ) async {
-    final ai = _ai()..openChat('a');
-    ai.calls.clear();
-    var opened = 0;
-    await _pump(tester, ai, onOpenChat: () => opened++);
-
-    await tester.enterText(
-      find.byKey(const ValueKey('kapy-ai-page-field')),
-      '  What is due on Friday?  ',
-    );
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('kapy-ai-page-send')));
-    await tester.pump();
-
-    expect(ai.calls, ['newChat', 'ask:What is due on Friday?:']);
-    expect(opened, 1);
-    expect(find.text('What is due on Friday?'), findsNothing);
-  });
-
-  testWidgets('an empty question asks nothing', (tester) async {
-    final ai = _ai();
-    var opened = 0;
-    await _pump(tester, ai, onOpenChat: () => opened++);
-
-    await tester.enterText(
-      find.byKey(const ValueKey('kapy-ai-page-field')),
-      '   ',
-    );
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('kapy-ai-page-send')));
-    await tester.pump();
-    expect(ai.calls, isEmpty);
-    expect(opened, 0);
-  });
-
-  testWidgets('while Kapy AI is still answering, the question waits', (
-    tester,
-  ) async {
-    final ai = _ai()..set(answering: true);
-    var opened = 0;
-    await _pump(tester, ai, onOpenChat: () => opened++);
-
-    await tester.enterText(
-      find.byKey(const ValueKey('kapy-ai-page-field')),
-      'Another one',
-    );
-    await tester.pump();
-    expect(find.text('Still answering'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('kapy-ai-page-send')));
-    await tester.pump();
-    expect(ai.calls, isEmpty);
-    expect(opened, 0);
-    expect(find.text('Another one'), findsOneWidget);
-  });
-
-  testWidgets('a model picked here goes to the new chat, not the open one', (
-    tester,
-  ) async {
-    final ai = _ai()
-      ..set(
-        accounts: const [
-          KapyAccountState(
-            kind: KapyAccountKind.codex,
-            status: KapyAccountStatus.connected,
-            models: [FakeKapyAi.gpt],
-          ),
-        ],
-      )
-      ..openChat('a');
-    ai.calls.clear();
-    var managed = 0;
-    await _pump(tester, ai, onManage: () => managed++);
-
-    await tester.tap(find.byKey(const ValueKey('kapy-ai-model-button')));
-    await tester.pumpAndSettle();
-    expect(ai.calls, ['newChat']);
-    await tester.tap(find.byKey(const ValueKey('kapy-ai-model-device-apple')));
-    await tester.pumpAndSettle();
-    expect(ai.calls, ['newChat', 'pickModel:apple']);
-    expect(
-      find.byKey(const ValueKey('kapy-ai-model-device-apple')),
-      findsNothing,
-    );
-
-    await tester.tap(find.byKey(const ValueKey('kapy-ai-model-button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Manage accounts…'));
-    await tester.pumpAndSettle();
-    expect(managed, 1);
   });
 
   testWidgets('Search finds an old chat, and says when none match', (
@@ -311,7 +240,166 @@ void main() {
     );
     await tester.pump();
     expect(find.text('No chats match'), findsOneWidget);
+    expect(find.byKey(const ValueKey('kapy-ai-page-example-0')), findsNothing);
+
+    await tester.tap(find.byTooltip('Clear search'));
+    await tester.pump();
+    expect(find.text('Price of 40 seats a month'), findsOneWidget);
   });
+
+  group('with no chats yet', () {
+    testWidgets('it says so, and offers three questions to start from', (
+      tester,
+    ) async {
+      await _pump(tester, _ai(chats: const []));
+      expect(
+        _shown(tester),
+        containsAllInOrder([
+          'No chats yet',
+          'Chats sync across your devices',
+          'What did I plan for this week?',
+          'Find my notes about Lisbon',
+          'Summarise what I wrote yesterday',
+        ]),
+      );
+    });
+
+    testWidgets('it says they sync only where they do', (tester) async {
+      await _pump(tester, _ai(chats: const [])..syncing = false);
+      expect(find.text('No chats yet'), findsOneWidget);
+      expect(find.textContaining('sync'), findsNothing);
+
+      await _pump(tester, _ai(pro: false, chats: const []));
+      expect(find.text('No chats yet'), findsOneWidget);
+      expect(find.textContaining('sync'), findsNothing);
+    });
+
+    testWidgets(
+      'a question tapped is asked in a new chat, never the last one',
+      (tester) async {
+        final ai = _ai(chats: const []);
+        var opened = 0;
+        await _pump(tester, ai, onOpenChat: () => opened++);
+
+        await tester.tap(find.byKey(const ValueKey('kapy-ai-page-example-1')));
+        expect(ai.calls, ['newChat', 'ask:Find my notes about Lisbon:']);
+        expect(opened, 1);
+      },
+    );
+
+    testWidgets('while Kapy AI is still answering, a tap asks nothing', (
+      tester,
+    ) async {
+      final ai = _ai(chats: const [])..set(answering: true);
+      var opened = 0;
+      await _pump(tester, ai, onOpenChat: () => opened++);
+
+      await tester.tap(find.byKey(const ValueKey('kapy-ai-page-example-0')));
+      expect(ai.calls, isEmpty);
+      expect(opened, 0);
+    });
+  });
+
+  testWidgets('every target is at least 44 × 44 to a finger', (tester) async {
+    await _pump(tester, _ai());
+    final targets = [
+      find.byKey(const ValueKey('sidebar-search-box')),
+      find.byKey(const ValueKey('kapy-ai-page-chat-a')),
+      find.byKey(const ValueKey('kapy-ai-page-chat-b')),
+    ];
+    for (final finder in targets) {
+      final size = tester.getSize(finder);
+      expect(size.width, greaterThanOrEqualTo(44), reason: '$finder');
+      expect(size.height, greaterThanOrEqualTo(44), reason: '$finder');
+    }
+    await _pump(tester, _ai(chats: const []));
+    for (var i = 0; i < 3; i++) {
+      final size = tester.getSize(
+        find.byKey(ValueKey('kapy-ai-page-example-$i')),
+      );
+      expect(size.height, greaterThanOrEqualTo(44), reason: 'example $i');
+    }
+  });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets(
+      'on ${platform.name} a screen reader presses a chat and a starting '
+      'question as a tap does (KAP-365)',
+      (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        final semantics = tester.ensureSemantics();
+        SemanticsNode node(String key) =>
+            tester.getSemantics(find.byKey(ValueKey(key)));
+        Future<void> press(String key) async {
+          final id = node(key).id;
+          tester.semantics.tap(find.semantics.byPredicate((n) => n.id == id));
+          await tester.pump();
+        }
+
+        final ai = _ai();
+        var opened = 0;
+        await _pump(tester, ai, onOpenChat: () => opened++);
+        expect(node('kapy-ai-page-chat-c'), isSemantics(hasTapAction: true));
+        await press('kapy-ai-page-chat-c');
+        expect(ai.calls, ['openChat:c']);
+        expect(opened, 1);
+
+        final empty = _ai(chats: const []);
+        await _pump(tester, empty, onOpenChat: () => opened++);
+        expect(
+          node('kapy-ai-page-example-0'),
+          isSemantics(
+            label: 'What did I plan for this week?',
+            isButton: true,
+            hasTapAction: true,
+          ),
+        );
+        await press('kapy-ai-page-example-0');
+        expect(empty.calls, ['newChat', 'ask:What did I plan for this week?:']);
+        expect(opened, 2);
+        semantics.dispose();
+      },
+    );
+  }
+
+  testWidgets('a tap anywhere on the search well puts the cursor in it', (
+    tester,
+  ) async {
+    await _pump(tester, _ai());
+    final well = tester.getRect(
+      find.byKey(const ValueKey('sidebar-search-box')),
+    );
+    await tester.tapAt(well.centerLeft + const Offset(6, 0));
+    await tester.pump();
+    final field = find.byKey(const ValueKey('kapy-ai-page-search'));
+    expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+  });
+
+  testWidgets('at twice the text size, chat rows keep space between them', (
+    tester,
+  ) async {
+    await _pump(tester, _ai(), textScale: 2);
+    final first = tester.getRect(find.text('Send the deck and book the room.'));
+    final second = tester.getRect(find.text('What did I plan for this week?'));
+    expect(second.top - first.bottom, greaterThanOrEqualTo(12));
+  });
+
+  for (final (name, size) in [
+    ('iPhone', Size(393, 852)),
+    ('small phone', Size(360, 640)),
+  ]) {
+    testWidgets('fits a $name at twice the text size', (tester) async {
+      await _pump(tester, _ai(), textScale: 2, size: size);
+      expect(tester.takeException(), isNull);
+      await _pump(tester, _ai(chats: const []), textScale: 2, size: size);
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('kapy-ai-page-example-2')),
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   group('the picker on a phone', () {
     List<String> pickerText(WidgetTester tester) => [
@@ -324,31 +412,40 @@ void main() {
         text.data!,
     ];
 
-    Future<void> openPicker(
+    Future<void> showPicker(
       WidgetTester tester,
       TargetPlatform platform,
       DeviceModelState device,
     ) async {
       AppPlatform.debugTargetPlatformOverride = platform;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      await _pump(
-        tester,
-        FakeKapyAi(
-          chatList: _chats,
-          deviceState: device,
-          accountList: const [
-            KapyAccountState(
-              kind: KapyAccountKind.openRouter,
-              status: KapyAccountStatus.connected,
-              models: [FakeKapyAi.gemini],
-              detail: '4f2a',
+      tester.view.physicalSize = const Size(393, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Material(
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: KapyAiPicker(
+                kapyAi: FakeKapyAi(
+                  deviceState: device,
+                  accountList: const [
+                    KapyAccountState(
+                      kind: KapyAccountKind.openRouter,
+                      status: KapyAccountStatus.connected,
+                      models: [FakeKapyAi.gemini],
+                      detail: '4f2a',
+                    ),
+                  ],
+                ),
+                onPick: (_) {},
+                onManageAccounts: () {},
+              ),
             ),
-          ],
+          ),
         ),
-      );
-      await tester.tap(
-        find.byKey(const ValueKey('kapy-ai-model-button')),
-        warnIfMissed: false,
       );
       await tester.pumpAndSettle();
     }
@@ -356,7 +453,7 @@ void main() {
     testWidgets('Android: "On this device" is said once, by its row', (
       tester,
     ) async {
-      await openPicker(
+      await showPicker(
         tester,
         TargetPlatform.android,
         const DeviceModelState(
@@ -381,7 +478,7 @@ void main() {
     });
 
     testWidgets('iOS: Apple Intelligence keeps its heading', (tester) async {
-      await openPicker(
+      await showPicker(
         tester,
         TargetPlatform.iOS,
         const DeviceModelState(
@@ -405,163 +502,14 @@ void main() {
     });
   });
 
-  testWidgets('every button is at least 44 × 44 to a finger', (tester) async {
-    await _pump(tester, _ai());
-    final handle = tester.ensureSemantics();
-    for (final finder in [
-      find.byKey(const ValueKey('kapy-ai-page-new-chat')),
-      find.byKey(const ValueKey('kapy-ai-page-send')),
-      find.bySemanticsLabel('Answers with Kapy AI Cloud'),
-      find.byKey(const ValueKey('kapy-ai-page-chat-a')),
-    ]) {
-      final size = tester.getSize(finder);
-      expect(size.width, greaterThanOrEqualTo(44), reason: '$finder');
-      expect(size.height, greaterThanOrEqualTo(44), reason: '$finder');
-    }
-    handle.dispose();
-  });
-
-  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
-    testWidgets('on ${platform.name} a screen reader presses New chat, Ask '
-        'and the picker as a tap does (KAP-365)', (tester) async {
-      AppPlatform.debugTargetPlatformOverride = platform;
-      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      final semantics = tester.ensureSemantics();
-      final ai = _ai()..openChat('a');
-      ai.calls.clear();
-      var opened = 0;
-      await _pump(tester, ai, onOpenChat: () => opened++);
-      SemanticsNode node(String key) =>
-          tester.getSemantics(find.byKey(ValueKey(key)));
-      Future<void> press(SemanticsNode node) async {
-        tester.semantics.tap(
-          find.semantics.byPredicate((n) => n.id == node.id),
-        );
-        await tester.pump();
-      }
-
-      final newChat = node('kapy-ai-page-new-chat');
-      expect(
-        newChat,
-        isSemantics(label: 'New chat', isButton: true, hasTapAction: true),
-      );
-      await press(newChat);
-      expect(ai.calls, ['newChat']);
-      expect(opened, 1);
-
-      ai.calls.clear();
-      expect(
-        node('kapy-ai-page-send'),
-        isSemantics(
-          label: 'Ask',
-          isButton: true,
-          isEnabled: false,
-          hasTapAction: false,
-        ),
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('kapy-ai-page-field')),
-        'What is due on Friday?',
-      );
-      await tester.pump();
-      final ask = node('kapy-ai-page-send');
-      expect(
-        ask,
-        isSemantics(
-          label: 'Ask',
-          isButton: true,
-          isEnabled: true,
-          hasTapAction: true,
-        ),
-      );
-      await press(ask);
-      expect(ai.calls, ['ask:What is due on Friday?:']);
-      expect(opened, 2);
-
-      final picker = node('kapy-ai-model-button');
-      expect(
-        picker,
-        isSemantics(
-          label: 'Answers with Kapy AI Cloud',
-          isButton: true,
-          hasTapAction: true,
-        ),
-      );
-      await press(picker);
-      await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('kapy-ai-picker')), findsOneWidget);
-      semantics.dispose();
-    });
-  }
-
-  testWidgets('with the keyboard up, Ask Kapy AI sits just above it', (
-    tester,
-  ) async {
-    await _pump(tester, _ai());
-    final field = find.byKey(const ValueKey('kapy-ai-page-field'));
-    Rect box() => tester.getRect(
-      find.ancestor(of: field, matching: find.byType(Container)).first,
-    );
-    expect(852 - box().bottom, 86 + 12);
-
-    await _pump(tester, _ai(), keyboard: 300);
-    expect(852 - 300 - box().bottom, 12);
-  });
-
-  testWidgets('a tap anywhere on the search pill puts the cursor in it', (
-    tester,
-  ) async {
-    await _pump(tester, _ai());
-    final field = find.byKey(const ValueKey('kapy-ai-page-search'));
-    final pill = tester.getRect(
-      find.ancestor(of: field, matching: find.byType(Container)).first,
-    );
-    await tester.tapAt(pill.centerLeft + const Offset(6, 0));
-    await tester.pump();
-    expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
-  });
-
-  testWidgets('at twice the text size, chat rows keep space between them', (
-    tester,
-  ) async {
-    await _pump(tester, _ai(), textScale: 2);
-    final first = tester.getRect(find.text('What is left on Call with Arjun'));
-    final second = tester.getRect(find.text('What did I plan for this week?'));
-    expect(second.top - first.bottom, greaterThanOrEqualTo(12));
-  });
-
-  testWidgets('with no chats yet, it says so', (tester) async {
-    await _pump(tester, FakeKapyAi(pro: true)..set(model: KapyModel.cloud));
-    expect(find.text('No chats yet'), findsOneWidget);
-  });
-
-  for (final (name, size) in [
-    ('iPhone', Size(393, 852)),
-    ('small phone', Size(360, 640)),
-  ]) {
-    testWidgets('fits a $name at twice the text size', (tester) async {
-      final ai = _ai();
-      var opened = 0;
-      await _pump(
-        tester,
-        ai,
-        textScale: 2,
-        size: size,
-        onOpenChat: () => opened++,
-      );
-      expect(tester.takeException(), isNull);
-      // The label gives way before the row overflows; the button stays.
-      expect(find.text('New chat'), findsNothing);
-      expect(find.bySemanticsLabel('New chat'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('kapy-ai-page-new-chat')));
-      expect(opened, 1);
-    });
-  }
-
   group('goldens', () {
-    for (final (name, scale) in [('1x', 1.0), ('2x', 2.0)]) {
-      testWidgets('the page, dark, $name text', (tester) async {
-        await _pump(tester, _ai(), textScale: scale);
+    for (final (name, scale, chats) in [
+      ('1x', 1.0, _chats),
+      ('2x', 2.0, _chats),
+      ('empty', 1.0, const <KapyChat>[]),
+    ]) {
+      testWidgets('the page, dark, $name', (tester) async {
+        await _pump(tester, _ai(chats: chats), textScale: scale);
         await tester.runAsync(
           () => Future<void>.delayed(const Duration(milliseconds: 100)),
         );

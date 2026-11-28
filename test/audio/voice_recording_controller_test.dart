@@ -39,6 +39,10 @@ class FakeVoiceRecorder implements VoiceRecorderBackend {
   /// What `start` leaves on disk. Null means "a real 5-second recording".
   List<int>? bytes;
 
+  /// Holds `start` until completed: a microphone slow to deliver its first
+  /// samples, as Linux waits for.
+  Completer<void>? startGate;
+
   String? startedAt;
   bool cancelled = false;
   bool stopped = false;
@@ -59,6 +63,7 @@ class FakeVoiceRecorder implements VoiceRecorderBackend {
   Future<void> start(String path) async {
     startedAt = path;
     if (writesFile) await File(path).writeAsBytes(bytes ?? _fixture());
+    await startGate?.future;
   }
 
   static List<int> _fixture() =>
@@ -97,6 +102,9 @@ class FakeVoiceRecorder implements VoiceRecorderBackend {
 class FakeRecordingControls implements RecordingControls {
   final calls = <String>[];
   Duration? elapsed;
+  bool live = false;
+  String? phrase;
+  String? heard;
   Future<bool> Function(RecordingCommand command)? _onCommand;
 
   @override
@@ -115,8 +123,14 @@ class FakeRecordingControls implements RecordingControls {
     required Duration elapsed,
     required bool paused,
     required bool interrupted,
+    bool live = false,
+    String? phrase,
+    String? heard,
   }) async {
     this.elapsed = elapsed;
+    this.live = live;
+    this.phrase = phrase;
+    this.heard = heard;
     calls.add(
       paused
           ? 'show paused'
@@ -249,6 +263,117 @@ void main() {
     await pumpEventQueue();
     expect(controller.session!.level, 0);
     expect(controller.session!.sampleSequence, 1);
+  });
+
+  group('a silent microphone (KAP-424)', () {
+    const silence = -160.0;
+
+    /// One level a tenth of a second, as every backend reports them.
+    Future<void> hear(Iterable<double> levels) async {
+      for (final level in levels) {
+        recorder.amplitudes.add(level);
+      }
+      await pumpEventQueue();
+    }
+
+    test('a recording that never had a sound is not kept', () async {
+      var delivered = 0;
+      controller.onFinished = (result, noteId) async => delivered++;
+      await controller.start(noteId: 'n1');
+      final path = recorder.startedAt!;
+      await hear(List.filled(50, silence));
+
+      expect(
+        await controller.finishRecordingAndFlush(discardSilent: true),
+        isTrue,
+      );
+      expect(delivered, 0);
+      expect(await File(path).exists(), isFalse);
+      expect(controller.session, isNull);
+    });
+
+    test('nor is one whose only noise is a step or two of dither', () async {
+      await controller.start(noteId: 'n1');
+      final path = recorder.startedAt!;
+      // One and two steps of a 16-bit sample.
+      await hear([for (var i = 0; i < 50; i++) i.isEven ? -90.3 : -84.3]);
+
+      expect(await controller.stop(discardSilent: true), isNull);
+      expect(await File(path).exists(), isFalse);
+    });
+
+    test('a quiet room is sound, and is kept', () async {
+      var delivered = 0;
+      controller.onFinished = (result, noteId) async => delivered++;
+      await controller.start(noteId: 'n1');
+      // A laptop's microphone in a quiet room, at its quietest.
+      await hear([for (var i = 0; i < 50; i++) -74.0 + (i % 5)]);
+
+      expect(
+        await controller.finishRecordingAndFlush(discardSilent: true),
+        isFalse,
+      );
+      expect(delivered, 1);
+    });
+
+    test('one sound anywhere in it keeps the recording', () async {
+      await controller.start(noteId: 'n1');
+      await hear([
+        ...List.filled(40, silence),
+        -30,
+        ...List.filled(40, silence),
+      ]);
+
+      expect(await controller.stop(discardSilent: true), isNotNull);
+    });
+
+    test('levels that never arrive keep the recording', () async {
+      // A backend whose levels do not reach us says nothing about the sound,
+      // and a real recording is not thrown away on a guess.
+      var delivered = 0;
+      controller.onFinished = (result, noteId) async => delivered++;
+      await controller.start(noteId: 'n1');
+
+      expect(
+        await controller.finishRecordingAndFlush(discardSilent: true),
+        isFalse,
+      );
+      expect(delivered, 1);
+    });
+
+    test('an ending nobody pressed Stop for keeps even silence', () async {
+      // Quitting, the thirty-minute cap, Stop on a phone's notification: no
+      // one is there to be told why a recording went missing, so it stays.
+      var delivered = 0;
+      controller.onFinished = (result, noteId) async => delivered++;
+      await controller.start(noteId: 'n1');
+      await hear(List.filled(50, silence));
+
+      expect(await controller.finishRecordingAndFlush(), isFalse);
+      expect(delivered, 1);
+    });
+
+    test('levels heard while paused do not count', () async {
+      await controller.start(noteId: 'n1');
+      await hear(List.filled(20, silence));
+      await controller.pause();
+      await hear([-20]);
+      await controller.resume();
+
+      expect(await controller.stop(discardSilent: true), isNull);
+    });
+  });
+
+  test('the bar does not say it is recording until the microphone has '
+      'started', () async {
+    final gate = recorder.startGate = Completer<void>();
+    final started = controller.start(noteId: 'n1');
+    await pumpEventQueue();
+    expect(controller.session!.starting, isTrue);
+
+    gate.complete();
+    expect(await started, isTrue);
+    expect(controller.session!.starting, isFalse);
   });
 
   test('two callers of the finish path share one future', () async {
@@ -422,6 +547,64 @@ void main() {
         controller.debugInterrupt();
         async.elapse(const Duration(seconds: 5));
         expect(controller.session!.elapsed, const Duration(seconds: 2));
+      });
+    });
+
+    test('silence is told once it has lasted silentAfter, and no sooner', () {
+      FakeAsync().run((async) {
+        final recorder = FakeVoiceRecorder(writesFile: false);
+        final controller = VoiceRecordingController(
+          recorder: recorder,
+          tempDirectory: temp,
+        );
+        controller.start(noteId: 'n1');
+        async.flushMicrotasks();
+        void hearSilence(Duration span) {
+          for (var i = 0; i < span.inMilliseconds ~/ 100; i++) {
+            recorder.amplitudes.add(-160);
+            async.elapse(const Duration(milliseconds: 100));
+          }
+        }
+
+        hearSilence(
+          VoiceRecordingController.silentAfter - const Duration(seconds: 1),
+        );
+        expect(controller.session!.silent, isFalse);
+        hearSilence(const Duration(seconds: 1));
+        expect(controller.session!.silent, isTrue);
+
+        // Unmuted: the warning goes with the first sound.
+        recorder.amplitudes.add(-40);
+        async.flushMicrotasks();
+        expect(controller.session!.silent, isFalse);
+        hearSilence(const Duration(seconds: 5));
+        expect(controller.session!.silent, isFalse);
+        controller.dispose();
+      });
+    });
+
+    test('a quiet room is never told it is silent', () {
+      FakeAsync().run((async) {
+        final recorder = FakeVoiceRecorder(writesFile: false);
+        final controller = VoiceRecordingController(
+          recorder: recorder,
+          tempDirectory: temp,
+        );
+        controller.start(noteId: 'n1');
+        async.flushMicrotasks();
+        for (var i = 0; i < 100; i++) {
+          recorder.amplitudes.add(-74.0 + (i % 5));
+          async.elapse(const Duration(milliseconds: 100));
+        }
+        expect(controller.session!.silent, isFalse);
+        controller.dispose();
+      });
+    });
+
+    test('no levels at all is not called silence', () {
+      withClock((async, controller) {
+        async.elapse(const Duration(seconds: 10));
+        expect(controller.session!.silent, isFalse);
       });
     });
 

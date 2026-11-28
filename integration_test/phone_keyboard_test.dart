@@ -1,17 +1,15 @@
-// A phone's keyboard on Kapy AI's page (KAP-337), on a real phone or
-// simulator: the whole app over notes kept in memory, with a Kapy AI that
-// never reaches a model or the network.
+// Kapy AI's tab in the whole app on a real phone or simulator, over notes
+// kept in memory, with a Kapy AI that never reaches a model or the network:
 //
 //   flutter drive --driver test_driver/integration_test.dart \
 //     --target integration_test/phone_keyboard_test.dart -d <device> \
 //     --dart-define=KAPYNOTES_SYNC=false
 //
-// Kapy AI is opened from the bar and Ask Kapy AI is tapped, so the keyboard
-// comes up over the bar. A tap on the empty page above it puts the keyboard
-// away, and the bar takes a tap again. Both states are device shots, the
-// keyboard included, where tool/ci/phone_screenshots.sh names the device.
-// Ask Kapy AI sits 12 above the keyboard while it's up and 12 above the bar
-// once it's down, typed in or not (KAP-343).
+// Search chats is tapped, so the keyboard comes up over the bar, and a tap on
+// the empty page puts it away so the bar takes a tap again (KAP-337). On this
+// tab the + starts a new chat in Kapy AI's sheet, ready to type in, and held
+// it still offers the rest of New (KAP-397). Each state is a shot, the
+// keyboard included where tool/ci/phone_screenshots.sh names the device.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
@@ -25,7 +23,6 @@ import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../test/fake_kapy_ai.dart';
-import 'keyboard_support.dart';
 import 'rates_support.dart';
 import 'screenshot.dart';
 
@@ -43,17 +40,19 @@ class _MemoryStore extends LocalStore {
 }
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('a tap on Kapy AI’s empty page puts the keyboard away', (
-    tester,
+  /// The app in [mode] on Kapy AI's tab, with no chats yet.
+  Future<FakeKapyAi> openKapyAi(
+    WidgetTester tester,
+    AppearanceMode mode,
   ) async {
     kapyAiAvailable = true;
     final store = _MemoryStore();
     store.data[Onboarding.storeKey] = Onboarding.welcomeRevision;
     final notes = NotesStore(store);
     final prefs = LayoutPrefs(store)..load();
-    prefs.appearance = AppearanceMode.dark;
+    prefs.appearance = mode;
     await notes.load();
     notes.create(body: 'Call with Arjun\nSend the deck this morning');
     final ai = FakeKapyAi(pro: true)..set(model: KapyModel.cloud);
@@ -69,16 +68,6 @@ void main() {
       ),
     );
     await tester.pumpAndSettle(const Duration(seconds: 1));
-
-    /// Pumps frames until [ready], and fails naming [what] if it never is.
-    Future<void> until(bool Function() ready, String what) async {
-      for (var i = 0; i < 100 && !ready(); i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-      expect(ready(), isTrue, reason: 'waited 10 s for $what');
-      await tester.pumpAndSettle();
-    }
-
     final back = find.byKey(const ValueKey('page-home'));
     if (back.evaluate().isNotEmpty) {
       await tester.tap(back);
@@ -87,57 +76,54 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('bar-kapyAi')));
     await tester.pumpAndSettle();
     expect(find.text('No chats yet'), findsOneWidget);
+    return ai;
+  }
 
-    final field = find.byKey(const ValueKey('kapy-ai-page-field'));
-    bool focused() => tester
-        .widget<EditableText>(
-          find.descendant(of: field, matching: find.byType(EditableText)),
-        )
-        .focusNode
-        .hasFocus;
-    double above(double top) =>
-        top -
-        tester
-            .getRect(
-              find.ancestor(of: field, matching: find.byType(Container)).first,
-            )
-            .bottom;
-    double keyboard() =>
-        (tester.view.physicalSize.height - tester.view.viewInsets.bottom) /
-        tester.view.devicePixelRatio;
-    double bar() => tester.getRect(find.byKey(const ValueKey('phone-bar'))).top;
+  /// Pumps frames until [ready], and fails naming [what] if it never is.
+  Future<void> until(
+    WidgetTester tester,
+    bool Function() ready,
+    String what,
+  ) async {
+    for (var i = 0; i < 100 && !ready(); i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(ready(), isTrue, reason: 'waited 10 s for $what');
+    await tester.pumpAndSettle();
+  }
+
+  bool focused(WidgetTester tester, Finder field) => tester
+      .widget<EditableText>(
+        find.descendant(of: field, matching: find.byType(EditableText)),
+      )
+      .focusNode
+      .hasFocus;
+
+  testWidgets('a tap on Kapy AI’s empty page puts the keyboard away', (
+    tester,
+  ) async {
+    await openKapyAi(tester, AppearanceMode.dark);
+    final search = find.byKey(const ValueKey('kapy-ai-page-search'));
     final chats = find.byKey(const ValueKey('kapy-ai-page-chats'));
 
-    await tester.tap(field);
-    await settleKeyboard(tester, up: true);
-    expect(focused(), isTrue);
+    await tester.tap(search);
     await until(
-      () => (above(keyboard()) - 12).abs() < 1,
-      'Ask Kapy AI 12 above the keyboard',
+      tester,
+      () => tester.view.viewInsets.bottom > 0,
+      'the keyboard',
     );
+    expect(focused(tester, search), isTrue);
     await screenshot('kapy-ai-page-keyboard-up', device: true);
 
-    await tester.tapAt(tester.getCenter(chats));
-    await settleKeyboard(tester, up: false);
-    expect(focused(), isFalse);
-    expect(tester.takeException(), isNull);
-    expect(above(bar()), moreOrLessEquals(12, epsilon: 1));
-    await screenshot('kapy-ai-page-keyboard-closed', device: true);
-
-    await tester.tap(field);
-    await settleKeyboard(tester, up: true);
-    tester.widget<TextField>(field).controller!.text = 'What is left';
+    await tester.tapAt(tester.getTopLeft(chats) + const Offset(20, 20));
     await until(
-      () => (above(keyboard()) - 12).abs() < 1,
-      'Ask Kapy AI 12 above the keyboard, typed in',
+      tester,
+      () => tester.view.viewInsets.bottom == 0,
+      'the keyboard to go down',
     );
-    await tester.tapAt(tester.getCenter(chats));
-    await settleKeyboard(tester, up: false);
-    expect(
-      above(bar()),
-      moreOrLessEquals(12, epsilon: 1),
-      reason: 'typed in, then put away',
-    );
+    expect(focused(tester, search), isFalse);
+    expect(tester.takeException(), isNull);
+    await screenshot('kapy-ai-page-keyboard-closed', device: true);
 
     await tester.tap(find.byKey(const ValueKey('bar-notes')));
     await tester.pumpAndSettle();
@@ -147,4 +133,47 @@ void main() {
       reason: 'the bar takes a tap again',
     );
   });
+
+  for (final mode in [AppearanceMode.dark, AppearanceMode.light]) {
+    testWidgets('on Kapy AI, the + starts a chat ready to type in, and held '
+        'it offers the rest, ${mode.name}', (tester) async {
+      final ai = await openKapyAi(tester, mode);
+      final plus = find.byKey(const ValueKey('phone-new'));
+
+      // The menu's route cancels the press it opens under, and the live
+      // binding hands that cancel to its finder printer unless device
+      // pointer events reach the app.
+      binding.shouldPropagateDevicePointerEvents = true;
+      addTearDown(() => binding.shouldPropagateDevicePointerEvents = false);
+      await tester.longPress(plus);
+      await tester.pumpAndSettle();
+      for (final made in ['note', 'drawing']) {
+        expect(find.byKey(ValueKey('phone-new-$made')), findsOneWidget);
+      }
+      await screenshot('kapy-ai-plus-menu-${mode.name}');
+      await tester.tap(find.byKey(const ValueKey('phone-new-close')));
+      await tester.pumpAndSettle();
+      binding.shouldPropagateDevicePointerEvents = false;
+
+      ai.calls.clear();
+      await tester.tap(plus);
+      await tester.pumpAndSettle(const Duration(seconds: 1));
+      expect(ai.calls, ['newChat']);
+      expect(find.byKey(const ValueKey('kapy-ai-sheet')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('kapy-ai-chip')),
+        findsNothing,
+        reason: 'a new chat from the page is about no note',
+      );
+      // A device with a hardware keyboard attached raises no software one,
+      // so this reads the field's focus rather than viewInsets.
+      expect(
+        focused(tester, find.byKey(const ValueKey('kapy-ai-field'))),
+        isTrue,
+        reason: 'a new chat opens ready to type in',
+      );
+      expect(tester.takeException(), isNull);
+      await screenshot('kapy-ai-plus-sheet-${mode.name}', device: true);
+    });
+  }
 }

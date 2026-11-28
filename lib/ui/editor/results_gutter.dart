@@ -39,13 +39,13 @@ class _LeaderPainter extends CustomPainter {
   bool shouldRepaint(_LeaderPainter oldDelegate) => oldDelegate.color != color;
 }
 
-/// How a result is drawn.
+/// Where a result's pill sits. Either way a total's pill is the strongest.
 enum ResultChipLook {
-  /// A quiet annotation at the right of a phone's line, which its writing
-  /// wraps short of.
+  /// At the right of a phone's line, which its writing wraps short of. A
+  /// long result wraps inside its pill, and its line grows to hold it.
   rail,
 
-  /// A pill at the end of its line. A total's pill is the strongest.
+  /// At the end of its line, on one row.
   pill,
 }
 
@@ -68,18 +68,22 @@ class ResultChip extends StatefulWidget {
 
   /// How wide a [ResultChipLook.rail] chip shows [result] whole in
   /// [context], for a line to keep that much room for it. Measured once per
-  /// result text and text size: every layout asks again for each line in
-  /// view, and a result rarely changes as the writing around it does.
+  /// result text, weight and text size: every layout asks again for each
+  /// line in view, and a result rarely changes as the writing around it does.
   static double widthOf(BuildContext context, LineResult result) {
     final scaler = MediaQuery.textScalerOf(context);
-    final key = (result.text, scaler.scale(AppTypeScale.result));
+    final key = (
+      result.text,
+      result.isTotal,
+      scaler.scale(AppTypeScale.result),
+    );
     if (_railWidths[key] case final width?) return width;
     final painter = TextPainter(
       text: TextSpan(
         text: result.text,
         style: DefaultTextStyle.of(
           context,
-        ).style.merge(_textStyle(pill: false)),
+        ).style.merge(_textStyle()),
       ),
       textDirection: TextDirection.ltr,
       textScaler: scaler,
@@ -94,7 +98,7 @@ class ResultChip extends StatefulWidget {
     );
   }
 
-  static final _railWidths = <(String, double), double>{};
+  static final _railWidths = <(String, bool, double), double>{};
 
   /// How tall a [ResultChipLook.rail] chip's words are in [context] when they
   /// wrap at [width], for a line to be at least that tall.
@@ -104,14 +108,19 @@ class ResultChip extends StatefulWidget {
     double width,
   ) {
     final scaler = MediaQuery.textScalerOf(context);
-    final key = (result.text, scaler.scale(AppTypeScale.result), width);
+    final key = (
+      result.text,
+      result.isTotal,
+      scaler.scale(AppTypeScale.result),
+      width,
+    );
     if (_railHeights[key] case final height?) return height;
     final painter = TextPainter(
       text: TextSpan(
         text: result.text,
         style: DefaultTextStyle.of(
           context,
-        ).style.merge(_textStyle(pill: false)),
+        ).style.merge(_textStyle()),
       ),
       textDirection: TextDirection.ltr,
       textScaler: scaler,
@@ -122,22 +131,33 @@ class ResultChip extends StatefulWidget {
     return _railHeights[key] = height.ceilToDouble() + _railPadding.vertical;
   }
 
-  static final _railHeights = <(String, double, double), double>{};
+  static final _railHeights = <(String, bool, double, double), double>{};
 
-  static const _railPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 3);
+  /// The desktop pill's padding, two steps shorter so the pill sits inside a
+  /// phone's row at its larger result size with a gap to the next one.
+  static const _railPadding = EdgeInsets.symmetric(horizontal: 10, vertical: 3);
+
+  /// Round ends on a pill of one row. A pill a long result wraps in keeps
+  /// those corners rather than turning into a lozenge that cuts its words.
+  static double _railRadius(TextScaler scaler) =>
+      (scaler.scale(AppTypeScale.result) * _pillHeight +
+          _railPadding.vertical) /
+      2;
+
+  static const double _pillHeight = 16 / 13;
 
   /// The least a finger gets to tap on the rail. Only the part inside its
   /// line takes a tap, so the lines above and below keep theirs.
   static const double _railTarget = 44;
 
-  static TextStyle _textStyle({required bool pill, Color? color}) {
+  static TextStyle _textStyle({Color? color}) {
     return TextStyle(
       fontFamily: AppFonts.ui,
       fontFamilyFallback: AppFonts.uiFallback,
       fontSize: AppTypeScale.result,
-      fontWeight: pill ? AppWeight.font(AppWeight.regular) : null,
-      fontVariations: pill ? AppWeight.wght(AppWeight.regular) : null,
-      height: pill ? 16 / 13 : 1.2,
+      fontWeight: AppWeight.font(AppWeight.regular),
+      fontVariations: AppWeight.wght(AppWeight.regular),
+      height: _pillHeight,
       leadingDistribution: TextLeadingDistribution.even,
       color: color,
       fontFeatures: const [FontFeature.tabularFigures()],
@@ -179,23 +199,19 @@ class _ResultChipState extends State<ResultChip> {
     final palette = context.palette;
     final pill = widget.look == ResultChipLook.pill;
     // The figure a list of amounts builds up to gets the strongest pill.
-    final total = pill && widget.result.isTotal;
+    final total = widget.result.isTotal;
     final ink = total ? palette.totalPillText : palette.resultPillText;
     final background = total
         ? palette.totalPillBackground
         : palette.resultPillBackground;
-    final Color fill;
-    if (pill) {
-      fill = KapyTheme.fillStates(
-        background,
-        ink: ink,
-        disabled: background,
-      ).resolve({if (_hovering) WidgetState.hovered});
-    } else {
-      // Results read like quiet annotations on the page. The pill only
-      // appears under the pointer to make the copy target clear.
-      fill = _hovering ? background : Colors.transparent;
-    }
+    final fill = KapyTheme.fillStates(
+      background,
+      ink: ink,
+      disabled: background,
+    ).resolve({if (_hovering) WidgetState.hovered});
+    final radius = pill
+        ? 999.0
+        : ResultChip._railRadius(MediaQuery.textScalerOf(context));
 
     final words = Text(
       widget.result.text,
@@ -205,7 +221,9 @@ class _ResultChipState extends State<ResultChip> {
       softWrap: !pill,
       overflow: pill ? TextOverflow.ellipsis : null,
       textAlign: TextAlign.right,
-      style: ResultChip._textStyle(pill: pill, color: ink),
+      // A wrapped result's pill hugs its longest row.
+      textWidthBasis: TextWidthBasis.longestLine,
+      style: ResultChip._textStyle(color: ink),
     );
     final check = KapyIcon(
       KapyIcons.checkRounded,
@@ -221,10 +239,10 @@ class _ResultChipState extends State<ResultChip> {
           : ResultChip._railPadding,
       decoration: BoxDecoration(
         color: fill,
-        borderRadius: BorderRadius.circular(pill ? 999 : 5),
+        borderRadius: BorderRadius.circular(radius),
       ),
       foregroundDecoration: widget.result.count?.mark == true
-          ? _DashedOutline(ink.withValues(alpha: 0.45), pill ? 999 : 5)
+          ? _DashedOutline(ink.withValues(alpha: 0.45), radius)
           : null,
       child: pill
           ? Row(

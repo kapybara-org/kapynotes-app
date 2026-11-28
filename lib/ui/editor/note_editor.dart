@@ -30,6 +30,7 @@ import '../../core/platform_spell_check.dart';
 import '../../core/appearance.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
+import '../../core/type_ahead.dart';
 import '../../data/daily_separator.dart';
 import '../../data/attachment_limits.dart';
 import '../../data/note.dart';
@@ -43,6 +44,7 @@ import '../compact_icon_button.dart';
 import '../focus_ring.dart';
 import '../notebook_paper.dart';
 import '../page_toolbar.dart' show NotePathLine, PagePlace;
+import '../page_turn.dart' show HiddenWhileTurning, PageTurn;
 import '../celebrate.dart';
 import '../kapy_cursor_peek.dart';
 import '../kapy_page_peek.dart';
@@ -56,6 +58,7 @@ import 'markdown_syntax.dart';
 import 'table_cell_editor.dart';
 import 'table_controls.dart';
 import 'table_geometry.dart';
+import 'note_find.dart';
 import 'note_footer.dart';
 import 'phone_format_bar.dart';
 import '../note_day_scope.dart';
@@ -99,7 +102,8 @@ import 'note_video_view.dart';
 import 'paste_feedback.dart';
 import 'remote_carets.dart';
 import 'note_field.dart';
-import 'note_sliver.dart' show LineSpan, LineTrailing, lineTrailingGap;
+import 'note_sliver.dart'
+    show LineSpan, LineTrailing, NoteFound, lineTrailingGap;
 import 'task_details_chrome.dart';
 import 'task_details_editing.dart';
 import 'results_gutter.dart';
@@ -108,6 +112,7 @@ import 'selection_bubble.dart';
 import 'slash_command_menu.dart';
 import 'slash_commands.dart';
 import '../../sync/presence.dart';
+import 'live_text_card.dart';
 
 /// [edit] is where in the old body the change happened, as the editor saw
 /// it; null when it cannot say. See [NotesStore.updateDocument].
@@ -174,6 +179,7 @@ class NoteEditor extends StatefulWidget {
     this.onImagePrepared,
     this.onImagesRejected,
     this.videoAcquirer,
+    this.cameraAcquirer,
     this.videoIngestor,
     this.videoAttachmentMaxBytes,
     this.fileAcquirer,
@@ -283,6 +289,10 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<ImageBatch>? onImagesRejected;
 
   final VideoFileAcquirer? videoAcquirer;
+
+  /// The camera window on a Mac or PC, or null where there is none. What it
+  /// keeps goes in where the caret is.
+  final Future<List<XFile>> Function(BuildContext context)? cameraAcquirer;
   final VideoBatchIngestor? videoIngestor;
 
   /// Read when a selection is made rather than when the editor is built, so
@@ -341,9 +351,10 @@ class NoteEditor extends StatefulWidget {
   final CalcEngine engine;
   final Highlighter highlighter;
 
-  /// Whether a line with a result wraps its writing short of it and shows it
-  /// at the right of its first row, as a phone does. Otherwise the result
-  /// follows the writing at the end of its line, on a leader.
+  /// Whether a line with a result shows it at the right of its row, as a
+  /// phone does: beside writing that fits on one row short of it, and on a
+  /// row of its own under writing that doesn't. Otherwise the result follows
+  /// the writing at the end of its line, on a leader.
   final bool keepResultRoom;
 
   /// Whether the page around this editor is too short for its top and bottom
@@ -468,6 +479,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   static const _keyboardGoneAfter = Duration(milliseconds: 500);
   Timer? _keyboardGoneTimer;
 
+  /// How long the inset must hold still before the keyboard counts as up.
+  /// Until then it is still coming up, and a fall to zero is Android starting
+  /// its slide again from the bottom, which on a slow phone can take longer
+  /// than [_keyboardGoneAfter] to show (KAP-324), not the reader putting it
+  /// away.
+  static const _keyboardSettleAfter = Duration(milliseconds: 500);
+  Timer? _keyboardSettleTimer;
+  bool _keyboardSettled = false;
+
   final PlatformSpellCheckService _spellCheckService =
       PlatformSpellCheckService();
   Locale? _spellCheckLocale;
@@ -520,6 +540,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   /// its cells does.
   bool get _editingNote => _focusNode.hasFocus || _editingCell != null;
 
+  /// The find in this note, kept from the first time its bar opened so that
+  /// it opens again on the same words, and whether the bar is open.
+  NoteFind? _find;
+  bool _findOpen = false;
+
   /// Whether this note is being written in; see [_editingNote].
   bool get writing => _editingNote;
   late final _DailySeparatorFormatter _dailySeparatorFormatter;
@@ -528,6 +553,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   TaskFolds? _folds;
   Timer? _keyboardRetryTimer;
   Timer? _selectionToolbarTimer;
+
+  /// How long a selection, or the page under it, keeps still before the
+  /// bubble comes, so a drag or a scroll never flickers it.
+  static const _selectionSettle = Duration(milliseconds: 150);
 
   /// A right-click selects the word under it on macOS, and that selection
   /// is for the menu it opens, not for the bubble.
@@ -825,6 +854,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _correctionsArrived.dispose();
     _keyboardRetryTimer?.cancel();
     _keyboardGoneTimer?.cancel();
+    _keyboardSettleTimer?.cancel();
     _selectionToolbarTimer?.cancel();
     _pasteOfferTimer?.cancel();
     _keywordHoverTimer?.cancel();
@@ -834,6 +864,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     _cellEditor.dispose();
     _tableControls.dispose();
     _tableGeometry.dispose();
+    _find?.dispose();
     _controller.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -865,7 +896,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   void _handleEditorScroll() {
     LinkPopover.hide();
     _slashCommandMenu.hide();
-    _selectionBubble.hide();
+    // The bubble lifts off while the page moves, and settles back over the
+    // selection once it stops with the selection in view.
+    if (_selectionBubble.isVisible || _selectionBubble.isLifted) {
+      _selectionBubble.lift();
+      _selectionToolbarTimer?.cancel();
+      _selectionToolbarTimer = Timer(_selectionSettle, () {
+        if (mounted) _showSelectionBubble();
+      });
+    }
     if (_pasteChipShown) _placePasteChip();
     _clearKeywordTooltip();
     _recordKapyPeekActivity();
@@ -3089,6 +3128,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  /// Opens the camera, and puts the photo or video kept there where the
+  /// caret is, the way the phone camera's land.
+  Future<void> openCameraAndInsert() async {
+    final acquire = widget.cameraAcquirer;
+    if (acquire == null || widget.readOnly || widget.images == null) return;
+    final files = await acquire(context);
+    if (files.isEmpty || !mounted) return;
+    await insertDroppedMedia(files);
+  }
+
   Future<void> pickAndInsertVideos() async {
     final store = widget.images;
     if (store == null || !_beginVideoAction()) return;
@@ -3387,6 +3436,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Set<SlashCommandType> get _availableSlashCommands => {
     SlashCommandType.checklist,
     SlashCommandType.bulletedList,
+    if (widget.images != null && widget.cameraAcquirer != null)
+      SlashCommandType.camera,
     if (widget.images != null && !_imageActionBusy) SlashCommandType.image,
     if (widget.onRecordVoice != null && !widget.voiceActionBusy)
       SlashCommandType.voiceNote,
@@ -3482,6 +3533,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       markdownEnabled: widget.markdownEnabled,
       hints: {
         for (final (command, action) in const [
+          (SlashCommandType.camera, ShortcutAction.openCamera),
           (SlashCommandType.image, ShortcutAction.insertImage),
           (SlashCommandType.voiceNote, ShortcutAction.recordVoiceNote),
           (SlashCommandType.video, ShortcutAction.insertVideo),
@@ -3716,6 +3768,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           ),
         );
         break;
+      case SlashCommandType.camera:
+        if (typed) _consumeSlashCommand(range);
+        await openCameraAndInsert();
+        break;
       case SlashCommandType.image:
         if (typed) _consumeSlashCommand(range);
         await pickAndInsertImages();
@@ -3845,6 +3901,140 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     );
   }
 
+  /// Opens the bar that finds words in this note, or takes the keyboard back
+  /// to it, with its words selected to type over. Words selected on one line
+  /// of the note are the ones it looks for. Desktop only.
+  void openFind() {
+    if (!AppPlatform.isDesktop) return;
+    TypeAhead.hold();
+    final find = _find ??= NoteFind()..query.addListener(_onFindChanged);
+    final selection = _controller.selection;
+    if (selection.isValid && !selection.isCollapsed) {
+      final words = selection.textInside(_controller.text);
+      if (!words.contains('\n')) find.query.text = words;
+    }
+    find.query.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: find.query.text.length,
+    );
+    if (!_findOpen) {
+      setState(() => _findOpen = true);
+      _refreshFind(find);
+      _revealFound();
+    }
+    find.field.requestFocus();
+  }
+
+  void _onFindChanged() {
+    final find = _find;
+    if (find == null || !_findOpen) return;
+    final shown = find.currentMatch;
+    if (!_refreshFind(find)) return;
+    setState(() {});
+    if (find.currentMatch != shown) _revealFound();
+  }
+
+  /// Finds the bar's words in the note as it shows now: see
+  /// [NoteFind.refresh].
+  bool _refreshFind(NoteFind find) {
+    final selection = _controller.selection;
+    return find.refresh(
+      _controller.markdownFor(_controller.text),
+      _controller.hiddenIn(_controller.text),
+      from: selection.isValid ? selection.start : 0,
+    );
+  }
+
+  void _stepFind({bool back = false}) {
+    final find = _find;
+    if (find == null || !_findOpen || find.matches.isEmpty) return;
+    setState(() => find.step(back: back));
+    _revealFound();
+  }
+
+  /// F3 steps through the matches from the note as well as from the bar, and
+  /// ⌘G on a Mac, where F3 is the system's. Shift steps back.
+  KeyEventResult _findKey(FocusNode node, KeyEvent event) {
+    if (!_findOpen) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    for (final (activator, back) in [
+      (const SingleActivator(LogicalKeyboardKey.f3), false),
+      (const SingleActivator(LogicalKeyboardKey.f3, shift: true), true),
+      if (AppPlatform.isMacOS) ...[
+        (const SingleActivator(LogicalKeyboardKey.keyG, meta: true), false),
+        (
+          const SingleActivator(
+            LogicalKeyboardKey.keyG,
+            meta: true,
+            shift: true,
+          ),
+          true,
+        ),
+      ],
+    ]) {
+      if (!activator.accepts(event, keyboard)) continue;
+      _stepFind(back: back);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  /// Closes the find bar, with the match it was on selected in the note and
+  /// the keyboard back in the note.
+  void _closeFind() {
+    if (!_findOpen) return;
+    final match = _find?.currentMatch;
+    setState(() => _findOpen = false);
+    if (match != null) {
+      _controller.selection = TextSelection(
+        baseOffset: match.start,
+        extentOffset: match.end,
+      );
+    }
+    _focusNode.requestFocus();
+  }
+
+  /// Scrolls the match the find is on to the middle of the note, unless it
+  /// shows already, and again on the frame after while the lines measured
+  /// on the way move it. Folded details that hold it unfold first.
+  void _revealFound([int attempts = 3]) {
+    final match = _find?.currentMatch;
+    if (match == null || attempts == 0) return;
+    _openFoldAt(match.start);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_findOpen || _find?.currentMatch != match) return;
+      final rect = _field?.caretRectAt(TextPosition(offset: match.start));
+      if (rect == null || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final view = position.viewportDimension;
+      if (rect.top >= 0 && rect.bottom <= view) return;
+      final target = clampDouble(
+        position.pixels + rect.center.dy - view / 2,
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      if ((target - position.pixels).abs() < 1) return;
+      _scrollController.jumpTo(target);
+      _revealFound(attempts - 1);
+    });
+  }
+
+  /// What the find found, for the field to fill, while its bar is open: the
+  /// match it is on as the selection is filled, which is what esc leaves of
+  /// it, and the rest in clay.
+  NoteFound? _found() {
+    final find = _find;
+    if (!_findOpen || find == null || find.matches.isEmpty) return null;
+    final palette = context.palette;
+    return (
+      ranges: find.matches,
+      current: find.current,
+      color: palette.clay.withValues(alpha: 0.2),
+      currentColor:
+          DefaultSelectionStyle.of(context).selectionColor ?? palette.selection,
+    );
+  }
+
   /// Any key at all dismisses the link panel first. Escape is the one people
   /// reach for, but a panel that outlives the caret it was raised next to is
   /// wrong whichever key moved it.
@@ -3946,11 +4136,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   }
 
   void _openFoldUnderCaret() {
-    final folds = _folds;
     final selection = _controller.selection;
-    if (folds == null || !selection.isValid) return;
+    if (selection.isValid) _openFoldAt(selection.extentOffset);
+  }
+
+  /// Unfolds the task details that hold [offset], if they are folded.
+  void _openFoldAt(int offset) {
+    final folds = _folds;
+    if (folds == null) return;
     final text = _controller.text;
-    final at = selection.extentOffset.clamp(0, text.length);
+    final at = offset.clamp(0, text.length);
     for (final block in _blocks()) {
       final details = block.details;
       if (details == null || !_taskFolded(block.task)) continue;
@@ -4160,51 +4355,55 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     });
   }
 
-  /// Puts the caret on the ruled row a click landed on, below everything the
-  /// note has been written into.
+  /// A click below everything the note has been written into: the caret goes
+  /// to the end of the note, where the field's own tap puts it (see
+  /// [NoteFieldState.positionAt]), and nothing is written.
   ///
-  /// Left to itself the field answers such a click with the end of the text,
-  /// so the caret appears on the last written line rather than under the
-  /// pointer and the page reads as though it ignored the click. A caret can
-  /// only sit on a row that exists, so the rows in between are written — the
-  /// same lines a run of Returns would have made, and undone by one press of
-  /// undo.
+  /// Unless the note ends in something with no line of words to type on: a
+  /// picture or another attachment, a table, a code or formula block, or a
+  /// divider. A caret at its end is drawn inside the block, so one empty line
+  /// opens under it, the line a Return there would have made. Only the one:
+  /// the next click below lands on it.
   ///
   /// Returns whether the click was in that empty region, in which case there
   /// is nothing below it to be a checkbox, a link or a calculator word.
-  bool _caretToBlankRow(NoteFieldState field, Offset globalPosition) {
+  bool _clickedBelowWriting(NoteFieldState field, Offset globalPosition) {
     if (widget.readOnly) return false;
-    final lineHeight = field.layout.rowHeight;
     final box = field.box;
     final end = field.lineTop(field.lines.length);
-    if (lineHeight <= 0 || box == null || end == null) return false;
-
-    // Where the writing actually ends. Measured rather than counted in rows:
-    // a note holding a picture has one row as tall as the picture, and only
-    // the empty page below the text is ruled at a fixed height.
-    final textBottom = box.localToGlobal(Offset(0, end)).dy;
-    if (globalPosition.dy <= textBottom) return false;
-
-    // Below that the ruling is uniform — the field forces its strut and the
-    // paper is drawn from the same number — so which line the pointer is over
-    // is arithmetic rather than a hit test.
-    final missing = ((globalPosition.dy - textBottom) / lineHeight).floor() + 1;
-
-    final text = _controller.text + '\n' * missing;
-    final caret = TextSelection.collapsed(offset: text.length);
-    _controller.value = TextEditingValue(text: text, selection: caret);
-    _focusNode.requestFocus();
-    // The field's own tap handler runs after this one, and answers the click
-    // with the position it finds in the layout it already has — the layout
-    // from before these rows existed, which puts the caret straight back on
-    // the last written line. A microtask lands after that handler and before
-    // the frame it would be drawn in, so the caret is only ever painted where
-    // the click was aimed.
-    scheduleMicrotask(() {
-      if (!mounted || _controller.text != text) return;
-      _controller.selection = caret;
-    });
+    if (box == null || end == null) return false;
+    if (globalPosition.dy <= box.localToGlobal(Offset(0, end)).dy) return false;
+    final text = _controller.text;
+    if (_endsInBlock(text)) {
+      _controller.value = TextEditingValue(
+        text: '$text\n',
+        selection: TextSelection.collapsed(offset: text.length + 1),
+      );
+    }
     return true;
+  }
+
+  /// Whether [text]'s last line is a block rather than a line of words.
+  bool _endsInBlock(String text) {
+    final lastLine = text.lastIndexOf('\n') + 1;
+    if (lastLine == text.length) return false;
+    if (text.contains(NoteAttachmentRef.placeholder, lastLine)) return true;
+    if (!widget.markdownEnabled) return false;
+    final markdown = _controller.markdownFor(text);
+    bool endsOn(int start, int end) => start <= lastLine && end >= text.length;
+    if (markdown.tables.any((table) => endsOn(table.start, table.end)) ||
+        markdown.maths.any(
+          (math) => math.display && endsOn(math.start, math.end),
+        )) {
+      return true;
+    }
+    return markdown.blocks.any((block) {
+      if (block.kind == MarkdownBlockKind.rule) {
+        return endsOn(block.start, block.end);
+      }
+      final close = markdown.fencesOf(block)?.close;
+      return close != null && endsOn(close.start, close.end);
+    });
   }
 
   /// Moves the caret into the misspelling a right-click landed on.
@@ -4307,7 +4506,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // A press on a table's grip or "+" is the control's, not the note's.
     if (_tableControls.claims(down.position)) return;
 
-    if (_caretToBlankRow(field, event.position)) {
+    if (_clickedBelowWriting(field, event.position)) {
       _offerPasteAfterTap(down);
       return;
     }
@@ -4540,8 +4739,21 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     // A cell opened with the keyboard down was scrolled into view before the
     // keyboard had a height; now that it has one, the cell may be under it.
     if (isUp && _editingCell != null) _ensureCellVisible();
-    if (isUp) _keyboardGoneTimer?.cancel();
-    if (isUp || !wasUp) return;
+    if (isUp) {
+      _keyboardGoneTimer?.cancel();
+      if (!_keyboardSettled) {
+        _keyboardSettleTimer?.cancel();
+        _keyboardSettleTimer = Timer(
+          _keyboardSettleAfter,
+          () => _keyboardSettled = true,
+        );
+      }
+      return;
+    }
+    _keyboardSettleTimer?.cancel();
+    final settled = _keyboardSettled;
+    _keyboardSettled = false;
+    if (!wasUp || !settled) return;
     if (widget.readOnly || !_editingNote) return;
     // Backgrounding the app also takes the keyboard down, and focus should
     // survive that: it is the same note, still open, when the app comes back.
@@ -5549,7 +5761,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (!selection.isValid || selection.isCollapsed || !_focusNode.hasFocus) {
       return;
     }
-    _selectionToolbarTimer = Timer(const Duration(milliseconds: 150), () {
+    _selectionToolbarTimer = Timer(_selectionSettle, () {
       if (!mounted ||
           !_focusNode.hasFocus ||
           _controller.selection != selection) {
@@ -5573,13 +5785,12 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     if (widget.readOnly ||
         field == null ||
         box == null ||
-        !_focusNode.hasFocus ||
+        !(_focusNode.hasFocus || _selectionBubble.editingLink) ||
         !selection.isValid ||
         selection.isCollapsed) {
       return;
     }
     final boxes = field.boxesFor(selection);
-    if (boxes.isEmpty) return;
     final transform = box.getTransformTo(null);
     Rect line(TextBox row) => MatrixUtils.transformRect(
       transform,
@@ -5588,6 +5799,20 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           if (box.top == row.top) box.toRect(),
       ].reduce((a, b) => a.expandToInclude(b)),
     );
+    final pane = context.findRenderObject()! as RenderBox;
+    final within = MatrixUtils.transformRect(
+      pane.getTransformTo(null),
+      Offset.zero & pane.size,
+    );
+    // A selection the pane no longer shows, scrolled away or under a window
+    // that shrank, takes the bubble with it rather than leave it over other
+    // words, until it is back in view.
+    if (boxes.isEmpty ||
+        line(boxes.last).bottom <= within.top ||
+        line(boxes.first).top >= within.bottom) {
+      _selectionBubble.lift();
+      return;
+    }
     String? key(ShortcutAction action) =>
         widget.shortcuts.hintFor(action)?.displayLabel;
     final markdown = widget.markdownEnabled
@@ -5595,15 +5820,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
         : null;
     bool marked(MarkdownStyle style) =>
         markdown != null && markdownSelectionHas(markdown, selection, style);
-    final pane = context.findRenderObject()! as RenderBox;
     _selectionBubble.show(
       context,
       above: line(boxes.first),
       below: line(boxes.last),
-      within: MatrixUtils.transformRect(
-        pane.getTransformTo(null),
-        Offset.zero & pane.size,
-      ),
+      within: within,
       block: _selectionBlockLabel,
       blocks: _selectionBlocks,
       markdownEnabled: widget.markdownEnabled,
@@ -7986,6 +8207,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                // The words move with the pane, when the window is resized
+                // or the sidebar opens, and the bubble over a selection
+                // goes with them.
+                if (_selectionBubble.isVisible) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted && _selectionBubble.isVisible) {
+                      _showSelectionBubble();
+                    }
+                  });
+                }
                 // Results take width only from their own lines, so prose,
                 // checklists, and journals keep the full writing width.
                 final resultsVisible =
@@ -8036,6 +8267,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   edges: editing && !_markdownQuiet,
                 );
                 final concealment = _controller.markdownConcealment();
+                if (_findOpen) _refreshFind(_find!);
 
                 // Every table's grid, fitted to the writing column so that a
                 // wide one shrinks and wraps rather than running off the side of
@@ -8190,7 +8422,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                   });
                 }
 
-                return MouseRegion(
+                final note = MouseRegion(
                   opaque: false,
                   onHover: widget.readOnly || !AppPlatform.hasPointer
                       ? null
@@ -8300,21 +8532,17 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                   final result when widget.keepResultRoom => (
                                     child: ResultChip(
                                       result: result,
-                                      collapsedWidth: contentWidth * 2 / 3,
+                                      collapsedWidth: contentWidth,
                                     ),
                                     leader: null,
                                     right: contentWidth,
-                                    firstRow: true,
                                     room:
-                                        math.min(
-                                          ResultChip.widthOf(context, result),
-                                          contentWidth * 2 / 3,
-                                        ) +
+                                        ResultChip.widthOf(context, result) +
                                         lineTrailingGap,
                                     height: ResultChip.heightOf(
                                       context,
                                       result,
-                                      contentWidth * 2 / 3,
+                                      contentWidth,
                                     ),
                                   ),
                                   final result => (
@@ -8328,7 +8556,6 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                                       color: leaderColor,
                                     ),
                                     right: contentWidth,
-                                    firstRow: false,
                                     room: 0.0,
                                     height: 0.0,
                                   ),
@@ -8433,17 +8660,42 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                     ],
                   ),
                 );
+                // The find bar pushes the note down rather than lying over
+                // what it finds. The note keeps the page's whole height for
+                // sizing its pictures, so none of them change as it opens.
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_findOpen)
+                      NoteFindBar(
+                        find: _find!,
+                        side: side,
+                        onNext: _stepFind,
+                        onPrevious: () => _stepFind(back: true),
+                        onClose: _closeFind,
+                      ),
+                    Expanded(child: note),
+                  ],
+                );
               },
             ),
           ),
-          if (!widget.readOnly && _liveSession != null)
+          if (!widget.readOnly && _liveSession != null) ...[
+            if (widget.recording?.liveText case final text?)
+              LiveTextCard(
+                text: text,
+                prefs: widget.recording!.live!.prefs,
+                paused: _liveSession!.paused,
+                wide: !AppPlatform.isMobile,
+              ),
             VoiceRecordingBar(
               session: _liveSession!,
               onPause: widget.recording?.pause,
               onResume: widget.recording?.resume,
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
-            )
+            ),
+          ]
           else if (!AppPlatform.isMobile)
             SizedBox(height: MediaQuery.paddingOf(context).bottom)
           else ...[
@@ -8456,10 +8708,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 onReadOnlyPressed: widget.onReadOnlyPressed,
               ),
             if (_formatBarShown)
-              PhoneFormatBar(
-                actions: _formatBarActions(mobileTableCell),
-                tapGroup: mobileTableCell == null ? EditableText : _cellEditor,
-                onDismissKeyboard: _dismissKeyboard,
+              HiddenWhileTurning(
+                fade: PageTurn.fade,
+                child: PhoneFormatBar(
+                  actions: _formatBarActions(mobileTableCell),
+                  tapGroup: mobileTableCell == null
+                      ? EditableText
+                      : _cellEditor,
+                  onDismissKeyboard: _dismissKeyboard,
+                ),
               )
             else if (!statusShown)
               SizedBox(height: MediaQuery.paddingOf(context).bottom),
@@ -8471,7 +8728,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     return ImageDropTarget(
       enabled: !widget.readOnly && widget.images != null,
       onFiles: (files) => unawaited(insertDroppedMedia(files)),
-      child: page,
+      // Without semantics of its own, which would gather the page's labels
+      // into one.
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        includeSemantics: false,
+        onKeyEvent: _findKey,
+        child: page,
+      ),
     );
   }
 
@@ -8637,6 +8902,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           ?.activator:
                       widget.onRecordVoice!,
                 if (!widget.readOnly && widget.images != null) ...{
+                  if (widget.cameraAcquirer != null)
+                    ?widget.shortcuts
+                        .bindingFor(ShortcutAction.openCamera)
+                        ?.activator: () =>
+                        unawaited(openCameraAndInsert()),
                   ?widget.shortcuts
                       .bindingFor(ShortcutAction.insertImage)
                       ?.activator: () =>
@@ -8669,6 +8939,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 trailingOf: trailingOf,
                 selectionOf: _tableSelectionOf,
                 adjustSpan: _adjustTaskFold,
+                found: _found(),
                 cursorWidth: EditorMetrics.cursorWidth,
                 cursorHeight: EditorMetrics.cursorHeight(
                   widget.writingFont,

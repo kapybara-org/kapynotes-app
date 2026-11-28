@@ -20,6 +20,7 @@ import 'keycap.dart';
 import 'sidebar_timestamp.dart';
 import 'tasks/task_marks.dart';
 import 'tasks/tasks_controller.dart';
+import 'editor/live_text_card.dart';
 
 /// Whether the panel may check [note]'s tasks or add one to it: not while the
 /// plan holds the note read-only, and not in a note shared view-only.
@@ -112,6 +113,10 @@ final class _MicrophoneRefused extends _Notice {
 
 final class _NoMicrophone extends _Notice {
   const _NoMicrophone();
+}
+
+final class _SilentMicrophone extends _Notice {
+  const _SilentMicrophone();
 }
 
 /// Two tabs, each with its own capture field and its own list, opening on the
@@ -420,10 +425,15 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     if (mounted) _say(const _MicrophoneRefused());
   }
 
+  /// A microphone that never gave a sound leaves nothing to save, so the note
+  /// made for the recording goes with it, unless someone has written in it
+  /// meanwhile from the main window.
   Future<void> _stopRecording() async {
     final id = _recordingNoteId;
-    await widget.recording?.finishRecordingAndFlush();
-    if (mounted && id != null) _say(_Saved(id));
+    final silent = await widget.recording?.finishRecordingAndFlush(discardSilent: true) ?? false;
+    if (id == null) return;
+    if (silent && widget.notes.byId(id)?.body == Note.blankBody) widget.notes.delete(id);
+    if (mounted) _say(silent ? const _SilentMicrophone() : _Saved(id));
   }
 
   Future<void> _discardRecording() async {
@@ -610,7 +620,34 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     final dark = theme.brightness == Brightness.dark;
     final sage = theme.colorScheme.primary;
     final notes = _tab == _Tab.notes;
-    if (_isRecording) return _recordingBar(context);
+    if (_isRecording) {
+      final text = widget.recording?.liveText;
+      if (text == null) return _recordingBar(context);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            key: const ValueKey('menu-bar-live-text'),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: palette.wellBackground,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: palette.controlBorder),
+            ),
+            child: ListenableBuilder(
+              listenable: text,
+              builder: (context, _) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: LiveTextLines.of(context, text, most: 2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _recordingBar(context),
+        ],
+      );
+    }
     return ListenableBuilder(
       listenable: _field,
       builder: (context, _) {
@@ -679,8 +716,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
 
   Widget _recordingBar(BuildContext context) {
     final palette = context.palette;
-    final elapsed = widget.recording?.session?.elapsed ?? Duration.zero;
-    final seconds = elapsed.inSeconds;
+    final session = widget.recording?.session;
+    final seconds = (session?.elapsed ?? Duration.zero).inSeconds;
     return Container(
       key: const ValueKey('menu-bar-recording'),
       height: 37,
@@ -708,6 +745,14 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
               color: palette.textPrimary,
             ),
           ),
+          if (session?.silent ?? false) ...[
+            const SizedBox(width: 10),
+            Text(
+              'Microphone is silent',
+              key: const ValueKey('menu-bar-silent'),
+              style: TextStyle(fontSize: 13, color: palette.textSecondary),
+            ),
+          ],
           const Spacer(),
           _TextButton(
             key: const ValueKey('menu-bar-stop'),
@@ -872,6 +917,11 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
       ),
       _NoMicrophone() => _Hint(
         children: [Text('No microphone found', style: style)],
+      ),
+      _SilentMicrophone() => _Hint(
+        children: [
+          Text('Nothing saved: the microphone was silent', style: style),
+        ],
       ),
       null when _draft.text.trim().isNotEmpty && !_isRecording => _Hint(
         children: [

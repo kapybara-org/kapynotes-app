@@ -71,11 +71,44 @@ extension RecordingAttributes.ContentState {
 
 /// The Lock Screen's card. The board draws it dark while recording and light
 /// while paused; it follows the phone's own appearance.
+///
+/// With a phrase, the board "Lock Screen · Live Activity with live
+/// translation": the time moves up into the status line, small, with smaller
+/// buttons beside it, and the words take the room the big time had.
 @available(iOS 16.1, *)
 struct RecordingCard: View {
   let state: RecordingAttributes.ContentState
 
   var body: some View {
+    if let phrase = state.phrase {
+      VStack(alignment: .leading, spacing: 10) {
+        HStack(spacing: 8) {
+          RecordingDot(recording: state.recording)
+          Text(state.status)
+            .font(WidgetFace.semibold(15))
+            .foregroundStyle(widgetText)
+            .lineLimit(1)
+          RecordingTime(state: state)
+            .font(WidgetFace.regular(15))
+            .foregroundStyle(widgetTextSecondary)
+          Spacer(minLength: 8)
+          if #available(iOS 17.0, *) {
+            RecordingButtons(
+              state: state, tonal: recordingTonal, onTonal: widgetText, clay: recordingClay,
+              onClay: recordingOnClay, disc: 36, spacing: 8)
+          }
+        }
+        RecordingPhrase(
+          phrase: phrase, heard: state.heard, size: 17, ink: widgetText,
+          quiet: widgetTextSecondary)
+      }
+      .padding(EdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 18))
+    } else {
+      today
+    }
+  }
+
+  private var today: some View {
     VStack(alignment: .leading, spacing: 4) {
       HStack(spacing: 8) {
         RecordingDot(recording: state.recording)
@@ -99,6 +132,34 @@ struct RecordingCard: View {
       }
     }
     .padding(EdgeInsets(top: 16, leading: 20, bottom: 16, trailing: 18))
+  }
+}
+
+/// The latest finished phrase in the other language, and under it, quieter,
+/// what was heard. Two lines and one: the Lock Screen shows a phrase, not a
+/// transcript.
+@available(iOS 16.1, *)
+struct RecordingPhrase: View {
+  let phrase: String
+  let heard: String?
+  let size: CGFloat
+  let ink: Color
+  let quiet: Color
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(phrase)
+        .font(WidgetFace.regular(size))
+        .foregroundStyle(ink)
+        .lineLimit(2)
+      if let heard, !heard.isEmpty {
+        Text(heard)
+          .font(WidgetFace.regular(13))
+          .foregroundStyle(quiet)
+          .lineLimit(1)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
@@ -192,18 +253,26 @@ struct RecordingIslandStatus: View {
   }
 }
 
+/// The expanded island's last row, with the phrase above it while live
+/// translation is on, as the board "Dynamic Island · compact and expanded"
+/// draws it. Compact and minimal never show words: they don't fit.
 @available(iOS 16.1, *)
 struct RecordingIslandFooter: View {
   let state: RecordingAttributes.ContentState
 
   var body: some View {
-    HStack(spacing: 12) {
-      Text("Kapy Notes")
-        .font(WidgetFace.regular(13))
-        .foregroundStyle(islandGrey)
-      Spacer(minLength: 8)
-      if #available(iOS 17.0, *) {
-        RecordingButtons(state: state, tonal: islandTonal, onTonal: .white, clay: islandClay, onClay: islandOnClay)
+    VStack(alignment: .leading, spacing: 12) {
+      if let phrase = state.phrase {
+        RecordingPhrase(phrase: phrase, heard: state.heard, size: 16, ink: .white, quiet: islandGrey)
+      }
+      HStack(spacing: 12) {
+        Text("Kapy Notes")
+          .font(WidgetFace.regular(13))
+          .foregroundStyle(islandGrey)
+        Spacer(minLength: 8)
+        if #available(iOS 17.0, *) {
+          RecordingButtons(state: state, tonal: islandTonal, onTonal: .white, clay: islandClay, onClay: islandOnClay)
+        }
       }
     }
     .padding(.horizontal, 6)
@@ -218,20 +287,23 @@ struct RecordingButtons: View {
   let onTonal: Color
   let clay: Color
   let onClay: Color
+  /// Smaller beside the live card's words, which need the height.
+  var disc: CGFloat = 44
+  var spacing: CGFloat = 12
 
   var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: spacing) {
       if state.recording {
         Button(intent: PauseRecordingIntent()) {
-          RecordingDisc(glyph: "Pause", label: "Pause", fill: tonal, ink: onTonal)
+          RecordingDisc(glyph: "Pause", label: "Pause", fill: tonal, ink: onTonal, size: disc)
         }
       } else {
         Button(intent: ResumeRecordingIntent()) {
-          RecordingDisc(glyph: "Play", label: "Resume", fill: tonal, ink: onTonal)
+          RecordingDisc(glyph: "Play", label: "Resume", fill: tonal, ink: onTonal, size: disc)
         }
       }
       Button(intent: StopRecordingIntent()) {
-        RecordingDisc(glyph: "Stop", label: "Stop", fill: clay, ink: onClay)
+        RecordingDisc(glyph: "Stop", label: "Stop", fill: clay, ink: onClay, size: disc)
       }
     }
     .buttonStyle(.plain)
@@ -243,14 +315,15 @@ struct RecordingDisc: View {
   let label: LocalizedStringKey
   let fill: Color
   let ink: Color
+  var size: CGFloat = 44
 
   var body: some View {
     Image(glyph)
       .renderingMode(.template)
       .resizable()
-      .frame(width: 20, height: 20)
+      .frame(width: size * 5 / 11, height: size * 5 / 11)
       .foregroundStyle(ink)
-      .frame(width: 44, height: 44)
+      .frame(width: size, height: size)
       .background(Circle().fill(fill))
       .accessibilityLabel(Text(label))
   }

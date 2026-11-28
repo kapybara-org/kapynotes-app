@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Bundle
 import android.os.IBinder
 import android.text.format.DateUtils
 import android.util.Log
@@ -80,8 +81,22 @@ class RecordingService : Service() {
         stopSelf(startId)
     }
 
-    /** How the recording looks from outside the app, as Dart last said. */
-    private data class Shown(val startedAt: Long, val elapsedMs: Long, val paused: Boolean, val interrupted: Boolean)
+    /**
+     * How the recording looks from outside the app, as Dart last said.
+     * [phrase] and [heard] are the latest finished live translation and what
+     * was heard, and [live] says live translation is running; all three are
+     * absent for a recording without it, which then looks exactly as it
+     * always has.
+     */
+    private data class Shown(
+        val startedAt: Long,
+        val elapsedMs: Long,
+        val paused: Boolean,
+        val interrupted: Boolean,
+        val phrase: String? = null,
+        val heard: String? = null,
+        val live: Boolean = false,
+    )
 
     companion object {
         private const val TAG = "KapyNotes"
@@ -98,6 +113,14 @@ class RecordingService : Service() {
         private val COMMANDS = setOf(ACTION_PAUSE, ACTION_RESUME, ACTION_STOP)
 
         private const val CHANNEL_ID = "recording"
+
+        /**
+         * Notification.EXTRA_REQUEST_PROMOTED_ONGOING, Android 16's request
+         * for a Live Update, by the value NotificationCompat also uses: set
+         * as an extra so it needs no newer androidx.core than the plugins
+         * bring.
+         */
+        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
         private const val NOTIFICATION_ID = 0x5243
 
         /** Asked to start, and not since stopped. Main thread only. */
@@ -110,8 +133,16 @@ class RecordingService : Service() {
          * is only posted again, because a service cannot be started from the
          * background, and an interruption arrives there.
          */
-        fun show(context: Context, elapsedMs: Long, paused: Boolean, interrupted: Boolean) {
-            shown = Shown(System.currentTimeMillis() - elapsedMs, elapsedMs, paused, interrupted)
+        fun show(
+            context: Context,
+            elapsedMs: Long,
+            paused: Boolean,
+            interrupted: Boolean,
+            phrase: String? = null,
+            heard: String? = null,
+            live: Boolean = false,
+        ) {
+            shown = Shown(System.currentTimeMillis() - elapsedMs, elapsedMs, paused, interrupted, phrase, heard, live)
             if (running) {
                 try {
                     context.getSystemService(NotificationManager::class.java)
@@ -178,7 +209,37 @@ class RecordingService : Service() {
                 builder.addAction(R.drawable.ic_play, context.getString(R.string.recording_resume), commandIntent(context, ACTION_RESUME))
             }
             builder.addAction(R.drawable.ic_stop, context.getString(R.string.recording_stop), commandIntent(context, ACTION_STOP))
+            if (state.phrase != null) showPhrase(context, builder, state.phrase, state.heard)
+            if (state.live && Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA) {
+                builder.addExtras(Bundle().apply { putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true) })
+            }
             return builder.build()
+        }
+
+        /**
+         * The live translation, as words nobody else should read off a
+         * locked phone: private, with a public version that says only that
+         * it is recording. Whether a locked phone shows the words is then
+         * the person's own lock-screen setting, where today's public
+         * notification would show them to anyone. Updated on every phrase,
+         * never with a sound or a buzz: the builder already alerts only once.
+         */
+        private fun showPhrase(context: Context, builder: NotificationCompat.Builder, phrase: String, heard: String?) {
+            val hidden = NotificationCompat.Builder(context, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_dictate)
+                .setColor(ContextCompat.getColor(context, R.color.recording_clay))
+                .setContentTitle(context.getString(R.string.recording_title))
+                .setContentText(context.getString(R.string.recording_live_hidden))
+                .setOngoing(true)
+                .setSilent(true)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .build()
+            builder
+                .setContentText(phrase)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(if (heard == null) phrase else "$phrase\n$heard"))
+                .setOnlyAlertOnce(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+                .setPublicVersion(hidden)
         }
 
         /**

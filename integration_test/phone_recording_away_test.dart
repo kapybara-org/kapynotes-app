@@ -13,6 +13,7 @@
 // nothing, the recording goes behind another app instead, which leaves the
 // app just as out of sight; an emulator always locks.
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,14 +63,48 @@ class _NoControls implements RecordingControls {
     required Duration elapsed,
     required bool paused,
     required bool interrupted,
+    bool live = false,
+    String? phrase,
+    String? heard,
   }) async {}
 
   @override
   Future<void> hide() async {}
 }
 
-/// At least this much of the recording is made with the app out of sight.
+/// At least this much of the recording is made with the app out of sight,
+/// read off the recording's own clock. That clock stops while the test pauses
+/// the recording for a shot, so a slow shot keeps the test away longer
+/// instead of eating into this.
 const _away = Duration(seconds: 130);
+
+/// How much audio the ADTS file [adts] holds, walked from its own frame
+/// headers up to the first frame cut short or making no sense, which is where
+/// a kill stops a file: everything a kill leaves to recover.
+Duration _adtsLength(Uint8List adts) {
+  const rates = [
+    96000, 88200, 64000, 48000, 44100, 32000, //
+    24000, 22050, 16000, 12000, 11025, 8000, 7350,
+  ];
+  var at = 0;
+  var samples = 0;
+  int? rate;
+  while (at + 7 <= adts.length &&
+      adts[at] == 0xFF &&
+      adts[at + 1] & 0xF0 == 0xF0) {
+    final length =
+        (adts[at + 3] & 0x03) << 11 | adts[at + 4] << 3 | adts[at + 5] >> 5;
+    if (length < 7 || at + length > adts.length) break;
+    rate ??= rates[adts[at + 2] >> 2 & 0x0F];
+    samples += 1024 * ((adts[at + 6] & 0x03) + 1);
+    at += length;
+  }
+  return rate == null
+      ? Duration.zero
+      : Duration(
+          microseconds: samples * Duration.microsecondsPerSecond ~/ rate,
+        );
+}
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -145,7 +180,7 @@ void main() {
 
     // Away. Nothing here pumps a frame until the app is back: a phone draws
     // none for an app out of sight, so a pump would wait for ever.
-    final left = DateTime.now();
+    final recordedInSight = recording.session!.elapsed;
     Future<void> wait(int seconds) =>
         Future<void>.delayed(Duration(seconds: seconds));
     // A host may have pressed Lock and locked nothing, so the phone counts as
@@ -236,8 +271,10 @@ void main() {
       await deviceAction('dark');
     }
 
-    final remaining = _away - DateTime.now().difference(left);
-    if (remaining > Duration.zero) await Future<void>.delayed(remaining);
+    if (recording.session case final session?) {
+      final remaining = _away - (session.elapsed - recordedInSight);
+      if (remaining > Duration.zero) await Future<void>.delayed(remaining);
+    }
     expect(recording.isRecording, isTrue, reason: 'stopped while away');
     if (Platform.isAndroid) expect(await deviceAction('cut'), isNull);
 
@@ -276,6 +313,7 @@ void main() {
     final killedAudio = await inProgress.copy(
       '${killed.path}/${inProgress.uri.pathSegments.last}',
     );
+    final onDisk = _adtsLength(await killedAudio.readAsBytes());
     File(
       killedAudio.path.replaceFirst(RegExp(r'\.aac$'), '.json'),
     ).writeAsStringSync('{"noteId":"standup"}');
@@ -302,13 +340,23 @@ void main() {
     expect(recovered, hasLength(1), reason: 'the killed recording was lost');
     final back = recovered.single;
     debugPrint(
-      'Killed at ${recordedBeforeKill.inSeconds} s, '
-      'came back with ${back.duration.inMilliseconds} ms.',
+      'Killed at ${recordedBeforeKill.inMilliseconds} ms, with '
+      '${onDisk.inMilliseconds} ms on the disk, came back with '
+      '${back.duration.inMilliseconds} ms.',
     );
     expect(
-      back.duration,
-      greaterThan(recordedBeforeKill - const Duration(seconds: 3)),
-      reason: 'more than the last few seconds were lost',
+      back.duration.inMilliseconds,
+      closeTo(onDisk.inMilliseconds, 64),
+      reason: 'audio that had reached the disk was lost',
+    );
+    // Frames reach the file in the platform's batches, behind the recording's
+    // clock, and a runner busy with the lock-screen shots holds a few seconds
+    // of them back. Those never reached the disk, so no recovery could keep
+    // them; this asks only that the recorder kept up while away.
+    expect(
+      onDisk,
+      greaterThan(recordedBeforeKill - const Duration(seconds: 5)),
+      reason: 'the recorder fell behind its own clock',
     );
     // The phone's own decoder reads every frame the index points at, which
     // is what the waveform and the transcript start from, and its player

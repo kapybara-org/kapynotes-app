@@ -620,6 +620,11 @@ class KapyAiNotice extends StatelessWidget {
           : 'Use ${model.plainLabel}',
       onPressed: () => unawaited(ai.answerWith(model)),
     );
+    // "On this device" is a description, not a name to put in a sentence.
+    String named(KapyModel model, {bool first = false}) =>
+        model.kind == KapyModelKind.device && model.id != 'apple'
+        ? '${first ? 'This' : 'this'} $word'
+        : model.plainLabel;
     final pickAnother = KapyAiButton('Pick another', onPressed: onPickAnother);
     // The first two are the likeliest to work; the rest stay reachable through
     // the picker rather than crowding the card.
@@ -643,7 +648,7 @@ class KapyAiNotice extends StatelessWidget {
         ? 'Apple Intelligence'
         : 'the on-device model';
     final (icon, title, lines, actions) = switch (pending) {
-      KapyCloudConsent(:final recording) => (
+      KapyCloudConsent(:final recording, device: final deviceToo) => (
         KapyIcons.cloudRounded,
         'Before the first answer',
         recording
@@ -660,7 +665,7 @@ class KapyAiNotice extends StatelessWidget {
               ],
         [
           goAhead,
-          if (usable != null)
+          if (usable != null && deviceToo)
             KapyAiButton(
               'Use this device',
               onPressed: () => unawaited(ai.answerWith(usable)),
@@ -735,7 +740,7 @@ class KapyAiNotice extends StatelessWidget {
               'Kapy AI Cloud gives $limit answers a month.'
             else
               'Kapy AI Cloud’s answers for the month are used up.',
-            'Until then, ${fallback == null ? 'your accounts' : '${fallback.plainLabel} and your accounts'} '
+            'Until then, ${fallback == null ? 'your accounts' : '${named(fallback)} and your accounts'} '
                 'still answer.',
           ].join(' '),
         ],
@@ -748,8 +753,7 @@ class KapyAiNotice extends StatelessWidget {
           [
             '${ai.model.plainLabel} needs a connection.',
             if (fallback != null)
-              '${fallback.id == 'apple' ? fallback.plainLabel : 'This device'} '
-                  'can answer offline.',
+              '${named(fallback, first: true)} answers offline.',
           ].join(' '),
         ],
         [?(fallback == null ? null : use(fallback)), tryAgain],

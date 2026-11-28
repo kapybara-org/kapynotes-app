@@ -31,6 +31,15 @@ class KapyModel {
     label: 'Kapy AI Cloud',
   );
 
+  /// The device's own translator: what a translation made on this device
+  /// keeps as its model. Never offered in the picker and never asked a
+  /// question, so no answer engine is behind it.
+  static const KapyModel translator = KapyModel(
+    kind: KapyModelKind.device,
+    id: 'translator',
+    label: 'Translator on this device',
+  );
+
   final KapyModelKind kind;
 
   /// Stable across launches: 'apple', 'gemma', 'cloud', or the account's own
@@ -276,6 +285,7 @@ class KapyChat {
     DateTime? titleAt,
     DateTime? modelAt,
     this.recording,
+    this.recap,
   }) : titleAt = titleAt ?? createdAt,
        modelAt = modelAt ?? createdAt;
 
@@ -297,6 +307,11 @@ class KapyChat {
   /// The recording this chat asks about, which it reads instead of the
   /// notes. Null for a chat about the notes.
   final KapyRecordingRef? recording;
+
+  /// A recap's record (lib/recaps/recap_record.dart), as the chat record
+  /// carries it. A chat with one is a recap, opened as a story and kept out
+  /// of the chat list.
+  final Map<String, Object?>? recap;
 }
 
 /// What holds up the last question, drawn inline under it (kapy-ai-7/8).
@@ -309,9 +324,13 @@ sealed class KapyPending {
 /// A [recording] chat's is worded for its transcript, and agreeing to it
 /// covers recording chats alone; the panel's covers both.
 class KapyCloudConsent extends KapyPending {
-  const KapyCloudConsent({this.recording = false});
+  const KapyCloudConsent({this.recording = false, this.device = true});
 
   final bool recording;
+
+  /// Whether this device's model may answer instead. Not for a translation,
+  /// which is only made in the cloud.
+  final bool device;
 }
 
 /// "Goes to OpenAI / Anthropic / OpenRouter" (Codex / Claude Code / key):
@@ -387,6 +406,22 @@ class KapyFailed extends KapyPending {
   final bool retry;
 }
 
+/// A translation being written: the parts that have come back, stitched in
+/// order, and how many there are in all. Never a whole translation: that
+/// joins the chat once every part is in.
+@immutable
+class KapyTranslationDraft {
+  const KapyTranslationDraft({
+    required this.text,
+    required this.done,
+    required this.parts,
+  });
+
+  final String text;
+  final int done;
+  final int parts;
+}
+
 /// Kapy AI: chats, models, accounts and answers.
 abstract class KapyAi extends ChangeNotifier {
   /// The Settings switch. Off hides the toolbar button, ⌘J does nothing and
@@ -423,6 +458,10 @@ abstract class KapyAi extends ChangeNotifier {
   /// Whether the chats are syncing to the account's other devices right now:
   /// Pro, and signed in with sync on. False keeps them on this device.
   bool get chatsSync => false;
+
+  /// Whether the book holds a recap, which [clearHistory] deletes with the
+  /// chats although it shows in the timeline rather than the chat list.
+  bool get hasRecaps => false;
 
   /// Newest first.
   List<KapyChat> get chats;
@@ -471,6 +510,10 @@ abstract class KapyAi extends ChangeNotifier {
 
   /// True while an answer is being written.
   bool get answering;
+
+  /// While the current chat's answer is a translation being written in
+  /// parts, the parts so far; null otherwise.
+  KapyTranslationDraft? get draft => null;
   KapyPending? get pending;
 
   /// The pending state's primary action: Go ahead (remembered), Download,

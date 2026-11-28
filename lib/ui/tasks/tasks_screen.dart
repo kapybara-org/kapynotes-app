@@ -16,6 +16,7 @@ import '../context_menu.dart';
 import '../sidebar.dart' show PhoneFiltersButton, SidebarSearchField;
 import '../note_day_scope.dart';
 import '../notes_grouping.dart' show dayShown;
+import '../page_turn.dart';
 import '../sidebar_timestamp.dart';
 import 'task_choice.dart';
 import 'task_choice_cards.dart';
@@ -73,6 +74,7 @@ class TasksScreen extends StatefulWidget {
     this.scrollController,
     this.onFilter,
     this.toolbar,
+    this.explainPair = true,
   });
 
   /// A window's page bar over the list. A task's details stand beside the
@@ -123,6 +125,11 @@ class TasksScreen extends StatefulWidget {
 
   /// Printed on the add row at rest.
   final String? newTaskShortcut;
+
+  /// Whether a round's first pair says in a line how choosing works: on a
+  /// desktop until How Tasks works is put away, and always on a phone, which
+  /// has no such card.
+  final bool explainPair;
 
   @override
   State<TasksScreen> createState() => TasksScreenState();
@@ -311,7 +318,8 @@ class TasksScreenState extends State<TasksScreen> {
     return true;
   }
 
-  /// esc: start with your choice so far, while Start with shows.
+  /// ↵ or esc: stop choosing and start your pick so far, while Stop choosing
+  /// shows.
   bool startEarly() {
     final pair = _pair;
     if (pair == null || pair.pairsLeft == 0) return false;
@@ -562,17 +570,23 @@ class TasksScreenState extends State<TasksScreen> {
             });
             return const SizedBox.shrink();
           }
-          return PhoneTaskPage(
-            item: current,
-            tasks: _tasks,
-            label: widget.labelOf(current.note),
-            images: widget.images,
-            onBack: () => Navigator.of(context).pop(),
-            onOpenNote: () {
-              Navigator.of(context).pop();
-              final open = widget.onOpenTask;
-              open == null ? widget.onOpenNote(current.note.id) : open(current);
-            },
+          // A drag right goes back to the list, as the page's arrow does.
+          return PageTurn(
+            onBack: () => unawaited(Navigator.of(context).maybePop()),
+            child: PhoneTaskPage(
+              item: current,
+              tasks: _tasks,
+              label: widget.labelOf(current.note),
+              images: widget.images,
+              onBack: () => Navigator.of(context).pop(),
+              onOpenNote: () {
+                Navigator.of(context).pop();
+                final open = widget.onOpenTask;
+                open == null
+                    ? widget.onOpenNote(current.note.id)
+                    : open(current);
+              },
+            ),
           );
         },
       ),
@@ -770,6 +784,7 @@ class TasksScreenState extends State<TasksScreen> {
               now: now,
               labelOf: labelOf,
               justDone: _tasks.justDone,
+              explain: widget.explainPair,
               phone: phone,
               onKeep: () => _tasks.keepChoice(stage),
               onTake: () => _tasks.takeNext(stage),

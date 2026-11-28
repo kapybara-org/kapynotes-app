@@ -21,6 +21,7 @@ enum SlashCommandType {
   heading2,
   heading3,
   formula,
+  camera,
 }
 
 /// A chosen command. Tables carry the size picked in the menu.

@@ -8,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../ai/kapy_ai.dart';
 import '../../core/phone_keyboard.dart';
 import '../../core/platform.dart';
+import '../../core/popup_keyboard.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import 'kapy_ai_chats.dart';
@@ -586,11 +587,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
       return KapyAiEmpty(
         menu: _picking ? _menu : null,
         suggestions: noteId == null
-            ? const [
-                'What did I plan for this week?',
-                'Find my notes about Lisbon',
-                'Summarise what I wrote yesterday',
-              ]
+            ? kapyAiExamples
             : [
                 'Summarise this note',
                 'What’s still open here?',
@@ -895,7 +892,6 @@ class KapyAiToolbarButton extends StatelessWidget {
     this.radius = 10,
     this.iconSize = 17,
     this.trailingGap = 6,
-    this.divided = false,
     this.showsOpen = true,
   });
 
@@ -910,10 +906,6 @@ class KapyAiToolbarButton extends StatelessWidget {
   /// The space before the next action, kept inside so a hidden button takes
   /// its gap with it.
   final double trailingGap;
-
-  /// Whether a hairline sets it apart from the actions before it, as at the
-  /// end of the page's bar. The hairline hides with the button.
-  final bool divided;
 
   /// Whether it turns tonal while the panel is open. A phone's sheet covers
   /// the note instead, and its button stays a bare icon (M10).
@@ -940,21 +932,7 @@ class KapyAiToolbarButton extends StatelessWidget {
       );
       return Padding(
         padding: EdgeInsets.only(right: trailingGap),
-        child: divided
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 1,
-                    height: 16,
-                    child: ColoredBox(color: palette.controlBorder),
-                  ),
-                  const SizedBox(width: 8),
-                  button,
-                ],
-              )
-            : button,
+        child: button,
       );
     },
   );
@@ -973,9 +951,11 @@ const double _kapyAiSheetFull = 0.8;
 /// height. Pulled up it is the full panel, and pulled down past its rest, a
 /// tap on the scrim, or Close puts it away. [panel] is built for the sheet's
 /// layout of the moment, with what puts the sheet away and what pulls it up.
+/// [typing] lets its field keep the keyboard it asks for as it opens.
 Future<void> showKapyAiSheet(
   BuildContext context, {
   required bool rest,
+  bool typing = false,
   required Widget Function(
     VoidCallback close,
     VoidCallback expand,
@@ -989,6 +969,7 @@ Future<void> showKapyAiSheet(
     context: context,
     isScrollControlled: true,
     enableDrag: false,
+    routeSettings: typing ? const TypingPopupSettings() : null,
     backgroundColor: Colors.transparent,
     elevation: 0,
     barrierColor: palette.scrim,

@@ -34,6 +34,9 @@ class RecordingControls private constructor(
                     elapsedMs = call.argument<Number>("elapsedMs")?.toLong() ?: 0L,
                     paused = call.argument<Boolean>("paused") ?: false,
                     interrupted = call.argument<Boolean>("interrupted") ?: false,
+                    phrase = call.argument<String>("phrase"),
+                    heard = call.argument<String>("heard"),
+                    live = call.argument<Boolean>("live") ?: false,
                 )
                 result.success(null)
             }

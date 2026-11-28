@@ -21,6 +21,10 @@
 //   folder, the empty states, and a tree note's whole-row hover.
 // - Move to folder… on a row's menu (KAP-377): its list opens where the menu
 //   was, from the same corner, on the board and in a 400 wide window.
+// - ⌘F's find bar in a note (KAP-389): no matches, the second of three, and
+//   the match esc leaves selected.
+// - KAP-408's calm list: the View menu beside the search, the one chip for
+//   what narrows the list, the checklist pie, and the list at 400 px.
 // Each state is taken light and dark, as screenshots in build/screenshots;
 // the boards' states dark only, as the boards draw them, with d1 and d3
 // light too.
@@ -385,7 +389,7 @@ void main() {
     );
     await shot(tester, 'later-day-by-date');
 
-    await click(tester, find.byKey(const ValueKey('notes-grouping')));
+    await click(tester, find.byKey(const ValueKey('notes-view')));
     await click(tester, find.byKey(const ValueKey('notes-grouping-byTag')));
     for (final title in ['Standup', 'Renewal notes']) {
       expect(
@@ -562,33 +566,91 @@ void main() {
     matching: find.byType(NoteField),
   );
 
+  testWidgets("KAP-408's calm list: the View menu beside the search holds "
+      'Show, Media, Tags, Group by and Layout, one chip says what narrows the '
+      'list, and the list keeps working at 400 px', (tester) async {
+    await board(tester);
+    final list = find.byType(Sidebar);
+    final view = find.byKey(const ValueKey('notes-view'));
+    final menu = find.byKey(const ValueKey('notes-filter-menu'));
+    final chip = find.byKey(const ValueKey('notes-filter-chip'));
+    expect(
+      find.descendant(of: list, matching: find.text('New note')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('sidebar-space-count')), findsNothing);
+    expect(
+      tester.getCenter(view).dy,
+      moreOrLessEquals(
+        tester.getCenter(find.byKey(const ValueKey('sidebar-search-box'))).dy,
+        epsilon: 0.5,
+      ),
+    );
+
+    await click(tester, view);
+    await click(tester, find.byKey(const ValueKey('notes-layout-list')));
+    expect(menu, findsNothing);
+    expect(
+      find.descendant(of: list, matching: find.byType(NoteCardFace)),
+      findsNothing,
+    );
+    // A checklist is the pie before a row's date, never words under it.
+    expect(
+      find.descendant(of: list, matching: find.textContaining(' done')),
+      findsNothing,
+    );
+    await shot(tester, 'calm-list');
+
+    await click(tester, view);
+    expect(menu, findsOneWidget);
+    await shot(tester, 'calm-list-view');
+    await click(tester, find.byKey(const ValueKey('media-filter-video')));
+    await click(tester, find.byKey(const ValueKey('notes-filter-when')));
+    await click(
+      tester,
+      find.byKey(const ValueKey('notes-filter-when-thisWeek')),
+    );
+    expect(chip, findsOneWidget);
+    expect(
+      find.descendant(
+        of: chip,
+        matching: find.text('Voice, Image · This week'),
+      ),
+      findsOneWidget,
+    );
+    await shot(tester, 'calm-list-chip');
+
+    const narrow = Size(400, 720);
+    await windowManager.setBounds(Offset.zero & narrow);
+    tester.view.physicalSize = narrow * tester.view.devicePixelRatio;
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    // At 400 px the list folds away, and comes back over the page.
+    await click(tester, find.byKey(const ValueKey('page-show-list')));
+    await shot(tester, 'calm-list-narrow');
+    await click(tester, view);
+    expect(tester.getRect(menu).right, lessThanOrEqualTo(narrow.width));
+    await shot(tester, 'calm-list-narrow-view');
+    await click(tester, find.byKey(const ValueKey('notes-filter-when')));
+    expect(menu, findsNothing);
+    expect(find.byKey(const ValueKey('notes-view-back')), findsOneWidget);
+    await shot(tester, 'calm-list-narrow-when');
+    await click(tester, find.byKey(const ValueKey('notes-view-back')));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    await click(tester, chip);
+    expect(chip, findsNothing);
+    expect(
+      find.descendant(of: list, matching: find.text('Call with Arjun')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets("D03's board: a second card's menu opens it in a new tab", (
     tester,
   ) async {
     await board(tester);
-    expect(find.byKey(const ValueKey('sidebar-space-count')), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('sidebar-new-note')),
-        matching: find.text('New note'),
-      ),
-      findsOneWidget,
-    );
-    final filter = find.byKey(const ValueKey('sidebar-notes-filter'));
-    expect(
-      tester
-          .widget<Container>(
-            find.descendant(of: filter, matching: find.byType(Container)).first,
-          )
-          .decoration,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<Container>(find.byKey(const ValueKey('sidebar-view-switch')))
-          .decoration,
-      isNull,
-    );
     expectBoardDates(tester);
     await click(tester, row('Call with Arjun'));
     final tabs = find.byType(NoteTabRow);
@@ -1200,5 +1262,54 @@ void main() {
     );
     await click(tester, find.byKey(const ValueKey('page-show-list')));
     await moveToFolderShots(tester, 'Pricing ideas', 'kap377-narrow');
+  });
+
+  testWidgets('KAP-389: ⌘F finds words in the open note, Enter steps, and '
+      'esc leaves the match selected', (tester) async {
+    await launch(
+      tester,
+      bodies: [
+        'Trip budget\nflights = 412 eur\nhotel = 128 eur\nfood = 55 eur',
+      ],
+    );
+    await click(tester, row('Trip budget'));
+    final bar = find.byKey(const ValueKey('note-find-bar'));
+    final field = find.byKey(const ValueKey('note-find-field'));
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pumpAndSettle();
+    expect(bar, findsOneWidget);
+    expect(find.byKey(const ValueKey('command-menu')), findsNothing);
+
+    await tester.enterText(field, 'porto');
+    await tester.pumpAndSettle();
+    expect(find.text('No matches'), findsOneWidget);
+    await shot(tester, 'find-in-note-none');
+
+    await tester.enterText(field, 'eur');
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('2 of 3'), findsOneWidget);
+    await shot(tester, 'find-in-note');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(bar, findsNothing);
+    final note = tester.widget<NoteField>(
+      find.descendant(
+        of: find.byType(NoteEditor),
+        matching: find.byType(NoteField),
+      ),
+    );
+    final body = note.controller.text;
+    final at = body.indexOf('eur', body.indexOf('hotel'));
+    expect(
+      note.controller.selection,
+      TextSelection(baseOffset: at, extentOffset: at + 3),
+    );
+    await shot(tester, 'find-in-note-closed');
   });
 }

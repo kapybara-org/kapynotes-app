@@ -175,14 +175,14 @@ void main() {
     await tap('home-title-tasks');
     expect(tester.takeException(), isNull, reason: step);
 
-    expect(find.text('What do you want to work on next?'), findsOneWidget);
-    expect(find.text('First on the list'), findsOneWidget);
+    expect(find.text('Which is more important?'), findsOneWidget);
+    expect(find.text('First on your list'), findsOneWidget);
     await shot('d1-first-pair');
 
     await tap('tasks-pair-right');
-    expect(find.text('Your choice so far'), findsOneWidget);
+    expect(find.text('Most important so far'), findsOneWidget);
     expect(find.text('Up next'), findsOneWidget);
-    expect(find.textContaining('Tap the one you’d rather do.'), findsOneWidget);
+    expect(find.textContaining('Nothing comes off your list.'), findsOneWidget);
     expect(heard('tasks-pair'), hasLength(greaterThanOrEqualTo(2)));
     await shot('d2-mid-pair');
     await scaledShots('d6-pair');
@@ -244,7 +244,7 @@ void main() {
     clock = clock.add(const Duration(minutes: 30));
     await tap('tasks-done');
     expect(find.byKey(const ValueKey('tasks-just-done')), findsOneWidget);
-    expect(find.text('New since you chose'), findsOneWidget);
+    expect(find.text('New since you started'), findsOneWidget);
     await shot('d4-after-done');
 
     clock = DateTime(2026, 11, 19, 18, 30);

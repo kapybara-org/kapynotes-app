@@ -301,6 +301,71 @@ void main() {
     );
   });
 
+  group('a click below the note', () {
+    /// On the empty page, a few lines under everything the note holds.
+    Offset underNote(Desk desk) => desk.note.toGlobal(
+      Offset(
+        40,
+        desk.note.state.layout.heights!.total + desk.note.rowHeight * 2.5,
+      ),
+    );
+
+    void caretAt(Desk desk, int offset, [String? reason]) {
+      expect(desk.selection.isCollapsed, isTrue, reason: reason);
+      expect(desk.selection.baseOffset, offset, reason: reason);
+    }
+
+    final endings = {
+      'a picture': 'Title\n$anchor',
+      'a table': 'Title\n\n| a | b |\n| --- | --- |\n| Tea | 4 |',
+      'a code block': 'Title\n```dart\nfoo\n```',
+      'a formula': 'Title\n\n\$\$\nx^2\n\$\$',
+      'a divider': 'Title\n\nabove\n\n---',
+    };
+    for (final MapEntry(key: ending, value: body) in endings.entries) {
+      testWidgets('after $ending opens one empty line to write on, and only '
+          'one', (tester) async {
+        final desk = Desk(tester);
+        await desk.open(
+          body,
+          window: const Size(720, 1000),
+          images: store,
+          initialAttachments: [
+            if (body.contains(anchor))
+              picture.copyWith(offset: body.indexOf(anchor)),
+          ],
+        );
+        for (final click in ['first', 'second']) {
+          await desk.click(underNote(desk));
+          expect(desk.text, '$body\n', reason: click);
+          caretAt(desk, body.length + 1, click);
+        }
+      }, variant: desktopPlatforms);
+    }
+
+    testWidgets('after a checklist goes to the end of its last item', (
+      tester,
+    ) async {
+      const body = 'Errands\n☐ Buy oats\n☐ Buy milk';
+      final desk = Desk(tester);
+      await desk.open(body, window: const Size(720, 1000));
+      await desk.click(underNote(desk));
+      expect(desk.text, body);
+      caretAt(desk, body.length);
+    }, variant: desktopPlatforms);
+
+    testWidgets('words typed under a table start a paragraph of their own', (
+      tester,
+    ) async {
+      const body = 'Title\n\n| a | b |\n| --- | --- |\n| Tea | 4 |';
+      final desk = Desk(tester);
+      await desk.open(body, window: const Size(720, 1000));
+      await desk.click(underNote(desk));
+      await desk.type('after');
+      expect(desk.text, '$body\n\nafter');
+    }, variant: desktopPlatforms);
+  });
+
   group('title and tags', () {
     testWidgets('typing in the title and Enter at its end move into the body', (
       tester,
