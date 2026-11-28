@@ -191,6 +191,7 @@ class HomePage extends StatefulWidget {
     this.liveTranslation,
     this.transcriber,
     this.imageAcquirer,
+    this.cameraAcquirer,
     this.lostImageRetriever,
     required this.hiddenNotesGate,
     this.kapyAi,
@@ -277,8 +278,9 @@ class HomePage extends StatefulWidget {
 
   /// Injectable media boundaries keep launch tests independent of a physical
   /// camera and let the real page remember which note owns an interrupted
-  /// Android camera or photo-library result.
+  /// Android photo-library result.
   final ImageFileAcquirer? imageAcquirer;
+  final MediaFileAcquirer? cameraAcquirer;
   final LostImageRetriever? lostImageRetriever;
   final HiddenNotesGate hiddenNotesGate;
 
@@ -795,7 +797,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       case LaunchIntent.recording:
         return;
       case LaunchIntent.capture:
-        await _selectedEditor?.pickAndInsertImages();
+        await _takePhotoOrVideo();
       case LaunchIntent.dictate:
         await _startVoiceRecording();
     }
@@ -835,13 +837,22 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     try {
       final override = widget.imageAcquirer;
       if (override != null) return await override(context);
-      if (!AppPlatform.isAndroid) return await acquireNoteImages(context);
-      return await acquireNoteImages(
-        context,
-        takePhoto: () => _pickImagesOnAndroid(noteId, takeNotePhoto),
-        chooseFromLibrary: () =>
-            _pickImagesOnAndroid(noteId, pickExistingImageFiles),
-      );
+      if (!AppPlatform.isAndroid) return await pickNoteImages();
+      return await _pickImagesOnAndroid(noteId, pickExistingImageFiles);
+    } finally {
+      if (protectsHiddenSession) _hiddenSystemUiDepth--;
+    }
+  }
+
+  /// The phone library with photos and videos together, for the attach
+  /// sheet's Photos row.
+  Future<List<XFile>> _acquireMedia(String noteId) async {
+    final protectsHiddenSession =
+        _hiddenMode && (widget.notes.byId(noteId)?.isHidden ?? false);
+    if (protectsHiddenSession) _hiddenSystemUiDepth++;
+    try {
+      if (!AppPlatform.isAndroid) return await pickExistingMedia();
+      return await _pickImagesOnAndroid(noteId, pickExistingMedia);
     } finally {
       if (protectsHiddenSession) _hiddenSystemUiDepth--;
     }
@@ -865,19 +876,29 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     final id = _selectedId;
     final note = id == null ? null : widget.notes.byId(id);
     if (note == null || !_canWriteNote(note)) return;
+    final files = await _openCamera(context, note.id);
+    if (files.isEmpty || !mounted || _selectedId != id) return;
+    await _selectedEditor?.insertDroppedMedia(files);
+  }
+
+  /// The camera over [noteId], opened in the mode last used. Returns what the
+  /// person kept, or nothing when it was closed.
+  Future<List<XFile>> _openCamera(BuildContext context, String noteId) async {
+    final note = widget.notes.byId(noteId);
+    if (note == null) return const [];
     // Photos leaves the app for the system library, as the pickers do.
     final protectsHiddenSession = _hiddenMode && note.isHidden;
     if (protectsHiddenSession) _hiddenSystemUiDepth++;
     try {
-      final files = await showNoteCamera(
+      final override = widget.cameraAcquirer;
+      if (override != null) return await override(context);
+      return await showNoteCamera(
         context,
         chooseFromLibrary: pickExistingMedia,
         attachmentMaxBytes: _videoAttachmentMaxBytes(note),
         startInVideo: widget.prefs.cameraVideo,
         onVideoChosen: (video) => widget.prefs.cameraVideo = video,
       );
-      if (files.isEmpty || !mounted || _selectedId != id) return;
-      await _selectedEditor?.insertDroppedMedia(files);
     } finally {
       if (protectsHiddenSession) _hiddenSystemUiDepth--;
     }
@@ -926,7 +947,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   }
 
   /// Remembers the target note only for the moment Android leaves Flutter for
-  /// its camera or system photo picker. This durable marker is needed where the
+  /// the system photo picker. This durable marker is needed where the
   /// operating system may reclaim the Activity while another one is open.
   Future<List<XFile>> _pickImagesOnAndroid(
     String noteId,
@@ -6747,6 +6768,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               : null,
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
+          mediaAcquirer: (_) => _acquireMedia(note.id),
+          phoneCameraAcquirer: (context) => _openCamera(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
           cameraAcquirer: AppPlatform.hasDesktopCamera
               ? (context) => _openDesktopCamera(context, note)
@@ -6847,6 +6870,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
               : null,
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
+          mediaAcquirer: (_) => _acquireMedia(note.id),
+          phoneCameraAcquirer: (context) => _openCamera(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
           cameraAcquirer: AppPlatform.hasDesktopCamera
               ? (context) => _openDesktopCamera(context, note)

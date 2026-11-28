@@ -4,12 +4,16 @@ import 'dart:io';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/cupertino.dart' show CupertinoActionSheet;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart' show kDoubleTapTimeout, kSecondaryButton;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart'
+    show ImagePickerPlatform, MultiImagePickerOptions;
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
@@ -222,6 +226,8 @@ Widget harness(
   ValueChanged<List<NoteFormatRange>>? onFormatsChanged,
   GlobalKey<NoteEditorState>? editorKey,
   ImageFileAcquirer? imageAcquirer,
+  MediaFileAcquirer? mediaAcquirer,
+  MediaFileAcquirer? phoneCameraAcquirer,
   ImageBatchIngestor? imageIngestor,
   Future<ImageIngestResult> Function(StagedImage staged, BlobStore store)?
   imageFinalizer,
@@ -249,6 +255,8 @@ Widget harness(
       images: images ?? store,
       clipboard: clipboard ?? FakeClipboard(),
       imageAcquirer: imageAcquirer,
+      mediaAcquirer: mediaAcquirer,
+      phoneCameraAcquirer: phoneCameraAcquirer,
       imageIngestor: imageIngestor,
       imageFinalizer: imageFinalizer,
       onImagePrepared: onImagePrepared,
@@ -991,22 +999,40 @@ void main() {
     expect(find.byType(NoteVideoViewer), findsNothing);
   });
 
-  testWidgets(
-    'the bar\'s attach button, then Photo, opens capture and inserts its result',
-    (tester) async {
+  group('the bar\'s attach button', () {
+    var imagesIngested = <String>[];
+    var videosIngested = <String>[];
+    ImageBatchIngestor? imageIngestor;
+    VideoBatchIngestor? videoIngestor;
+
+    setUp(() {
+      imagesIngested = [];
+      videosIngested = [];
+      imageIngestor = (files, _) async {
+        imagesIngested = [for (final file in files) file.name];
+        return ImageBatch(images: [at(0)], rejections: const []);
+      };
+      videoIngestor = (files, _) async {
+        videosIngested = [for (final file in files) file.name];
+        return VideoBatch(videos: [videoAt(0)], rejections: const []);
+      };
+    });
+
+    Future<void> openAttach(
+      WidgetTester tester, {
+      MediaFileAcquirer? camera,
+      MediaFileAcquirer? photos,
+    }) async {
       AppPlatform.debugTargetPlatformOverride = TargetPlatform.android;
       addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
-      var opened = 0;
       await tester.pumpWidget(
         harness(
           'a note',
           attachments: const [],
-          imageAcquirer: (_) async {
-            opened++;
-            return [XFile.fromData(Uint8List(0), name: 'camera.jpg')];
-          },
-          imageIngestor: (_, _) async =>
-              ImageBatch(images: [at(0)], rejections: const []),
+          mediaAcquirer: photos,
+          phoneCameraAcquirer: camera,
+          imageIngestor: imageIngestor,
+          videoIngestor: videoIngestor,
         ),
       );
       await tester.pump();
@@ -1014,17 +1040,170 @@ void main() {
       addTearDown(tester.view.resetViewInsets);
       tester.widget<NoteField>(noteField).focusNode.requestFocus();
       await tester.pumpAndSettle();
-
       await tester.tap(find.byKey(const ValueKey('format-attach')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('attach-photo')));
+    }
+
+    Future<void> choose(WidgetTester tester, String key) async {
+      await tester.tap(find.byKey(ValueKey(key)));
       await tester.pumpAndSettle();
+    }
+
+    XFile file(String name) => XFile('/photos/$name');
+
+    testWidgets('Camera opens the camera and puts a photo in the note', (
+      tester,
+    ) async {
+      var opened = 0;
+      await openAttach(
+        tester,
+        camera: (_) async {
+          opened++;
+          return [file('camera.jpg')];
+        },
+      );
+      await choose(tester, 'attach-camera');
 
       expect(opened, 1);
+      expect(imagesIngested, ['camera.jpg']);
+      expect(videosIngested, isEmpty);
       expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
       expect(find.byType(NoteImageView), findsOneWidget);
-    },
-  );
+    });
+
+    testWidgets('Camera puts a video it kept in the note', (tester) async {
+      await openAttach(tester, camera: (_) async => [file('camera.mp4')]);
+      await choose(tester, 'attach-camera');
+
+      expect(videosIngested, ['camera.mp4']);
+      expect(imagesIngested, isEmpty);
+      expect(find.byType(NoteVideoView), findsOneWidget);
+    });
+
+    testWidgets('closing the camera leaves the note untouched', (tester) async {
+      await openAttach(tester, camera: (_) async => const []);
+      await choose(tester, 'attach-camera');
+
+      expect(imagesIngested, isEmpty);
+      expect(videosIngested, isEmpty);
+      expect(find.byType(NoteImageView), findsNothing);
+      expect(find.byType(NoteVideoView), findsNothing);
+      expect(find.byKey(const ValueKey('phone-format-bar')), findsOneWidget);
+    });
+
+    testWidgets('Photos with photos and videos sends each its own way', (
+      tester,
+    ) async {
+      var opened = 0;
+      await openAttach(
+        tester,
+        photos: (_) async {
+          opened++;
+          return [file('one.jpg'), file('clip.mov'), file('two.heic')];
+        },
+      );
+      await choose(tester, 'attach-photos');
+
+      expect(opened, 1);
+      expect(imagesIngested, ['one.jpg', 'two.heic']);
+      expect(videosIngested, ['clip.mov']);
+      expect(find.byType(NoteImageView), findsOneWidget);
+      expect(find.byType(NoteVideoView), findsOneWidget);
+    });
+
+    testWidgets('Photos with only pictures does what Photo did', (
+      tester,
+    ) async {
+      await openAttach(
+        tester,
+        photos: (_) async => [file('a.jpg'), file('b.png')],
+      );
+      await choose(tester, 'attach-photos');
+
+      expect(imagesIngested, ['a.jpg', 'b.png']);
+      expect(videosIngested, isEmpty);
+      expect(find.byType(NoteImageView), findsOneWidget);
+    });
+
+    testWidgets('closing Photos leaves the note untouched', (tester) async {
+      await openAttach(tester, photos: (_) async => const []);
+      await choose(tester, 'attach-photos');
+
+      expect(imagesIngested, isEmpty);
+      expect(videosIngested, isEmpty);
+      expect(find.byType(NoteImageView), findsNothing);
+      expect(find.byType(NoteVideoView), findsNothing);
+    });
+
+    testWidgets('a video that is too large is refused by name, and the '
+        'picture beside it still goes in', (tester) async {
+      videoIngestor = (_, _) async => const VideoBatch(
+        videos: [],
+        rejections: [(name: 'big.mp4', reason: VideoRejection.tooLarge)],
+      );
+      await openAttach(
+        tester,
+        photos: (_) async => [file('one.jpg'), file('big.mp4')],
+      );
+      await choose(tester, 'attach-photos');
+
+      expect(find.byType(NoteImageView), findsOneWidget);
+      expect(find.byType(NoteVideoView), findsNothing);
+      expect(
+        find.text('big.mp4 is larger than the 25 MB attachment limit'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a picture that cannot be read is refused by name', (
+      tester,
+    ) async {
+      imageIngestor = (_, _) async => const ImageBatch(
+        images: [],
+        rejections: [(name: 'odd.jpg', reason: ImageRejection.unreadable)],
+      );
+      await openAttach(tester, photos: (_) async => [file('odd.jpg')]);
+      await choose(tester, 'attach-photos');
+
+      expect(find.byType(NoteImageView), findsNothing);
+      expect(find.text('odd.jpg is not an image we can read'), findsOneWidget);
+    });
+  });
+
+  for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+    testWidgets('Image on ${platform.name} goes straight to the library, with '
+        'no camera question first', (tester) async {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final library = _OneLibrary();
+      final previous = ImagePickerPlatform.instance;
+      ImagePickerPlatform.instance = library;
+      addTearDown(() => ImagePickerPlatform.instance = previous);
+      final editorKey = GlobalKey<NoteEditorState>();
+      var ingested = <String>[];
+      await tester.pumpWidget(
+        harness(
+          'a note',
+          attachments: const [],
+          editorKey: editorKey,
+          imageIngestor: (files, _) async {
+            ingested = [for (final file in files) file.name];
+            return ImageBatch(images: [at(0)], rejections: const []);
+          },
+        ),
+      );
+      await tester.pump();
+
+      unawaited(editorKey.currentState!.pickAndInsertImages());
+      await tester.pumpAndSettle();
+
+      expect(library.asked, 1);
+      expect(ingested, ['chosen.jpg']);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byType(CupertinoActionSheet), findsNothing);
+      expect(find.byType(NoteImageView), findsOneWidget);
+    });
+  }
 
   testWidgets('the image shortcut opens the same picker as the footer', (
     tester,
@@ -2772,4 +2951,17 @@ void main() {
       expect(controller.selection, const TextSelection.collapsed(offset: 21));
     });
   });
+}
+
+/// A phone's photo library that hands back one picture.
+class _OneLibrary extends ImagePickerPlatform with MockPlatformInterfaceMixin {
+  int asked = 0;
+
+  @override
+  Future<List<XFile>> getMultiImageWithOptions({
+    MultiImagePickerOptions options = const MultiImagePickerOptions(),
+  }) async {
+    asked++;
+    return [XFile('/library/chosen.jpg')];
+  }
 }

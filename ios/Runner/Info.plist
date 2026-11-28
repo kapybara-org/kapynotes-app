@@ -102,6 +102,6 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Kapy Notes uses the camera when you take a photo or record a video for a note.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Kapy Notes opens your photo library when you choose pictures for a note.</string>
+	<string>Kapy Notes opens your photo library when you choose photos and videos for a note.</string>
 </dict>
 </plist>
