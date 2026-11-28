@@ -154,8 +154,13 @@ class _RowLinePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     const width = AppTimeline.rowLine;
     final paint = Paint()..color = color;
-    final y = size.height / 2;
-    for (var x = 0.0; x + width <= size.width; x += width * 2) {
+    // On whole pixels, so every heading's dots stay dots rather than
+    // blurring into a solid line where the row lands between pixels.
+    final at = canvas.getTransform();
+    final dx = at[12].roundToDouble() - at[12];
+    final y = (at[13] + size.height / 2).roundToDouble() - at[13];
+    for (var x = dx; x + width <= size.width; x += width * 2) {
+      if (x < 0) continue;
       canvas.drawRect(Rect.fromLTWH(x, y - width / 2, width, width), paint);
     }
   }
