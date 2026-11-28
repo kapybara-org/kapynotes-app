@@ -212,6 +212,8 @@ class NoteEditor extends StatefulWidget {
     this.onDefaultTitleEntered,
     this.initialCaret,
     this.onCaretChanged,
+    this.keyboardRoom,
+    this.onKeyboardRoom,
     this.ensureKeyboardVisible = false,
     this.lastUpdatedAt,
     this.createdAt,
@@ -416,6 +418,10 @@ class NoteEditor extends StatefulWidget {
   /// Fires on every move, like the body does on every keystroke, and is meant
   /// to be written through a coalescing store rather than straight to disk.
   final ValueChanged<int>? onCaretChanged;
+
+  /// See [NoteField.keyboardRoom] and [NoteField.onKeyboardRoom].
+  final double? Function(double width)? keyboardRoom;
+  final void Function(double width, double room)? onKeyboardRoom;
   final bool ensureKeyboardVisible;
   final DateTime? lastUpdatedAt;
 
@@ -8900,6 +8906,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 selectionOf: _tableSelectionOf,
                 adjustSpan: _adjustTaskFold,
                 found: _found(),
+                keyboardRoom: widget.keyboardRoom,
+                onKeyboardRoom: widget.onKeyboardRoom,
                 cursorWidth: EditorMetrics.cursorWidth,
                 cursorHeight: EditorMetrics.cursorHeight(
                   widget.writingFont,

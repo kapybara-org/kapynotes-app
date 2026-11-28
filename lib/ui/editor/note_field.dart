@@ -51,6 +51,8 @@ class NoteField extends StatefulWidget {
     this.selectionOf,
     this.adjustSpan,
     this.found,
+    this.keyboardRoom,
+    this.onKeyboardRoom,
   });
 
   final HighlightingController controller;
@@ -113,6 +115,17 @@ class NoteField extends StatefulWidget {
   /// What a find in the note found, filled under the writing.
   final NoteFound? found;
 
+  /// How much of the field's height a soft keyboard took the last time it
+  /// came up in a window [width] wide, if one has. Taking focus with the
+  /// keyboard down, the field lays the note out as if that much were gone
+  /// already, so a caret low on the page is above the keyboard before it
+  /// arrives and nothing scrolls while it slides in.
+  final double? Function(double width)? keyboardRoom;
+
+  /// Hears how much of the field's height a keyboard took once it has come
+  /// up and held still, to be offered back as [keyboardRoom].
+  final void Function(double width, double room)? onKeyboardRoom;
+
   @override
   State<NoteField> createState() => NoteFieldState();
 }
@@ -173,6 +186,19 @@ class NoteFieldState extends State<NoteField>
   TextInputConnection? _connection;
   bool _afterFrameScheduled = false;
   bool _revealScheduled = false;
+
+  /// The field's height, and the window's width, when it last took focus
+  /// with the keyboard down: what a keyboard coming up takes its room from.
+  ({double width, double height})? _keyboardDown;
+
+  /// The room [NoteField.keyboardRoom] says the keyboard on its way will
+  /// take, reserved below the note until it has come up.
+  double _keyboardExpected = 0;
+
+  /// How long the keyboard holds still before it counts as up, or, asked
+  /// for and not moving yet, as not coming.
+  static const _keyboardStillAfter = Duration(milliseconds: 500);
+  Timer? _keyboardStillTimer;
 
   /// The caret's opacity as it blinks, and what times the blink. The timer
   /// stays set, cancelled, while the caret rests on Linux, so that the next
@@ -287,6 +313,7 @@ class NoteFieldState extends State<NoteField>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _keyboardStillTimer?.cancel();
     _controller.removeListener(_didChangeValue);
     widget.focusNode.removeListener(_didChangeFocus);
     _closeConnection();
@@ -610,9 +637,13 @@ class NoteFieldState extends State<NoteField>
       _controller.selection = TextSelection.collapsed(offset: _text.length);
     }
     if (focused && !widget.readOnly) {
+      _expectKeyboard();
       _openConnection();
       _scheduleReveal();
     } else {
+      _keyboardStillTimer?.cancel();
+      _keyboardDown = null;
+      _keyboardExpected = 0;
       _closeConnection();
     }
     if (!focused) {
@@ -1675,7 +1706,60 @@ class NoteFieldState extends State<NoteField>
   void didChangeMetrics() {
     final keyboard = View.of(context).viewInsets.bottom;
     if (keyboard > _keyboard && widget.focusNode.hasFocus) _scheduleReveal();
+    if (keyboard < _keyboard && _keyboardExpected > 0) {
+      setState(() => _keyboardExpected = 0);
+    }
     _keyboard = keyboard;
+    if (_keyboardDown != null) _waitForKeyboardToHold();
+  }
+
+  /// Taking focus with no keyboard up, notes the field's height to measure
+  /// the keyboard's room against, and reserves the room it took last time.
+  void _expectKeyboard() {
+    final scroll = widget.scrollController;
+    if (widget.onKeyboardRoom == null ||
+        View.of(context).viewInsets.bottom > 0 ||
+        !scroll.hasClients ||
+        !scroll.position.hasViewportDimension) {
+      return;
+    }
+    final width = MediaQuery.sizeOf(context).width;
+    _keyboardDown = (width: width, height: scroll.position.viewportDimension);
+    final expected = widget.keyboardRoom?.call(width) ?? 0;
+    if (expected != _keyboardExpected) {
+      setState(() => _keyboardExpected = expected);
+    }
+    _waitForKeyboardToHold();
+  }
+
+  /// Once the keyboard has held still, it is up, and the room it took is
+  /// reported; or, if it never moved, it isn't coming. Either way nothing is
+  /// held for it any more.
+  void _waitForKeyboardToHold() {
+    _keyboardStillTimer?.cancel();
+    _keyboardStillTimer = Timer(_keyboardStillAfter, () {
+      if (!mounted) return;
+      final down = _keyboardDown;
+      final scroll = widget.scrollController;
+      if (down != null &&
+          _keyboard > 0 &&
+          scroll.hasClients &&
+          down.width == MediaQuery.sizeOf(context).width) {
+        final room = down.height - scroll.position.viewportDimension;
+        if (room > 0) widget.onKeyboardRoom?.call(down.width, room);
+        _keyboardDown = null;
+      }
+      if (_keyboardExpected > 0) setState(() => _keyboardExpected = 0);
+    });
+  }
+
+  /// The room still held below the note for a keyboard on its way, in a
+  /// field [height] tall: what it is expected to take, less what it has
+  /// taken so far.
+  double _keyboardAhead(double height) {
+    final down = _keyboardDown;
+    if (down == null || _keyboardExpected <= 0) return 0;
+    return math.max(0, _keyboardExpected - (down.height - height));
   }
 
   /// Shows the caret once the frame is laid out, and again after the next
@@ -1701,11 +1785,12 @@ class NoteFieldState extends State<NoteField>
     final scroll = widget.scrollController;
     if (!scroll.hasClients) return false;
     final scrollPosition = scroll.position;
+    final ahead = _keyboardAhead(scrollPosition.viewportDimension);
     if (position.offset >= _text.length) {
       if (scrollPosition.pixels >= scrollPosition.maxScrollExtent) {
         return false;
       }
-      layout.jumpToEnd(scrollPosition);
+      layout.jumpToEnd(scrollPosition, below: ahead);
       return true;
     }
     if (_lines.lineAt(position.offset) == 0) {
@@ -1723,7 +1808,7 @@ class NoteFieldState extends State<NoteField>
         layout.paragraphOf(_lines.lineAt(position.offset)).preferredLineHeight,
       ),
     );
-    final viewport = scrollPosition.viewportDimension;
+    final viewport = scrollPosition.viewportDimension - ahead;
     final double by;
     if (shown.height >= viewport) {
       by = shown.center.dy - viewport / 2;
@@ -2198,7 +2283,20 @@ class NoteFieldState extends State<NoteField>
                       scrollBehavior: ScrollConfiguration.of(
                         context,
                       ).copyWith(overscroll: false),
-                      slivers: [NoteSliver(layout: layout)],
+                      slivers: [
+                        NoteSliver(layout: layout),
+                        if (_keyboardExpected > 0)
+                          SliverLayoutBuilder(
+                            builder: (context, constraints) =>
+                                SliverToBoxAdapter(
+                                  child: SizedBox(
+                                    height: _keyboardAhead(
+                                      constraints.viewportMainAxisExtent,
+                                    ),
+                                  ),
+                                ),
+                          ),
+                      ],
                     ),
                   ),
                 ),

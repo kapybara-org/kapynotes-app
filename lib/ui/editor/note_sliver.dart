@@ -324,14 +324,15 @@ class NoteLayout {
   }
 
   /// Scrolls [position] so that the note's last line ends at the bottom of
-  /// the viewport, exactly, measuring the last screenful first. It scrolls
-  /// as a jump does, so what follows the scroll offset follows this too.
-  void jumpToEnd(ScrollPosition position) {
+  /// the viewport, exactly, or [below] above it, measuring the last
+  /// screenful first. It scrolls as a jump does, so what follows the scroll
+  /// offset follows this too.
+  void jumpToEnd(ScrollPosition position, {double below = 0}) {
     final heights = _heights;
     final sliver = _sliver;
     if (heights == null || sliver == null) return;
     final constraints = sliver.constraints;
-    final viewport = constraints.viewportMainAxisExtent;
+    final viewport = constraints.viewportMainAxisExtent - below;
     var covered = 0.0;
     for (var line = length - 1; line >= 0 && covered < viewport; line--) {
       covered += measure(line);
