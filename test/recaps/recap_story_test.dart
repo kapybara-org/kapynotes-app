@@ -3,6 +3,7 @@ import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/data/note.dart';
 import 'package:kapy_notes/data/note_attachment.dart';
 import 'package:kapy_notes/data/notes_store.dart';
+import 'package:kapy_notes/data/tombstone.dart';
 import 'package:kapy_notes/recaps/recap_filter.dart';
 import 'package:kapy_notes/recaps/recap_lines.dart';
 import 'package:kapy_notes/recaps/recap_material.dart';
@@ -271,6 +272,14 @@ void main() {
       return RecapStory.read(chat, world.material(thursday))!;
     }
 
+    Future<MemoryStore> storeAt(DateTime now) async {
+      final local = MemoryStore()
+        ..data['notes.v1'] = [for (final note in world.notes) note.toJson()];
+      world.store = NotesStore(local, now: () => now);
+      await world.store.load();
+      return local;
+    }
+
     void expectAllLeftOut(RecapStory story) {
       expect(story.lines.next, isNull, reason: 'Pay for it before Friday');
       expect(story.lines.title, isNull);
@@ -358,7 +367,7 @@ void main() {
     });
 
     test(
-      'a held delete, a deleted note and an archive alone drop nothing',
+      'a held delete and an archive drop nothing, and a delete once made does',
       () async {
         final chat = parted();
         void expectKept(RecapStory story, String how) {
@@ -368,20 +377,79 @@ void main() {
           expect(story.wordsGone, isFalse, reason: how);
         }
 
+        expectKept(await reopenWith(chat, archivedAt: since), 'archived');
+
+        await storeAt(DateTime.utc(2026, 11, 25));
         world.store.holdDelete(['trip']);
         expectKept(RecapStory.read(chat, world.material(thursday))!, 'held');
-
-        final local = MemoryStore()
-          ..data['notes.v1'] = [for (final note in world.notes) note.toJson()];
-        world.store = NotesStore(local, now: () => DateTime.utc(2026, 11, 25));
-        await world.store.load();
-        world.store.delete('trip');
+        world.store.deleteAll(['trip']);
         expect(world.store.tombstones.single.deletedAt.isAfter(made), isTrue);
-        expectKept(RecapStory.read(chat, world.material(thursday))!, 'deleted');
-
-        expectKept(await reopenWith(chat, archivedAt: since), 'archived');
+        expectAllLeftOut(RecapStory.read(chat, world.material(thursday))!);
       },
     );
+
+    test('a note deleted since takes its words out', () async {
+      final chat = parted();
+      await storeAt(DateTime.utc(2026, 11, 25));
+      world.store.delete('trip');
+      expectAllLeftOut(RecapStory.read(chat, world.material(thursday))!);
+    });
+
+    test('a delete arriving by sync takes its words out', () async {
+      final chat = parted();
+      await storeAt(DateTime.utc(2026, 11, 25));
+      world.store.applyRemote(
+        tombstones: [
+          Tombstone(id: 'trip', deletedAt: DateTime.utc(2026, 11, 24)),
+        ],
+      );
+      expectAllLeftOut(RecapStory.read(chat, world.material(thursday))!);
+    });
+
+    test('a delete less than a day before the recap was made takes its words '
+        'out, and one a day or more before drops nothing', () async {
+      final chat = parted();
+      final made = recapOf(chat)!.madeAt;
+      Future<RecapStory> deletedAt(Duration before) async {
+        await storeAt(DateTime.utc(2026, 11, 25));
+        world.store.applyRemote(
+          tombstones: [Tombstone(id: 'trip', deletedAt: made.subtract(before))],
+        );
+        return RecapStory.read(chat, world.material(thursday))!;
+      }
+
+      expectAllLeftOut(
+        await deletedAt(recapHideGrace - const Duration(minutes: 1)),
+      );
+      final kept = await deletedAt(recapHideGrace + const Duration(minutes: 1));
+      expect(kept.lines.title, 'A full day');
+      expect(kept.wordsGone, isFalse);
+    });
+
+    test('a deleted note stays dropped once its tombstone is gone, by keeping '
+        'the drop', () async {
+      final chat = parted();
+      final local = await storeAt(DateTime.utc(2026, 11, 25));
+      world.store.delete('trip');
+      final pruned = recapPruned(
+        RecapStory.read(chat, world.material(thursday))!,
+        now: DateTime.utc(2026, 11, 25),
+      )!;
+      await Future<void>.delayed(Duration.zero);
+      final saved = local.data['notes.v2']! as Map;
+      for (final stone in saved['tombstones'] as List) {
+        (stone as Map)['syncedAt'] = stone['deletedAt'];
+      }
+      world.store = NotesStore(local, now: () => DateTime.utc(2027, 1, 5));
+      await world.store.load();
+      expect(world.store.tombstones, isEmpty, reason: 'synced, 41 days on');
+      expectAllLeftOut(RecapStory.read(pruned, world.material(thursday))!);
+      expect(
+        RecapStory.read(chat, world.material(thursday))!.lines.title,
+        'A full day',
+        reason: 'without the kept drop, the words would come back',
+      );
+    });
 
     test('a note hidden and then deleted stays dropped once its tombstone is '
         'gone, by keeping the drop', () async {

@@ -35,8 +35,9 @@ typedef RecapTopicRow = ({
   String? colour,
 });
 
-/// How long before a recap was made a hide still takes words out of it: a
-/// device may make a recap before another device's hide has reached it.
+/// How long before a recap was made a hide or a delete still takes words
+/// out of it: a device may make a recap before another device's hide or
+/// delete has reached it.
 const Duration recapHideGrace = Duration(days: 1);
 
 /// What a recap shows when it opens: the numbers worked out on the device
@@ -64,17 +65,17 @@ class RecapStory {
   /// added to it.
   ///
   /// A line can tell of a note without naming it, so where a note one of
-  /// the recap's parts may have read was hidden after it was made, or less
-  /// than [recapHideGrace] before, every
+  /// the recap's parts may have read was hidden or deleted after it was
+  /// made, or less than [recapHideGrace] before, every
   /// line no part can be told from is dropped too: the title, the topics,
   /// the line of the year and what's next. So are a year's moments of that
   /// part's months, and the highlights and the quote of any note that part
-  /// may have read. Deleting or archiving a note takes nothing out this way.
+  /// may have read. Archiving a note takes nothing out this way.
   ///
-  /// Which parts may have read a hidden note, the record's filters alone
+  /// Which parts may have read such a note, the record's filters alone
   /// say, whatever day the note shows on now: first the one of every note
   /// the recap read, then each part's own. [handled] holds the notes whose
-  /// hide was dealt with already, and they are left alone. Null when [chat]
+  /// hide or delete was dealt with already, and they are left alone. Null when [chat]
   /// is not a recap of [now]'s period.
   static RecapStory? read(
     KapyChat chat,
@@ -122,7 +123,7 @@ class RecapStory {
       period.first.day + index,
     );
     final changed = [
-      for (final note in now.hidden)
+      for (final note in now.gone)
         if (note.at.isAfter(record.madeAt.subtract(recapHideGrace)) &&
             !handled.contains(note.id) &&
             (record.allRead?.mayHold(note.id) ?? true))

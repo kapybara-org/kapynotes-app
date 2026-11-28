@@ -42,8 +42,9 @@ class RecapItem {
   final String? taskId;
 }
 
-/// A note hidden at [at], which a recap made before then may have read.
-typedef RecapHidden = ({String id, DateTime at});
+/// A note hidden or deleted at [at], which a recap made before then may
+/// have read.
+typedef RecapGone = ({String id, DateTime at});
 
 /// What a period gives a recap made with Kapy AI, chosen on the device: its
 /// visible notes, each recording in them as its summary and transcript, and
@@ -54,7 +55,7 @@ class RecapMaterial {
     this.period,
     this.items,
     this.edited,
-    this.hidden,
+    this.gone,
     this.tagColours,
   );
 
@@ -135,15 +136,16 @@ class RecapMaterial {
       final bySource = a.source.index.compareTo(b.source.index);
       return bySource != 0 ? bySource : a.note.edited.compareTo(b.note.edited);
     });
-    final hidden = <RecapHidden>[
+    final gone = <RecapGone>[
       for (final note in store.allNotes)
         if (note.hiddenAt case final at?) (id: note.id, at: at),
+      for (final stone in store.tombstones) (id: stone.id, at: stone.deletedAt),
     ];
     return RecapMaterial._(
       period,
       List.unmodifiable(items),
       {for (final note in held.keys) note.id: note.updatedAt},
-      List.unmodifiable(hidden),
+      List.unmodifiable(gone),
       {
         for (final note in held.keys)
           for (final tag in tags.tagsOf(note.id))
@@ -158,9 +160,9 @@ class RecapMaterial {
   /// The period's notes, and when each was last edited.
   final Map<String, DateTime> edited;
 
-  /// Every hidden note, which a recap of the period made before it was
-  /// hidden may have read.
-  final List<RecapHidden> hidden;
+  /// Every hidden note and every deleted one whose tombstone is still kept,
+  /// which a recap of the period made before then may have read.
+  final List<RecapGone> gone;
 
   /// The colour of each tag the period's notes carry, by its name as a
   /// recap's record keeps it ([recapTopicName]), in lower case: one of
