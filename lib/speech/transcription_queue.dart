@@ -140,6 +140,7 @@ class TranscriptionQueue extends ChangeNotifier {
     SpeechApi? Function()? api,
     Summarizer? Function()? summarizer,
     Transcriber? Function()? transcriber,
+    void Function(String noteId, String hash, String to)? keepTranslation,
   }) : _store = store,
        _notes = notes,
        _blobs = blobs,
@@ -147,7 +148,8 @@ class TranscriptionQueue extends ChangeNotifier {
        _cloudAccess = cloudAccess,
        _api = api ?? (() => null),
        _summarizer = summarizer ?? (() => null),
-       _transcriber = transcriber ?? _cloudOnly(api ?? (() => null));
+       _transcriber = transcriber ?? _cloudOnly(api ?? (() => null)),
+       _keepTranslation = keepTranslation;
 
   final LocalStore _store;
   final NotesStore _notes;
@@ -167,6 +169,10 @@ class TranscriptionQueue extends ChangeNotifier {
   /// [RoutingTranscriber] holding both the server and this device, so it is
   /// never null and the *preference* decides which one runs.
   final Transcriber? Function() _transcriber;
+
+  /// Saves a finished transcript translated into the live translation's
+  /// language, for a person who has live translation on.
+  final void Function(String noteId, String hash, String to)? _keepTranslation;
 
   /// What a queue given only a [SpeechApi] transcribes with.
   ///
@@ -574,6 +580,10 @@ class TranscriptionQueue extends ChangeNotifier {
         // Other devices need the words, and sync only pushes dirty notes.
         touch: true,
       );
+      final to = _prefs.liveTranslateTo;
+      if (_prefs.liveTranslation && to != null) {
+        _keepTranslation?.call(entry.noteId, entry.hash, to);
+      }
       _replace(
         entry.copyWith(
           jobId: result.jobId,

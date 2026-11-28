@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -32,14 +33,19 @@ Future<void> _open(
   SlashCommandType? last,
   bool search = false,
   bool markdown = true,
+  bool camera = true,
 }) async {
   _menu.show(
     _context,
     anchor: const Rect.fromLTWH(40, 20, 2, 20),
     query: query,
-    available: SlashCommandType.values.toSet(),
+    available: {
+      for (final type in SlashCommandType.values)
+        if (camera || type != SlashCommandType.camera) type,
+    },
     markdownEnabled: markdown,
     hints: const {
+      SlashCommandType.camera: '⌘⇧P',
       SlashCommandType.image: '⌘⇧I',
       SlashCommandType.video: '⌘⇧M',
       SlashCommandType.voiceNote: '⌘⇧R',
@@ -67,6 +73,23 @@ Finder _command(SlashCommandType type) =>
 bool _selected(WidgetTester tester, SlashCommandType type) => isSemantics(
   isSelected: true,
 ).matches(tester.getSemantics(_command(type)), {});
+
+final _media = find.byKey(const ValueKey('slash-command-media'));
+final _back = find.byKey(const ValueKey('slash-command-back'));
+
+bool _highlighted(WidgetTester tester, Finder finder) =>
+    isSemantics(isSelected: true).matches(tester.getSemantics(finder), {});
+
+/// The words beside each key under the menu: move, insert, and close or back.
+List<String> _footer(WidgetTester tester) => [
+  for (final text in tester.widgetList<Text>(
+    find.descendant(
+      of: find.byKey(const ValueKey('slash-command-keys')),
+      matching: find.byType(Text),
+    ),
+  ))
+    ?text.data,
+];
 
 void main() {
   setUpAll(loadTestFonts);
@@ -127,16 +150,20 @@ void main() {
     );
     expect(keys.top, closeTo(inserts.bottom, 1));
     for (final (insert, label) in [
-      (SlashCommandType.image, 'Image'),
-      (SlashCommandType.video, 'Video'),
-      (SlashCommandType.voiceNote, 'Voice note'),
-      (SlashCommandType.file, 'File'),
+      (_media, 'Media'),
+      (_command(SlashCommandType.voiceNote), 'Voice note'),
+      (_command(SlashCommandType.file), 'File'),
     ]) {
-      expect(
-        tester.getRect(_command(insert)).center.dy,
-        closeTo(inserts.center.dy, 1),
-      );
+      expect(tester.getRect(insert).center.dy, closeTo(inserts.center.dy, 1));
       expect(find.text(label), findsNothing, reason: 'icons only');
+    }
+    // Camera, Photo and Video wait behind Media.
+    for (final type in [
+      SlashCommandType.camera,
+      SlashCommandType.image,
+      SlashCommandType.video,
+    ]) {
+      expect(_command(type), findsNothing, reason: type.name);
     }
     expect(find.text('Drawing'), findsNothing);
     // Every row shows what typing it takes, as plain text, as D06 has it.
@@ -208,6 +235,8 @@ void main() {
       ('todo', SlashCommandType.checklist),
       ('photo', SlashCommandType.image),
       ('img', SlashCommandType.image),
+      ('image', SlashCommandType.image),
+      ('cam', SlashCommandType.camera),
       ('mic', SlashCommandType.voiceNote),
       ('record', SlashCommandType.voiceNote),
       ('math', SlashCommandType.formula),
@@ -252,14 +281,22 @@ void main() {
     expect(find.text('↑↓'), findsOneWidget);
     _key(LogicalKeyboardKey.arrowDown);
     await tester.pumpAndSettle();
-    expect(_selected(tester, SlashCommandType.image), isTrue);
+    expect(_highlighted(tester, _media), isTrue);
     expect(find.text('←→'), findsOneWidget);
-    expect(find.text('Image  ⌘⇧I'), findsOneWidget);
+    // Media has no key of its own, so its tooltip is its name alone.
+    expect(
+      tester
+          .widget<Tooltip>(
+            find.descendant(of: _media, matching: find.byType(Tooltip)),
+          )
+          .message,
+      'Media',
+    );
 
     _key(LogicalKeyboardKey.arrowRight);
     await tester.pumpAndSettle();
-    expect(_selected(tester, SlashCommandType.video), isTrue);
-    expect(find.text('Video  ⌘⇧M'), findsOneWidget);
+    expect(_selected(tester, SlashCommandType.voiceNote), isTrue);
+    expect(find.text('Voice note  ⌘⇧R'), findsOneWidget);
     _key(LogicalKeyboardKey.arrowLeft);
     _key(LogicalKeyboardKey.arrowLeft);
     await tester.pumpAndSettle();
@@ -276,7 +313,7 @@ void main() {
     _key(LogicalKeyboardKey.arrowRight);
     _key(LogicalKeyboardKey.arrowRight);
     expect(_key(LogicalKeyboardKey.enter), isTrue);
-    expect(_chosen.single.type, SlashCommandType.voiceNote);
+    expect(_chosen.single.type, SlashCommandType.file);
     await tester.pumpAndSettle();
     semantics.dispose();
   });
@@ -329,6 +366,316 @@ void main() {
     await tester.pumpAndSettle();
     expect(_chosen.single.type, SlashCommandType.quote);
     expect(search, findsNothing);
+    semantics.dispose();
+  });
+
+  testWidgets('Enter on Media swaps the row for a back arrow, Camera, Photo '
+      'and Video, with Camera highlighted and esc back', (tester) async {
+    window(tester);
+    await tester.pumpWidget(_app());
+    final semantics = tester.ensureSemantics();
+    await _open(tester, last: SlashCommandType.divider);
+    expect(_footer(tester), contains('close'));
+
+    _key(LogicalKeyboardKey.arrowDown);
+    expect(_key(LogicalKeyboardKey.enter), isTrue);
+    await tester.pumpAndSettle();
+    expect(_chosen, isEmpty);
+    expect(_menu.mediaOpen, isTrue);
+    expect(_media, findsNothing);
+    expect(_command(SlashCommandType.voiceNote), findsNothing);
+    expect(_command(SlashCommandType.file), findsNothing);
+    final row = tester.getRect(
+      find.byKey(const ValueKey('slash-command-inserts')),
+    );
+    final xs = [
+      for (final finder in [
+        _back,
+        _command(SlashCommandType.camera),
+        _command(SlashCommandType.image),
+        _command(SlashCommandType.video),
+      ])
+        tester.getRect(finder).left,
+    ];
+    for (var index = 1; index < xs.length; index++) {
+      expect(xs[index], greaterThan(xs[index - 1]));
+    }
+    expect(tester.getRect(_back).top, greaterThanOrEqualTo(row.top));
+    // The back arrow is a fixed square, the Table picker's back icon.
+    expect(tester.getSize(_back), const Size(34, 34));
+    expect(
+      tester.getSize(_command(SlashCommandType.camera)).width,
+      greaterThan(34),
+    );
+    expect(
+      find.descendant(
+        of: _back,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is KapyIcon && widget.icon == KapyIcons.arrowBackRounded,
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(_selected(tester, SlashCommandType.camera), isTrue);
+    expect(find.text('Camera  ⌘⇧P'), findsOneWidget);
+    for (final name in ['Back', 'Camera', 'Photo', 'Video']) {
+      expect(find.bySemanticsLabel(name), findsOneWidget, reason: name);
+    }
+    expect(_footer(tester), containsAllInOrder(['move', 'insert', 'back']));
+    expect(_footer(tester), isNot(contains('close')));
+
+    _key(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(find.text('Photo  ⌘⇧I'), findsOneWidget);
+    expect(_key(LogicalKeyboardKey.enter), isTrue);
+    expect(_chosen.single.type, SlashCommandType.image);
+    await tester.pumpAndSettle();
+    semantics.dispose();
+  });
+
+  testWidgets('a click on Media opens it too, and the back arrow goes back', (
+    tester,
+  ) async {
+    window(tester);
+    await tester.pumpWidget(_app());
+    final semantics = tester.ensureSemantics();
+    await _open(tester);
+
+    await tester.tap(_media);
+    await tester.pumpAndSettle();
+    expect(_menu.mediaOpen, isTrue);
+    expect(_selected(tester, SlashCommandType.camera), isTrue);
+
+    // Left from Camera reaches the back arrow, named with its key.
+    _key(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(_highlighted(tester, _back), isTrue);
+    expect(find.text('Back  esc'), findsOneWidget);
+    _key(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_menu.mediaOpen, isFalse);
+    expect(_highlighted(tester, _media), isTrue);
+
+    await tester.tap(_media);
+    await tester.pumpAndSettle();
+    await tester.tap(_back);
+    await tester.pumpAndSettle();
+    expect(_menu.mediaOpen, isFalse);
+    expect(_menu.isVisible, isTrue);
+    expect(_chosen, isEmpty);
+    semantics.dispose();
+  });
+
+  testWidgets('Esc steps back to Media before it closes the menu', (
+    tester,
+  ) async {
+    window(tester);
+    await tester.pumpWidget(_app());
+    final semantics = tester.ensureSemantics();
+    await _open(tester);
+    await tester.tap(_media);
+    await tester.pumpAndSettle();
+
+    expect(_key(LogicalKeyboardKey.escape), isTrue);
+    await tester.pumpAndSettle();
+    expect(_menu.isVisible, isTrue);
+    expect(_menu.mediaOpen, isFalse);
+    expect(_highlighted(tester, _media), isTrue);
+    expect(_footer(tester), contains('close'));
+
+    expect(_key(LogicalKeyboardKey.escape), isTrue);
+    await tester.pumpAndSettle();
+    expect(_menu.isVisible, isFalse);
+    semantics.dispose();
+  });
+
+  testWidgets('the row goes back to Media when the highlight or the pointer '
+      'reaches a list row, or a letter is typed', (tester) async {
+    window(tester);
+    await tester.pumpWidget(_app());
+    final semantics = tester.ensureSemantics();
+    Future<void> openMedia() async {
+      await tester.tap(_media);
+      await tester.pumpAndSettle();
+      expect(_menu.mediaOpen, isTrue);
+    }
+
+    await _open(tester);
+    await openMedia();
+    _key(LogicalKeyboardKey.arrowUp);
+    await tester.pumpAndSettle();
+    expect(_menu.mediaOpen, isFalse);
+    expect(_selected(tester, SlashCommandType.divider), isTrue);
+    expect(_media, findsOneWidget);
+
+    await openMedia();
+    _key(LogicalKeyboardKey.arrowDown);
+    await tester.pumpAndSettle();
+    expect(_menu.mediaOpen, isFalse);
+    expect(_selected(tester, SlashCommandType.checklist), isTrue);
+
+    await openMedia();
+    final pointer = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(pointer.removePointer);
+    await pointer.addPointer(location: tester.getCenter(_back));
+    await pointer.moveTo(tester.getCenter(_command(SlashCommandType.video)));
+    await tester.pumpAndSettle();
+    expect(_menu.mediaOpen, isTrue, reason: 'still on the row');
+    await pointer.moveTo(tester.getCenter(_command(SlashCommandType.table)));
+    await tester.pumpAndSettle();
+    expect(_menu.mediaOpen, isFalse);
+    expect(_selected(tester, SlashCommandType.table), isTrue);
+
+    await pointer.moveTo(tester.getCenter(_media));
+    await openMedia();
+    await _open(tester, query: 't');
+    expect(_menu.mediaOpen, isFalse);
+    await _open(tester);
+    expect(_menu.mediaOpen, isFalse);
+    expect(_media, findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('typing skips Media: /cam, /photo and /video highlight that '
+      'icon, and /media lists all three', (tester) async {
+    window(tester);
+    await tester.pumpWidget(_app());
+    final semantics = tester.ensureSemantics();
+    for (final (query, type, tooltip) in [
+      ('cam', SlashCommandType.camera, 'Camera  ⌘⇧P'),
+      ('camera', SlashCommandType.camera, 'Camera  ⌘⇧P'),
+      ('photo', SlashCommandType.image, 'Photo  ⌘⇧I'),
+      ('image', SlashCommandType.image, 'Photo  ⌘⇧I'),
+      ('video', SlashCommandType.video, 'Video  ⌘⇧M'),
+    ]) {
+      await _open(tester, query: query);
+      expect(_media, findsNothing, reason: query);
+      expect(_selected(tester, type), isTrue, reason: query);
+      expect(find.text(tooltip), findsOneWidget, reason: query);
+      _menu.hide();
+      await tester.pumpAndSettle();
+    }
+
+    await _open(tester, query: 'media');
+    expect(_media, findsNothing);
+    expect(_back, findsNothing);
+    for (final type in [
+      SlashCommandType.camera,
+      SlashCommandType.image,
+      SlashCommandType.video,
+    ]) {
+      expect(_command(type), findsOneWidget, reason: type.name);
+    }
+    expect(_command(SlashCommandType.voiceNote), findsNothing);
+    expect(_selected(tester, SlashCommandType.camera), isTrue);
+    _key(LogicalKeyboardKey.enter);
+    expect(_chosen.single.type, SlashCommandType.camera);
+    await tester.pumpAndSettle();
+    semantics.dispose();
+  });
+
+  testWidgets('the + menu has Media too, and its search field finds Camera', (
+    tester,
+  ) async {
+    window(tester);
+    await tester.pumpWidget(_app());
+    final semantics = tester.ensureSemantics();
+    await _open(tester, search: true);
+    final search = find.byKey(const ValueKey('slash-command-search'));
+
+    await tester.tap(_media);
+    await tester.pumpAndSettle();
+    expect(_menu.mediaOpen, isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(_menu.mediaOpen, isFalse);
+    expect(search, findsOneWidget);
+
+    await tester.tap(_media);
+    await tester.pumpAndSettle();
+    await tester.enterText(search, 'cam');
+    await tester.pump();
+    expect(_menu.mediaOpen, isFalse);
+    expect(_selected(tester, SlashCommandType.camera), isTrue);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(_chosen.single.type, SlashCommandType.camera);
+    semantics.dispose();
+  });
+
+  testWidgets('the command used last behind Media starts on Media', (
+    tester,
+  ) async {
+    window(tester);
+    await tester.pumpWidget(_app());
+    final semantics = tester.ensureSemantics();
+    await _open(tester, last: SlashCommandType.video);
+    expect(_highlighted(tester, _media), isTrue);
+    semantics.dispose();
+  });
+
+  testWidgets('Linux has no Camera and no Media: the row stays four icons, '
+      'with Image called Photo', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.linux;
+    window(tester);
+    await tester.pumpWidget(_app());
+    final semantics = tester.ensureSemantics();
+    await _open(tester, camera: false);
+
+    expect(_media, findsNothing);
+    expect(_command(SlashCommandType.camera), findsNothing);
+    final xs = [
+      for (final type in [
+        SlashCommandType.image,
+        SlashCommandType.video,
+        SlashCommandType.voiceNote,
+        SlashCommandType.file,
+      ])
+        tester.getRect(_command(type)).left,
+    ];
+    for (var index = 1; index < xs.length; index++) {
+      expect(xs[index], greaterThan(xs[index - 1]));
+    }
+    expect(
+      tester.getSemantics(_command(SlashCommandType.image)),
+      matchesSemantics(
+        label: 'Photo',
+        hint: 'Choose a picture',
+        isButton: true,
+        hasTapAction: true,
+        hasSelectedState: true,
+      ),
+    );
+    _menu.hide();
+    await tester.pumpAndSettle();
+
+    await _open(tester, query: 'media', camera: false);
+    expect(find.text('No matching commands'), findsOneWidget);
+    _menu.hide();
+    await tester.pumpAndSettle();
+    await _open(tester, query: 'image', camera: false);
+    expect(_selected(tester, SlashCommandType.image), isTrue);
+    semantics.dispose();
+  });
+
+  testWidgets('a phone keeps Image as it was', (tester) async {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.iOS;
+    window(tester);
+    await tester.pumpWidget(_app());
+    final semantics = tester.ensureSemantics();
+    await _open(tester, camera: false);
+    expect(_media, findsNothing);
+    expect(
+      tester.getSemantics(_command(SlashCommandType.image)),
+      matchesSemantics(
+        label: 'Image',
+        hint: 'Take or choose a picture',
+        isButton: true,
+        hasTapAction: true,
+        hasSelectedState: true,
+      ),
+    );
     semantics.dispose();
   });
 

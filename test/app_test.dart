@@ -3638,14 +3638,14 @@ void main() {
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyP);
-    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyP);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyU);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyU);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
     await tester.pumpAndSettle();
 
     final recorded = shortcuts.bindingFor(ShortcutAction.findNotes)!;
-    expect(recorded.logicalKey, LogicalKeyboardKey.keyP);
+    expect(recorded.logicalKey, LogicalKeyboardKey.keyU);
     expect(recorded.meta, isTrue);
     expect(recorded.shift, isTrue);
   });
@@ -13764,7 +13764,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(menu, findsOneWidget);
       expect(tester.getRect(notice), place);
-      await tester.tap(find.text('Tags'));
+      await tester.tap(find.text('Tags…'));
       await tester.pumpAndSettle();
       expect(menu, findsNothing);
       expect(picker, findsOneWidget);

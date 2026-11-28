@@ -44,6 +44,7 @@ import '../compact_icon_button.dart';
 import '../focus_ring.dart';
 import '../notebook_paper.dart';
 import '../page_toolbar.dart' show NotePathLine, PagePlace;
+import '../page_turn.dart' show HiddenWhileTurning, PageTurn;
 import '../celebrate.dart';
 import '../kapy_cursor_peek.dart';
 import '../kapy_page_peek.dart';
@@ -111,6 +112,7 @@ import 'selection_bubble.dart';
 import 'slash_command_menu.dart';
 import 'slash_commands.dart';
 import '../../sync/presence.dart';
+import 'live_text_card.dart';
 
 /// [edit] is where in the old body the change happened, as the editor saw
 /// it; null when it cannot say. See [NotesStore.updateDocument].
@@ -177,6 +179,7 @@ class NoteEditor extends StatefulWidget {
     this.onImagePrepared,
     this.onImagesRejected,
     this.videoAcquirer,
+    this.cameraAcquirer,
     this.videoIngestor,
     this.videoAttachmentMaxBytes,
     this.fileAcquirer,
@@ -288,6 +291,10 @@ class NoteEditor extends StatefulWidget {
   final ValueChanged<ImageBatch>? onImagesRejected;
 
   final VideoFileAcquirer? videoAcquirer;
+
+  /// The camera window on a Mac or PC, or null where there is none. What it
+  /// keeps goes in where the caret is.
+  final Future<List<XFile>> Function(BuildContext context)? cameraAcquirer;
   final VideoBatchIngestor? videoIngestor;
 
   /// Read when a selection is made rather than when the editor is built, so
@@ -3127,6 +3134,16 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
     }
   }
 
+  /// Opens the camera, and puts the photo or video kept there where the
+  /// caret is, the way the phone camera's land.
+  Future<void> openCameraAndInsert() async {
+    final acquire = widget.cameraAcquirer;
+    if (acquire == null || widget.readOnly || widget.images == null) return;
+    final files = await acquire(context);
+    if (files.isEmpty || !mounted) return;
+    await insertDroppedMedia(files);
+  }
+
   Future<void> pickAndInsertVideos() async {
     final store = widget.images;
     if (store == null || !_beginVideoAction()) return;
@@ -3425,6 +3442,8 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
   Set<SlashCommandType> get _availableSlashCommands => {
     SlashCommandType.checklist,
     SlashCommandType.bulletedList,
+    if (widget.images != null && widget.cameraAcquirer != null)
+      SlashCommandType.camera,
     if (widget.images != null && !_imageActionBusy) SlashCommandType.image,
     if (widget.onRecordVoice != null && !widget.voiceActionBusy)
       SlashCommandType.voiceNote,
@@ -3520,6 +3539,7 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
       markdownEnabled: widget.markdownEnabled,
       hints: {
         for (final (command, action) in const [
+          (SlashCommandType.camera, ShortcutAction.openCamera),
           (SlashCommandType.image, ShortcutAction.insertImage),
           (SlashCommandType.voiceNote, ShortcutAction.recordVoiceNote),
           (SlashCommandType.video, ShortcutAction.insertVideo),
@@ -3753,6 +3773,10 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
             selectionInBlock: const TextSelection.collapsed(offset: 4),
           ),
         );
+        break;
+      case SlashCommandType.camera:
+        if (typed) _consumeSlashCommand(range);
+        await openCameraAndInsert();
         break;
       case SlashCommandType.image:
         if (typed) _consumeSlashCommand(range);
@@ -8664,14 +8688,22 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
               },
             ),
           ),
-          if (!widget.readOnly && _liveSession != null)
+          if (!widget.readOnly && _liveSession != null) ...[
+            if (widget.recording?.liveText case final text?)
+              LiveTextCard(
+                text: text,
+                prefs: widget.recording!.live!.prefs,
+                paused: _liveSession!.paused,
+                wide: !AppPlatform.isMobile,
+              ),
             VoiceRecordingBar(
               session: _liveSession!,
               onPause: widget.recording?.pause,
               onResume: widget.recording?.resume,
               onStop: widget.onRecordVoice,
               onCancel: () => unawaited(widget.recording!.cancel()),
-            )
+            ),
+          ]
           else if (!AppPlatform.isMobile)
             SizedBox(height: MediaQuery.paddingOf(context).bottom)
           else ...[
@@ -8684,10 +8716,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 onReadOnlyPressed: widget.onReadOnlyPressed,
               ),
             if (_formatBarShown)
-              PhoneFormatBar(
-                actions: _formatBarActions(mobileTableCell),
-                tapGroup: mobileTableCell == null ? EditableText : _cellEditor,
-                onDismissKeyboard: _dismissKeyboard,
+              HiddenWhileTurning(
+                fade: PageTurn.fade,
+                child: PhoneFormatBar(
+                  actions: _formatBarActions(mobileTableCell),
+                  tapGroup: mobileTableCell == null
+                      ? EditableText
+                      : _cellEditor,
+                  onDismissKeyboard: _dismissKeyboard,
+                ),
               )
             else if (!statusShown)
               SizedBox(height: MediaQuery.paddingOf(context).bottom),
@@ -8873,6 +8910,11 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                           ?.activator:
                       widget.onRecordVoice!,
                 if (!widget.readOnly && widget.images != null) ...{
+                  if (widget.cameraAcquirer != null)
+                    ?widget.shortcuts
+                        .bindingFor(ShortcutAction.openCamera)
+                        ?.activator: () =>
+                        unawaited(openCameraAndInsert()),
                   ?widget.shortcuts
                       .bindingFor(ShortcutAction.insertImage)
                       ?.activator: () =>

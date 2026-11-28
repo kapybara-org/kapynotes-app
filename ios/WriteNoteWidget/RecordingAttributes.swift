@@ -20,6 +20,13 @@ struct RecordingAttributes: ActivityAttributes {
     var paused: Bool
     /// A call, or another app, took the microphone.
     var interrupted: Bool
+    /// While live translation is on: the latest finished phrase in the other
+    /// language, and what was heard, cut by Dart to 300 and 200 characters
+    /// so the activity stays far inside ActivityKit's 4 KB. Optional, so a
+    /// state encoded before they existed still decodes; nil draws today's
+    /// card.
+    var phrase: String?
+    var heard: String?
 
     var recording: Bool { !paused && !interrupted }
   }

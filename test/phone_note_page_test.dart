@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart' show kLongPressTimeout;
+import 'package:flutter/rendering.dart' show RenderAnimatedOpacity;
 import 'package:flutter/semantics.dart'
     show CustomSemanticsAction, SemanticsAction, SemanticsNode;
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +32,7 @@ import 'package:kapy_notes/ui/editor/note_editor.dart'
 import 'package:kapy_notes/ui/editor/note_header.dart' show NoteMetaRow;
 import 'package:kapy_notes/ui/hidden_notes_gate.dart';
 import 'package:kapy_notes/ui/home_page.dart' show HomePage;
+import 'package:kapy_notes/ui/page_turn.dart' show PageTurn;
 import 'package:kapy_notes/ui/phone_note_header.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/sidebar.dart' show NoteRow;
@@ -1735,7 +1737,7 @@ void main() {
         ('pin', 'Pin note'),
         ('share', 'Share note'),
         ('folder', 'Move to folder…'),
-        ('tags', 'Tags'),
+        ('tags', 'Tags…'),
         ('hide', 'Move to Hidden Notes'),
         ('archive', 'Archive note'),
         ('delete', 'Delete note…'),
@@ -2555,6 +2557,41 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(openNoteBody(tester), startsWith('Call with Arjun'));
+    });
+
+    testWidgets("with the keyboard up, the keyboard's bar fades as a turn "
+        'starts, in its own room, and comes back once the turn has sprung '
+        'back', (tester) async {
+      seed();
+      await pump(tester);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await tester.pumpAndSettle();
+      final bar = find.byKey(const ValueKey('phone-format-bar'));
+      expect(bar, findsOneWidget);
+      double shown() => tester
+          .renderObject<RenderAnimatedOpacity>(
+            find.ancestor(of: bar, matching: find.byType(AnimatedOpacity)),
+          )
+          .opacity
+          .value;
+      expect(shown(), 1);
+      final room = tester.getRect(bar);
+      final drag = await tester.startGesture(onHeader(tester));
+      await drag.moveBy(const Offset(30, 0));
+      await drag.moveBy(const Offset(30, 0));
+      await tester.pump();
+      await tester.pump(PageTurn.fade ~/ 2);
+      expect(shown(), inExclusiveRange(0, 1));
+      await tester.pump(PageTurn.fade);
+      expect(shown(), 0);
+      expect(tester.getSize(bar), room.size);
+      await drag.moveBy(const Offset(-60, 0));
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(openNoteBody(tester), startsWith('Call with Arjun'));
+      expect(shown(), 1);
+      expect(tester.getRect(bar), room);
     });
 
     testWidgets("on an iPhone, a drag from the left edge is iOS's back, not "

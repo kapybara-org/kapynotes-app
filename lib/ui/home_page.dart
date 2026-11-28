@@ -73,8 +73,10 @@ import '../data/task_folds.dart';
 import '../data/update_checker.dart';
 import '../data/writing_streak.dart';
 import '../images/camera_capture.dart';
+import '../images/desktop_camera.dart';
 import '../images/image_picker.dart';
 import '../video/video_picker.dart';
+import 'desktop_camera_window.dart';
 import 'editor/note_editor.dart';
 import 'editor/note_header.dart' show DateLineSaved, NoteFolders;
 import 'editor/image_insertion.dart';
@@ -130,6 +132,7 @@ import 'tag_ui.dart';
 import 'spaces_rail.dart';
 import 'split_view.dart';
 import 'draw/drawing_canvas.dart';
+import '../audio/live_text.dart';
 
 /// The narrowest window that holds the notes list beside the page. Below it a
 /// phone switches to the compact editor with a notes drawer, while a desktop
@@ -185,6 +188,7 @@ class HomePage extends StatefulWidget {
     this.deviceSummarizer,
     this.summarizer,
     this.deviceTranscriber,
+    this.liveTranslation,
     this.transcriber,
     this.imageAcquirer,
     this.lostImageRetriever,
@@ -262,6 +266,9 @@ class HomePage extends StatefulWidget {
   /// The device half of transcribing, for the voice pane to offer and to
   /// explain when this machine cannot do it.
   final Transcriber? deviceTranscriber;
+
+  /// Live translation, where this device can do it; for Settings.
+  final LiveTranslationLauncher? liveTranslation;
 
   /// Where a recording actually goes to become words. The twin of
   /// [summarizer], and it is the queue rather than this page that uses it —
@@ -871,6 +878,35 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       );
       if (files.isEmpty || !mounted || _selectedId != id) return;
       await _selectedEditor?.insertDroppedMedia(files);
+    } finally {
+      if (protectsHiddenSession) _hiddenSystemUiDepth--;
+    }
+  }
+
+  /// The camera window on a Mac or PC. Its first use asks for the camera and
+  /// the microphone, and it can send the person to the system's settings or
+  /// to a file dialog, so a hidden note's session outlasts the whole window,
+  /// as it does the phone camera.
+  Future<List<XFile>> _openDesktopCamera(
+    BuildContext context,
+    Note note,
+  ) async {
+    final camera = desktopCameraForThisComputer();
+    if (camera == null) return const [];
+    final protectsHiddenSession =
+        _hiddenMode && (widget.notes.byId(note.id)?.isHidden ?? false);
+    if (protectsHiddenSession) _hiddenSystemUiDepth++;
+    try {
+      return await showDesktopCamera(
+        context,
+        camera: camera,
+        attachmentMaxBytes: _videoAttachmentMaxBytes(note),
+        chooseFiles: chooseCameraFiles,
+        startInVideo: widget.prefs.cameraVideo,
+        onVideoChosen: (video) => widget.prefs.cameraVideo = video,
+        cameraId: widget.prefs.cameraDevice,
+        onCameraChosen: (id) => widget.prefs.cameraDevice = id,
+      );
     } finally {
       if (protectsHiddenSession) _hiddenSystemUiDepth--;
     }
@@ -3677,6 +3713,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         localModels: widget.localModels,
         deviceSummarizer: widget.deviceSummarizer,
         deviceTranscriber: widget.deviceTranscriber,
+        liveTranslation: widget.liveTranslation,
         onTranscriptionReady: _resumeTranscriptionsFromSettings,
         cloudAccess: widget.cloudAccess,
         hiddenNotes: widget.hiddenNotesGate,
@@ -3895,6 +3932,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         localModels: widget.localModels,
         deviceSummarizer: widget.deviceSummarizer,
         deviceTranscriber: widget.deviceTranscriber,
+        liveTranslation: widget.liveTranslation,
         cloudAccess: widget.cloudAccess,
         hiddenNotes: widget.hiddenNotesGate,
       ),
@@ -4909,7 +4947,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           if (mayEdit && !_specialMode && widget.tags != null)
             const KapyMenuAction(
               value: 'tags',
-              label: 'Tags',
+              label: 'Tags…',
               icon: KapyIcons.tagRounded,
             ),
         ],
@@ -6710,6 +6748,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
+          cameraAcquirer: AppPlatform.hasDesktopCamera
+              ? (context) => _openDesktopCamera(context, note)
+              : null,
           fileAcquirer: () => _acquireFiles(note.id),
           videoAttachmentMaxBytes: () => _videoAttachmentMaxBytes(note),
           onImagePrepared: (staged, prepared) =>
@@ -6809,6 +6850,9 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           voiceActionBusy: _voiceActionBusy,
           imageAcquirer: (context) => _acquireImages(context, note.id),
           videoAcquirer: () => _acquireVideos(note.id),
+          cameraAcquirer: AppPlatform.hasDesktopCamera
+              ? (context) => _openDesktopCamera(context, note)
+              : null,
           fileAcquirer: () => _acquireFiles(note.id),
           videoAttachmentMaxBytes: () => _videoAttachmentMaxBytes(note),
           onImagePrepared: (staged, prepared) =>
