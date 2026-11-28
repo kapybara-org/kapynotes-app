@@ -43,68 +43,102 @@ class PhoneHomeHeader extends StatelessWidget {
   final AccountUser? user;
   final VoidCallback onSettings;
 
-  /// How far S's 44 pt target reaches past its 32 pt circle on each side,
-  /// into the room around it, so the circle keeps its place.
-  static const double _reach = 6;
-
   @override
   Widget build(BuildContext context) {
     final onTasks = this.onTasks;
     final streak = this.streak;
-    return MediaQuery.withClampedTextScaling(
-      maxScaleFactor: 1.3,
-      child: Container(
-        height: 48,
-        padding: const EdgeInsets.only(left: 20, right: 20 - _reach),
+    return PhoneTitleBar(
+      // The titles shrink together, only when a narrow phone at large text
+      // has no room for them beside the streak and S.
+      title: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
         child: Row(
           spacing: 16,
           children: [
-            // The titles shrink together, only when a narrow phone at large
-            // text has no room for them beside the streak and S.
-            Expanded(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Row(
-                  spacing: 16,
-                  children: [
-                    _Title(
-                      key: const ValueKey('home-title-notes'),
-                      label: 'Notes',
-                      count: notesCount,
-                      selected: !tasks,
-                      onPressed: onNotes,
-                    ),
-                    if (onTasks != null)
-                      _Title(
-                        key: const ValueKey('home-title-tasks'),
-                        label: 'Tasks',
-                        count: tasksCount,
-                        selected: tasks,
-                        onPressed: onTasks,
-                      ),
-                  ],
-                ),
+            _Title(
+              key: const ValueKey('home-title-notes'),
+              label: 'Notes',
+              count: notesCount,
+              selected: !tasks,
+              onPressed: onNotes,
+            ),
+            if (onTasks != null)
+              _Title(
+                key: const ValueKey('home-title-tasks'),
+                label: 'Tasks',
+                count: tasksCount,
+                selected: tasks,
+                onPressed: onTasks,
               ),
-            ),
-            Row(
-              spacing: 12 - _reach,
-              children: [
-                if (streak != null && streak.days > 0)
-                  StreakMark(
-                    key: const ValueKey('phone-streak'),
-                    streak: streak,
-                    inline: true,
-                  ),
-                AccountAvatar(
-                  key: const ValueKey('phone-account'),
-                  label: 'Settings',
-                  target: 32 + 2 * _reach,
-                  user: user,
-                  onPressed: onSettings,
-                ),
-              ],
-            ),
+          ],
+        ),
+      ),
+      trailing: [
+        if (streak != null && streak.days > 0)
+          StreakMark(
+            key: const ValueKey('phone-streak'),
+            streak: streak,
+            inline: true,
+          ),
+        AccountAvatar(
+          key: const ValueKey('phone-account'),
+          label: 'Settings',
+          target: PhoneTitleBar.avatarTarget,
+          user: user,
+          onPressed: onSettings,
+        ),
+      ],
+    );
+  }
+}
+
+/// The frame every phone tab's header is drawn in, Home's and the lists'
+/// alike (KAP-462): 48 tall under the status bar, text scaled no further than
+/// 1.3×, the title from the 20 pt inset on Home's line, and what ends the row,
+/// S last, ending at it. Switching between Notes, Folders and Kapy AI changes
+/// the words in it and moves nothing.
+class PhoneTitleBar extends StatelessWidget {
+  const PhoneTitleBar({
+    super.key,
+    this.leading,
+    required this.title,
+    this.trailing = const [],
+  });
+
+  /// Before the title, such as a page's back arrow, from a 6 pt inset.
+  final Widget? leading;
+  final Widget title;
+  final List<Widget> trailing;
+
+  /// How far S's 44 pt target reaches past its 32 pt circle on each side,
+  /// into the room around it, so the circle keeps its place.
+  static const double _reach = 6;
+
+  static const double height = 48;
+
+  /// S's tap target, the same on every tab.
+  static const double avatarTarget = 32 + 2 * _reach;
+
+  @override
+  Widget build(BuildContext context) {
+    final leading = this.leading;
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Container(
+        height: height,
+        padding: EdgeInsets.only(
+          left: leading == null ? 20 : 6,
+          right: trailing.isEmpty ? 20 : 20 - _reach,
+        ),
+        child: Row(
+          children: [
+            ?leading,
+            Expanded(child: title),
+            if (trailing.isNotEmpty) ...[
+              const SizedBox(width: 16),
+              Row(spacing: 12 - _reach, children: trailing),
+            ],
           ],
         ),
       ),

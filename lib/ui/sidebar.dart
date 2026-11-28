@@ -33,6 +33,7 @@ import 'note_picks.dart';
 import 'note_row_swipe.dart';
 import 'notes_grouping.dart';
 import 'notes_list.dart';
+import 'phone_home_header.dart' show PhoneTitleBar;
 import 'safety_dialogs.dart';
 import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
@@ -2667,6 +2668,20 @@ class SidebarSearchField extends StatefulWidget {
   final ShortcutBinding? shortcut;
   final String placeholder;
 
+  /// The line a phone's placeholder and field are set on.
+  static TextStyle phoneLine(Color color) =>
+      uiStyle(AppTypeScale.row, 22, FontWeight.w400, color);
+
+  /// How tall a phone's well stands with the room round it at [scaler]: 44
+  /// at least, and taller as its line grows with the text size.
+  static double phoneExtent(TextScaler scaler) =>
+      4 +
+      math.max(
+        44,
+        12 + scaler.scale(AppTypeScale.row) * 22 / AppTypeScale.row,
+      ) +
+      6;
+
   @override
   State<SidebarSearchField> createState() => _SidebarSearchFieldState();
 }
@@ -2839,10 +2854,7 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
                     searching ? query : placeholder,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: uiStyle(
-                      AppTypeScale.row,
-                      22,
-                      FontWeight.w400,
+                    style: SidebarSearchField.phoneLine(
                       searching ? palette.textPrimary : palette.textSecondary,
                     ),
                   ),
@@ -4425,7 +4437,8 @@ TextStyle _phoneHeadingStyle(CalcPalette palette) => chromeStyle(
 );
 
 /// A phone list's title: the space's name large, its count small and quiet
-/// beside it (M02, M03).
+/// beside it (M02, M03), in Home's header frame ([PhoneTitleBar]) so a tab
+/// or page switched to keeps the title's line, S and the search under it.
 class PhoneListTitle extends StatelessWidget {
   const PhoneListTitle({
     super.key,
@@ -4438,8 +4451,8 @@ class PhoneListTitle extends StatelessWidget {
 
   final String title;
 
-  /// Set for Kapy AI, a tab of its own: its name is handwritten, as Home's
-  /// Notes and Tasks are.
+  /// Set for a tab's own title, Folders' and Kapy AI's: handwritten at
+  /// Home's Notes size, as Refine D sets a phone's screen titles.
   final bool handwritten;
 
   /// Left out where the page counts nothing, as Folders does.
@@ -4496,19 +4509,10 @@ class PhoneListTitle extends StatelessWidget {
         ],
       ),
     );
-    final trailing = this.trailing;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        onBack == null ? 20 : 6,
-        12,
-        trailing == null ? 20 : 14,
-        14,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (onBack != null)
-            IconButton(
+    return PhoneTitleBar(
+      leading: onBack == null
+          ? null
+          : IconButton(
               key: const ValueKey('page-back'),
               tooltip: 'Back',
               onPressed: onBack,
@@ -4517,10 +4521,13 @@ class PhoneListTitle extends StatelessWidget {
               color: palette.textPrimary,
               icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22),
             ),
-          Expanded(child: heading),
-          if (trailing != null) ...[const SizedBox(width: 6), trailing],
-        ],
+      // Home's titles are 44 tall to tap, their words at the top: the same
+      // box puts this one on their line.
+      title: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: heading,
       ),
+      trailing: [?trailing],
     );
   }
 }

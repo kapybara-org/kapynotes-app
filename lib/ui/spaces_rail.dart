@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
@@ -15,7 +18,9 @@ import '../sync/sync_service.dart';
 import 'context_menu.dart';
 import 'focus_ring.dart';
 import 'installed_version.dart';
+import 'phone_home_header.dart' show PhoneTitleBar;
 import 'profile_avatar.dart';
+import 'sidebar.dart' show SidebarSearchField;
 import 'window_drag_area.dart';
 
 /// What the notes list beside the spaces rail can show.
@@ -761,8 +766,55 @@ class PhoneSpaces extends StatefulWidget {
   State<PhoneSpaces> createState() => _PhoneSpacesState();
 }
 
-class _PhoneSpacesState extends State<PhoneSpaces> {
+class _PhoneSpacesState extends State<PhoneSpaces>
+    with SingleTickerProviderStateMixin {
   final _bar = GlobalKey();
+  final _page = GlobalKey();
+
+  /// The tab left, as it was last drawn, fading out over the one chosen
+  /// below its header and search well. Those are the same frame on every
+  /// tab, so their words change at once rather than showing both tabs' at
+  /// half strength, and only the page under them crossfades (KAP-462).
+  ui.Image? _leaving;
+  late final _fade =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 150),
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) _dropLeaving();
+      });
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    _leaving?.dispose();
+    super.dispose();
+  }
+
+  void _dropLeaving() {
+    final leaving = _leaving;
+    if (leaving == null) return;
+    setState(() => _leaving = null);
+    leaving.dispose();
+  }
+
+  void _select(PhoneTab tab) {
+    if (tab != widget.tab && !MediaQuery.disableAnimationsOf(context)) {
+      final page = _page.currentContext?.findRenderObject();
+      // Taken between frames, so the page is as it was last drawn; a debug
+      // build skips the fade on the rare tap that lands mid-repaint.
+      if (page is RenderRepaintBoundary &&
+          !(kDebugMode && page.debugNeedsPaint)) {
+        final leaving = page.toImageSync(
+          pixelRatio: View.of(context).devicePixelRatio,
+        );
+        _leaving?.dispose();
+        setState(() => _leaving = leaving);
+        _fade.forward(from: 0);
+      }
+    }
+    widget.onSelected(tab);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -792,7 +844,32 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
-      body: widget.child,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          RepaintBoundary(key: _page, child: widget.child),
+          if (_leaving case final leaving?)
+            IgnorePointer(
+              child: ClipRect(
+                clipper: _Below(
+                  MediaQuery.paddingOf(context).top +
+                      PhoneTitleBar.height +
+                      SidebarSearchField.phoneExtent(
+                        MediaQuery.textScalerOf(context),
+                      ),
+                ),
+                child: FadeTransition(
+                  opacity: ReverseAnimation(_fade),
+                  child: RawImage(
+                    image: leaving,
+                    scale: View.of(context).devicePixelRatio,
+                    fit: BoxFit.fill,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.fromLTRB(16, 0, 16, PhoneSpaces._lift(context)),
         child: Row(
@@ -820,7 +897,7 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
                           label: item.label,
                           selected: item.to == widget.tab,
                           dot: item.to == PhoneTab.folders && widget.foldersDot,
-                          onPressed: () => widget.onSelected(item.to),
+                          onPressed: () => _select(item.to),
                         ),
                       ),
                   ],
@@ -861,6 +938,19 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
     if (box == null) return null;
     return box.localToGlobal(Offset.zero) & box.size;
   }
+}
+
+/// What lies below [top]: the page under a tab's header and search well.
+class _Below extends CustomClipper<Rect> {
+  const _Below(this.top);
+
+  final double top;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(0, top, size.width, size.height);
+
+  @override
+  bool shouldReclip(_Below oldClipper) => oldClipper.top != top;
 }
 
 /// One of the bar's destinations: its icon over its name in a 46 pt pill,

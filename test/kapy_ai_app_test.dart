@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hugeicons/hugeicons.dart';
@@ -29,9 +30,11 @@ import 'package:kapy_notes/ui/kapy_ai/kapy_ai_panel.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_parts.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_settings.dart';
 import 'package:kapy_notes/ui/page_pane.dart';
+import 'package:kapy_notes/ui/phone_home_header.dart' show PhoneTitleBar;
 import 'package:kapy_notes/ui/spaces_rail.dart';
 import 'package:kapy_notes/ui/settings_dialog.dart';
 import 'package:kapy_notes/ui/settings_rows.dart';
+import 'package:kapy_notes/ui/sidebar.dart' show SidebarSearchField;
 import 'package:material_ui/material_ui.dart';
 
 import 'billing/billing_fakes.dart';
@@ -2401,6 +2404,156 @@ void main() {
       await pumpPhone(tester);
       expect(tab, findsNothing);
       expect(find.byKey(const ValueKey('bar-folders')), findsOneWidget);
+    });
+
+    // KAP-462: Notes, Folders and Kapy AI share one header frame, so a switch
+    // between them moves nothing they share: the title's face, size and
+    // line, S, the search field and the button that ends it, and the bar.
+    group('switching tabs moves nothing they share (KAP-462)', () {
+      Future<void> pumpTabs(
+        WidgetTester tester, {
+        required Size size,
+        required TargetPlatform platform,
+      }) async {
+        await _pump(
+          tester,
+          size: size,
+          platform: platform,
+          folders: FolderStore(store),
+        );
+        final back = find.byKey(const ValueKey('page-home'));
+        if (back.evaluate().isNotEmpty) await tap(tester, back);
+      }
+
+      Map<String, Object?> shared(WidgetTester tester, String tab) {
+        final title = tab == 'notes'
+            ? find.descendant(of: home, matching: find.text('Notes'))
+            : find.byKey(const ValueKey('phone-list-title'));
+        final paragraph = tester.renderObject<RenderParagraph>(title);
+        final style = paragraph.text.style!;
+        final line = TextPainter(
+          text: paragraph.text,
+          textDirection: TextDirection.ltr,
+          textScaler: paragraph.textScaler,
+          strutStyle: paragraph.strutStyle,
+        )..layout();
+        Rect? rect(String key) {
+          final found = find.byKey(ValueKey(key));
+          return found.evaluate().isEmpty ? null : tester.getRect(found);
+        }
+
+        return {
+          'title': (
+            tester.getTopLeft(title),
+            line.computeDistanceToActualBaseline(TextBaseline.alphabetic),
+            paragraph.textScaler.scale(style.fontSize!),
+            style.fontFamily,
+            style.fontWeight,
+          ),
+          'avatar': rect('phone-account'),
+          'search': tester.getRect(find.byType(SidebarSearchField)),
+          'search button': rect('phone-filters') ?? rect('phone-new-folder'),
+          'bar': rect('phone-bar'),
+        };
+      }
+
+      for (final (phone, size, platform) in const [
+        ('an iPhone', Size(390, 844), TargetPlatform.iOS),
+        ('an SE', Size(320, 568), TargetPlatform.iOS),
+        ('a Pixel', Size(412, 915), TargetPlatform.android),
+      ]) {
+        for (final scale in const [1.0, 2.0]) {
+          testWidgets('on $phone at ${scale}x text', (tester) async {
+            tester.platformDispatcher.textScaleFactorTestValue = scale;
+            addTearDown(
+              tester.platformDispatcher.clearTextScaleFactorTestValue,
+            );
+            await pumpTabs(tester, size: size, platform: platform);
+            final notes = shared(tester, 'notes');
+            // The fade cuts at this line, under the header and the well.
+            final search = notes['search']! as Rect;
+            expect(
+              search.bottom,
+              MediaQuery.paddingOf(
+                    tester.element(find.byType(PhoneSpaces)),
+                  ).top +
+                  PhoneTitleBar.height +
+                  SidebarSearchField.phoneExtent(
+                    MediaQuery.textScalerOf(
+                      tester.element(find.byType(SidebarSearchField)),
+                    ),
+                  ),
+            );
+            for (final other in ['folders', 'kapyAi', 'notes']) {
+              await tap(tester, find.byKey(ValueKey('bar-$other')));
+              final now = shared(tester, other);
+              for (final part in notes.keys) {
+                if (part == 'search button' && other == 'kapyAi') continue;
+                expect(now[part], notes[part], reason: '$other: $part');
+              }
+            }
+          });
+        }
+      }
+
+      testWidgets('the tab left fades out over the one chosen in 150 ms, '
+          'below the header and search well and under the bar', (tester) async {
+        await pumpTabs(
+          tester,
+          size: const Size(390, 844),
+          platform: TargetPlatform.iOS,
+        );
+        final bar = tester.getRect(find.byKey(const ValueKey('phone-bar')));
+        final leaving = find.descendant(
+          of: find.byType(PhoneSpaces),
+          matching: find.byType(RawImage),
+        );
+        await tester.tap(find.byKey(const ValueKey('bar-folders')));
+        await tester.pump();
+        expect(leaving, findsOneWidget);
+        await tester.pump(const Duration(milliseconds: 75));
+        final fade = tester.widget<FadeTransition>(
+          find
+              .ancestor(of: leaving, matching: find.byType(FadeTransition))
+              .first,
+        );
+        expect(fade.opacity.value, closeTo(0.5, 0.01));
+        final clip = tester.widget<ClipRect>(
+          find.ancestor(of: leaving, matching: find.byType(ClipRect)).first,
+        );
+        expect(
+          clip.clipper!.getClip(const Size(390, 844)).top,
+          tester.getRect(find.byType(SidebarSearchField)).bottom,
+          reason: "the header's and the well's words change at once",
+        );
+        expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
+        expect(tester.getRect(find.byKey(const ValueKey('phone-bar'))), bar);
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(leaving, findsNothing);
+      });
+
+      testWidgets('with Reduce Motion the tab changes at once', (tester) async {
+        tester.platformDispatcher.accessibilityFeaturesTestValue =
+            const FakeAccessibilityFeatures(disableAnimations: true);
+        addTearDown(
+          tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+        );
+        await pumpTabs(
+          tester,
+          size: const Size(390, 844),
+          platform: TargetPlatform.iOS,
+        );
+        await tester.tap(find.byKey(const ValueKey('bar-folders')));
+        await tester.pump();
+        expect(
+          find.descendant(
+            of: find.byType(PhoneSpaces),
+            matching: find.byType(RawImage),
+          ),
+          findsNothing,
+        );
+        expect(find.byKey(const ValueKey('phone-list-title')), findsOneWidget);
+      });
     });
   });
 }
