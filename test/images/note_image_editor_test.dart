@@ -256,7 +256,7 @@ Widget harness(
       clipboard: clipboard ?? FakeClipboard(),
       imageAcquirer: imageAcquirer,
       mediaAcquirer: mediaAcquirer,
-      phoneCameraAcquirer: cameraAcquirer,
+      phoneCameraAcquirer: phoneCameraAcquirer,
       imageIngestor: imageIngestor,
       imageFinalizer: imageFinalizer,
       onImagePrepared: onImagePrepared,
