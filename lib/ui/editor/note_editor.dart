@@ -44,6 +44,7 @@ import '../compact_icon_button.dart';
 import '../focus_ring.dart';
 import '../notebook_paper.dart';
 import '../page_toolbar.dart' show NotePathLine, PagePlace;
+import '../page_turn.dart' show HiddenWhileTurning, PageTurn;
 import '../celebrate.dart';
 import '../kapy_cursor_peek.dart';
 import '../kapy_page_peek.dart';
@@ -8678,10 +8679,15 @@ class NoteEditorState extends State<NoteEditor> with WidgetsBindingObserver {
                 onReadOnlyPressed: widget.onReadOnlyPressed,
               ),
             if (_formatBarShown)
-              PhoneFormatBar(
-                actions: _formatBarActions(mobileTableCell),
-                tapGroup: mobileTableCell == null ? EditableText : _cellEditor,
-                onDismissKeyboard: _dismissKeyboard,
+              HiddenWhileTurning(
+                fade: PageTurn.fade,
+                child: PhoneFormatBar(
+                  actions: _formatBarActions(mobileTableCell),
+                  tapGroup: mobileTableCell == null
+                      ? EditableText
+                      : _cellEditor,
+                  onDismissKeyboard: _dismissKeyboard,
+                ),
               )
             else if (!statusShown)
               SizedBox(height: MediaQuery.paddingOf(context).bottom),

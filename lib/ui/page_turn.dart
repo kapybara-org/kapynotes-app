@@ -32,7 +32,8 @@ import 'package:material_ui/material_ui.dart';
 /// Or each page may draw its own copy of a part that should not move, such
 /// as Home's header, inside [HiddenWhileTurning]: while a turn moves, those
 /// copies hide, keeping their room, and [over] draws the part still over
-/// the pages instead.
+/// the pages instead. A part that has no place on a moving page, such as the
+/// keyboard's bar, fades the same way, with [HiddenWhileTurning.fade].
 ///
 /// Under reduce motion nothing moves with the finger: a turn past the same
 /// marks crossfades to its page instead.
@@ -104,7 +105,8 @@ class PageTurn extends StatefulWidget {
   static const Duration motion = Duration(milliseconds: 250);
   static const Curve curve = Curves.easeOutCubic;
 
-  /// The crossfade under reduce motion.
+  /// The crossfade under reduce motion, and how a part fades as a turn
+  /// starts.
   static const Duration fade = Duration(milliseconds: 150);
 
   /// How far in from the left iOS's own back swipe starts, which a turn
@@ -213,7 +215,7 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
     _shift.stop();
     _dragging = true;
     _pulled = _shift.value;
-    if (widget.over != null && !_moving) setState(() => _moving = true);
+    if (!_moving) setState(() => _moving = true);
   }
 
   void _drag(DragUpdateDetails details) {
@@ -465,24 +467,41 @@ class _PageTurnState extends State<PageTurn> with TickerProviderStateMixin {
   }
 }
 
-/// A part of a page under a [PageTurn] with [PageTurn.over] that hides
-/// while a turn moves, keeping its room, as the turn draws it still over the
-/// pages instead.
+/// A part of a page under a [PageTurn] that hides while a turn moves,
+/// keeping its room: at once where [PageTurn.over] draws it still over the
+/// pages instead, or over [fade], back too if the turn springs back.
 class HiddenWhileTurning extends StatelessWidget {
-  const HiddenWhileTurning({super.key, required this.child});
+  const HiddenWhileTurning({
+    super.key,
+    this.fade = Duration.zero,
+    required this.child,
+  });
 
+  final Duration fade;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Visibility(
-    visible:
-        !(context.dependOnInheritedWidgetOfExactType<_Moving>()?.moving ??
-            false),
-    maintainState: true,
-    maintainAnimation: true,
-    maintainSize: true,
-    child: child,
-  );
+  Widget build(BuildContext context) {
+    final moving =
+        context.dependOnInheritedWidgetOfExactType<_Moving>()?.moving ?? false;
+    if (fade == Duration.zero) {
+      return Visibility(
+        visible: !moving,
+        maintainState: true,
+        maintainAnimation: true,
+        maintainSize: true,
+        child: child,
+      );
+    }
+    return IgnorePointer(
+      ignoring: moving,
+      child: AnimatedOpacity(
+        opacity: moving ? 0 : 1,
+        duration: fade,
+        child: child,
+      ),
+    );
+  }
 }
 
 /// Whether the [PageTurn] over the pages under it moves a turn.
