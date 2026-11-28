@@ -220,16 +220,18 @@ class ThemeSwatches extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 120),
-          child: Text(
-            selected.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: pointer ? 13 : 15,
-              height: 18 / (pointer ? 13 : 15),
-              color: palette.textSecondary,
+        Flexible(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 120),
+            child: Text(
+              selected.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: pointer ? 13 : 15,
+                height: 18 / (pointer ? 13 : 15),
+                color: palette.textSecondary,
+              ),
             ),
           ),
         ),

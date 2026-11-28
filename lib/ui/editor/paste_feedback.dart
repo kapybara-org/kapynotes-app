@@ -286,7 +286,7 @@ class _Chip extends StatelessWidget {
                   'Formatted',
                   style: _type(
                     AppTypeScale.small,
-                    FontWeight.w500,
+                    FontWeight.w400,
                     palette.textSubheading,
                   ),
                 ),

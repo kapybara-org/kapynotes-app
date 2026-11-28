@@ -110,7 +110,7 @@ Future<void> _delete(WidgetTester tester, String title) async {
 }
 
 Future<void> _show(WidgetTester tester, NotesShow show) async {
-  await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+  await tester.tap(find.byKey(const ValueKey('notes-view')));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(ValueKey('notes-filter-${show.name}')));
   await tester.pumpAndSettle();

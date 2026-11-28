@@ -69,6 +69,17 @@ dependencies:
   # preview, rear/front switching, flash and still-image capture. Pinned to
   # the newest release whose public package keeps this app's Dart 3.10 floor.
   camera: 0.12.0+2
+  # The recording settings the video camera is opened with. Comes in with
+  # camera; named here because the camera builds its MediaSettings directly.
+  camera_platform_interface: ^2.14.0
+  # The camera on Windows: the Flutter team's implementation, which registers
+  # as the same camera platform the phone camera uses. It records video but
+  # can't pause and has no flash, which the computer's camera doesn't offer.
+  camera_windows: ^0.3.1
+  # The camera on a Mac. Third party, with an API of its own, so the camera
+  # window reaches it through lib/images/desktop_camera.dart. It is the only
+  # Mac camera package that doesn't also build a Linux camera into the app.
+  camera_macos: ^0.1.1
   # The platform photo library behind the Photos button in that camera. Its
   # lost-data API also lets Android finish a selection after recreating the
   # activity under memory pressure.
@@ -152,6 +163,13 @@ dependencies:
   # floor holding for direct dependencies and quietly failing one level down.
   app_links_platform_interface: 2.0.2
 
+  # Remove noise: takes the background noise out of a recording on the
+  # device. A small Rust library, prebuilt for every platform in
+  # packages/denoise/prebuilt/, so like sherpa_onnx it needs no Rust on the
+  # build machines. See packages/denoise/README.md.
+  denoise:
+    path: packages/denoise
+
   # Reading an image off the system clipboard, which Flutter's own
   # `Clipboard` cannot do — it handles text and nothing else. Chosen over
   # super_clipboard, which is more capable but needs a Rust toolchain on every
@@ -213,10 +231,15 @@ dev_dependencies:
   # a platform for. Both come in with path_provider itself; named here because
   # the export tests use them directly.
   path_provider_platform_interface: ^2.1.2
-  # Lets a test stand in for the camera and Android's lost-result store. It
-  # comes in with image_picker; named here because a test uses it directly.
+  # Lets a test stand in for the photo library and Android's lost-result
+  # store. It comes in with image_picker; named here because a test uses it
+  # directly.
   image_picker_platform_interface: ^2.11.1
   plugin_platform_interface: ^2.1.8
+  # Lets a test stand in for the video player, so a video in a note can be
+  # played, paused and scrolled away from without a platform. It comes in
+  # with video_player; named here because a test uses it directly.
+  video_player_platform_interface: ^6.9.0
   # Drives the real app on a real device or simulator, with the real plugins
   # behind it. `flutter test` runs against fakes by design; this is the only
   # way to find out whether the microphone actually works on a platform.
@@ -245,8 +268,9 @@ flutter:
     - assets/branding/kapynotes_tray_macos.png
     - assets/branding/kapynotes_tray_linux.png
     - assets/fonts/ShantellSans-OFL.txt
-    - assets/fonts/Inter-OFL.txt
+    - assets/fonts/Geist-OFL.txt
     - assets/fonts/GeistMono-OFL.txt
+    - assets/fonts/GeistPixel-OFL.txt
     # The notice KaTeX's fonts come with, which flutter_math_fork bundles
     # without: its own LICENSE is the package's, not the fonts'.
     - packages/flutter_math_fork/katex_fonts/LICENSE
@@ -258,17 +282,23 @@ flutter:
       platforms: [android, linux, windows]
     - path: assets/speech/silero_vad-LICENSE.txt
       platforms: [android, linux, windows]
+    # The licence of the model Remove noise downloads on first use
+    # (lib/audio/noise_removal.dart).
+    - assets/audio/DPDFNet-LICENSE.txt
   fonts:
     - family: Shantell Sans
       fonts:
         - asset: assets/fonts/ShantellSans-Variable.ttf
         - asset: assets/fonts/ShantellSans-Italic-Variable.ttf
           style: italic
-    - family: Inter
+    - family: Geist
       fonts:
-        - asset: assets/fonts/Inter-Variable.ttf
-        - asset: assets/fonts/Inter-Italic-Variable.ttf
+        - asset: assets/fonts/Geist-Variable.ttf
+        - asset: assets/fonts/Geist-Italic-Variable.ttf
           style: italic
+    - family: Geist Pixel
+      fonts:
+        - asset: assets/fonts/GeistPixel-Square.ttf
     - family: Geist Mono
       fonts:
         - asset: assets/fonts/GeistMono-Variable.ttf

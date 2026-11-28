@@ -267,7 +267,7 @@ class _Row extends StatelessWidget {
                           13,
                           16,
                           enabled ? palette.textPrimary : palette.textTertiary,
-                          weight: FontWeight.w500,
+                          weight: FontWeight.w400,
                         ),
                       ),
                       if (subline != null) ...[
@@ -322,7 +322,7 @@ class KapyAiModelButton extends StatelessWidget {
     required this.open,
     required this.onPressed,
     this.fontSize = 12.5,
-    this.weight = FontWeight.w500,
+    this.weight = FontWeight.w400,
   });
 
   final KapyAi kapyAi;

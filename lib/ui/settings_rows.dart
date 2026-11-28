@@ -77,63 +77,63 @@ class SettingsLabel extends StatelessWidget {
     // The heading yields to the line beside it when the two cannot share
     // the width; at every width they can, it keeps its natural size.
     final heading = LayoutBuilder(
-        builder: (context, box) => Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: math.max(0, box.maxWidth - (detail == null ? 0 : 96)),
+      builder: (context, box) => Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: math.max(0, box.maxWidth - (detail == null ? 0 : 96)),
+            ),
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: chromeStyle(
+                size: SettingsMetrics.sectionLabelSize,
+                line: 16,
+                weight: AppWeight.regular,
+                color: palette.textSecondary,
               ),
+            ),
+          ),
+          if (detail != null) ...[
+            const SizedBox(width: 8),
+            Expanded(
               child: Text(
-                text,
+                detail,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: chromeStyle(
-                  size: SettingsMetrics.sectionLabelSize,
-                  line: 16,
-                  weight: AppWeight.regular,
-                  color: palette.textSecondary,
+                style: TextStyle(
+                  fontSize: 12,
+                  height: 16 / 12,
+                  color: palette.textTertiary,
                 ),
               ),
             ),
-            if (detail != null) ...[
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          ],
+        ],
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(left: 10, bottom: 8),
+      child: caption == null
+          ? heading
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                heading,
+                const SizedBox(height: 2),
+                Text(
+                  caption,
                   style: TextStyle(
                     fontSize: 12,
                     height: 16 / 12,
                     color: palette.textTertiary,
                   ),
                 ),
-              ),
-            ],
-          ],
-        ),
-      );
-      return Padding(
-        padding: const EdgeInsets.only(left: 10, bottom: 8),
-        child: caption == null
-            ? heading
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  heading,
-                  const SizedBox(height: 2),
-                  Text(
-                    caption,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 16 / 12,
-                      color: palette.textTertiary,
-                    ),
-                  ),
-                ],
-              ),
+              ],
+            ),
     );
   }
 }
@@ -270,7 +270,7 @@ class SettingsRowCopy extends StatelessWidget {
                 style: chromeStyle(
                   size: SettingsMetrics.titleSize,
                   line: pointer ? 18 : null,
-                  weight: AppWeight.regular,
+                  weight: AppWeight.medium,
                   color: titleColor ?? palette.textPrimary,
                 ),
               ),
@@ -747,9 +747,26 @@ class SettingsSegmented<T> extends StatelessWidget {
     final palette = context.palette;
     final pointer = AppPlatform.hasPointer;
     final fitted = pointer && width == null;
+    TextStyle labelStyle(T option) =>
+        (styleFor?.call(option) ?? const TextStyle()).copyWith(
+          fontSize: SettingsMetrics.buttonLabelSize,
+          height: 1.2,
+        );
     Widget segment(T option) {
       final chosen = option == selected;
       final enabled = enabledFor?.call(option) ?? true;
+      final label = Text(
+        labelFor(option),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: labelStyle(option).copyWith(
+          color: chosen
+              ? palette.textPrimary
+              : enabled
+              ? palette.textDescription
+              : palette.textTertiary.withValues(alpha: 0.6),
+        ),
+      );
       return Semantics(
         button: true,
         selected: chosen,
@@ -764,7 +781,7 @@ class SettingsSegmented<T> extends StatelessWidget {
             curve: Curves.easeOutCubic,
             height: pointer ? 26 : 30,
             alignment: Alignment.center,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: EdgeInsets.symmetric(horizontal: pointer ? 10 : 8),
             decoration: BoxDecoration(
               color: chosen ? palette.segmentSelected : null,
               borderRadius: BorderRadius.circular(AppRadii.control),
@@ -772,20 +789,10 @@ class SettingsSegmented<T> extends StatelessWidget {
                   ? Border.all(color: palette.accent)
                   : null,
             ),
-            child: Text(
-              labelFor(option),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: (styleFor?.call(option) ?? const TextStyle()).copyWith(
-                fontSize: SettingsMetrics.buttonLabelSize,
-                height: 1.2,
-                color: chosen
-                    ? palette.textPrimary
-                    : enabled
-                    ? palette.textDescription
-                    : palette.textTertiary.withValues(alpha: 0.6),
-              ),
-            ),
+            // A phone's label shrinks a little rather than losing letters.
+            child: pointer
+                ? label
+                : FittedBox(fit: BoxFit.scaleDown, child: label),
           ),
         ),
       );
@@ -801,18 +808,57 @@ class SettingsSegmented<T> extends StatelessWidget {
             ? Border.all(color: palette.controlBorder)
             : null,
       ),
-      child: Row(
-        mainAxisSize: fitted ? MainAxisSize.min : MainAxisSize.max,
-        children: [
-          for (final option in options) ...[
-            if (option != options.first) const SizedBox(width: 2),
-            if (fitted)
-              Flexible(child: segment(option))
-            else
-              Expanded(child: segment(option)),
-          ],
-        ],
-      ),
+      child: fitted
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (final option in options) ...[
+                  if (option != options.first) const SizedBox(width: 2),
+                  Flexible(child: segment(option)),
+                ],
+              ],
+            )
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                // Options share the track equally, unless a phone's share is
+                // too narrow for a label: then each is as wide as its label.
+                final scaler = MediaQuery.textScalerOf(context);
+                final base = DefaultTextStyle.of(context).style;
+                int measure(T option) {
+                  final painter = TextPainter(
+                    text: TextSpan(
+                      text: labelFor(option),
+                      style: base.merge(labelStyle(option)),
+                    ),
+                    textDirection: TextDirection.ltr,
+                    textScaler: scaler,
+                    maxLines: 1,
+                  )..layout();
+                  final width = painter.width.ceil() + 16;
+                  painter.dispose();
+                  return width;
+                }
+
+                final widths = [
+                  for (final option in options) pointer ? 1 : measure(option),
+                ];
+                final share =
+                    (constraints.maxWidth - 2 * (options.length - 1)) /
+                    options.length;
+                final even = pointer || widths.every((width) => width <= share);
+                return Row(
+                  children: [
+                    for (final (index, option) in options.indexed) ...[
+                      if (index > 0) const SizedBox(width: 2),
+                      Expanded(
+                        flex: even ? 1 : widths[index],
+                        child: segment(option),
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
     );
   }
 }
@@ -892,8 +938,8 @@ class SettingsStepper extends StatelessWidget {
               label,
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontFamily: AppPlatform.monoFontFallback.first,
-                fontFamilyFallback: AppPlatform.monoFontFallback,
+                fontFamily: AppFonts.ui,
+                fontFamilyFallback: AppFonts.uiFallback,
                 fontSize: 12,
                 fontWeight: AppWeight.font(AppWeight.regular),
                 fontVariations: AppWeight.wght(AppWeight.regular),
@@ -917,20 +963,27 @@ class SettingsStepper extends StatelessWidget {
 /// How much of an allowance is gone, as a 14 px clock face filling in: the
 /// smallest mark that still reads as a proportion.
 class SettingsPie extends StatelessWidget {
-  const SettingsPie({super.key, required this.fraction});
+  const SettingsPie({super.key, required this.fraction, this.fill, this.track});
 
   /// Null while it is not known yet, which draws the empty face.
   final double? fraction;
+
+  /// The wedge and the ring, for a face drawn where the theme's own would not
+  /// show, such as over a video's picture.
+  final Color? fill;
+  final Color? track;
 
   @override
   Widget build(BuildContext context) => CustomPaint(
     size: const Size.square(14),
     painter: _PiePainter(
       fraction: (fraction ?? 0).clamp(0.0, 1.0),
-      fill: (fraction ?? 0) >= 1
-          ? Theme.of(context).colorScheme.error
-          : Theme.of(context).colorScheme.primary,
-      track: context.palette.textTertiary,
+      fill:
+          fill ??
+          ((fraction ?? 0) >= 1
+              ? Theme.of(context).colorScheme.error
+              : Theme.of(context).colorScheme.primary),
+      track: track ?? context.palette.textTertiary,
     ),
   );
 }
@@ -1019,7 +1072,9 @@ class SettingsSwitch extends StatelessWidget {
                       ),
                     ),
                     decoration: BoxDecoration(
-                      color: value ? palette.accent : palette.switchTrackOff,
+                      color: value
+                          ? palette.accentFill
+                          : palette.switchTrackOff,
                       borderRadius: BorderRadius.circular(height / 2),
                     ),
                     child: AnimatedAlign(

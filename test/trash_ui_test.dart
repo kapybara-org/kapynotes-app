@@ -122,7 +122,7 @@ Future<void> _choose(WidgetTester tester, String title, String action) async {
 }
 
 Future<void> _show(WidgetTester tester, NotesShow show) async {
-  await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+  await tester.tap(find.byKey(const ValueKey('notes-view')));
   await tester.pumpAndSettle();
   await tester.tap(_filter(show));
   await tester.pumpAndSettle();
@@ -188,13 +188,13 @@ void main() {
       expect(notes.tombstones, isEmpty);
     });
 
-    testWidgets('the Show menu lists Recently deleted under Archive, with its '
+    testWidgets('the View menu lists Recently deleted under Archive, with its '
         'count, and its rows say how long is left', (tester) async {
       await _pump(tester);
       notes.trashAll([_note('First').id]);
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const ValueKey('sidebar-notes-filter')));
+      await tester.tap(find.byKey(const ValueKey('notes-view')));
       await tester.pumpAndSettle();
       final trash = _filter(NotesShow.trash);
       expect(

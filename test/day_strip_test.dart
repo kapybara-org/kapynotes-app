@@ -2,9 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/data/note.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
 import 'package:kapy_notes/ui/day_strip.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'support/back_forward.dart';
 import 'test_fonts.dart';
 
 void main() {
@@ -105,6 +107,57 @@ void main() {
     expect(DayStrip.daysIn(540, arrow: 48), 5);
   });
 
+  for (final by in StepBy.values) {
+    testWidgets('${by.name}: a swipe or the mouse buttons over the calendar '
+        'turn it a month, as its ‹ and › do', (tester) async {
+      asDesktop();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: KapyTheme.dark(),
+          home: Scaffold(
+            body: Center(
+              child: DayPicker(
+                month: DateTime(2026, 11),
+                today: thursday,
+                filled: thursday,
+                counts: (_) => const {},
+                firstWeekday: DateTime.monday,
+                onPicked: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      final calendar = find.byType(DayPicker);
+      expect(find.textContaining('November'), findsOneWidget);
+
+      await stepOver(tester, calendar, BackForwardStep.back, by);
+      expect(find.textContaining('October'), findsOneWidget);
+      await stepOver(tester, calendar, BackForwardStep.forward, by);
+      await stepOver(tester, calendar, BackForwardStep.forward, by);
+      expect(find.textContaining('December'), findsOneWidget);
+    }, variant: TargetPlatformVariant.desktop());
+  }
+
+  for (final by in StepBy.values) {
+    testWidgets('${by.name}: a swipe or the mouse buttons over the week turn '
+        'it a week, as ‹ and › do', (tester) async {
+      asDesktop();
+      await pumpStrip(tester);
+      final at = tester.getCenter(day(19));
+
+      await stepAt(tester, at, BackForwardStep.back, by);
+      for (final date in [9, 10, 11, 12, 13, 14, 15]) {
+        expect(day(date), findsOneWidget, reason: '$date November');
+      }
+      expect(day(19), findsNothing);
+      await stepAt(tester, at, BackForwardStep.forward, by);
+      await stepAt(tester, at, BackForwardStep.forward, by);
+      expect(day(26), findsOneWidget);
+      expect(day(19), findsNothing);
+    }, variant: TargetPlatformVariant.desktop());
+  }
+
   testWidgets('seven days with today in the middle, a dot for each note up to '
       'three', (tester) async {
     final semantics = tester.ensureSemantics();
@@ -123,7 +176,8 @@ void main() {
     }
     expect(day(15), findsNothing);
     expect(day(23), findsNothing);
-    expect(find.text('November'), findsOneWidget);
+    expect(find.text('Nov'), findsOneWidget);
+    expect(find.text('November'), findsNothing);
     expect(find.text('Thu 19'), findsOneWidget);
     expect(dotsOf(day(16)), findsNothing);
     expect(dotsOf(day(17)), findsOneWidget);
@@ -219,9 +273,28 @@ void main() {
     expect(day(22), findsNothing);
   });
 
-  testWidgets('a week across two months names both, in full', (tester) async {
+  testWidgets('the month says three letters, and its full name to a screen '
+      'reader', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await pumpStrip(tester);
+    final month = find.byKey(const ValueKey('day-strip-month'));
+    expect(
+      find.descendant(of: month, matching: find.text('Nov')),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel('November'), findsOneWidget);
+    expect(find.byTooltip('Pick a day'), findsOneWidget);
+
     await pumpStrip(tester, today: DateTime(2026, 12, 2));
-    expect(find.text('November–December'), findsOneWidget);
+    expect(find.bySemanticsLabel('November to December'), findsOneWidget);
+    semantics.dispose();
+  });
+
+  testWidgets('a week across two months names both, in three letters each', (
+    tester,
+  ) async {
+    await pumpStrip(tester, today: DateTime(2026, 12, 2));
+    expect(find.text('Nov–Dec'), findsOneWidget);
     expect(day(29), findsOneWidget);
     expect(day(3, month: 12), findsOneWidget);
   });
@@ -366,8 +439,8 @@ void main() {
     final forward = find.byKey(const ValueKey('day-strip-forward'));
     final month = find.byKey(const ValueKey('day-strip-month'));
     final date = find.byKey(const ValueKey('day-strip-date'));
-    // Seven days from Sun 29 November say "November–December", and fewer
-    // around Wed 2 December only "December".
+    // Seven days from Sun 29 November say "Nov–Dec", and fewer around Wed 2
+    // December only "Dec".
     for (var room = 200.0; room <= 760; room += 12) {
       for (final compact in [false, true]) {
         await pumpStrip(

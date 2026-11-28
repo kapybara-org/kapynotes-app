@@ -697,7 +697,8 @@ class _InRoom extends SingleChildLayoutDelegate {
 
 /// Keeps toasts above [child], such as a phone's bar and its + or the format
 /// bar over the keyboard, the highest of them on screen, while its
-/// route is the one on top, and the page around its navigator too when a
+/// route is the one on top, or on a desktop has a menu or a popover over it
+/// (see [ToastMenuRoute]), and the page around its navigator too when a
 /// [ToastClearanceScope] marks one. A sheet over it takes the toast back down
 /// to the bottom edge.
 ///
@@ -707,10 +708,10 @@ class _InRoom extends SingleChildLayoutDelegate {
 /// [ToastClearance.beside] keeps a desktop's toasts beside [child] instead,
 /// as the notes list, Kapy AI's panel and a folder's Add notes do, so a
 /// toast centres on the page between them and follows the list as it slides
-/// open or shut. A dialog or a menu over them takes it back to the middle of
-/// the window, and so does a page too narrow between them, where a toast
-/// also keeps above a [ToastClearance] inside [child], as the list's Notes
-/// and Folders switch.
+/// open or shut. A dialog over them takes it back to the middle of the
+/// window, and so does a page too narrow between them, where a toast also
+/// keeps above a [ToastClearance] inside [child], as the list's Notes and
+/// Folders switch. A menu or a popover over them leaves it where it is.
 ///
 /// It lets go as its route starts to leave, so a toast still showing goes
 /// straight to its next place rather than follow a closing sheet.
@@ -737,6 +738,9 @@ class ToastClearance extends StatefulWidget {
 }
 
 class _ToastClearanceState extends State<ToastClearance> {
+  /// Every clearance on screen, kept or not, for a menu to look at again.
+  static final _all = <_ToastClearanceState>{};
+
   bool _onTop = true;
   ModalRoute<Object?>? _route;
   double _height = 0;
@@ -746,6 +750,7 @@ class _ToastClearanceState extends State<ToastClearance> {
   @override
   void initState() {
     super.initState();
+    _all.add(this);
     if (widget.room) Toast._room.addListener(_roomChanged);
   }
 
@@ -774,7 +779,7 @@ class _ToastClearanceState extends State<ToastClearance> {
     final keep =
         _onTop &&
         (route == null ||
-            route.isCurrent &&
+            (route.isCurrent || ToastMenuRoute._showing) &&
                 route.animation?.status != AnimationStatus.reverse);
     if (keep) _height = _room;
     if (keep ? Toast._clearances.add(this) : Toast._clearances.remove(this)) {
@@ -784,6 +789,7 @@ class _ToastClearanceState extends State<ToastClearance> {
 
   @override
   void dispose() {
+    _all.remove(this);
     Toast._room.removeListener(_roomChanged);
     _route?.animation?.removeStatusListener(_update);
     if (Toast._clearances.remove(this)) Toast._clearancesChanged();
@@ -821,6 +827,49 @@ class ToastClearanceScope extends StatelessWidget {
     onTop: _OnTop.of(context) && (ModalRoute.of(context)?.isCurrent ?? true),
     child: child,
   );
+}
+
+/// A menu, or a popover such as the tag list, which leaves a desktop's
+/// toasts where they are: what they keep clear of or beside keeps them
+/// while one is on top. They look again after the frame whenever what is
+/// over one changes, so a dialog that a shortcut opens over it still takes
+/// them to the middle of the window, and they come back once it closes.
+mixin ToastMenuRoute<T> on PopupRoute<T> {
+  static final _open = <ToastMenuRoute<Object?>>{};
+
+  /// Whether, on a desktop, a menu or a popover is the route on top.
+  static bool get _showing =>
+      AppPlatform.hasPointer && _open.any((menu) => menu.isCurrent);
+
+  static void _lookAgain() => WidgetsBinding.instance.addPostFrameCallback((_) {
+    for (final clearance in _ToastClearanceState._all.toList()) {
+      clearance._update();
+    }
+  });
+
+  @override
+  void install() {
+    super.install();
+    _open.add(this);
+  }
+
+  @override
+  void didChangeNext(Route<dynamic>? nextRoute) {
+    super.didChangeNext(nextRoute);
+    _lookAgain();
+  }
+
+  @override
+  void didPopNext(Route<dynamic> nextRoute) {
+    super.didPopNext(nextRoute);
+    _lookAgain();
+  }
+
+  @override
+  void dispose() {
+    _open.remove(this);
+    super.dispose();
+  }
 }
 
 class _OnTop extends InheritedWidget {

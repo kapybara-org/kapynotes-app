@@ -12,8 +12,8 @@ import 'sidebar_timestamp.dart';
 
 /// A note's header on a phone, as M07 and M09 draw it: ⌂ Home, then the
 /// note's day, Kapy AI and More. Under them, while the day has it open, the
-/// note's week and the line that opens the day's tasks, then on a page that
-/// shows a day's notes as tabs, those, then a hairline.
+/// note's week. The page under it draws the rest, the day's tasks line,
+/// tabs and hairline, as a [PhoneNoteHeaderEnd], so they turn with the note.
 class PhoneNoteHeader extends StatelessWidget {
   const PhoneNoteHeader({
     super.key,
@@ -25,9 +25,6 @@ class PhoneNoteHeader extends StatelessWidget {
     this.weekOpen = true,
     this.onWeekToggled,
     this.week,
-    this.tasks = 0,
-    this.onTasks,
-    this.tabs,
     this.members = const [],
     this.present = const [],
     this.currentUserId = '',
@@ -51,15 +48,6 @@ class PhoneNoteHeader extends StatelessWidget {
   final bool weekOpen;
   final VoidCallback? onWeekToggled;
   final Widget? week;
-
-  /// How many tasks the line under the week counts, and what opens them.
-  /// The line shows only while there are some.
-  final int tasks;
-  final VoidCallback? onTasks;
-
-  /// A day's notes as tabs (A1), last in the header, the week or not. Under
-  /// an open week they take the place of the room that ends it.
-  final Widget? tabs;
 
   /// Who else has the note, at the left of the day button.
   final List<SpaceMember> members;
@@ -90,19 +78,14 @@ class PhoneNoteHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = context.palette;
     final day = this.day;
     final today = this.today;
     final week = this.week;
-    final onTasks = this.onTasks;
     final open = weekOpen && week != null;
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
-      child: DecoratedBox(
+      child: KeyedSubtree(
         key: const ValueKey('phone-note-header'),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: palette.railBorder)),
-        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -158,17 +141,7 @@ class PhoneNoteHeader extends StatelessWidget {
                 ),
               ),
             ),
-            if (open) ...[
-              week,
-              if (tasks > 0 && onTasks != null && day != null && today != null)
-                _TasksLine(
-                  label: tasksLine(tasks, day, today),
-                  onPressed: onTasks,
-                )
-              else if (tabs == null)
-                const SizedBox(height: 8),
-            ],
-            ?tabs,
+            if (open) ...[week],
           ],
         ),
       ),
@@ -196,6 +169,47 @@ class PhoneNoteHeader extends StatelessWidget {
       }),
     );
   }
+}
+
+/// The end of a [PhoneNoteHeader], drawn by the page under it so it turns
+/// with the note: under an open week the day's
+/// tasks line or some room, the day's notes as tabs, then the hairline.
+class PhoneNoteHeaderEnd extends StatelessWidget {
+  const PhoneNoteHeaderEnd({
+    super.key,
+    required this.weekOpen,
+    this.tasksLine,
+    this.onTasks,
+    this.tabs,
+  });
+
+  /// Whether an open week is over it, under which comes the day's tasks
+  /// line, [tasksLine], or where there is none and no [tabs], some room.
+  final bool weekOpen;
+  final String? tasksLine;
+  final VoidCallback? onTasks;
+  final Widget? tabs;
+
+  @override
+  Widget build(BuildContext context) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: 1.3,
+    child: DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: context.palette.railBorder)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (weekOpen)
+            if ((tasksLine, onTasks) case (final label?, final onPressed?))
+              _TasksLine(label: label, onPressed: onPressed)
+            else if (tabs == null)
+              const SizedBox(height: 8),
+          ?tabs,
+        ],
+      ),
+    ),
+  );
 }
 
 /// ⌂ Home: back to the notes, whichever list the note was opened from.

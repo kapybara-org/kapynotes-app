@@ -35,40 +35,37 @@ License: [`ShantellSans-OFL.txt`](ShantellSans-OFL.txt)
 
 ## Interface fonts
 
-On a Mac and an iPhone the interface is set in San Francisco, through the
-system face: its licence allows it only on Apple's platforms, so it is never
-bundled. Windows, Android and Linux get Inter by Rasmus Andersson, the closest
-free match, under the SIL Open Font License 1.1. The Clean writing font and
-Mixed's body text use the same face.
+The interface is set in Geist by the Geist Project Authors (Vercel), bundled
+and the same on every platform, under the SIL Open Font License 1.1. The
+Clean writing font and Mixed's body text use it too. The files are the
+upstream variable fonts as the `geist` npm package 1.9.2 ships them (Geist
+1.900), unmodified, with `wght` from 100 to 900.
 
-The app sets interface text at 400 and 600 only, and 700 when the system's
-Bold Text is on, so the two files here are instances of Inter 4.1's variable
-fonts with the optical size pinned to text (opsz 14) and the weight axis cut
-to 400–700: 880 KB + 910 KB became 514 KB + 520 KB. To regenerate them from
-the release's InterVariable.ttf and InterVariable-Italic.ttf:
+Geist has no ⌘, ⌥, ⌃, ⎋, ⏎ or ⌫, no ₩ ₺ ₫ ₦ ₸ ₿, and no Devanagari or other
+non-Latin, non-Greek, non-Cyrillic scripts, so those come from the device's
+own face (`AppFonts.uiFallback` in `lib/core/theme.dart`).
 
-```sh
-pip install fonttools
-fonttools varLib.instancer -o Inter-Variable.ttf InterVariable.ttf opsz=14 wght=400:700
-fonttools varLib.instancer -o Inter-Italic-Variable.ttf InterVariable-Italic.ttf opsz=14 wght=400:700
-```
+Code and the Monospace writing font are set in Geist Mono, the upstream
+variable font as Google Fonts distributes it, unmodified, with `wght` from
+100 to 900. Geist Mono has ⏎ and ⌫ but no ⌘, ⌥, ⌃ or ⎋, so those come from
+the platform monospace face (`AppFonts.monoFallback`).
 
-Source: <https://github.com/rsms/inter/releases/tag/v4.1>
-
-Calculation results, keycaps and code are set in Geist Mono by the Geist
-Project Authors (Vercel), the upstream variable font as Google Fonts
-distributes it, unmodified, with `wght` from 100 to 900, under the SIL Open
-Font License 1.1. Geist Mono has no ⌘, ⌥ or ⌃, so a keycap draws those from
-the platform monospace face (`AppFonts.monoFallback` in `lib/core/theme.dart`).
+The Pixel writing font is set in Geist Pixel's Square cut, one of the five
+static cuts in vercel/geist-pixel-font, converted from the npm package's
+WOFF2 to TrueType with fonttools and otherwise unmodified. It has 420
+glyphs and no ₹, ☐, ☑ or ✓; Geist draws whatever it lacks.
 
 | File | Source | Size |
 | --- | --- | --- |
-| `Inter-Variable.ttf` | Inter 4.1, `InterVariable.ttf`, instanced as above | 514 KB |
-| `Inter-Italic-Variable.ttf` | Inter 4.1, `InterVariable-Italic.ttf`, instanced as above | 520 KB |
+| `Geist-Variable.ttf` | [`geist`](https://www.npmjs.com/package/geist) 1.9.2, `dist/fonts/geist-sans/Geist-Variable.ttf` | 169 KB |
+| `Geist-Italic-Variable.ttf` | `geist` 1.9.2, `dist/fonts/geist-sans/Geist-Italic[wght].ttf` | 175 KB |
 | `GeistMono-Variable.ttf` | [`ofl/geistmono/GeistMono[wght].ttf`](https://github.com/google/fonts/tree/main/ofl/geistmono), from [vercel/geist-font](https://github.com/vercel/geist-font) at `77f0563` | 172 KB |
+| `GeistPixel-Square.ttf` | `geist` 1.9.2, `dist/fonts/geist-pixel/GeistPixel-Square.woff2`, as TrueType | 94 KB |
 
-Licenses: [`Inter-OFL.txt`](Inter-OFL.txt),
-[`GeistMono-OFL.txt`](GeistMono-OFL.txt)
+Licenses: [`Geist-OFL.txt`](Geist-OFL.txt) (from vercel/geist-font),
+[`GeistMono-OFL.txt`](GeistMono-OFL.txt),
+[`GeistPixel-OFL.txt`](GeistPixel-OFL.txt) (from
+[vercel/geist-pixel-font](https://github.com/vercel/geist-pixel-font))
 
 ## Formula fonts
 

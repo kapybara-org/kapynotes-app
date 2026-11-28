@@ -11,6 +11,9 @@
 //
 // On the iOS Simulator turn off I/O > Keyboard > Connect Hardware Keyboard, or
 // the software keyboard never appears and the first case says so.
+import 'dart:io';
+
+import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -18,12 +21,14 @@ import 'package:kapy_notes/calc/engine.dart';
 import 'package:kapy_notes/calc/highlight.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/note_editor.dart';
 import 'package:kapy_notes/ui/editor/note_field.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../test/images/fake_camera.dart';
 import 'screenshot.dart';
 
 class _MemoryStore extends LocalStore {
@@ -46,10 +51,16 @@ void main() {
 
   late CalcEngine engine;
   late ShortcutPrefs shortcuts;
+  late BlobStore images;
+  var recordings = 0;
 
   setUp(() {
     engine = CalcEngine();
     shortcuts = ShortcutPrefs(_MemoryStore())..load();
+    final blobs = Directory.systemTemp.createTempSync('phone-format-bar');
+    addTearDown(() => blobs.deleteSync(recursive: true));
+    images = BlobStore(directory: blobs);
+    recordings = 0;
   });
 
   NoteField field(WidgetTester tester) =>
@@ -59,6 +70,7 @@ void main() {
     WidgetTester tester,
     String body, {
     bool again = false,
+    bool dark = true,
   }) async {
     await tester.pumpWidget(const SizedBox.shrink());
     // Each case starts with the keyboard down, whatever the last one left.
@@ -66,22 +78,48 @@ void main() {
     // it, which nothing else would ever take down, so ask for it to go, and
     // ask again each second in case a request lands mid-animation and is
     // lost.
-    for (var i = 0; i < 150 && tester.view.viewInsets.bottom != 0; i++) {
-      if (i % 10 == 0) {
-        await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    Future<bool> down(int tenths) async {
+      for (var i = 0; i < tenths && tester.view.viewInsets.bottom != 0; i++) {
+        if (i % 10 == 0) {
+          await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+        }
+        await tester.pump(const Duration(milliseconds: 100));
       }
-      await tester.pump(const Duration(milliseconds: 100));
+      return tester.view.viewInsets.bottom == 0;
+    }
+
+    if (!await down(50)) {
+      // Flutter can be left holding a keyboard's height that Android has put
+      // away (KAP-324: 883 px while the input method said it was hidden), and
+      // a hide that finds nothing to hide brings no new height. A field that
+      // raises the keyboard makes Android send the real height, and taking
+      // the field away puts the keyboard down.
+      await deviceAction(
+        'warn:phone_format_bar_test: the inset stayed at '
+        '${tester.view.viewInsets.bottom} with nothing focused, so a field '
+        'raises the keyboard and puts it down again (KAP-324)',
+      );
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: TextField(autofocus: true))),
+      );
+      for (var i = 0; i < 30; i++) {
+        if (i == 5) {
+          await SystemChannels.textInput.invokeMethod<void>('TextInput.show');
+        }
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
     }
     expect(
-      tester.view.viewInsets.bottom,
-      0,
+      await down(150),
+      isTrue,
       reason:
           'the last case\'s keyboard is still going down; mounting over it '
           'would have the editor let go when it finally does',
     );
     await tester.pumpWidget(
       MaterialApp(
-        theme: KapyTheme.dark(),
+        theme: dark ? KapyTheme.dark() : KapyTheme.light(),
         home: Scaffold(
           body: NoteEditor(
             key: ValueKey(body),
@@ -91,6 +129,10 @@ void main() {
             highlighter: Highlighter(engine.registry),
             resultsVisible: true,
             markdownEnabled: true,
+            // With somewhere to keep pictures and something to record with,
+            // as in the app, so Attach and its sheet are as people see them.
+            images: images,
+            onRecordVoice: () => recordings++,
             // Opened the way the app reopens a note within the day: both
             // NoteEditor call sites in lib/ui/home_page.dart pass startAtEnd
             // and initialCaret along with autofocus and ensureKeyboardVisible.
@@ -136,7 +178,7 @@ void main() {
               'warn:phone_format_bar_test: the inset went to zero under a '
               'keyboard Android still shows (KAP-324), so the note opens again',
             );
-            return open(tester, body, again: true);
+            return open(tester, body, again: true, dark: dark);
           }
           return;
         }
@@ -295,6 +337,75 @@ void main() {
       reason: 'the note did not get focus back after the menu',
     );
   });
+
+  testWidgets('Attach leads the bar and offers Camera, Photos, Voice note and '
+      'File', (tester) async {
+    await open(tester, 'Trip budget');
+    final bar = tester.getRect(find.byKey(_bar));
+    final attach = tester.getRect(find.byKey(const ValueKey('format-attach')));
+    await tap(tester, 'format-attach');
+    // The keyboard goes down under the sheet; the shot waits for it to stop.
+    var inset = -1.0;
+    for (var i = 0; i < 30 && tester.view.viewInsets.bottom != inset; i++) {
+      inset = tester.view.viewInsets.bottom;
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await screenshot('format-bar-attach-sheet', device: true);
+
+    expect(attach.left, closeTo(bar.left, 1), reason: 'Attach is not first');
+    final sheet = find.byType(BottomSheet);
+    expect(
+      [
+        for (final tile in tester.widgetList<ListTile>(
+          find.descendant(of: sheet, matching: find.byType(ListTile)),
+        ))
+          (tile.title! as Text).data,
+      ],
+      ['Camera', 'Photos', 'Voice note', 'File'],
+    );
+
+    final route = ModalRoute.of(tester.element(sheet))!;
+    await tester.tap(find.byKey(const ValueKey('attach-voice')));
+    await tester.pump();
+    expect(route.isActive, isFalse, reason: 'the sheet did not close on tap');
+    // It slides away over a few frames, which a busy simulator can stretch.
+    for (var i = 0; i < 25 && sheet.evaluate().isNotEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    expect(sheet, findsNothing);
+    expect(recordings, 1);
+  });
+
+  for (final dark in [true, false]) {
+    final look = dark ? 'dark' : 'light';
+    testWidgets('Camera in the attach sheet opens the camera, and closing it '
+        'leaves the note as it was, $look', (tester) async {
+      final directory = Directory.systemTemp.createTempSync('attach-camera');
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final previous = CameraPlatform.instance;
+      CameraPlatform.instance = FakeCameraPlatform(directory);
+      addTearDown(() => CameraPlatform.instance = previous);
+
+      await open(tester, 'Trip budget', dark: dark);
+      await tap(tester, 'format-attach');
+      var inset = -1.0;
+      for (var i = 0; i < 30 && tester.view.viewInsets.bottom != inset; i++) {
+        inset = tester.view.viewInsets.bottom;
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      await screenshot('attach-sheet-$look', device: true);
+
+      await tester.tap(find.byKey(const ValueKey('attach-camera')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('camera-shutter')), findsOneWidget);
+      await screenshot('attach-camera-$look');
+
+      await tester.tap(find.byKey(const ValueKey('camera-close')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('camera-shutter')), findsNothing);
+      expect(field(tester).controller.text, 'Trip budget');
+    });
+  }
 
   testWidgets('Hide keyboard puts the keyboard and the bar away', (
     tester,

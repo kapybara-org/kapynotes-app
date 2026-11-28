@@ -6,13 +6,14 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'the interface has two weights, and anything under 400 is left alone',
+    'the interface has three weights, and anything under 400 is left alone',
     () {
       expect(AppWeight.regular, 400);
+      expect(AppWeight.medium, 500);
       expect(AppWeight.semibold, 600);
       expect(AppWeight.axisOf(FontWeight.w300), 300);
       expect(AppWeight.axisOf(FontWeight.w400), 400);
-      expect(AppWeight.axisOf(FontWeight.w500), 400);
+      expect(AppWeight.axisOf(FontWeight.w500), 500);
       expect(AppWeight.axisOf(FontWeight.w600), 600);
       expect(AppWeight.axisOf(FontWeight.w700), 600);
 
@@ -25,7 +26,8 @@ void main() {
       );
       expect(style.fontVariations, contains(const FontVariation('wght', 400)));
       expect(style.fontFeatures, contains(FontFeature.tabularFigures()));
-      expect(style.letterSpacing, 0);
+      expect(style.fontFeatures, contains(FontFeature.liningFigures()));
+      expect(style.letterSpacing, AppTracking.of(13));
       expect(style.fontFamily, AppFonts.ui);
     },
   );

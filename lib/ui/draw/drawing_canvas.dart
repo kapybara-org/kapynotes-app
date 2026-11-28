@@ -9,10 +9,10 @@ import '../../core/platform.dart';
 import '../../core/theme.dart';
 import '../../data/note_drawing.dart';
 import '../../data/notes_store.dart';
+import '../back_forward.dart';
 import '../compact_icon_button.dart';
 import '../editor/editor_formatting.dart';
 import '../focus_ring.dart';
-import '../sidebar_swipe.dart';
 import 'drawing_geometry.dart';
 import 'drawing_painter.dart';
 
@@ -880,8 +880,8 @@ class DrawingCanvasState extends State<DrawingCanvas> {
       child: Stack(
         children: [
           // Every stroke and pan belongs to the canvas: neither a phone's
-          // page swipe nor a desktop's sidebar swipe may take one.
-          Positioned.fill(child: SidebarSwipeExclusion(child: canvas)),
+          // page swipe nor a desktop's back and forward swipe may take one.
+          Positioned.fill(child: BackForwardArea(onStep: null, child: canvas)),
           if (_textId != null && _textAt != null) _buildTextField(context),
           Positioned(left: 0, right: 0, top: 0, child: _buildHeader(context)),
           if (!widget.readOnly && _drawing.isEmpty && _gesture == null)
@@ -1144,8 +1144,8 @@ class DrawingCanvasState extends State<DrawingCanvas> {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             foregroundColor: palette.textPrimary,
             textStyle: TextStyle(
-              fontFamily: AppFonts.mono,
-              fontFamilyFallback: AppFonts.monoFallback,
+              fontFamily: AppFonts.ui,
+              fontFamilyFallback: AppFonts.uiFallback,
               fontSize: 13,
               fontWeight: AppWeight.font(AppWeight.regular),
               fontVariations: AppWeight.wght(AppWeight.regular),

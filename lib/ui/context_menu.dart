@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
 import '../core/theme.dart';
+import '../core/toast.dart';
 
 /// The quiet desktop menu used by note rows and things embedded in a note.
 ///
@@ -62,6 +63,36 @@ Future<T?> showKapyContextMenu<T>({
   return choice;
 }
 
+/// A picker or a field over the window, such as the tag list, with no
+/// barrier to see: a click outside closes it unless [barrierDismissible] is
+/// false. To a desktop's toasts it is a menu, so a notice stays where it is.
+Future<T?> showKapyPopover<T>({
+  required BuildContext context,
+  required String barrierLabel,
+  required RoutePageBuilder pageBuilder,
+  bool barrierDismissible = true,
+  Duration transitionDuration = Duration.zero,
+  RouteTransitionsBuilder? transitionBuilder,
+}) => Navigator.of(context, rootNavigator: true).push(
+  _KapyPopoverRoute<T>(
+    pageBuilder: pageBuilder,
+    barrierDismissible: barrierDismissible,
+    barrierLabel: barrierLabel,
+    transitionDuration: transitionDuration,
+    transitionBuilder: transitionBuilder,
+  ),
+);
+
+class _KapyPopoverRoute<T> extends RawDialogRoute<T> with ToastMenuRoute<T> {
+  _KapyPopoverRoute({
+    required super.pageBuilder,
+    required super.barrierDismissible,
+    required super.barrierLabel,
+    required super.transitionDuration,
+    required super.transitionBuilder,
+  }) : super(barrierColor: Colors.transparent);
+}
+
 /// The shared compact surface for popup-route and editable-text menus.
 class KapyContextMenuSurface extends StatelessWidget {
   const KapyContextMenuSurface({
@@ -106,7 +137,7 @@ class KapyContextMenuSurface extends StatelessWidget {
   }
 }
 
-class _KapyContextMenuRoute<T> extends PopupRoute<T> {
+class _KapyContextMenuRoute<T> extends PopupRoute<T> with ToastMenuRoute<T> {
   _KapyContextMenuRoute({
     required this.position,
     required this.preferredBounds,
@@ -153,7 +184,7 @@ class _KapyContextMenuRoute<T> extends PopupRoute<T> {
       removeBottom: true,
       removeLeft: true,
       child: CustomSingleChildLayout(
-        delegate: _KapyContextMenuLayout(
+        delegate: KapyMenuLayout(
           position: position,
           preferredBounds: preferredBounds,
           mediaPadding: mediaPadding,
@@ -197,53 +228,95 @@ class _KapyContextMenuRoute<T> extends PopupRoute<T> {
   );
 }
 
-class _KapyContextMenuLayout extends SingleChildLayoutDelegate {
-  const _KapyContextMenuLayout({
+/// Lays a menu out so the pointer rests on none of its items and a stray
+/// release chooses nothing.
+///
+/// It opens down from [position], or up when only that fits, with a corner
+/// at the pointer. When it fits neither below nor above, it stays whole
+/// inside the window and opens beside the pointer, its left or right edge
+/// there, and scrolls only when it is taller than the window. Sideways it
+/// opens right, or left when that doesn't fit. A note row's menu hangs left
+/// from the click while the notes list, [preferredBounds], holds it, from
+/// the right when it doesn't fit on the left, and inside the list when it
+/// fits on neither, unless it is beside the pointer, where it keeps clear of
+/// the pointer even if that is outside the list.
+class KapyMenuLayout extends SingleChildLayoutDelegate {
+  const KapyMenuLayout({
     required this.position,
-    required this.preferredBounds,
     required this.mediaPadding,
+    this.preferredBounds,
   });
 
   static const _preferredGap = 4.0;
+  static const _pointerGap = 1.0;
 
   final Offset position;
   final Rect? preferredBounds;
   final EdgeInsets mediaPadding;
 
   @override
-  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
-      BoxConstraints.loose(constraints.biggest).deflate(_clear(mediaPadding));
-
-  @override
-  Offset getPositionForChild(Size size, Size childSize) {
-    final safe = _clear(mediaPadding).deflateRect(Offset.zero & size);
-    final preferred = preferredBounds?.intersect(safe);
-
-    double x;
-    if (preferred != null &&
-        preferred.width >= childSize.width + _preferredGap * 2) {
-      // A note-row menu belongs to the notes list when the list can hold it.
-      // Its right edge follows the click, then clamps inside that column.
-      x = (position.dx - childSize.width).clamp(
-        preferred.left + _preferredGap,
-        preferred.right - childSize.width - _preferredGap,
-      );
-    } else if (position.dx + childSize.width <= safe.right) {
-      x = position.dx;
-    } else {
-      x = position.dx - childSize.width;
-    }
-
-    var y = position.dy;
-    if (y + childSize.height > safe.bottom) y -= childSize.height;
-    return Offset(
-      x.clamp(safe.left, safe.right - childSize.width).toDouble(),
-      y.clamp(safe.top, safe.bottom - childSize.height).toDouble(),
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final safe = _clear(
+      mediaPadding,
+    ).deflateRect(Offset.zero & constraints.biggest);
+    final right = safe.right - position.dx - _pointerGap;
+    final left = position.dx - safe.left;
+    final loose = BoxConstraints.loose(
+      constraints.biggest,
+    ).deflate(_clear(mediaPadding));
+    // Narrower than the room on the side with more, so it can open beside
+    // the pointer instead of sliding back over it.
+    return loose.copyWith(
+      maxWidth: (left > right ? left : right)
+          .clamp(0.0, loose.maxWidth)
+          .toDouble(),
     );
   }
 
   @override
-  bool shouldRelayout(_KapyContextMenuLayout oldDelegate) =>
+  Offset getPositionForChild(Size size, Size childSize) {
+    final safe = _clear(mediaPadding).deflateRect(Offset.zero & size);
+    final Offset(:dx, :dy) = position;
+    final list = preferredBounds?.intersect(safe);
+    final holds =
+        list != null && list.width >= childSize.width + _preferredGap * 2;
+    final fitsBelow = childSize.height <= safe.bottom - dy;
+    final fitsAbove = childSize.height <= dy - safe.top;
+    final beside = !fitsBelow && !fitsAbove;
+    final right = beside ? dx + _pointerGap : dx;
+    final left = dx - childSize.width;
+    final inList =
+        holds &&
+        (!beside ||
+            left >= list.left + _preferredGap ||
+            right + childSize.width <= list.right - _preferredGap);
+    final fitsLeft = left >= (inList ? list.left + _preferredGap : safe.left);
+    final fitsRight =
+        right + childSize.width <=
+        (inList ? list.right - _preferredGap : safe.right);
+    final double x;
+    if (inList) {
+      x = fitsLeft
+          ? left
+          : fitsRight
+          ? right
+          : left.clamp(
+              list.left + _preferredGap,
+              list.right - childSize.width - _preferredGap,
+            );
+    } else {
+      x = fitsRight ? right : left;
+    }
+    return Offset(
+      x.clamp(safe.left, safe.right - childSize.width).toDouble(),
+      (fitsBelow || !fitsAbove ? dy : dy - childSize.height)
+          .clamp(safe.top, safe.bottom - childSize.height)
+          .toDouble(),
+    );
+  }
+
+  @override
+  bool shouldRelayout(KapyMenuLayout oldDelegate) =>
       position != oldDelegate.position ||
       preferredBounds != oldDelegate.preferredBounds ||
       mediaPadding != oldDelegate.mediaPadding;
@@ -273,8 +346,27 @@ class PopoverAtSpot extends SingleChildLayoutDelegate {
   final EdgeInsets mediaPadding;
 
   @override
-  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
-      BoxConstraints.loose(constraints.biggest).deflate(_clear(mediaPadding));
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final safe = _clear(
+      mediaPadding,
+    ).deflateRect(Offset.zero & constraints.biggest);
+    final point = spot.corner.withinRect(spot.bounds);
+    final loose = BoxConstraints.loose(
+      constraints.biggest,
+    ).deflate(_clear(mediaPadding));
+    // The list grows away from the corner it shares with the menu, and only
+    // as far as that side has room, so the corner stays put.
+    final roomX = spot.corner.x >= 0
+        ? point.dx - safe.left
+        : safe.right - point.dx;
+    final roomY = spot.corner.y >= 0
+        ? point.dy - safe.top
+        : safe.bottom - point.dy;
+    return loose.copyWith(
+      maxWidth: roomX.clamp(0.0, loose.maxWidth).toDouble(),
+      maxHeight: roomY.clamp(0.0, loose.maxHeight).toDouble(),
+    );
+  }
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {

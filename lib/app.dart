@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show File;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:material_ui/material_ui.dart';
@@ -14,6 +15,8 @@ import 'core/popup_keyboard.dart';
 import 'core/phone_keyboard.dart';
 import 'core/appearance.dart';
 import 'core/desktop_integration.dart';
+import 'audio/noise_removal.dart';
+import 'audio/noise_removals.dart';
 import 'audio/recording_file.dart';
 import 'audio/voice_player.dart';
 import 'data/voice_prefs.dart';
@@ -60,6 +63,7 @@ import 'mcp/mcp_service.dart';
 import 'sync/account.dart';
 import 'sync/key_store.dart';
 import 'ui/app_logo.dart';
+import 'ui/focus_reveal.dart';
 import 'ui/focus_ring.dart';
 import 'ui/home_page.dart';
 import 'ui/hidden_notes_gate.dart';
@@ -70,6 +74,8 @@ import 'ui/instant_capture.dart';
 import 'ui/mcp_pane.dart';
 import 'ui/menu_bar_panel.dart';
 import 'ui/tasks/tasks_controller.dart';
+import 'speech/live_translation.dart';
+import 'audio/live_text.dart';
 
 /// Flutter's own actions, with a finger outside a text field putting a
 /// phone's keyboard away.
@@ -101,6 +107,7 @@ class KapyNotesApp extends StatefulWidget {
     this.kapyAi,
     this.titleModel,
     this.imageAcquirer,
+    this.cameraAcquirer,
     this.lostImageRetriever,
     this.hiddenNotesGate,
     this.deepLinks,
@@ -158,6 +165,7 @@ class KapyNotesApp extends StatefulWidget {
 
   /// Native image boundaries, injectable for launch and recovery tests.
   final ImageFileAcquirer? imageAcquirer;
+  final MediaFileAcquirer? cameraAcquirer;
   final LostImageRetriever? lostImageRetriever;
 
   /// Injectable so UI tests can cross the authentication boundary without a
@@ -227,13 +235,21 @@ class _KapyNotesAppState extends State<KapyNotesApp>
   /// The account is read at every press rather than once here: it signs in
   /// and out while the player lives on, and a recording made on another device
   /// needs one to come down.
+  ///
+  /// A recording whose noise was removed here plays its clean copy instead.
   late final VoicePlayer _player = VoicePlayer(
-    files: (hash) => openRecording(
-      hash,
-      blobs: widget.notes.blobs,
-      fetch: widget.account?.imageFetch,
-    ),
+    files: (hash) async =>
+        await _noise?.playable(hash) ?? await _openRecording(hash),
   );
+
+  Future<File?> _openRecording(String hash) => openRecording(
+    hash,
+    blobs: widget.notes.blobs,
+    fetch: widget.account?.imageFetch,
+  );
+
+  /// Remove noise. Null where this build carries no cleaner.
+  NoiseRemovals? _noise;
 
   /// Turns recordings into words, across launches. Its file is only touched
   /// once something has been recorded, so a device that never records pays a
@@ -344,6 +360,23 @@ class _KapyNotesAppState extends State<KapyNotesApp>
         _recording.finishRecordingAndFlush;
     _recording.onFlush = _flushAfterHydration;
     _voicePrefs = VoicePrefs(widget.store);
+    // Only where the OS has its own engines. Nothing behind it is created
+    // until live translation is turned on in Settings.
+    if (PlatformLiveTranslation.isPossibleHere) {
+      _recording.live ??= LiveTranslationLauncher(
+        engine: PlatformLiveTranslation(),
+        prefs: _voicePrefs!,
+      );
+    }
+    if (NoiseRemover.isPossibleHere) {
+      _noise = NoiseRemovals(
+        models: LocalModelStore(catalogue: const [noiseRemovalModel]),
+        prefs: _voicePrefs!,
+        copies: widget.notes.cleanCopies,
+        originals: _openRecording,
+        switched: (hash) => unawaited(_player.reopen(hash)),
+      );
+    }
     // Each model is offered only where this build carries something that
     // reads it: Parakeet where the platform has no recogniser of its own,
     // Gemma everywhere but iOS. On Android neither runtime is in the app;
@@ -364,10 +397,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     _deviceSummarizer = DeviceSummarizer([apple, _gemma!]);
     // Kapy AI answers with the same two models, through the same objects, so
     // the weights are in memory once whichever feature asked for them.
+    KapyAiController? kapyAi;
     if (widget.kapyAi != null) {
       _kapyAi = widget.kapyAi;
     } else if (kapyAiAvailable) {
-      _kapyAi = KapyAiController(
+      _kapyAi = kapyAi = KapyAiController(
         store: widget.store,
         notes: widget.notes,
         device: PlatformDeviceModel(
@@ -375,6 +409,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           gemma: _gemma!,
           models: _localModels!,
         ),
+        translator: _recording.live?.engine,
         billing: widget.account?.billing,
         chats: widget.chats,
         token: () => widget.account?.token,
@@ -416,6 +451,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
       api: () => widget.account?.speech,
       summarizer: () => _summarizer,
       transcriber: () => _transcriber,
+      keepTranslation: kapyAi?.keepTranscriptTranslation,
     );
     if (widget.notes.isLoaded) {
       _activateLoadedApp();
@@ -733,6 +769,7 @@ class _KapyNotesAppState extends State<KapyNotesApp>
     if (widget.kapyAi == null) _kapyAi?.dispose();
     if (widget.storeUpdates == null) _storeUpdates?.dispose();
     _localModels?.dispose();
+    _noise?.dispose();
     _mcp?.dispose();
     unawaited(_gemma?.unload() ?? Future<void>.value());
     _launchController.dispose();
@@ -853,7 +890,9 @@ class _KapyNotesAppState extends State<KapyNotesApp>
           builder: (context, child) {
             final asks = _systemAsksForContrast;
             final solid = !_glassBehindWindow || asks;
-            Widget result = FocusRing(child: child ?? const SizedBox.shrink());
+            Widget result = FocusRing(
+              child: FocusReveal(child: child ?? const SizedBox.shrink()),
+            );
             if (widget.prefs.transparencyEnabled && solid) {
               final theme = Theme.of(context);
               final palette = theme.extension<CalcPalette>()!;
@@ -864,6 +903,10 @@ class _KapyNotesAppState extends State<KapyNotesApp>
             }
 
             result = JoiningScope(account: widget.account, child: result);
+            final noise = _noise;
+            if (noise != null) {
+              result = NoiseRemovalScope(notifier: noise, child: result);
+            }
 
             final media = zoomedMediaQuery(
               MediaQuery.of(context),
@@ -920,9 +963,11 @@ class _KapyNotesAppState extends State<KapyNotesApp>
                   localModels: _localModels,
                   deviceSummarizer: _deviceSummarizer,
                   deviceTranscriber: _deviceTranscriber,
+                  liveTranslation: _recording.live,
                   summarizer: _summarizer,
                   transcriber: _transcriber,
                   imageAcquirer: widget.imageAcquirer,
+                  cameraAcquirer: widget.cameraAcquirer,
                   lostImageRetriever: widget.lostImageRetriever,
                   hiddenNotesGate: _hiddenNotesGate,
                   kapyAi: _kapyAi,

@@ -68,7 +68,10 @@ void main() {
     expect(style.height, 16 / 12);
     expect(style.fontVariations, AppWeight.variations(AppWeight.regular));
     expect(style.color, KapyTheme.darkPalette.resultPillText);
-    expect(style.fontFeatures, const [FontFeature.tabularFigures()]);
+    expect(style.fontFeatures, const [
+      FontFeature.tabularFigures(),
+      FontFeature.liningFigures(),
+    ]);
   });
 
   testWidgets('View all sits at the end of the Pinned heading', (tester) async {

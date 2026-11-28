@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:material_ui/material_ui.dart';
 
 import '../core/platform.dart';
@@ -15,7 +18,9 @@ import '../sync/sync_service.dart';
 import 'context_menu.dart';
 import 'focus_ring.dart';
 import 'installed_version.dart';
+import 'phone_home_header.dart' show PhoneTitleBar;
 import 'profile_avatar.dart';
+import 'sidebar.dart' show SidebarSearchField;
 import 'window_drag_area.dart';
 
 /// What the notes list beside the spaces rail can show.
@@ -166,28 +171,28 @@ class SpacesRail extends StatelessWidget {
                         SliverToBoxAdapter(
                           child: Column(
                             children: [
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 8),
                               destination(
                                 LibrarySpace.notes,
                                 icon: KapyIcons.noteOutlined,
                                 label: 'Notes',
                               ),
                               if (tasks) ...[
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 8),
                                 destination(
                                   LibrarySpace.tasks,
                                   icon: KapyIcons.tasksOutlined,
                                   label: 'Tasks',
                                 ),
                               ],
-                              const SizedBox(height: 6),
+                              const SizedBox(height: 8),
                               destination(
                                 LibrarySpace.drawings,
                                 icon: KapyIcons.penRounded,
                                 label: 'Drawings',
                               ),
                               if (invitations != null) ...[
-                                const SizedBox(height: 6),
+                                const SizedBox(height: 8),
                                 destination(
                                   LibrarySpace.shared,
                                   icon: KapyIcons.groupOutlined,
@@ -246,7 +251,7 @@ class SpacesRail extends StatelessWidget {
 /// The words on the rail: a space's name under its icon, and the streak's
 /// run of days under its flame. 11 on a Mac, a floor above that elsewhere.
 TextStyle _railLabel(Color color) => chromeStyle(
-  size: AppTypeScale.micro,
+  size: 11.5,
   line: 14,
   weight: AppWeight.regular,
   color: color,
@@ -292,8 +297,8 @@ class _RailItemState extends State<_RailItem> {
     final tile = AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOutCubic,
-      width: 54,
-      height: 54,
+      width: 60,
+      height: 60,
       decoration: BoxDecoration(
         color: selected
             ? palette.selectedBackground
@@ -309,7 +314,7 @@ class _RailItemState extends State<_RailItem> {
           Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              KapyIcon(widget.icon, size: 18, color: ink),
+              KapyIcon(widget.icon, size: 22, color: ink),
               const SizedBox(height: 5),
               Text(
                 widget.label,
@@ -367,24 +372,26 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Container(
-      height: 17.5,
-      constraints: const BoxConstraints(minWidth: 17.5),
+      height: 18,
+      constraints: const BoxConstraints(minWidth: 18),
       padding: const EdgeInsets.symmetric(horizontal: 5),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: scheme.errorContainer,
+        color: waitingMarker,
         borderRadius: BorderRadius.circular(AppRadii.pill),
+        boxShadow: [
+          BoxShadow(color: context.palette.railBackground, spreadRadius: 2),
+        ],
       ),
       child: Text(
         count > 99 ? '99+' : '$count',
         textScaler: TextScaler.noScaling,
         style: chromeStyle(
-          size: AppTypeScale.chip,
-          line: 13,
-          weight: AppWeight.regular,
-          color: scheme.error,
+          size: 11,
+          line: 18,
+          weight: AppWeight.semibold,
+          color: const Color(0xFFFFFFFF),
           tabular: true,
         ),
       ),
@@ -759,8 +766,55 @@ class PhoneSpaces extends StatefulWidget {
   State<PhoneSpaces> createState() => _PhoneSpacesState();
 }
 
-class _PhoneSpacesState extends State<PhoneSpaces> {
+class _PhoneSpacesState extends State<PhoneSpaces>
+    with SingleTickerProviderStateMixin {
   final _bar = GlobalKey();
+  final _page = GlobalKey();
+
+  /// The tab left, as it was last drawn, fading out over the one chosen
+  /// below its header and search well. Those are the same frame on every
+  /// tab, so their words change at once rather than showing both tabs' at
+  /// half strength, and only the page under them crossfades (KAP-462).
+  ui.Image? _leaving;
+  late final _fade =
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 150),
+      )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) _dropLeaving();
+      });
+
+  @override
+  void dispose() {
+    _fade.dispose();
+    _leaving?.dispose();
+    super.dispose();
+  }
+
+  void _dropLeaving() {
+    final leaving = _leaving;
+    if (leaving == null) return;
+    setState(() => _leaving = null);
+    leaving.dispose();
+  }
+
+  void _select(PhoneTab tab) {
+    if (tab != widget.tab && !MediaQuery.disableAnimationsOf(context)) {
+      final page = _page.currentContext?.findRenderObject();
+      // Taken between frames, so the page is as it was last drawn; a debug
+      // build skips the fade on the rare tap that lands mid-repaint.
+      if (page is RenderRepaintBoundary &&
+          !(kDebugMode && page.debugNeedsPaint)) {
+        final leaving = page.toImageSync(
+          pixelRatio: View.of(context).devicePixelRatio,
+        );
+        _leaving?.dispose();
+        setState(() => _leaving = leaving);
+        _fade.forward(from: 0);
+      }
+    }
+    widget.onSelected(tab);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -790,7 +844,32 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBody: true,
-      body: widget.child,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          RepaintBoundary(key: _page, child: widget.child),
+          if (_leaving case final leaving?)
+            IgnorePointer(
+              child: ClipRect(
+                clipper: _Below(
+                  MediaQuery.paddingOf(context).top +
+                      PhoneTitleBar.height +
+                      SidebarSearchField.phoneExtent(
+                        MediaQuery.textScalerOf(context),
+                      ),
+                ),
+                child: FadeTransition(
+                  opacity: ReverseAnimation(_fade),
+                  child: RawImage(
+                    image: leaving,
+                    scale: View.of(context).devicePixelRatio,
+                    fit: BoxFit.fill,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
       bottomNavigationBar: Padding(
         padding: EdgeInsets.fromLTRB(16, 0, 16, PhoneSpaces._lift(context)),
         child: Row(
@@ -818,7 +897,7 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
                           label: item.label,
                           selected: item.to == widget.tab,
                           dot: item.to == PhoneTab.folders && widget.foldersDot,
-                          onPressed: () => widget.onSelected(item.to),
+                          onPressed: () => _select(item.to),
                         ),
                       ),
                   ],
@@ -861,6 +940,19 @@ class _PhoneSpacesState extends State<PhoneSpaces> {
   }
 }
 
+/// What lies below [top]: the page under a tab's header and search well.
+class _Below extends CustomClipper<Rect> {
+  const _Below(this.top);
+
+  final double top;
+
+  @override
+  Rect getClip(Size size) => Rect.fromLTRB(0, top, size.width, size.height);
+
+  @override
+  bool shouldReclip(_Below oldClipper) => oldClipper.top != top;
+}
+
 /// One of the bar's destinations: its icon over its name in a 46 pt pill,
 /// lifted a step while it is the one on screen, and a 7 pt clay dot on the
 /// icon's corner while something new waits there.
@@ -884,7 +976,6 @@ class _BarItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final ink = selected ? palette.textPrimary : palette.textSecondary;
-    final scheme = Theme.of(context).colorScheme;
     return Semantics(
       container: true,
       button: true,
@@ -907,7 +998,7 @@ class _BarItem extends StatelessWidget {
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    KapyIcon(icon, size: 18, color: ink),
+                    KapyIcon(icon, size: 22, color: ink),
                     if (dot)
                       Positioned(
                         top: -1,
@@ -916,8 +1007,8 @@ class _BarItem extends StatelessWidget {
                           key: const ValueKey('bar-folders-dot'),
                           width: 6,
                           height: 6,
-                          decoration: BoxDecoration(
-                            color: scheme.error,
+                          decoration: const BoxDecoration(
+                            color: waitingMarker,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -937,14 +1028,10 @@ class _BarItem extends StatelessWidget {
                     context,
                   ).clamp(maxScaleFactor: 1.3),
                   style: TextStyle(
-                    fontSize: 10.5,
-                    height: 13 / 10.5,
-                    fontWeight: AppWeight.font(
-                      selected ? AppWeight.regular : AppWeight.regular,
-                    ),
-                    fontVariations: AppWeight.wght(
-                      selected ? AppWeight.regular : AppWeight.regular,
-                    ),
+                    fontSize: 11.5,
+                    height: 14 / 11.5,
+                    fontWeight: AppWeight.font(AppWeight.regular),
+                    fontVariations: AppWeight.wght(AppWeight.regular),
                     color: ink,
                   ),
                 ),
@@ -984,7 +1071,7 @@ class _PlusButton extends StatelessWidget {
       onTap: onPressed,
       onLongPress: onLongPress,
       child: Material(
-        color: palette.accent,
+        color: palette.accentFill,
         shape: const CircleBorder(),
         clipBehavior: Clip.antiAlias,
         child: InkWell(

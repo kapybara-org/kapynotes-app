@@ -5,6 +5,7 @@ import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
 import 'package:kapy_notes/core/toast.dart';
+import 'package:kapy_notes/data/blob_store.dart';
 import 'package:kapy_notes/data/local_store.dart';
 import 'package:kapy_notes/data/shortcut_prefs.dart';
 import 'package:kapy_notes/ui/editor/editor_formatting.dart' show bulletPrefix;
@@ -43,6 +44,9 @@ Widget _harness(
   bool markdown = true,
   bool readOnly = false,
   ValueChanged<bool>? onMarkdownEnabledChanged,
+  BlobStore? images,
+  VoidCallback? onRecordVoice,
+  bool voiceActionBusy = false,
 }) => MaterialApp(
   theme: KapyTheme.dark(),
   home: Scaffold(
@@ -60,6 +64,9 @@ Widget _harness(
             markdownEnabled: markdown,
             readOnly: readOnly,
             onMarkdownEnabledChanged: onMarkdownEnabledChanged,
+            images: images,
+            onRecordVoice: onRecordVoice,
+            voiceActionBusy: voiceActionBusy,
             autofocus: true,
             onDocumentChanged: (_, _, _, _) {},
             onSettingsPressed: () {},
@@ -90,6 +97,9 @@ Future<void> _open(
   bool readOnly = false,
   bool keyboard = true,
   ValueChanged<bool>? onMarkdownEnabledChanged,
+  BlobStore? images,
+  VoidCallback? onRecordVoice,
+  bool voiceActionBusy = false,
 }) async {
   AppPlatform.debugTargetPlatformOverride = platform;
   addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
@@ -102,6 +112,9 @@ Future<void> _open(
       markdown: markdown,
       readOnly: readOnly,
       onMarkdownEnabledChanged: onMarkdownEnabledChanged,
+      images: images,
+      onRecordVoice: onRecordVoice,
+      voiceActionBusy: voiceActionBusy,
     ),
   );
   await tester.pumpAndSettle();
@@ -128,6 +141,17 @@ Future<void> _tap(WidgetTester tester, String key) async {
   await tester.tap(button);
   await tester.pumpAndSettle();
 }
+
+/// The rows of the sheet the attach button opens, top to bottom.
+List<String?> _attachChoices(WidgetTester tester) => [
+  for (final tile in tester.widgetList<ListTile>(
+    find.descendant(
+      of: find.byType(BottomSheet),
+      matching: find.byType(ListTile),
+    ),
+  ))
+    (tile.title! as Text).data,
+];
 
 bool _lit(WidgetTester tester, String key) {
   final tile = tester.widget<Container>(
@@ -613,7 +637,134 @@ void main() {
         _expectStillWriting(tester);
       });
 
-      testWidgets('the picture button is dimmed without a place to keep one', (
+      testWidgets('attach is the first button, ahead of the line tools', (
+        tester,
+      ) async {
+        for (final (body, next) in const [
+          ('Trip', 'format-style'),
+          ('- Trip', 'format-outdent'),
+        ]) {
+          await _open(
+            tester,
+            platform,
+            body,
+            TextSelection.collapsed(offset: body.length),
+          );
+          final attach = tester.getRect(
+            find.byKey(const ValueKey('format-attach')),
+          );
+          expect(attach.left, tester.getRect(find.byKey(_bar)).left);
+          expect(
+            attach.right,
+            lessThanOrEqualTo(tester.getRect(find.byKey(ValueKey(next))).left),
+            reason: body,
+          );
+        }
+      });
+
+      testWidgets('a screen reader hears attach as Attach', (tester) async {
+        final semantics = tester.ensureSemantics();
+        await _open(
+          tester,
+          platform,
+          'Trip',
+          const TextSelection.collapsed(offset: 4),
+          images: BlobStore(),
+        );
+        expect(
+          tester.getSemantics(find.byKey(const ValueKey('format-attach'))),
+          isSemantics(label: 'Attach', isButton: true, isEnabled: true),
+        );
+        semantics.dispose();
+      });
+
+      testWidgets('attach offers Camera, Photos, Voice note and File, and '
+          'Voice note starts one', (tester) async {
+        var recordings = 0;
+        await _open(
+          tester,
+          platform,
+          'Trip',
+          const TextSelection.collapsed(offset: 4),
+          images: BlobStore(),
+          onRecordVoice: () => recordings++,
+        );
+        await _tap(tester, 'format-attach');
+        expect(_attachChoices(tester), [
+          'Camera',
+          'Photos',
+          'Voice note',
+          'File',
+        ]);
+        expect(
+          [
+            for (final icon in tester.widgetList<KapyIcon>(
+              find.descendant(
+                of: find.byType(BottomSheet),
+                matching: find.byType(KapyIcon),
+              ),
+            ))
+              icon.icon,
+          ],
+          [
+            KapyIcons.cameraOutlined,
+            KapyIcons.photoLibraryOutlined,
+            KapyIcons.micRounded,
+            KapyIcons.attachFileRounded,
+          ],
+        );
+
+        await tester.tap(find.byKey(const ValueKey('attach-voice')));
+        await tester.pumpAndSettle();
+        expect(recordings, 1);
+        expect(find.byType(BottomSheet), findsNothing);
+        expect(_text(tester), 'Trip');
+      });
+
+      for (final (name, onRecordVoice, busy) in <(String, VoidCallback?, bool)>[
+        ('with nothing to record with', null, false),
+        ('while a recording starts or stops', () {}, true),
+      ]) {
+        testWidgets('attach leaves out Voice note $name', (tester) async {
+          await _open(
+            tester,
+            platform,
+            'Trip',
+            const TextSelection.collapsed(offset: 4),
+            images: BlobStore(),
+            onRecordVoice: onRecordVoice,
+            voiceActionBusy: busy,
+          );
+          await _tap(tester, 'format-attach');
+          expect(_attachChoices(tester), ['Camera', 'Photos', 'File']);
+        });
+      }
+
+      testWidgets('Code, lit past the end of the row, scrolls into view', (
+        tester,
+      ) async {
+        await _open(
+          tester,
+          platform,
+          'Trip\n```\ntrip\n```',
+          const TextSelection.collapsed(offset: 0),
+        );
+        final row = tester.getRect(
+          find.byKey(const ValueKey('phone-format-scroll')),
+        );
+        final code = find.byKey(const ValueKey('format-code'));
+        expect(tester.getRect(code).left, greaterThan(row.right));
+
+        _field(tester).controller.selection = const TextSelection.collapsed(
+          offset: 11,
+        );
+        await tester.pumpAndSettle();
+        expect(_lit(tester, 'format-code'), isTrue);
+        expect(tester.getRect(code).left, greaterThanOrEqualTo(row.left));
+        expect(tester.getRect(code).right, lessThanOrEqualTo(row.right + 0.01));
+      });
+
+      testWidgets('the attach button is dimmed without a place to keep one', (
         tester,
       ) async {
         await _open(
@@ -623,7 +774,8 @@ void main() {
           const TextSelection.collapsed(offset: 4),
         );
         await _tap(tester, 'format-attach');
-        expect(find.byKey(const ValueKey('attach-photo')), findsNothing);
+        expect(find.byKey(const ValueKey('attach-camera')), findsNothing);
+        expect(find.byKey(const ValueKey('attach-photos')), findsNothing);
         _expectStillWriting(tester);
       });
     });

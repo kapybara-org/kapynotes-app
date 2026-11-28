@@ -64,7 +64,7 @@ void main() {
     expect(title.fontFamily, AppFonts.ui);
     expect(title.fontWeight, FontWeight.w600);
     expect(title.fontFamilyFallback!.first, AppFonts.uiFallback.first);
-    expect(title.fontSize, 26);
+    expect(title.fontSize, 28);
     expect(title.fontSize! / base.fontSize!, inInclusiveRange(1.5, 1.8));
   });
 
@@ -79,6 +79,17 @@ void main() {
       expect(title.fontFamily, family, reason: font.name);
       expect(title.fontWeight, EditorMetrics.titleWeight, reason: font.name);
     }
+  });
+
+  test('Pixel sets the whole note in Geist Pixel at 18, with Geist drawing '
+      'what it lacks', () {
+    final base = EditorMetrics.textStyle(lightInk, WritingFont.pixel);
+    expect(base.fontFamily, 'Geist Pixel');
+    expect(base.fontFamilyFallback!.first, AppFonts.ui);
+    expect(base.fontSize, 18);
+    final title = noteTitleStyle(base, writingFont: WritingFont.pixel);
+    expect(title.fontFamily, 'Geist Pixel');
+    expect(title.fontFamilyFallback!.first, AppFonts.ui);
   });
 
   test('every heading stays under the title', () {
@@ -114,21 +125,29 @@ void main() {
     );
   });
 
-  test(
-    'Inter and Shantell stay on the licences page, and the retired faces go',
-    () async {
-      final entries = await fontLicenseEntries().toList();
-      final names = entries.expand((e) => e.packages).toList();
-      expect(names, containsAll(['Inter', 'Shantell Sans', 'Geist Mono']));
-      expect(names, isNot(contains('Figtree')));
-      expect(names, isNot(contains('Newsreader')));
-      final inter = entries.where((e) => e.packages.contains('Inter'));
+  test('Geist, its Mono and Pixel cuts and Shantell are on the licences page, '
+      'and the retired faces go', () async {
+    final entries = await fontLicenseEntries().toList();
+    final names = entries.expand((e) => e.packages).toList();
+    expect(
+      names,
+      containsAll(['Geist', 'Geist Mono', 'Geist Pixel', 'Shantell Sans']),
+    );
+    for (final gone in ['Figtree', 'Newsreader', 'Inter']) {
+      expect(names, isNot(contains(gone)), reason: gone);
+    }
+    for (final family in ['Geist', 'Geist Pixel']) {
       expect(
-        inter.first.paragraphs.map((p) => p.text).join(' '),
+        entries
+            .firstWhere((e) => e.packages.contains(family))
+            .paragraphs
+            .map((p) => p.text)
+            .join(' '),
         contains('SIL Open Font License'),
+        reason: family,
       );
-    },
-  );
+    }
+  });
 
   test('the interface type scale stays on whole and half points', () {
     for (final size in [

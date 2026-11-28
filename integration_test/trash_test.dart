@@ -6,7 +6,7 @@
 //     --dart-define=KAPYNOTES_SYNC=false
 //
 // It takes, light and dark, as screenshots in build/screenshots, for the
-// design check: Delete's notice with Undo, the Show menu with Recently
+// design check: Delete's notice with Undo, the View menu with Recently
 // deleted under Archive, the list with a deleted note open under its bar, a
 // row's menu, and the question Empty asks.
 import 'package:flutter/gestures.dart'
@@ -49,7 +49,7 @@ void main() {
 
   const mouse = PointerDeviceKind.mouse;
 
-  testWidgets('Recently deleted: Delete with Undo, the Show menu, the list '
+  testWidgets('Recently deleted: Delete with Undo, the View menu, the list '
       'with its page bar, a row menu and Empty', (tester) async {
     if (AppPlatform.isDesktop) {
       await windowManager.ensureInitialized();
@@ -133,12 +133,12 @@ void main() {
     await pumpUntil(tester, () => moved.evaluate().isEmpty);
     await tester.pumpAndSettle();
 
-    await click(find.byKey(const ValueKey('sidebar-notes-filter')));
+    await click(find.byKey(const ValueKey('notes-view')));
     expect(
       tester.getCenter(filter(NotesShow.trash)).dy,
       greaterThan(tester.getCenter(filter(NotesShow.archive)).dy),
     );
-    await shot('show-menu');
+    await shot('view-menu');
 
     await click(filter(NotesShow.trash));
     expect(row('Trip budget'), findsOneWidget);

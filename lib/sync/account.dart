@@ -10,6 +10,8 @@ import '../data/day_tabs.dart';
 import '../data/folders.dart';
 import '../data/note_days.dart';
 import '../data/local_store.dart';
+import '../data/note.dart';
+import '../data/note_attachment.dart';
 import '../data/notes_store.dart';
 import '../data/tags.dart';
 import '../data/task_library.dart';
@@ -744,7 +746,12 @@ class Account extends ChangeNotifier {
       store: _store,
       trust: trust,
     );
-    final images = ImageSync(api: api, store: _notes.blobs, notes: _notes);
+    final images = ImageSync(
+      api: api,
+      store: _notes.blobs,
+      notes: _notes,
+      onStorage: _onStorage,
+    );
     final docs = _tasks.docs;
     final service =
         _syncServiceFactory?.call(api: api, vault: vault, keyring: keyring) ??
@@ -823,6 +830,7 @@ class Account extends ChangeNotifier {
     _sharing?.dispose();
     _sharing = null;
     _images = null;
+    _storageFull = null;
     _speech = null;
     _sync?.dispose();
     _sync = null;
@@ -1014,6 +1022,7 @@ class Account extends ChangeNotifier {
   static const String _unsavedEntry = 'keys.recoveryUnsaved.v1';
   static const String _nudgedEntry = 'keys.recoveryNudged.v1';
   static const String _reportedEntry = 'keys.deviceReported.v1';
+  static const String _storageFullEntry = 'storage.fullShown.v1';
 
   Object? _forThisAccount(String entry) {
     final saved = _store.read<Map<String, Object?>>(entry);
@@ -1054,6 +1063,39 @@ class Account extends ChangeNotifier {
 
   void recoveryNudgeShown() {
     _putForThisAccount(_nudgedEntry, true);
+    notifyListeners();
+  }
+
+  NoteAttachmentRef? _storageFull;
+
+  /// What this account just ran out of room for, until the sheet that says so
+  /// has been shown. Once: not again until an upload has been let in.
+  NoteAttachmentRef? get storageFull => _storageFull;
+
+  void storageFullShown() {
+    _storageFull = null;
+    _putForThisAccount(_storageFullEntry, true);
+  }
+
+  void _onStorage(Note note, NoteAttachmentRef? refused) {
+    // A space somebody else owns is counted against their account, which
+    // this sheet is not about. Checked first: an upload that is let in
+    // there is not room in this account, and must not make the sheet show
+    // again.
+    final own =
+        note.spaceId == null || (_sharing?.spaceOf(note)?.isOwner ?? false);
+    if (!own) return;
+    if (refused == null) {
+      _storageFull = null;
+      if (_forThisAccount(_storageFullEntry) == true) {
+        _putForThisAccount(_storageFullEntry, null);
+      }
+      return;
+    }
+    if (_storageFull != null || _forThisAccount(_storageFullEntry) == true) {
+      return;
+    }
+    _storageFull = refused;
     notifyListeners();
   }
 

@@ -442,11 +442,7 @@ class HighlightingController extends TextEditingController {
       spans: _Sorted(spansFor(source), (span) => (span.start, span.end)),
       links: _Sorted(links, (link) => (link.start, link.end)),
       markdown: _Sorted(analysis.spans, (span) => (span.start, span.end)),
-      hidden: _Sorted(
-        [...concealment.hidden, ..._chipSchemes(source)]
-          ..sort((a, b) => a.start.compareTo(b.start)),
-        (range) => (range.start, range.end),
-      ),
+      hidden: _Sorted(hiddenIn(source), (range) => (range.start, range.end)),
       transparent: _Sorted(
         concealment.transparent,
         (range) => (range.start, range.end),
@@ -940,7 +936,7 @@ class HighlightingController extends TextEditingController {
   bool _chipLink(NoteLink link) =>
       _cachedWebSpans.contains((link.start, link.end));
 
-  /// A web address on the page: Paper's link chip, Geist Mono at 12.5 in the
+  /// A web address on the page: Paper's link chip, Geist at 12.5 in the
   /// muted ink, keeping the row it sits in. The chip under it is drawn by the
   /// backdrop.
   TextStyle _linkChipStyle(TextStyle style) {
@@ -949,8 +945,8 @@ class HighlightingController extends TextEditingController {
         ? null
         : style.fontSize! * style.height!;
     return style.copyWith(
-      fontFamily: AppFonts.mono,
-      fontFamilyFallback: AppFonts.monoFallback,
+      fontFamily: AppFonts.ui,
+      fontFamilyFallback: AppFonts.uiFallback,
       fontVariations: const [],
       fontWeight: FontWeight.w400,
       fontSize: size,
@@ -961,6 +957,12 @@ class HighlightingController extends TextEditingController {
   }
 
   static final _scheme = RegExp('^https?://');
+
+  /// What the note draws as nothing, sorted: the markdown it hides, and the
+  /// scheme of each web address it sets as a chip.
+  List<TextRange> hiddenIn(String source) =>
+      [...markdownConcealment().hidden, ..._chipSchemes(source)]
+        ..sort((a, b) => a.start.compareTo(b.start));
 
   /// The \`https://\` of each chip the caret is not in: Paper's pill shows the
   /// address without it, and it comes back for whoever is editing the link.

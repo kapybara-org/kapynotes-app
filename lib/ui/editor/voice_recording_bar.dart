@@ -75,12 +75,15 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
 
   /// What the bar says it is doing. The distinction that matters is between a
   /// pause the user chose and one a phone call forced: only the second needs
-  /// telling, because only it requires an action to undo.
+  /// telling, because only it requires an action to undo. A microphone that
+  /// gives no sound is told too, while there is still time to fix it.
   String get _status {
     final session = widget.session;
     if (session.finishing) return 'Saving voice note…';
+    if (session.starting) return 'Starting…';
     if (session.interrupted) return 'Recording interrupted';
     if (session.paused) return 'Recording paused';
+    if (session.silent) return 'Microphone is silent';
     final left = VoiceRecordingController.maxDuration - session.elapsed;
     if (session.elapsed >= VoiceRecordingController.warnAfter) {
       return '${formatVoiceDuration(left)} left';
@@ -93,7 +96,10 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
     final palette = context.palette;
     final session = widget.session;
     final active =
-        !session.paused && !session.interrupted && !session.finishing;
+        !session.starting &&
+        !session.paused &&
+        !session.interrupted &&
+        !session.finishing;
     final elapsed = formatVoiceDuration(session.elapsed);
     final barHeight = AppControlMetrics.scaleBar(
       context,
@@ -108,7 +114,7 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
       container: true,
       explicitChildNodes: true,
       label: '$_status, $elapsed',
-      liveRegion: session.interrupted || session.finishing,
+      liveRegion: session.interrupted || session.finishing || session.silent,
       child: Container(
         height: barHeight + bottomInset,
         padding: EdgeInsets.fromLTRB(12, 0, 12, bottomInset),
@@ -153,6 +159,7 @@ class _VoiceRecordingBarState extends State<VoiceRecordingBar> {
                     levels: List.unmodifiable(_levels),
                     active: active,
                     finishing: session.finishing,
+                    silent: session.silent,
                     status: _status,
                     showStatus: compact,
                   ),
@@ -224,6 +231,7 @@ class _LiveWaveform extends StatelessWidget {
     required this.levels,
     required this.active,
     required this.finishing,
+    required this.silent,
     required this.status,
     required this.showStatus,
   });
@@ -231,6 +239,10 @@ class _LiveWaveform extends StatelessWidget {
   final List<double> levels;
   final bool active;
   final bool finishing;
+
+  /// A silent microphone draws a flat line, so on a narrow bar the warning
+  /// takes the waveform's place.
+  final bool silent;
   final String status;
   final bool showStatus;
 
@@ -238,7 +250,7 @@ class _LiveWaveform extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = context.palette;
     final recording = Theme.of(context).colorScheme.error;
-    final showOverlay = finishing || (showStatus && !active);
+    final showOverlay = finishing || (showStatus && (!active || silent));
     return AnimatedContainer(
       duration: const Duration(milliseconds: 160),
       height: AppControlMetrics.footerButtonExtent - 8,

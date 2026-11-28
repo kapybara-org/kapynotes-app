@@ -27,6 +27,7 @@ class MainActivity : FlutterFragmentActivity() {
     private var noteTitles: NoteTitles? = null
     private var contrastSetting: ContrastSetting? = null
     private var recordingControls: RecordingControls? = null
+    private var liveTranslation: LiveTranslation? = null
 
     /**
      * Lets code Play delivered after install — the speech runtime module —
@@ -44,12 +45,14 @@ class MainActivity : FlutterFragmentActivity() {
         AudioDecode.register(flutterEngine.dartExecutor.binaryMessenger)
         SpeechRuntime.register(flutterEngine.dartExecutor.binaryMessenger, this) { this }
         SystemRegion.register(flutterEngine.dartExecutor.binaryMessenger)
+        CameraSupport.register(flutterEngine.dartExecutor.binaryMessenger, this)
         StoreUpdate.register(flutterEngine.dartExecutor.binaryMessenger, this)
         contrastSetting = ContrastSetting.register(this, flutterEngine.dartExecutor.binaryMessenger)
         StatusBar.register(flutterEngine.dartExecutor.binaryMessenger, this)
         noteTitles = NoteTitles.register(flutterEngine.dartExecutor.binaryMessenger)
         FileExport.register(flutterEngine.dartExecutor.binaryMessenger) { this }
         recordingControls = RecordingControls.register(this, flutterEngine.dartExecutor.binaryMessenger)
+        liveTranslation = LiveTranslation.register(this, flutterEngine.dartExecutor.binaryMessenger)
         pendingLaunch = takeLaunchName(intent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
@@ -111,10 +114,16 @@ class MainActivity : FlutterFragmentActivity() {
         contrastSetting = null
         recordingControls?.close()
         recordingControls = null
+        liveTranslation?.close()
+        liveTranslation = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
-    /** Notifications, asked for by [RecordingControls] as somebody records. */
+    /**
+     * Notifications, asked for by [RecordingControls] as somebody records,
+     * and the microphone, asked for by [LiveTranslation] as somebody turns
+     * it on.
+     */
     @Deprecated("Deprecated in FragmentActivity")
     override fun onRequestPermissionsResult(
         requestCode: Int,
@@ -123,6 +132,7 @@ class MainActivity : FlutterFragmentActivity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         recordingControls?.onPermissionResult(requestCode)
+        liveTranslation?.onPermissionResult(requestCode, grantResults)
     }
 
     /**

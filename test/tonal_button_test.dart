@@ -30,15 +30,15 @@ Color? _ink(WidgetTester tester, String text) =>
     tester.renderObject<RenderParagraph>(find.text(text)).text.style?.color;
 
 void main() {
-  testWidgets('a keycap prints its key in Geist Mono on the keycap colours', (
+  testWidgets('a keycap prints its key in Geist on the keycap colours', (
     tester,
   ) async {
     await _pump(tester, const Keycap('⌘F'));
     final palette = KapyTheme.darkPalette;
 
     final style = tester.widget<Text>(find.text('⌘F')).style!;
-    expect(style.fontFamily, AppFonts.mono);
-    expect(style.fontFamilyFallback, AppFonts.monoFallback);
+    expect(style.fontFamily, AppFonts.ui);
+    expect(style.fontFamilyFallback, AppFonts.uiFallback);
     expect(style.fontSize, AppTypeScale.keycap);
     expect(style.color, palette.keycapText);
 

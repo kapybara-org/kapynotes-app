@@ -460,6 +460,51 @@ void main() {
     expect(api.summarizeCalls, 0);
   });
 
+  group('live translation', () {
+    late List<(String, String, String)> kept;
+    late TranscriptionQueue translating;
+
+    setUp(() {
+      kept = [];
+      translating = TranscriptionQueue(
+        store: _MemoryStore(),
+        notes: notes,
+        blobs: blobs,
+        prefs: prefs,
+        api: () => api,
+        keepTranslation: (noteId, hash, to) => kept.add((noteId, hash, to)),
+      );
+    });
+
+    test('on, a finished transcript is kept in its language once', () async {
+      prefs
+        ..liveTranslation = true
+        ..liveTranslateTo = 'es';
+      translating.enqueue(noteId, 'v1');
+      await translating.drain();
+      expect(current()!.transcript, isNotNull);
+      expect(kept, [(noteId, 'v1', 'es')]);
+      await translating.drain();
+      expect(kept, hasLength(1), reason: 'not again for the summary');
+    });
+
+    test('off, nothing is kept', () async {
+      prefs.liveTranslateTo = 'es';
+      translating.enqueue(noteId, 'v1');
+      await translating.drain();
+      expect(current()!.transcript, isNotNull);
+      expect(kept, isEmpty);
+    });
+
+    test('on with no language picked, nothing is kept', () async {
+      prefs.liveTranslation = true;
+      translating.enqueue(noteId, 'v1');
+      await translating.drain();
+      expect(current()!.transcript, isNotNull);
+      expect(kept, isEmpty);
+    });
+  });
+
   test('a chosen language is sent to the provider', () async {
     prefs.language = 'de';
     queue.enqueue(noteId, 'v1');

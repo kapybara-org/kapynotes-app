@@ -172,6 +172,9 @@ class SidebarTimestamp {
   /// A month's name: "November".
   static String monthName(DateTime day) => _monthNames[day.month - 1];
 
+  /// A month in three letters: "Nov".
+  static String shortMonth(DateTime day) => _months[day.month - 1];
+
   /// The heading over a day of finished tasks: "Today", "Yesterday · Monday,
   /// 16 Nov", then "Sunday, 15 Nov", with the year when it is not this one.
   static String doneDay(DateTime shown, {required DateTime now}) {

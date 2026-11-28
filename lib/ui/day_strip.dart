@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -9,6 +10,7 @@ import '../core/platform.dart';
 import '../core/theme.dart';
 import '../data/note.dart';
 import 'compact_icon_button.dart';
+import 'context_menu.dart';
 import 'notes_grouping.dart';
 import 'sidebar_timestamp.dart';
 import 'tag_ui.dart' show PopoverAtPoint;
@@ -238,12 +240,14 @@ class _DayStripState extends State<DayStrip> {
     }
   }
 
-  /// Pages the week to the one that holds [day].
+  /// Pages the week to the one that holds [day], sliding there from the
+  /// week beside it, as a page turned to the next day does.
   void _bringIntoView(DateTime day) {
     if (_weeks case final weeks?) {
       final page = _pageOf(day);
       if (weeks.hasClients && weeks.page?.round() != page) {
-        weeks.jumpToPage(page);
+        final by = page - weeks.page!.round();
+        by.abs() == 1 ? _turn(by) : weeks.jumpToPage(page);
       }
       return;
     }
@@ -309,12 +313,9 @@ class _DayStripState extends State<DayStrip> {
     final picked = widget.picked;
     final shown = picked ?? _shown.lastOrNull ?? today;
     setState(() => _choosing = true);
-    final day = await showGeneralDialog<DateTime>(
+    final day = await showKapyPopover<DateTime>(
       context: context,
-      barrierDismissible: true,
       barrierLabel: 'Close the calendar',
-      barrierColor: Colors.transparent,
-      transitionDuration: Duration.zero,
       pageBuilder: (context, _, _) => CustomSingleChildLayout(
         delegate: PopoverAtPoint(
           box.localToGlobal(Offset(0, box.size.height + 4)),
@@ -334,16 +335,19 @@ class _DayStripState extends State<DayStrip> {
     if (day != null) _choose(day);
   }
 
-  /// The month over the week, or the two its days span: "November",
-  /// "November–December". Spelled out in full (Sanjay, 20 Nov).
-  String _monthOver(List<DateTime> shown) {
-    if (shown.isEmpty) return SidebarTimestamp.monthName(widget.today);
+  /// The month over the week, or the two its days span, in three letters
+  /// each: "Nov", "Nov–Dec" (Sanjay, 26 Nov). With [full], spelled out for a
+  /// screen reader: "November", "November to December".
+  String _monthOver(List<DateTime> shown, {bool full = false}) {
+    final name = full
+        ? SidebarTimestamp.monthName
+        : SidebarTimestamp.shortMonth;
+    if (shown.isEmpty) return name(widget.today);
     final first = shown.first;
     final last = shown.last;
     return first.month == last.month
-        ? SidebarTimestamp.monthName(last)
-        : '${SidebarTimestamp.monthName(first)}–'
-              '${SidebarTimestamp.monthName(last)}';
+        ? name(last)
+        : [name(first), name(last)].join(full ? ' to ' : '–');
   }
 
   /// How wide [label] is: 8, its text, 4, a 12 chevron and 8.
@@ -393,7 +397,12 @@ class _DayStripState extends State<DayStrip> {
         builder: (context, constraints) =>
             _buttonWidth(context, label, compact: compact) <=
                 constraints.maxWidth
-            ? _calendarButton(label, palette, compact: compact)
+            ? _calendarButton(
+                label,
+                palette,
+                compact: compact,
+                spoken: compact ? null : _monthOver(_shown, full: true),
+              )
             : const SizedBox.shrink(),
       ),
       compact
@@ -416,49 +425,65 @@ class _DayStripState extends State<DayStrip> {
                 final shown = _shown;
                 final counts = _counts(shown);
                 final filled = picked ?? today;
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CompactIconButton(
-                      key: const ValueKey('day-strip-back'),
-                      tooltip: 'The week before',
-                      extent: 32,
-                      width: DayStrip._arrowWidth,
-                      radius: 8,
-                      onPressed: () => setState(() => _shift -= 7),
-                      icon: const KapyIcon(
-                        KapyIcons.chevronLeftRounded,
-                        size: 16,
+                return BackForwardArea(
+                  onStep: (step) {
+                    setState(
+                      () => _shift += step == BackForwardStep.back ? -7 : 7,
+                    );
+                    return true;
+                  },
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CompactIconButton(
+                        key: const ValueKey('day-strip-back'),
+                        tooltip: 'The week before',
+                        extent: 32,
+                        width: DayStrip._arrowWidth,
+                        radius: 8,
+                        onPressed: () => setState(() => _shift -= 7),
+                        icon: const KapyIcon(
+                          KapyIcons.chevronLeftRounded,
+                          size: 16,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: DayStrip._arrowGap),
-                    for (final (index, day) in shown.indexed) ...[
-                      if (index > 0) const SizedBox(width: DayStrip._dayGap),
-                      _Day(
-                        key: ValueKey('day-strip-${_date(day)}'),
-                        day: day,
-                        today: day == today,
-                        picked: day == picked,
-                        filled: day == filled,
-                        count: counts[day]!,
-                        opensTabs: widget.opensTabs,
-                        onTap: () => _choose(day),
+                      const SizedBox(width: DayStrip._arrowGap),
+                      BackForwardSlide(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final (index, day) in shown.indexed) ...[
+                              if (index > 0)
+                                const SizedBox(width: DayStrip._dayGap),
+                              _Day(
+                                key: ValueKey('day-strip-${_date(day)}'),
+                                day: day,
+                                today: day == today,
+                                picked: day == picked,
+                                filled: day == filled,
+                                count: counts[day]!,
+                                opensTabs: widget.opensTabs,
+                                onTap: () => _choose(day),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: DayStrip._arrowGap),
+                      CompactIconButton(
+                        key: const ValueKey('day-strip-forward'),
+                        tooltip: 'The week after',
+                        extent: 32,
+                        width: DayStrip._arrowWidth,
+                        radius: 8,
+                        onPressed: () => setState(() => _shift += 7),
+                        icon: const KapyIcon(
+                          KapyIcons.chevronRightRounded,
+                          size: 16,
+                        ),
                       ),
                     ],
-                    const SizedBox(width: DayStrip._arrowGap),
-                    CompactIconButton(
-                      key: const ValueKey('day-strip-forward'),
-                      tooltip: 'The week after',
-                      extent: 32,
-                      width: DayStrip._arrowWidth,
-                      radius: 8,
-                      onPressed: () => setState(() => _shift += 7),
-                      icon: const KapyIcon(
-                        KapyIcons.chevronRightRounded,
-                        size: 16,
-                      ),
-                    ),
-                  ],
+                  ),
                 );
               },
             ),
@@ -498,23 +523,56 @@ class _DayStripState extends State<DayStrip> {
             ),
           ),
         );
-    Widget week(BuildContext context, int page) => Row(
-      children: [
-        for (final day in _weekOn(page))
-          Expanded(
-            child: _Day(
-              key: ValueKey('day-strip-${_date(day)}'),
-              day: day,
-              today: day == today,
-              picked: day == picked,
-              filled: day == filled,
-              count: counts[day] ?? 0,
-              stacked: true,
-              onTap: () => _choose(day),
+    // The fill is drawn once under the week's days, so it slides from the
+    // day it left to the one picked.
+    final still = MediaQuery.disableAnimationsOf(context);
+    Widget week(BuildContext context, int page) {
+      final days = _weekOn(page);
+      final at = days.indexOf(filled);
+      return Stack(
+        children: [
+          if (at >= 0)
+            Positioned.fill(
+              child: AnimatedAlign(
+                alignment: Alignment(at / 3 - 1, 0),
+                duration: still
+                    ? Duration.zero
+                    : const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                child: FractionallySizedBox(
+                  key: const ValueKey('day-strip-fill'),
+                  widthFactor: 1 / 7,
+                  heightFactor: 1,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: context.palette.controlBackground,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
             ),
+          Row(
+            children: [
+              for (final day in days)
+                Expanded(
+                  child: _Day(
+                    key: ValueKey('day-strip-${_date(day)}'),
+                    day: day,
+                    today: day == today,
+                    picked: day == picked,
+                    filled: day == filled,
+                    count: counts[day] ?? 0,
+                    stacked: true,
+                    onTap: () => _choose(day),
+                  ),
+                ),
+            ],
           ),
-      ],
-    );
+        ],
+      );
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = ((constraints.maxWidth - 7 * 44) / 2).clamp(
@@ -590,6 +648,7 @@ class _DayStripState extends State<DayStrip> {
     String label,
     CalcPalette palette, {
     required bool compact,
+    String? spoken,
   }) {
     final icons = _choosing ? palette.tonalForeground : palette.textSecondary;
     return Builder(
@@ -627,7 +686,7 @@ class _DayStripState extends State<DayStrip> {
                 KapyIcon(KapyIcons.calendarOutlined, size: 16, color: icons),
                 const SizedBox(width: 4),
               ],
-              Text(label),
+              Text(label, semanticsLabel: spoken),
               const SizedBox(width: 4),
               KapyIcon(KapyIcons.chevronDownRounded, size: 12, color: icons),
             ],
@@ -671,7 +730,8 @@ class _Day extends StatefulWidget {
   final bool today;
 
   /// A phone's day: its weekday over its date, both in the day's colour,
-  /// and a quiet fill while it is the note's.
+  /// over a quiet fill while it is the note's, which its week draws, so the
+  /// fill slides to the day picked.
   final bool stacked;
 
   /// Whether the list is narrowed to this day.
@@ -723,10 +783,6 @@ class _DayState extends State<_Day> {
     final column = widget.stacked
         ? Container(
             constraints: const BoxConstraints(minHeight: _Day.phoneHeight),
-            decoration: BoxDecoration(
-              color: filled ? palette.controlBackground : null,
-              borderRadius: BorderRadius.circular(10),
-            ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -1113,19 +1169,28 @@ class _DayPickerState extends State<DayPicker> {
         ),
       );
     }
-    return Material(
-      color: palette.surfaceBackground,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(AppRadii.control),
-        side: BorderSide(
-          color: palette.controlBorder,
-          width: AppHairline.of(context),
+    return BackForwardArea(
+      onStep: (step) {
+        _page(step == BackForwardStep.back ? -1 : 1);
+        return true;
+      },
+      child: Material(
+        color: palette.surfaceBackground,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.control),
+          side: BorderSide(
+            color: palette.controlBorder,
+            width: AppHairline.of(context),
+          ),
         ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: SizedBox(width: 7 * 32 + 6 * 4, child: grid),
+        clipBehavior: Clip.antiAlias,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: SizedBox(
+            width: 7 * 32 + 6 * 4,
+            child: BackForwardSlide(child: grid),
+          ),
+        ),
       ),
     );
   }

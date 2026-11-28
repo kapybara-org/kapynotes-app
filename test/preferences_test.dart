@@ -405,6 +405,17 @@ void main() {
     expect(reloaded.lastSlashCommand, 'heading2');
   });
 
+  test('the camera opens in Photo the first time, then in the mode used '
+      'last', () {
+    final store = _MemoryStore();
+    final prefs = LayoutPrefs(store)..load();
+    expect(prefs.cameraVideo, isFalse);
+    prefs.cameraVideo = true;
+
+    final reloaded = LayoutPrefs(store)..load();
+    expect(reloaded.cameraVideo, isTrue);
+  });
+
   test('markdown in notes starts on, and a no survives reload', () {
     final store = _MemoryStore();
     final prefs = LayoutPrefs(store)..load();
@@ -774,7 +785,7 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
     expect(
       ShortcutPrefs.defaultFor(ShortcutAction.findNotes).keycapLabel,
-      '⌘K',
+      '⇧⌘F',
     );
     // The order a Mac's own menus print modifiers in.
     expect(everything.keycapLabel, '⌃⌥⇧⌘K');
@@ -782,7 +793,7 @@ void main() {
     AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
     expect(
       ShortcutPrefs.defaultFor(ShortcutAction.findNotes).keycapLabel,
-      'Ctrl+K',
+      'Ctrl+Shift+F',
     );
     expect(everything.keycapLabel, 'Ctrl+Alt+Shift+Win+K');
 
@@ -871,7 +882,6 @@ void main() {
       final claimed = <ShortcutBinding, ShortcutAction>{};
       for (final action in ShortcutAction.values) {
         final binding = ShortcutPrefs.defaultFor(action);
-        if (ShortcutPrefs.sharesChord(action, claimed[binding])) continue;
         expect(
           claimed[binding],
           isNull,
@@ -1163,8 +1173,8 @@ void main() {
     final store = _MemoryStore();
     final prefs = ShortcutPrefs(store)..load();
     final replacement = ShortcutBinding(
-      logicalKey: LogicalKeyboardKey.keyP,
-      physicalKey: PhysicalKeyboardKey.keyP,
+      logicalKey: LogicalKeyboardKey.keyU,
+      physicalKey: PhysicalKeyboardKey.keyU,
       control: true,
       shift: true,
     );
@@ -1182,18 +1192,68 @@ void main() {
     expect(restored.bindingFor(ShortcutAction.findNotes)!, replacement);
   });
 
+  test('the camera opens on Shift and P, and that chord is checked against '
+      'every other key', () {
+    for (final (platform, meta) in [
+      (TargetPlatform.macOS, true),
+      (TargetPlatform.windows, false),
+    ]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+      final prefs = ShortcutPrefs(_MemoryStore())..load();
+      final camera = prefs.bindingFor(ShortcutAction.openCamera)!;
+      expect(camera.logicalKey, LogicalKeyboardKey.keyP, reason: platform.name);
+      expect(camera.shift, isTrue);
+      expect(camera.meta, meta);
+      expect(camera.control, !meta);
+      expect(camera.alt, isFalse);
+      expect(ShortcutAction.openCamera.label, 'Open the camera');
+      expect(
+        ShortcutAction.openCamera.description,
+        'Take a photo or record a video for the note',
+      );
+      for (final action in ShortcutAction.values) {
+        if (action == ShortcutAction.openCamera) continue;
+        expect(
+          prefs.bindingFor(action),
+          isNot(camera),
+          reason: '${platform.name}: ${action.name}',
+        );
+      }
+      expect(
+        prefs.conflictFor(ShortcutAction.findNotes, camera),
+        ShortcutAction.openCamera,
+      );
+    }
+  });
+
+  test('a key someone already set keeps the camera off it until they '
+      'choose one', () {
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.windows;
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    final taken = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyP,
+      physicalKey: PhysicalKeyboardKey.keyP,
+      control: true,
+      shift: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'findNotes': taken.toJson()};
+    final prefs = ShortcutPrefs(store)..load();
+    expect(prefs.bindingFor(ShortcutAction.findNotes), taken);
+    expect(prefs.bindingFor(ShortcutAction.openCamera), isNull);
+  });
+
   test('formatting shortcuts have distinct OS-specific defaults', () {
     final prefs = ShortcutPrefs(_MemoryStore())..load();
     final defaults = [
       for (final action in ShortcutAction.values) prefs.bindingFor(action)!,
     ];
 
-    // Less one: Link and Search share a chord, Link only while words are
-    // selected.
-    expect(defaults.toSet(), hasLength(ShortcutAction.values.length - 1));
+    expect(defaults.toSet(), hasLength(ShortcutAction.values.length));
     expect(
       prefs.bindingFor(ShortcutAction.cycleTextStyle)!.logicalKey,
-      LogicalKeyboardKey.keyT,
+      LogicalKeyboardKey.keyH,
     );
     expect(
       prefs.bindingFor(ShortcutAction.formatBold)!.logicalKey,
@@ -1229,23 +1289,23 @@ void main() {
   });
 
   // Cmd+Tab is the macOS application switcher and never reaches an app, so
-  // walking the notes is the one pair of defaults that stays on Control
-  // wherever it runs.
-  test('the walk between notes is Ctrl+Tab on every platform', () {
+  // stepping through the tabs is the one pair of defaults that stays on
+  // Control wherever it runs.
+  test('Next tab and Previous tab are Ctrl+Tab on every platform', () {
     addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
 
     for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
       AppPlatform.debugTargetPlatformOverride = platform;
       final prefs = ShortcutPrefs(_MemoryStore())..load();
 
-      final next = prefs.bindingFor(ShortcutAction.nextNote)!;
+      final next = prefs.bindingFor(ShortcutAction.nextTab)!;
       expect(next.logicalKey, LogicalKeyboardKey.tab);
       expect(next.control, isTrue);
       expect(next.meta, isFalse);
       expect(next.shift, isFalse);
       expect(next.displayLabel, 'Ctrl + Tab');
 
-      final previous = prefs.bindingFor(ShortcutAction.previousNote)!;
+      final previous = prefs.bindingFor(ShortcutAction.previousTab)!;
       expect(previous.logicalKey, LogicalKeyboardKey.tab);
       expect(previous.control, isTrue);
       expect(previous.shift, isTrue);
@@ -1331,6 +1391,204 @@ void main() {
         reason: 'Reopen closed tab on $platform',
       );
     }
+  });
+
+  // Search shared K with Link, which took it only while words were selected,
+  // and F opened Search as well. Now K is Link's alone, F finds in the open
+  // note, and Search answers to F with Shift.
+  test("Search moves off Link's K, and off F, onto F with Shift", () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+
+    for (final platform in [TargetPlatform.macOS, TargetPlatform.windows]) {
+      AppPlatform.debugTargetPlatformOverride = platform;
+      final useMeta = platform == TargetPlatform.macOS;
+      for (final (logical, physical) in [
+        (LogicalKeyboardKey.keyK, PhysicalKeyboardKey.keyK),
+        (LogicalKeyboardKey.keyF, PhysicalKeyboardKey.keyF),
+      ]) {
+        final shipped = ShortcutBinding(
+          logicalKey: logical,
+          physicalKey: physical,
+          meta: useMeta,
+          control: !useMeta,
+        );
+        final store = _MemoryStore();
+        store.data['shortcuts.v1'] = {
+          'findNotes': shipped.toJson(),
+          'formatLink': ShortcutPrefs.defaultFor(
+            ShortcutAction.formatLink,
+          ).toJson(),
+        };
+
+        ShortcutPrefs(store).load();
+
+        // Checked after a second load, so the move is known to be on disk.
+        final reloaded = ShortcutPrefs(store)..load();
+        final reason = '${logical.keyLabel} on $platform';
+        expect(
+          reloaded.bindingFor(ShortcutAction.findNotes)!.keycapLabel,
+          useMeta ? '⇧⌘F' : 'Ctrl+Shift+F',
+          reason: reason,
+        );
+        expect(
+          reloaded.bindingFor(ShortcutAction.formatLink)!.keycapLabel,
+          useMeta ? '⌘K' : 'Ctrl+K',
+          reason: reason,
+        );
+        expect(
+          reloaded.bindingFor(ShortcutAction.findInNote)!.keycapLabel,
+          useMeta ? '⌘F' : 'Ctrl+F',
+          reason: reason,
+        );
+      }
+    }
+  });
+
+  // An action added since the shortcuts were saved would otherwise take a
+  // chord the person already gave to something of their own.
+  test('a new action leaves a chord the person chose to them', () {
+    addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    AppPlatform.debugTargetPlatformOverride = TargetPlatform.macOS;
+
+    final chosen = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyF,
+      physicalKey: PhysicalKeyboardKey.keyF,
+      meta: true,
+    );
+    final store = _MemoryStore();
+    store.data['shortcuts.v1'] = {'newDrawing': chosen.toJson()};
+
+    final prefs = ShortcutPrefs(store)..load();
+    expect(prefs.bindingFor(ShortcutAction.newDrawing), chosen);
+    expect(prefs.bindingFor(ShortcutAction.findInNote), isNull);
+    expect(
+      prefs.conflictFor(ShortcutAction.findInNote, chosen),
+      ShortcutAction.newDrawing,
+    );
+
+    // Written down as cleared, so a restart keeps it that way, and a key
+    // given to it later is kept.
+    final reloaded = ShortcutPrefs(store)..load();
+    expect(reloaded.bindingFor(ShortcutAction.findInNote), isNull);
+    final other = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyF,
+      physicalKey: PhysicalKeyboardKey.keyF,
+      meta: true,
+      alt: true,
+    );
+    reloaded.update(ShortcutAction.findInNote, other);
+    expect(
+      (ShortcutPrefs(store)..load()).bindingFor(ShortcutAction.findInNote),
+      other,
+    );
+  });
+
+  group('Cycle text style gives Cmd+T and Ctrl+T to New note in a new tab '
+      '(KAP-433)', () {
+    tearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+    const platforms = [
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+      TargetPlatform.linux,
+    ];
+    ShortcutBinding chord(
+      LogicalKeyboardKey key,
+      PhysicalKeyboardKey physical, {
+      bool shift = false,
+    }) {
+      final useMeta = AppPlatform.isMacOS;
+      return ShortcutBinding(
+        logicalKey: key,
+        physicalKey: physical,
+        meta: useMeta,
+        control: !useMeta,
+        shift: shift,
+      );
+    }
+
+    ShortcutBinding t() =>
+        chord(LogicalKeyboardKey.keyT, PhysicalKeyboardKey.keyT);
+    ShortcutBinding h() =>
+        chord(LogicalKeyboardKey.keyH, PhysicalKeyboardKey.keyH, shift: true);
+
+    test('a new install has T for the new tab and H with Shift for text '
+        'style', () {
+      for (final platform in platforms) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        final fresh = ShortcutPrefs(_MemoryStore())..load();
+        expect(fresh.bindingFor(ShortcutAction.newNoteInNewTab), t());
+        expect(fresh.bindingFor(ShortcutAction.cycleTextStyle), h());
+        expect(fresh.conflictFor(ShortcutAction.newNoteInNewTab, t()), isNull);
+        expect(ShortcutAction.newNoteInNewTab.label, 'New note in a new tab');
+      }
+    });
+
+    test('text style still on the T it shipped with moves to H with Shift', () {
+      for (final platform in platforms) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        final store = _MemoryStore();
+        store.data['shortcuts.v1'] = {'cycleTextStyle': t().toJson()};
+        final prefs = ShortcutPrefs(store)..load();
+        expect(prefs.bindingFor(ShortcutAction.cycleTextStyle), h());
+        expect(prefs.bindingFor(ShortcutAction.newNoteInNewTab), t());
+
+        final reloaded = ShortcutPrefs(store)..load();
+        expect(reloaded.bindingFor(ShortcutAction.cycleTextStyle), h());
+        expect(reloaded.bindingFor(ShortcutAction.newNoteInNewTab), t());
+      }
+    });
+
+    test('a key chosen for text style stays, and the new tab keeps T', () {
+      for (final platform in platforms) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        final chosen = chord(LogicalKeyboardKey.keyY, PhysicalKeyboardKey.keyY);
+        final store = _MemoryStore();
+        store.data['shortcuts.v1'] = {'cycleTextStyle': chosen.toJson()};
+        final prefs = ShortcutPrefs(store)..load();
+        expect(prefs.bindingFor(ShortcutAction.cycleTextStyle), chosen);
+        expect(prefs.bindingFor(ShortcutAction.newNoteInNewTab), t());
+      }
+    });
+
+    test('T picked again for text style stays there, and the new tab waits '
+        'with no key', () {
+      for (final platform in platforms) {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        final store = _MemoryStore();
+        store.data['shortcuts.v1'] = {
+          'cycleTextStyle': t().toJson(),
+          'repicked': ['cycleTextStyle'],
+        };
+        final prefs = ShortcutPrefs(store)..load();
+        expect(prefs.bindingFor(ShortcutAction.cycleTextStyle), t());
+        expect(prefs.bindingFor(ShortcutAction.newNoteInNewTab), isNull);
+
+        final reloaded = ShortcutPrefs(store)..load();
+        expect(reloaded.bindingFor(ShortcutAction.cycleTextStyle), t());
+        expect(reloaded.bindingFor(ShortcutAction.newNoteInNewTab), isNull);
+      }
+    });
+  });
+
+  test('a key chosen for Next note or Previous note carries over to Next tab '
+      'or Previous tab, and one cleared stays cleared (KAP-433)', () {
+    final store = _MemoryStore();
+    const chosen = ShortcutBinding(
+      logicalKey: LogicalKeyboardKey.keyJ,
+      physicalKey: PhysicalKeyboardKey.keyJ,
+      control: true,
+      alt: true,
+    );
+    store.data['shortcuts.v1'] = {
+      'nextNote': chosen.toJson(),
+      'previousNote': 'unbound',
+    };
+
+    final prefs = ShortcutPrefs(store)..load();
+    expect(prefs.bindingFor(ShortcutAction.nextTab), chosen);
+    expect(prefs.bindingFor(ShortcutAction.previousTab), isNull);
+    expect(ShortcutAction.nextTab.label, 'Next tab');
+    expect(ShortcutAction.previousTab.label, 'Previous tab');
   });
 
   test('a key chosen for Close pane carries over to Close tab', () {
@@ -1450,7 +1708,6 @@ void main() {
       final seen = <String, ShortcutAction>{};
       for (final action in ShortcutAction.values) {
         final label = prefs.bindingFor(action)!.displayLabel;
-        if (ShortcutPrefs.sharesChord(action, seen[label])) continue;
         expect(
           seen[label],
           isNull,

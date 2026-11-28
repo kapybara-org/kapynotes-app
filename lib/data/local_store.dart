@@ -24,10 +24,16 @@ class LocalStore {
 
   File? _file;
   Map<String, Object?> _data = {};
-  Timer? _timer;
+  Timer? _delayTimer;
+  Timer? _retryTimer;
   Future<void>? _inFlight;
   Future<void>? _loadFuture;
   bool _dirty = false;
+  bool _disposed = false;
+
+  /// Whether everything put here is on disk, still on its way there, or
+  /// failed its last write, which is tried again after [retry].
+  final ValueNotifier<StoreWrite> writes = ValueNotifier(StoreWrite.written);
 
   /// How long the last write came out, so the next one knows whether it is
   /// worth an isolate. Starts high so a store that has never been written
@@ -43,7 +49,10 @@ class LocalStore {
   LocalStore({
     required this.fileName,
     this.delay = const Duration(milliseconds: 250),
+    this.retry = const Duration(seconds: 5),
   });
+
+  final Duration retry;
 
   Map<String, Object?> get data => _data;
 
@@ -73,7 +82,12 @@ class LocalStore {
   void put(String key, Object? value) {
     _data[key] = value;
     _dirty = true;
-    _timer ??= Timer(delay, () => unawaited(flush()));
+    if (writes.value == StoreWrite.written) writes.value = StoreWrite.pending;
+    // A retry waiting out a failed write must not hold this keystroke. The
+    // delay itself is counted from the first change, so a pause is not required.
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _delayTimer ??= Timer(delay, () => unawaited(flush()));
   }
 
   /// Writes without waiting for [delay].
@@ -86,8 +100,11 @@ class LocalStore {
   void putNow(String key, Object? value) {
     _data[key] = value;
     _dirty = true;
-    _timer?.cancel();
-    _timer = null;
+    if (writes.value == StoreWrite.written) writes.value = StoreWrite.pending;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _delayTimer?.cancel();
+    _delayTimer = null;
     unawaited(flush());
   }
 
@@ -98,23 +115,38 @@ class LocalStore {
 
   /// Writes immediately. Safe to call at any time; concurrent calls queue.
   Future<void> flush() async {
-    _timer?.cancel();
-    _timer = null;
+    _delayTimer?.cancel();
+    _delayTimer = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     if (!_dirty) return;
     _dirty = false;
 
     final previous = _inFlight;
-    final next = () async {
+    late final Future<void> next;
+    next = () async {
       if (previous != null) await previous;
-      await _write();
+      final wrote = await _write();
+      // A dispose during the write must not schedule a retry or touch
+      // [writes], which is already disposed.
+      if (_disposed) return;
+      // Scheduled here rather than in _write, whose context its isolate
+      // copies, and which must not hold this store.
+      if (!wrote) {
+        _retryTimer ??= Timer(retry, () => unawaited(flush()));
+      }
+      if (_disposed || !identical(_inFlight, next) || _dirty && wrote) return;
+      writes.value = wrote ? StoreWrite.written : StoreWrite.failed;
     }();
     _inFlight = next;
     return next;
   }
 
-  Future<void> _write() async {
+  /// Whether the store is on disk once this returns. A failed write leaves
+  /// it dirty and tries again after [retry], unless a change comes first.
+  Future<bool> _write() async {
     final file = _file;
-    if (file == null) return;
+    if (file == null) return true;
     try {
       await file.parent.create(recursive: true);
       // Every keystroke lands here a quarter of a second later, so this is
@@ -132,13 +164,20 @@ class LocalStore {
       final temp = File('${file.path}.tmp');
       await temp.writeAsString(encoded, flush: true);
       await temp.rename(file.path);
+      return true;
     } catch (error, stack) {
       _dirty = true;
       debugPrint('KapyNotes: could not write $fileName: $error\n$stack');
+      return false;
     }
   }
 
   void dispose() {
-    _timer?.cancel();
+    _disposed = true;
+    _delayTimer?.cancel();
+    _retryTimer?.cancel();
+    writes.dispose();
   }
 }
+
+enum StoreWrite { written, pending, failed }

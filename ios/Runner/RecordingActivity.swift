@@ -37,7 +37,9 @@ final class RecordingActivity {
         self.show(
           elapsed: ((arguments["elapsedMs"] as? NSNumber)?.doubleValue ?? 0) / 1000,
           paused: arguments["paused"] as? Bool ?? false,
-          interrupted: arguments["interrupted"] as? Bool ?? false
+          interrupted: arguments["interrupted"] as? Bool ?? false,
+          phrase: arguments["phrase"] as? String,
+          heard: arguments["heard"] as? String
         ) { refusal in
           result(refusal.map { FlutterError(code: "unavailable", message: $0, details: nil) })
         }
@@ -56,8 +58,13 @@ final class RecordingActivity {
 
   /// Starts the activity, or brings it up to date, and answers with why
   /// ActivityKit would not start it, or nil.
+  ///
+  /// `phrase` and `heard` come only while live translation is on and the
+  /// person lets its words onto the Lock Screen. An update carrying them is
+  /// as quiet as every other: no alert, so the Dynamic Island never opens by
+  /// itself for a new phrase.
   private func show(
-    elapsed: TimeInterval, paused: Bool, interrupted: Bool,
+    elapsed: TimeInterval, paused: Bool, interrupted: Bool, phrase: String?, heard: String?,
     answer: @escaping (String?) -> Void
   ) {
     guard #available(iOS 16.1, *) else { return answer(nil) }
@@ -65,7 +72,9 @@ final class RecordingActivity {
       startedAt: Date().addingTimeInterval(-elapsed),
       elapsed: elapsed,
       paused: paused,
-      interrupted: interrupted)
+      interrupted: interrupted,
+      phrase: phrase,
+      heard: heard)
     enqueue {
       if let activity = Activity<RecordingAttributes>.activities.first {
         await RecordingActivity.update(activity, to: state)

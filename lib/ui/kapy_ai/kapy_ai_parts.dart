@@ -37,6 +37,7 @@ TextStyle kapyText(
   height: line / size,
   fontWeight: AppWeight.font(AppWeight.axisOf(weight)),
   fontVariations: AppWeight.wght(AppWeight.axisOf(weight)),
+  letterSpacing: AppTracking.of(size),
   color: color,
 );
 
@@ -67,15 +68,31 @@ const kapyMonths = [
   'December',
 ];
 
+/// Questions a new chat offers to start from, on the panel and on a phone's
+/// empty Kapy AI page.
+const kapyAiExamples = [
+  'What did I plan for this week?',
+  'Find my notes about Lisbon',
+  'Summarise what I wrote yesterday',
+];
+
+/// [chats] whose title holds [query], newest first.
+List<KapyChat> kapyChatsMatching(List<KapyChat> chats, String query) {
+  final words = query.trim().toLowerCase();
+  return chats
+      .where((chat) => chat.title.toLowerCase().contains(words))
+      .toList()
+    ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+}
+
 /// [chats] whose title holds [query], newest first, under Today, Yesterday,
 /// Previous 7 days and then each month, with its year when it is not this
-/// one. The panel's chats and the phone's page group them the same way.
+/// one, as the panel lists them.
 Map<String, List<KapyChat>> kapyChatGroups(
   List<KapyChat> chats, {
   required String query,
   required DateTime now,
 }) {
-  final words = query.trim().toLowerCase();
   final today = DateTime(now.year, now.month, now.day);
   String groupOf(DateTime when) {
     final days = today
@@ -89,11 +106,7 @@ Map<String, List<KapyChat>> kapyChatGroups(
   }
 
   final groups = <String, List<KapyChat>>{};
-  for (final chat
-      in chats
-          .where((chat) => chat.title.toLowerCase().contains(words))
-          .toList()
-        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt))) {
+  for (final chat in kapyChatsMatching(chats, query)) {
     (groups[groupOf(chat.updatedAt)] ??= []).add(chat);
   }
   return groups;
@@ -170,7 +183,7 @@ class KapyAiButton extends StatelessWidget {
       child: Text(
         label,
         maxLines: 1,
-        style: kapyText(13, 16, foreground, weight: FontWeight.w500),
+        style: kapyText(13, 16, foreground, weight: FontWeight.w400),
       ),
     );
   }

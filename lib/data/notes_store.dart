@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../crdt/text_diff.dart';
 import 'local_store.dart';
 import 'blob_store.dart';
+import 'clean_copies.dart';
 import 'note.dart';
 import 'note_attachment.dart';
 import 'note_drawing.dart';
@@ -88,9 +89,18 @@ class NotesStore extends ChangeNotifier {
   /// a test can point it at a temporary directory.
   final BlobStore blobs;
 
-  NotesStore(this._store, {DateTime Function()? now, BlobStore? blobs})
-    : _now = now ?? DateTime.now,
-      blobs = blobs ?? BlobStore();
+  /// Remove noise's cleaned copies of recordings, swept with the blobs for the
+  /// same reason.
+  final CleanCopies cleanCopies;
+
+  NotesStore(
+    this._store, {
+    DateTime Function()? now,
+    BlobStore? blobs,
+    CleanCopies? cleanCopies,
+  }) : _now = now ?? DateTime.now,
+       blobs = blobs ?? BlobStore(),
+       cleanCopies = cleanCopies ?? CleanCopies();
 
   /// Notes shown in the main list, newest first.
   List<Note> get notes => _activeNotes;
@@ -559,11 +569,13 @@ class NotesStore extends ChangeNotifier {
       ],
   };
 
-  /// Deletes attachment bytes no note refers to any more, and reports the
-  /// bytes reclaimed. Safe to call at any time; it reads the live set fresh.
+  /// Deletes attachment bytes no note refers to any more, and the cleaned
+  /// copies of recordings that went with them, and reports the bytes
+  /// reclaimed. Safe to call at any time; it reads the live set fresh.
   Future<int> sweepBlobs() async {
     if (!_loaded) return 0;
-    return blobs.sweep(liveBlobHashes);
+    final live = liveBlobHashes;
+    return await blobs.sweep(live) + await cleanCopies.sweep(live);
   }
 
   /// Removes a note from view and records that it was deleted, in the space
@@ -1610,6 +1622,10 @@ class NotesStore extends ChangeNotifier {
   }
 
   Future<void> flush() => _store.flush();
+
+  /// Whether the notes are on disk, on their way there, or failed to get
+  /// there last time.
+  ValueListenable<StoreWrite> get writes => _store.writes;
 
   void _replace(int index, Note replacement, {bool toFront = false}) {
     if (toFront) {

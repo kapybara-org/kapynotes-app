@@ -525,12 +525,9 @@ Future<void> showTagPickerAt(
 ) async {
   final shelf = TagShelf.maybeOf(context);
   if (shelf == null) return;
-  await showGeneralDialog<void>(
+  await showKapyPopover<void>(
     context: context,
-    barrierDismissible: true,
     barrierLabel: 'Close tags',
-    barrierColor: Colors.transparent,
-    transitionDuration: Duration.zero,
     pageBuilder: (context, _, _) => CustomSingleChildLayout(
       delegate: PopoverAtSpot(
         spot,
@@ -881,7 +878,7 @@ class _TagNameFieldState extends State<TagNameField> {
   }
 }
 
-/// ⋯ on a tag's row: Rename, Colour ▸ and Delete. Rename is the row's own,
+/// ⋯ on a tag's row: Rename, Colour… and Delete. Rename is the row's own,
 /// which turns into a field.
 Future<void> showTagActions(
   BuildContext context, {
@@ -910,9 +907,8 @@ Future<void> showTagActions(
       item(
         const KapyMenuAction(
           value: 'colour',
-          label: 'Colour',
+          label: 'Colour…',
           icon: KapyIcons.tagRounded,
-          hint: '›',
         ),
       ),
       item(

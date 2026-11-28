@@ -127,7 +127,7 @@ void main() {
       );
       expect(
         (nightSwitch.decoration as BoxDecoration).color,
-        const Color(0xFFE8772E),
+        const Color(0xFFC05815),
       );
       expect(find.byKey(const ValueKey('night-theme-button')), findsOneWidget);
       final night = tester.widget<SettingsRow>(

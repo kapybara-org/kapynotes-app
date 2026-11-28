@@ -84,6 +84,14 @@ class AnswerFailed extends AnswerFailure {
   String toString() => message;
 }
 
+/// Kapy AI Cloud was asked too fast and counted nothing: asking again after
+/// [wait] is answered. The panel shows it as any other failure; a recap
+/// waits and asks again.
+class AnswerTooFast extends AnswerFailed {
+  const AnswerTooFast(super.message, this.wait);
+  final Duration wait;
+}
+
 /// What every model is told, whoever runs it. Kapy AI Cloud's server writes
 /// its own from the same request.
 ///

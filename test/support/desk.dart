@@ -1,3 +1,4 @@
+import 'package:file_selector/file_selector.dart' show XFile;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -78,6 +79,7 @@ class Desk {
     Brightness brightness = Brightness.dark,
     DateTime Function()? now,
     ValueChanged<SlashCommandType>? onSlashCommandChosen,
+    Future<List<XFile>> Function(BuildContext context)? cameraAcquirer,
   }) async {
     attachments = initialAttachments;
     AppPlatform.debugTargetPlatformOverride = defaultTargetPlatform;
@@ -96,6 +98,7 @@ class Desk {
       imageAcquirer: (_) async => [],
       videoAcquirer: () async => [],
       fileAcquirer: () async => [],
+      cameraAcquirer: cameraAcquirer,
       onSlashCommandChosen: onSlashCommandChosen,
       engine: engine,
       highlighter: Highlighter(engine.registry),

@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'dart:ui' show ImageByteFormat;
 import 'package:flutter/foundation.dart';
 import 'dart:math';
 
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kapy_notes/core/editor_font.dart';
 import 'package:kapy_notes/core/platform.dart';
@@ -13,9 +15,9 @@ void main() {
   test('dark theme is the design system neutral ladder', () {
     final palette = KapyTheme.darkPalette;
 
-    expect(palette.editorBackground, const Color(0xFF0F0E0E));
+    expect(palette.editorBackground, const Color(0xFF1A1A1A));
     expect(palette.gutterBackground, palette.editorBackground);
-    expect(palette.textPrimary, const Color(0xFFDBDBDB));
+    expect(palette.textPrimary, const Color(0xFFEDEDED));
     expect(palette.paperFiber, Colors.transparent);
 
     // Names and figures stay in the note's ink; only the operators, the
@@ -24,7 +26,7 @@ void main() {
       {palette.number, palette.keyword, palette.function, palette.variable},
       {palette.textPrimary},
     );
-    expect(palette.textTertiary, const Color(0xFF878787));
+    expect(palette.textTertiary, const Color(0xFF8F8F8F));
     expect(
       {palette.operator, palette.unit, palette.currency, palette.comment},
       {palette.textTertiary},
@@ -32,7 +34,7 @@ void main() {
     expect(palette.railBackground, palette.sidebarBackground);
     expect(palette.raisedBackground, isNull);
     expect(palette.raisedBorder, isNull);
-    // A result is a grey chip: the note's ink on #1E1E1E.
+    // A result is a grey chip: the note's ink on #262626.
     expect(
       {
         palette.chipNumber,
@@ -43,10 +45,10 @@ void main() {
       },
       {palette.textPrimary},
     );
-    expect(palette.resultPillBackground, const Color(0xFF1E1E1E));
+    expect(palette.resultPillBackground, const Color(0xFF262626));
     final theme = KapyTheme.dark();
     expect(theme.colorScheme.primary, const Color(0xFFE8772E));
-    expect(theme.colorScheme.onPrimary, const Color(0xFF1A0E06));
+    expect(theme.colorScheme.onPrimary, const Color(0xFFFFFFFF));
     expect(theme.colorScheme.error, const Color(0xFFEB534E));
     expect(theme.colorScheme.errorContainer, const Color(0xFF291919));
     expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
@@ -64,9 +66,10 @@ void main() {
 
   test('the radii are the design system', () {
     expect(AppRadii.control, 7);
-    expect(AppRadii.group, 10);
+    expect(AppRadii.group, 8);
     expect(AppRadii.surface, 12);
-    expect(AppRadii.card, 20);
+    expect(AppRadii.card, 14);
+    expect(AppRadii.phoneList, 18);
     final dialog =
         KapyTheme.dark().dialogTheme.shape! as RoundedRectangleBorder;
     expect(dialog.borderRadius, BorderRadius.circular(AppRadii.surface));
@@ -85,7 +88,7 @@ void main() {
     expect(filled.visualDensity, VisualDensity.standard);
     expect(filled.padding!.resolve({})!.vertical, greaterThanOrEqualTo(16));
     expect(filled.textStyle!.resolve({})!.fontWeight, FontWeight.w400);
-    expect(filled.backgroundColor!.resolve({}), palette.accent);
+    expect(filled.backgroundColor!.resolve({}), palette.accentFill);
     expect(filled.foregroundColor!.resolve({}), palette.onAccent);
     expect(
       (filled.shape!.resolve({})! as RoundedRectangleBorder).borderRadius,
@@ -109,23 +112,39 @@ void main() {
     expect(segmented.iconSize!.resolve({}), AppControlMetrics.iconControl);
     final field = theme.inputDecorationTheme;
     expect(field.filled, isTrue);
+    // One stateful border, so a field that brings its own, such as
+    // InputDecoration.collapsed's none, keeps it when focused.
+    final border = field.border! as WidgetStateInputBorder;
     expect(
-      (field.border! as OutlineInputBorder).borderRadius,
+      (border.resolve({}) as OutlineInputBorder).borderRadius,
       BorderRadius.circular(AppRadii.control),
     );
-    expect(field.enabledBorder!.borderSide.color, Colors.transparent);
-    expect(field.focusedBorder!.borderSide.color, palette.accent);
+    expect(border.resolve({}).borderSide.color, Colors.transparent);
+    expect(
+      border.resolve({WidgetState.focused}).borderSide.color,
+      palette.accent,
+    );
+    expect(border.resolve({WidgetState.focused}).borderSide.width, 1.25);
+    expect(
+      border.resolve({WidgetState.error}).borderSide.color,
+      theme.colorScheme.error,
+    );
+    expect(field.enabledBorder, isNull);
+    expect(field.focusedBorder, isNull);
 
     final switches = theme.switchTheme;
     expect(switches.thumbColor!.resolve({}), const Color(0xFFFFFFFF));
     expect(
       switches.trackColor!.resolve({WidgetState.selected}),
-      palette.accent,
+      palette.accentFill,
     );
     expect(switches.trackColor!.resolve({}), palette.switchTrackOff);
     final checkbox = theme.checkboxTheme;
     expect(checkbox.shape, const CircleBorder());
-    expect(checkbox.fillColor!.resolve({WidgetState.selected}), palette.accent);
+    expect(
+      checkbox.fillColor!.resolve({WidgetState.selected}),
+      palette.accentFill,
+    );
     expect(
       (checkbox.side! as WidgetStateProperty<BorderSide?>).resolve({})!.color,
       palette.checkboxBorder,
@@ -135,10 +154,114 @@ void main() {
     expect(theme.dividerTheme.color, palette.pageBorder);
   });
 
-  test('two weights: regular, and semibold for titles', () {
+  testWidgets('a collapsed field stays borderless when focused, and a plain '
+      'one rings in orange', (tester) async {
+    final collapsed = FocusNode();
+    final plain = FocusNode();
+    addTearDown(collapsed.dispose);
+    addTearDown(plain.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Material(
+          child: Column(
+            children: [
+              TextField(
+                key: const ValueKey('collapsed'),
+                focusNode: collapsed,
+                decoration: const InputDecoration.collapsed(hintText: 'Ask'),
+              ),
+              TextField(key: const ValueKey('plain'), focusNode: plain),
+            ],
+          ),
+        ),
+      ),
+    );
+    InputDecoration decorationOf(String key) => tester
+        .widget<InputDecorator>(
+          find.descendant(
+            of: find.byKey(ValueKey(key)),
+            matching: find.byType(InputDecorator),
+          ),
+        )
+        .decoration;
+
+    collapsed.requestFocus();
+    await tester.pump();
+    final quiet = decorationOf('collapsed');
+    expect(quiet.focusedBorder, isNull);
+    expect(quiet.border, InputBorder.none);
+
+    plain.requestFocus();
+    await tester.pump();
+    final ring = (decorationOf('plain').border! as WidgetStateInputBorder)
+        .resolve({WidgetState.focused});
+    expect(ring.borderSide.color, KapyTheme.lightPalette.accent);
+  });
+
+  testWidgets('a field that brings its own outline shows the theme\'s sides '
+      'on it: none at rest, orange when focused', (tester) async {
+    final own = FocusNode();
+    final plain = FocusNode();
+    addTearDown(own.dispose);
+    addTearDown(plain.dispose);
+    final keys = [GlobalKey(), GlobalKey()];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: KapyTheme.light(),
+        home: Material(
+          child: Column(
+            children: [
+              for (final (index, focus) in [own, plain].indexed)
+                RepaintBoundary(
+                  key: keys[index],
+                  child: SizedBox(
+                    width: 200,
+                    child: TextField(
+                      focusNode: focus,
+                      decoration: InputDecoration(
+                        border: focus == own
+                            ? OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    Future<List<int>> edgeOf(GlobalKey key) async =>
+        (await tester.runAsync(() async {
+          final image =
+              await (key.currentContext!.findRenderObject()!
+                      as RenderRepaintBoundary)
+                  .toImage();
+          final data = await image.toByteData(format: ImageByteFormat.rawRgba);
+          final at = (image.height ~/ 2) * image.width * 4;
+          return data!.buffer.asUint8List().sublist(at, at + 4);
+        }))!;
+
+    expect(await edgeOf(keys[0]), await edgeOf(keys[1]), reason: 'at rest');
+    own.requestFocus();
+    await tester.pumpAndSettle();
+    final ringed = await edgeOf(keys[0]);
+    plain.requestFocus();
+    await tester.pumpAndSettle();
+    expect(ringed, await edgeOf(keys[1]), reason: 'focused');
+  });
+
+  test('three weights: regular, medium for row titles, semibold for '
+      'headings', () {
     expect(AppWeight.regular, 400);
+    expect(AppWeight.medium, 500);
     expect(AppWeight.semibold, 600);
-    expect(AppWeight.axisOf(FontWeight.w500), AppWeight.regular);
+    expect(AppWeight.axisOf(FontWeight.w500), AppWeight.medium);
+    expect(AppWeight.named(AppWeight.medium), FontWeight.w500);
     expect(AppWeight.axisOf(FontWeight.w700), AppWeight.semibold);
     expect(AppWeight.named(AppWeight.regular), FontWeight.w400);
     expect(AppWeight.named(AppWeight.semibold), FontWeight.w600);
@@ -162,8 +285,8 @@ void main() {
 
     final theme = KapyTheme.dark();
 
-    // Inter, bundled, with Segoe UI drawing whatever it lacks.
-    expect(theme.textTheme.bodyMedium?.fontFamily, 'Inter');
+    // Geist, bundled, with Segoe UI drawing whatever it lacks.
+    expect(theme.textTheme.bodyMedium?.fontFamily, 'Geist');
     expect(theme.textTheme.bodyMedium?.fontFamilyFallback?.first, 'Segoe UI');
     expect(theme.textTheme.bodyMedium?.fontWeight, FontWeight.w400);
     expect(theme.textTheme.bodySmall?.fontWeight, FontWeight.w400);
@@ -315,19 +438,21 @@ void main() {
     );
   });
 
-  test('the interface is San Francisco on Apple and Inter elsewhere', () {
+  test('the interface is Geist on every platform, and each device draws what '
+      'it lacks', () {
     addTearDown(() {
       AppPlatform.debugTargetPlatformOverride = null;
       debugDefaultTargetPlatformOverride = null;
     });
 
-    for (final (platform, face) in [
-      (TargetPlatform.macOS, '.AppleSystemUIFont'),
-      (TargetPlatform.iOS, '.AppleSystemUIFont'),
-      (TargetPlatform.windows, 'Inter'),
-      (TargetPlatform.android, 'Inter'),
-      (TargetPlatform.linux, 'Inter'),
+    for (final platform in [
+      TargetPlatform.macOS,
+      TargetPlatform.iOS,
+      TargetPlatform.windows,
+      TargetPlatform.android,
+      TargetPlatform.linux,
     ]) {
+      const face = 'Geist';
       AppPlatform.debugTargetPlatformOverride = platform;
       debugDefaultTargetPlatformOverride = platform;
       final text = KapyTheme.light().textTheme;
@@ -349,11 +474,12 @@ void main() {
     () {
       final pubspec = File('pubspec.yaml').readAsStringSync();
 
-      expect(pubspec, contains('- family: ${AppFonts.inter}\n'));
+      expect(pubspec, contains('- family: ${AppFonts.ui}\n'));
+      expect(pubspec, contains('- family: ${AppFonts.pixel}\n'));
       expect(pubspec, contains('- family: ${AppFonts.hand}\n'));
       // San Francisco's licence keeps it out of the bundle, and the faces
       // the design system replaced are gone with their files.
-      for (final gone in ['Figtree', 'Newsreader', 'SF Pro']) {
+      for (final gone in ['Figtree', 'Newsreader', 'SF Pro', 'Inter']) {
         expect(pubspec, isNot(contains(gone)), reason: gone);
       }
       expect(pubspec, contains('- family: ${AppFonts.mono}\n'));

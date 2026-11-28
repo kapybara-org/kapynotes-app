@@ -9,6 +9,9 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'linux_wheel.dart';
+import 'platform.dart';
+
 /// Zooms the main window the way a browser zooms a page: text, icons,
 /// spacing and panels together.
 ///
@@ -29,7 +32,9 @@ class AppZoomBinding extends WidgetsFlutterBinding {
   /// Installs the binding. Call it first thing, in place of
   /// [WidgetsFlutterBinding.ensureInitialized].
   static void ensureInitialized() {
-    if (!_initialized) AppZoomBinding._();
+    if (!_initialized) {
+      AppPlatform.isLinux ? _LinuxZoomBinding._() : AppZoomBinding._();
+    }
     _initialized = true;
   }
 
@@ -117,6 +122,13 @@ class AppZoomBinding extends WidgetsFlutterBinding {
       handlePointerEvent(_pointers.removeFirst());
     }
   }
+}
+
+/// The binding on Linux, where a notch of a mouse wheel also scrolls as far as
+/// it does in GTK apps. [GtkWheelSteps] goes by the window's own height, so a
+/// notch moves a note as far on screen at every zoom.
+class _LinuxZoomBinding extends AppZoomBinding with GtkWheelSteps {
+  _LinuxZoomBinding._() : super._();
 }
 
 /// The size the app lays [view] out at: its size on screen, made smaller by

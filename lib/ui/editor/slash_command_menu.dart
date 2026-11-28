@@ -22,7 +22,7 @@ enum _CommandGroup {
 
 class _SlashCommandDefinition {
   const _SlashCommandDefinition({
-    required this.type,
+    this.type,
     required this.group,
     required this.label,
     required this.description,
@@ -33,9 +33,14 @@ class _SlashCommandDefinition {
     this.requiresMarkdown = false,
   });
 
-  final SlashCommandType type;
+  /// What choosing it does, or null for Media and its back arrow, which
+  /// only change the icon row.
+  final SlashCommandType? type;
   final _CommandGroup group;
   final String label;
+
+  /// Names it in widget keys: the command's own name, or "media" and "back".
+  String get id => type?.name ?? label.toLowerCase();
 
   /// Read to assistive technology after the label; the row shows the label
   /// alone.
@@ -182,12 +187,28 @@ const _definitions = [
     requiresMarkdown: true,
   ),
   _SlashCommandDefinition(
+    type: SlashCommandType.camera,
+    group: _CommandGroup.insert,
+    label: 'Camera',
+    description: 'Take a photo or record a video',
+    icon: KapyIcons.cameraOutlined,
+    aliases: ['webcam'],
+  ),
+  _SlashCommandDefinition(
     type: SlashCommandType.image,
     group: _CommandGroup.insert,
     label: 'Image',
     description: 'Take or choose a picture',
     icon: KapyIcons.imageOutlined,
     aliases: ['photo', 'picture', 'img'],
+  ),
+  _SlashCommandDefinition(
+    type: SlashCommandType.image,
+    group: _CommandGroup.insert,
+    label: 'Photo',
+    description: 'Choose a picture',
+    icon: KapyIcons.imageOutlined,
+    aliases: ['image', 'picture', 'img'],
   ),
   _SlashCommandDefinition(
     type: SlashCommandType.video,
@@ -215,6 +236,36 @@ const _definitions = [
   ),
 ];
 
+/// On a Mac or PC, Camera, Photo and Video share one Media icon in the row,
+/// until something is typed.
+const _media = _SlashCommandDefinition(
+  group: _CommandGroup.insert,
+  label: 'Media',
+  description: 'Camera, Photo and Video',
+  icon: KapyIcons.mediaOutlined,
+);
+
+/// First in the row while Media is open, and the way back to it.
+const _backToMedia = _SlashCommandDefinition(
+  group: _CommandGroup.insert,
+  label: 'Back',
+  description: 'Back to Media, Voice note and File',
+  icon: KapyIcons.arrowBackRounded,
+);
+
+bool _isMedia(SlashCommandType? type) =>
+    type == SlashCommandType.camera ||
+    type == SlashCommandType.image ||
+    type == SlashCommandType.video;
+
+/// The commands this device offers, in menu order. A phone keeps Image as
+/// it was, "Take or choose a picture"; a computer calls it Photo.
+Iterable<_SlashCommandDefinition> get _definitionsHere => _definitions.where(
+  (definition) =>
+      definition.type != SlashCommandType.image ||
+      (definition.label == 'Image') == AppPlatform.isMobile,
+);
+
 /// Owns the root-overlay menu while leaving focus in the real editor.
 ///
 /// A controller rather than a modal route is important here: letters typed
@@ -230,6 +281,7 @@ class SlashCommandMenuController extends ChangeNotifier {
   SlashCommandType? _last;
   bool _markdownEnabled = false;
   bool _choosingTable = false;
+  bool _mediaOpen = false;
   int _selectedIndex = 0;
   int _tableRows = 2;
   int _tableColumns = 2;
@@ -251,6 +303,9 @@ class SlashCommandMenuController extends ChangeNotifier {
   Rect get anchor => _anchor;
   bool get markdownEnabled => _markdownEnabled;
   bool get choosingTable => _choosingTable;
+
+  /// Whether the icon row shows Camera, Photo and Video in place of Media.
+  bool get mediaOpen => _mediaOpen;
   int get selectedIndex => _selectedIndex;
   int get tableRows => _tableRows;
   int get tableColumns => _tableColumns;
@@ -263,13 +318,35 @@ class SlashCommandMenuController extends ChangeNotifier {
       .toList(growable: false);
 
   /// What is on offer for what is typed: the rows, in menu order, then the
-  /// inserts in the icon row.
+  /// inserts in the icon row. Where there is a camera and nothing is typed,
+  /// Camera, Photo and Video sit behind Media; typing finds each of them
+  /// directly, and "media" finds all three.
   List<_SlashCommandDefinition> get _commands {
     final words = _words;
-    return [
-      for (final definition in _definitions)
-        if (_available.contains(definition.type) && definition.matches(words))
+    final grouped = _available.contains(SlashCommandType.camera);
+    final matching = [
+      for (final definition in _definitionsHere)
+        if (_available.contains(definition.type) &&
+            (definition.matches(words) ||
+                (grouped &&
+                    _isMedia(definition.type) &&
+                    words.every('media'.startsWith))))
           definition,
+    ];
+    if (!grouped || words.isNotEmpty) return matching;
+    final media = [
+      for (final command in matching)
+        if (_isMedia(command.type)) command,
+    ];
+    if (media.isEmpty) return matching;
+    return [
+      for (final command in matching)
+        if (command.group != _CommandGroup.insert) command,
+      if (_mediaOpen) ...[_backToMedia, ...media] else _media,
+      if (!_mediaOpen)
+        for (final command in matching)
+          if (command.group == _CommandGroup.insert && !_isMedia(command.type))
+            command,
     ];
   }
 
@@ -285,7 +362,12 @@ class SlashCommandMenuController extends ChangeNotifier {
     final commands = _commands;
     final query = _query.trim().toLowerCase();
     final index = query.isEmpty
-        ? commands.indexWhere((command) => command.type == _last)
+        ? commands.indexWhere(
+            (command) =>
+                _last != null &&
+                (command.type == _last ||
+                    (command == _media && _isMedia(_last))),
+          )
         : commands.indexWhere(
             (command) => command.label.toLowerCase().startsWith(query),
           );
@@ -323,6 +405,7 @@ class SlashCommandMenuController extends ChangeNotifier {
     _onDismissed = onDismissed;
     if (queryChanged || _entry == null) {
       _choosingTable = false;
+      _mediaOpen = false;
       _selectedIndex = _initialIndex();
     }
     _clampSelection();
@@ -351,6 +434,7 @@ class SlashCommandMenuController extends ChangeNotifier {
   void _searchChanged(String text) {
     _query = text;
     _choosingTable = false;
+    _mediaOpen = false;
     _selectedIndex = _initialIndex();
     notifyListeners();
   }
@@ -361,6 +445,7 @@ class SlashCommandMenuController extends ChangeNotifier {
     _entry = null;
     _searching = false;
     _choosingTable = false;
+    _mediaOpen = false;
     _selectedIndex = 0;
     _onSelected = null;
     _onDismissed = null;
@@ -371,12 +456,24 @@ class SlashCommandMenuController extends ChangeNotifier {
     _selectedIndex = count == 0 ? 0 : _selectedIndex.clamp(0, count - 1);
   }
 
+  /// Moves the highlight. Reaching a list row, by key or by pointer, puts
+  /// Media back in the icon row.
   void selectIndex(int index) {
     final count = _commands.length;
     if (count == 0) return;
     final next = index.clamp(0, count - 1);
-    if (next == _selectedIndex) return;
+    final closesMedia = _mediaOpen && next < _rows.length;
+    if (next == _selectedIndex && !closesMedia) return;
+    if (closesMedia) _mediaOpen = false;
     _selectedIndex = next;
+    notifyListeners();
+  }
+
+  /// Puts Media back in the icon row, highlighted.
+  void leaveMedia() {
+    if (!_mediaOpen) return;
+    _mediaOpen = false;
+    _selectedIndex = _commands.indexOf(_media);
     notifyListeners();
   }
 
@@ -385,14 +482,25 @@ class SlashCommandMenuController extends ChangeNotifier {
     if (index < 0 || index >= visible.length) return;
     _selectedIndex = index;
     final command = visible[index];
-    if (command.type == SlashCommandType.table) {
+    if (command == _media) {
+      _mediaOpen = true;
+      _selectedIndex = _commands.indexOf(_backToMedia) + 1;
+      notifyListeners();
+      return;
+    }
+    if (command == _backToMedia) {
+      leaveMedia();
+      return;
+    }
+    final type = command.type!;
+    if (type == SlashCommandType.table) {
       _choosingTable = true;
       _tableRows = 2;
       _tableColumns = 2;
       notifyListeners();
       return;
     }
-    _complete(SlashCommandChoice(command.type));
+    _complete(SlashCommandChoice(type));
   }
 
   void chooseTableSize(int rows, int columns) {
@@ -427,6 +535,8 @@ class SlashCommandMenuController extends ChangeNotifier {
     if (key == LogicalKeyboardKey.escape) {
       if (_choosingTable) {
         leaveTablePicker();
+      } else if (_mediaOpen) {
+        leaveMedia();
       } else {
         hide(userInitiated: true);
       }
@@ -667,6 +777,15 @@ class _CommandList extends StatelessWidget {
     String? note(_SlashCommandDefinition command) => words.isEmpty
         ? (command.type == controller._last ? 'last used' : null)
         : command.matchedAlias(words);
+    Widget button(int offset, _SlashCommandDefinition command) => _InsertButton(
+      key: ValueKey('slash-command-${command.id}'),
+      command: command,
+      hint: command == _backToMedia ? 'esc' : hint(command),
+      selected: rows.length + offset == controller.selectedIndex,
+      rowHighlighted: controller.selectedIndex >= rows.length,
+      onHover: () => controller.selectIndex(rows.length + offset),
+      onPressed: () => controller.activateIndex(rows.length + offset),
+    );
     return SizedBox(
       width: width,
       child: Column(
@@ -716,7 +835,7 @@ class _CommandList extends StatelessWidget {
                         ),
                       ),
                     _CommandRow(
-                      key: ValueKey('slash-command-${command.type.name}'),
+                      key: ValueKey('slash-command-${command.id}'),
                       command: command,
                       hint: hint(command),
                       note: note(command),
@@ -743,19 +862,13 @@ class _CommandList extends StatelessWidget {
                 children: [
                   for (final (offset, command)
                       in commands.skip(rows.length).indexed)
-                    Expanded(
-                      child: _InsertButton(
-                        key: ValueKey('slash-command-${command.type.name}'),
-                        command: command,
-                        hint: hint(command),
-                        selected:
-                            rows.length + offset == controller.selectedIndex,
-                        onHover: () =>
-                            controller.selectIndex(rows.length + offset),
-                        onPressed: () =>
-                            controller.activateIndex(rows.length + offset),
-                      ),
-                    ),
+                    if (command == _backToMedia)
+                      SizedBox.square(
+                        dimension: 34,
+                        child: button(offset, command),
+                      )
+                    else
+                      Expanded(child: button(offset, command)),
                 ],
               ),
             ),
@@ -764,6 +877,7 @@ class _CommandList extends StatelessWidget {
               alongIcons:
                   commands.isNotEmpty &&
                   controller.selectedIndex >= rows.length,
+              escBack: controller.mediaOpen,
             ),
         ],
       ),
@@ -943,6 +1057,7 @@ class _InsertButton extends StatefulWidget {
     required this.command,
     required this.hint,
     required this.selected,
+    required this.rowHighlighted,
     required this.onHover,
     required this.onPressed,
   });
@@ -950,6 +1065,10 @@ class _InsertButton extends StatefulWidget {
   final _SlashCommandDefinition command;
   final String? hint;
   final bool selected;
+
+  /// Whether the highlight is on some icon in the row, which then shows the
+  /// tooltip in place of this one's.
+  final bool rowHighlighted;
   final VoidCallback onHover;
   final VoidCallback onPressed;
 
@@ -960,15 +1079,33 @@ class _InsertButton extends StatefulWidget {
 class _InsertButtonState extends State<_InsertButton> {
   final _tooltip = GlobalKey<TooltipState>();
 
+  /// After the frame, when no tooltip is mid-build, and alone: the icon
+  /// the highlight left keeps none.
+  void _showTooltip() => WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted || !widget.selected) return;
+    Tooltip.dismissAllToolTips();
+    _tooltip.currentState?.ensureTooltipVisible();
+  });
+
+  /// An icon that arrives highlighted, as Camera does when Media opens or
+  /// when typing finds it, names itself at once.
+  @override
+  void initState() {
+    super.initState();
+    if (widget.selected) _showTooltip();
+  }
+
   @override
   void didUpdateWidget(_InsertButton oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.selected && !oldWidget.selected) {
+      _showTooltip();
+    } else if (!widget.selected &&
+        oldWidget.selected &&
+        !widget.rowHighlighted) {
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _tooltip.currentState?.ensureTooltipVisible(),
+        (_) => Tooltip.dismissAllToolTips(),
       );
-    } else if (!widget.selected && oldWidget.selected) {
-      Tooltip.dismissAllToolTips();
     }
   }
 
@@ -1019,11 +1156,13 @@ class _InsertButtonState extends State<_InsertButton> {
 }
 
 /// The keys that work the menu, under it on a desktop: up and down through
-/// the rows, or left and right [alongIcons].
+/// the rows, or left and right [alongIcons], and Esc to close it, or to go
+/// back to Media while Media is open.
 class _KeyHints extends StatelessWidget {
-  const _KeyHints({required this.alongIcons});
+  const _KeyHints({required this.alongIcons, required this.escBack});
 
   final bool alongIcons;
+  final bool escBack;
 
   @override
   Widget build(BuildContext context) {
@@ -1048,7 +1187,7 @@ class _KeyHints extends StatelessWidget {
             for (final (key, action) in [
               (alongIcons ? '←→' : '↑↓', 'move'),
               ('↵', 'insert'),
-              ('esc', 'close'),
+              ('esc', escBack ? 'back' : 'close'),
             ]) ...[
               Keycap(key, plain: true),
               Padding(

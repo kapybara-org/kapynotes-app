@@ -1,3 +1,4 @@
+import 'back_forward.dart';
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -11,7 +12,7 @@ import '../core/theme.dart';
 import '../core/toast.dart';
 import '../calc/engine.dart';
 import '../data/folders.dart';
-import '../data/layout_prefs.dart' show LayoutPrefs, NotesGrouping;
+import '../data/layout_prefs.dart' show NotesGrouping;
 import '../data/note.dart';
 import '../data/shortcut_prefs.dart';
 import '../sync/presence.dart';
@@ -26,11 +27,13 @@ import 'editor/note_footer.dart' show typingStatusText;
 import 'editor_panes.dart';
 import 'folders_ui.dart';
 import 'join/joining_ui.dart' show joinedLine;
+import 'keycap.dart';
 import 'member_avatars.dart';
 import 'note_picks.dart';
 import 'note_row_swipe.dart';
 import 'notes_grouping.dart';
 import 'notes_list.dart';
+import 'phone_home_header.dart' show PhoneTitleBar;
 import 'safety_dialogs.dart';
 import 'sharing_sheet.dart';
 import 'sidebar_timestamp.dart';
@@ -211,6 +214,7 @@ class Sidebar extends StatelessWidget {
     this.filtersActive = false,
     this.onFiltersToggled,
     this.controls,
+    this.filterChip,
     this.pinnedOnly = false,
     this.onPinnedOnlyChanged,
     this.grouping = NotesGrouping.byDate,
@@ -384,10 +388,14 @@ class Sidebar extends StatelessWidget {
   /// The tiles a phone's Folders puts over its tree: Drawings and Shared.
   final Widget? phoneTiles;
 
-  /// The notes filter and the list/cards switch, under the search beside the
-  /// rail: see [NotesListControls]. Null leaves them out, as the compact list
+  /// The View menu's icon beside the search, or a phone's filter row under
+  /// it: see [NotesListControls]. Null leaves them out, as the compact list
   /// does.
   final Widget? controls;
+
+  /// What narrows the list, as one chip under the search beside the rail:
+  /// see [NotesFilterChip]. Null while nothing does.
+  final Widget? filterChip;
 
   /// Whether a phone's filter row is showing. The row is put away by default
   /// so the list keeps the room, and the button beside the search brings it
@@ -451,128 +459,140 @@ class Sidebar extends StatelessWidget {
 
     // Solid, rather than the GlassSurface the toolbar and footer use: the
     // notes list stays put whatever the window is doing behind it. See
-    // [CalcPalette.sidebarColor].
-    return ColoredBox(
-      color: phone ? palette.paperColor : palette.sidebarColor,
-      // Colour runs to the window edges; content stays clear of the status
-      // bar, home indicator and any display cutout.
-      child: SafeArea(
-        right: false,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            windowBar,
-            SidebarSearchField(
-              onSearch: onSearch,
-              query: query,
-              onClear: onClearQuery,
-              shortcut: searchShortcut,
-              placeholder: searchPlaceholder,
-              phone: phone,
-              trailing: switch ([
-                if (phone && controls != null && onFiltersToggled != null)
-                  PhoneFiltersButton(
-                    key: const ValueKey('phone-filters'),
-                    active: filtersActive,
-                    onPressed: onFiltersToggled!,
+    // [CalcPalette.sidebarColor]. One traversal group, so Tab takes the
+    // list's controls together, before the note's toolbar.
+    return FocusTraversalGroup(
+      child: ColoredBox(
+        color: phone ? palette.paperColor : palette.sidebarColor,
+        // Colour runs to the window edges; content stays clear of the status
+        // bar, home indicator and any display cutout.
+        child: SafeArea(
+          right: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              windowBar,
+              SidebarSearchField(
+                onSearch: onSearch,
+                query: query,
+                onClear: onClearQuery,
+                shortcut: searchShortcut,
+                placeholder: searchPlaceholder,
+                phone: phone,
+                trailing: switch ([
+                  if (!phone && !_foldersTab) ?controls,
+                  if (phone && controls != null && onFiltersToggled != null)
+                    PhoneFiltersButton(
+                      key: const ValueKey('phone-filters'),
+                      active: filtersActive,
+                      onPressed: onFiltersToggled!,
+                    ),
+                  if (onAddNotes case final onAddNotes? when phone)
+                    searchButton(
+                      const ValueKey('phone-add-notes'),
+                      'Add notes',
+                      KapyIcons.noteAddRounded,
+                      onAddNotes,
+                    ),
+                  if (folders?.newFolder case final newFolder?
+                      when phone && _foldersTab)
+                    searchButton(
+                      const ValueKey('phone-new-folder'),
+                      'New folder',
+                      KapyIcons.folderAddOutlined,
+                      () => newFolder.value++,
+                    ),
+                ]) {
+                  [] => null,
+                  [final button] => button,
+                  final buttons => Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: buttons,
                   ),
-                if (onAddNotes case final onAddNotes? when phone)
-                  searchButton(
-                    const ValueKey('phone-add-notes'),
-                    'Add notes',
-                    KapyIcons.noteAddRounded,
-                    onAddNotes,
-                  ),
-                if (folders?.newFolder case final newFolder?
-                    when phone && _foldersTab)
-                  searchButton(
-                    const ValueKey('phone-new-folder'),
-                    'New folder',
-                    KapyIcons.folderAddOutlined,
-                    () => newFolder.value++,
-                  ),
-              ]) {
-                [] => null,
-                [final button] => button,
-                final buttons => Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: buttons,
-                ),
-              },
-            ),
-            if (folders?.newFolder case final newFolder?
-                when !phone && _foldersTab)
-              NewFolderButton(onPressed: () => newFolder.value++),
-            if (controls != null && !_foldersTab)
-              if (phone && onFiltersToggled != null)
-                // A phone keeps the filter row out of the way until the
-                // button asks for it, and the list slides up to take its
-                // room while it is put away.
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.topCenter,
-                  child: filtersOpen
-                      ? Padding(
-                          padding: const EdgeInsets.only(bottom: 2),
-                          child: controls,
-                        )
-                      : const SizedBox(width: double.infinity),
-                )
-              else
+                },
+              ),
+              if (folders?.newFolder case final newFolder?
+                  when !phone && _foldersTab)
+                NewFolderButton(onPressed: () => newFolder.value++),
+              if (filterChip case final chip? when !phone && !_foldersTab)
                 Padding(
-                  padding: phone
-                      ? const EdgeInsets.only(bottom: 2)
-                      : const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                  child: controls,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Align(alignment: Alignment.centerLeft, child: chip),
                 ),
-            if (_picking || ((archiveMode || trashMode) && notes.isNotEmpty))
-              _pickBar(context),
-            Expanded(
-              child: _BelowInvitations(
-                invitations:
-                    !_specialMode &&
-                        sharing != null &&
-                        sharing!.invites.isNotEmpty &&
-                        _onSharedTab
-                    ? _Invitations(
-                        sharing: sharing!,
-                        onJoined: onTabChanged == null
-                            ? null
-                            : () => onTabChanged!(SidebarTab.shared),
-                      )
-                    : null,
-                child: _NoteListKeys(
-                  onMoveSelected: _moveSelected,
-                  onEnterSelected: onEnterSelected,
-                  onOpenSelectedInNewTab: onOpenSelectedInNewTab,
-                  onArchiveSelected: _archiveSelected,
-                  onDeleteSelected: _deleteSelected,
-                  onPickAll: picks == null || notes.isEmpty
-                      ? null
-                      : () => picks!.all(_order),
-                  onExtendPick: picks == null || notes.isEmpty
-                      ? null
-                      : (delta) =>
-                            picks!.step(_order, delta, open: _highlighted?.id),
-                  onStopPicking: _picking ? picks!.clear : null,
-                  archiveShortcut: archiveShortcut,
-                  child: _foldersTab
-                      ? _buildFolders(context)
-                      : notes.isEmpty
-                      ? _buildEmpty(context)
-                      : _sweeps(_buildBesideRail(context)),
+              if (controls != null && phone && !_foldersTab)
+                if (onFiltersToggled != null)
+                  // A phone keeps the filter row out of the way until the
+                  // button asks for it, and the list slides up to take its
+                  // room while it is put away.
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 160),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
+                    child: filtersOpen
+                        ? Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: controls,
+                          )
+                        : const SizedBox(width: double.infinity),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: controls,
+                  ),
+              if (_picking || ((archiveMode || trashMode) && notes.isNotEmpty))
+                _pickBar(context),
+              Expanded(
+                child: _BelowInvitations(
+                  invitations:
+                      !_specialMode &&
+                          sharing != null &&
+                          sharing!.invites.isNotEmpty &&
+                          _onSharedTab
+                      ? _Invitations(
+                          sharing: sharing!,
+                          onJoined: onTabChanged == null
+                              ? null
+                              : () => onTabChanged!(SidebarTab.shared),
+                        )
+                      : null,
+                  child: _NoteListKeys(
+                    onMoveSelected: _moveSelected,
+                    onEnterSelected: onEnterSelected,
+                    onOpenSelectedInNewTab: onOpenSelectedInNewTab,
+                    onArchiveSelected: _archiveSelected,
+                    onDeleteSelected: _deleteSelected,
+                    onPickAll: picks == null || notes.isEmpty
+                        ? null
+                        : () => picks!.all(_order),
+                    onExtendPick: picks == null || notes.isEmpty
+                        ? null
+                        : (delta) => picks!.step(
+                            _order,
+                            delta,
+                            open: _highlighted?.id,
+                          ),
+                    onStopPicking: _picking ? picks!.clear : null,
+                    archiveShortcut: archiveShortcut,
+                    child: BackForwardSlide(
+                      child: _foldersTab
+                          ? _buildFolders(context)
+                          : notes.isEmpty
+                          ? _buildEmpty(context)
+                          : _sweeps(_buildBesideRail(context)),
+                    ),
+                  ),
                 ),
               ),
-            ),
-            if (folders?.onShown case final onShown?)
-              ToastClearance(
-                child: NotesFoldersSwitch(
-                  folders: _foldersTab,
-                  onChanged: onShown,
+              if (folders?.onShown case final onShown?)
+                ToastClearance(
+                  child: NotesFoldersSwitch(
+                    folders: _foldersTab,
+                    onChanged: onShown,
+                  ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -867,9 +887,8 @@ extension on Sidebar {
           if (_taggable(context, joining).isNotEmpty)
             const KapyMenuAction(
               value: 'picked-tags',
-              label: 'Tags',
+              label: 'Tags…',
               icon: KapyIcons.tagRounded,
-              hint: '›',
             ),
           if (_fileable(joining).isNotEmpty)
             const KapyMenuAction(
@@ -1389,7 +1408,15 @@ extension on Sidebar {
 
     void gap(double height) => rows.add((_) => SizedBox(height: height));
 
-    void heading(Widget heading) {
+    // A desktop heading starts where the words under it do. A phone's
+    // heading insets itself inside the margin.
+    final axis = phone || drawings
+        ? margin
+        : cards
+        ? margin + NoteCardFace.textStart
+        : 10 + NoteListRowFace.textStart(touch: false);
+
+    void heading(Widget heading, {bool onAxis = true}) {
       if (rows.isNotEmpty) {
         gap(phone ? 22 : 24);
       } else if (phone) {
@@ -1398,7 +1425,7 @@ extension on Sidebar {
       }
       rows.add(
         (_) => Padding(
-          padding: EdgeInsets.symmetric(horizontal: margin),
+          padding: EdgeInsets.only(left: onAxis ? axis : margin, right: margin),
           child: heading,
         ),
       );
@@ -1450,8 +1477,8 @@ extension on Sidebar {
           padding: EdgeInsets.symmetric(horizontal: margin),
           child: ClipRRect(
             borderRadius: BorderRadius.vertical(
-              top: Radius.circular(first ? AppRadii.card : 0),
-              bottom: Radius.circular(last ? AppRadii.card : 0),
+              top: Radius.circular(first ? AppRadii.phoneList : 0),
+              bottom: Radius.circular(last ? AppRadii.phoneList : 0),
             ),
             child: ColoredBox(
               color: context.palette.cardBackground,
@@ -1568,6 +1595,7 @@ extension on Sidebar {
             icon: const KapyIcon(KapyIcons.arrowBackRounded, size: 16),
           ),
         ),
+        onAxis: false,
       );
       section(groups.pinned);
     } else if (phone) {
@@ -1583,9 +1611,10 @@ extension on Sidebar {
               key: const ValueKey('sidebar-pinned-heading'),
               children: [
                 Expanded(
-                  child: _PhoneDayHeading(
+                  child: PhoneDayHeading(
                     lead: 'Pinned',
                     date: '${groups.pinned.length}',
+                    pin: true,
                   ),
                 ),
                 ViewAllLink(
@@ -1605,7 +1634,7 @@ extension on Sidebar {
           ),
         );
       } else if (pinned.isNotEmpty) {
-        heading(const _PhoneHeading('Pinned'));
+        heading(const _PhoneHeading('Pinned', pin: true));
         section(pinned);
       }
       // A group's heading carries the room above it and sits right on its
@@ -1635,7 +1664,7 @@ extension on Sidebar {
           displayTime: displayTime,
           ownDay: ownDay,
         )) {
-          heading(_PhoneDayHeading(lead: day.lead, date: day.date));
+          heading(PhoneDayHeading(lead: day.lead, date: day.date));
           section(day.notes, clockOnly: true);
         }
       }
@@ -1648,6 +1677,12 @@ extension on Sidebar {
             count: groups.pinned.length,
             noun: noun,
             height: 16,
+            leading: KapyIcon(
+              KapyIcons.pinOutlined,
+              size: 14,
+              color: palette.textPrimary,
+            ),
+            leadingGap: 4,
             trailing:
                 pinned.length < groups.pinned.length &&
                     onPinnedOnlyChanged != null
@@ -2168,8 +2203,8 @@ class SidebarWindowBar extends StatelessWidget {
 
   final String title;
 
-  /// Said after the count, as Tasks says "10 open". Without it the figure
-  /// stands alone.
+  /// Said after the count in the title's tooltip, as Tasks says "10 tasks
+  /// open".
   final String? countLabel;
 
   /// What the space holds and New makes: a note, or a drawing in Drawings.
@@ -2181,27 +2216,17 @@ class SidebarWindowBar extends StatelessWidget {
   final VoidCallback onCreate;
   final VoidCallback onHide;
 
-  /// Printed on New note's keycap, so the chord is learnt from the button.
-  /// New drawing has no keycap, as D08 draws it, and names the chord on
-  /// hover.
+  /// Named in the + button's tooltip, "New note  ⌘N".
   final ShortcutBinding? newNoteShortcut;
   final ShortcutBinding? hideShortcut;
 
-  /// Opens Kapy AI's panel from the sparkle left of New note. Null leaves
+  /// Opens Kapy AI's panel from the sparkle left of the +. Null leaves
   /// the sparkle out, as over Drawings and Tasks and while Kapy AI is off
   /// or not in this build.
   final VoidCallback? onAskKapy;
   final ShortcutBinding? askKapyShortcut;
 
   static const double height = 52;
-
-  /// The narrowest desktop list that keeps the count and New's word: the
-  /// list's own width, which a 1440 pt window gives it and where D01 and D03
-  /// draw both, with the sparkle, New and the toggle side by side. Below it
-  /// they fold away, and sooner wherever the reader's text size or a longer
-  /// name leaves them no room. A tablet keeps 8 between the buttons and
-  /// folds only for room.
-  static const double fullWidth = LayoutPrefs.defaultSidebarWidth;
 
   /// New's name and chord on hover, as the page's + names it while this bar
   /// is hidden.
@@ -2211,38 +2236,16 @@ class SidebarWindowBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final newNoteShortcut = this.newNoteShortcut;
     final hideShortcut = this.hideShortcut;
     final onAskKapy = this.onAskKapy;
     final askKapyShortcut = this.askKapyShortcut;
-    final titleStyle = chromeStyle(
-      size: AppTypeScale.spaceTitle,
-      line: AppTypeScale.spaceTitle * 1.3,
-      weight: AppWeight.semibold,
+    final desktop = AppPlatform.hasPointer;
+    final titleStyle = handTitle(
+      size: 22,
+      line: 28,
       color: palette.textHeading,
     );
-    final countText = [count, ?countLabel].join(' ');
-    final countStyle = chromeStyle(
-      size: AppTypeScale.small,
-      line: 16,
-      weight: AppWeight.regular,
-      color: palette.textQuiet,
-      tabular: true,
-    );
-    double widthOf(String text, TextStyle style) {
-      final painter = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: DefaultTextStyle.of(context).style.merge(style),
-        ),
-        textDirection: TextDirection.ltr,
-        textScaler: MediaQuery.textScalerOf(context),
-        maxLines: 1,
-      )..layout();
-      final width = painter.width;
-      painter.dispose();
-      return width;
-    }
+    Widget gap() => SizedBox(width: desktop ? 0 : 8);
 
     return SizedBox(
       height: AppControlMetrics.scaleBar(context, height),
@@ -2254,131 +2257,80 @@ class SidebarWindowBar extends StatelessWidget {
           Positioned.fill(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  // New note gives up its keycap and then its word and the
-                  // count, so the space's name keeps its room on a list
-                  // dragged narrow. Everything is measured as it prints, at
-                  // the reader's text size and with this platform's chord.
-                  final desktop = AppPlatform.hasPointer;
-                  final gap = desktop ? 0 : 8;
-                  final room =
-                      constraints.maxWidth -
-                      widthOf(title, titleStyle) -
-                      8 -
-                      gap -
-                      32 -
-                      (onAskKapy == null ? 0 : 32 + gap);
-                  final chord = noun == 'drawing'
-                      ? null
-                      : newNoteShortcut?.keycapLabel;
-                  bool fits({String? shortcut}) =>
-                      room - 8 - widthOf(countText, countStyle) >=
-                      TonalButton.widthOf(
-                        context,
-                        'New $noun',
-                        shortcut: shortcut,
-                        tall: true,
-                      );
-                  final label =
-                      (!desktop ||
-                          constraints.maxWidth + 2 * 16 >= fullWidth) &&
-                      fits();
-                  final keycap =
-                      label && chord != null && fits(shortcut: chord);
-                  return Row(
-                    children: [
-                      Expanded(
-                        // Its own drag region, because text takes the pointer
-                        // before the bar's can.
-                        child: WindowDragArea(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.baseline,
-                            textBaseline: TextBaseline.alphabetic,
-                            children: [
-                              Flexible(
-                                child: Semantics(
-                                  header: true,
-                                  child: Text(
-                                    title,
-                                    key: const ValueKey('sidebar-space-title'),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: titleStyle,
-                                  ),
-                                ),
-                              ),
-                              if (label) ...[
-                                const SizedBox(width: 8),
-                                // The tooltip is what a screen reader hears:
-                                // "3 notes", where the bare figure would be
-                                // read as just a number.
-                                Tooltip(
-                                  message: [
-                                    count == 1 ? '1 $noun' : '$count ${noun}s',
-                                    ?countLabel,
-                                  ].join(' '),
-                                  child: Text(
-                                    countText,
-                                    key: const ValueKey('sidebar-space-count'),
-                                    maxLines: 1,
-                                    style: countStyle,
-                                  ),
-                                ),
-                              ],
-                            ],
+              child: Row(
+                children: [
+                  Expanded(
+                    // Its own drag region, because text takes the pointer
+                    // before the bar's can.
+                    child: WindowDragArea(
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        // How many the space holds waits in the tooltip,
+                        // which is also what a screen reader hears after the
+                        // name: "My notes, 36 notes".
+                        child: Tooltip(
+                          message: [
+                            count == 1 ? '1 $noun' : '$count ${noun}s',
+                            ?countLabel,
+                          ].join(' '),
+                          child: Semantics(
+                            header: true,
+                            child: Text(
+                              title,
+                              key: const ValueKey('sidebar-space-title'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: titleStyle,
+                            ),
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      if (onAskKapy != null)
-                        CompactIconButton(
-                          key: const ValueKey('sidebar-ask-kapy'),
-                          tooltip: askKapyShortcut == null
-                              ? 'Ask Kapy'
-                              : 'Ask Kapy  ${askKapyShortcut.displayLabel}',
-                          extent: 32,
-                          radius: AppRadii.control,
-                          onPressed: onAskKapy,
-                          icon: const KapyIcon(
-                            KapyIcons.sparklesOutlined,
-                            size: 16,
-                          ),
-                        ),
-                      if (onAskKapy != null && !desktop)
-                        const SizedBox(width: 8),
-                      TonalButton(
-                        key: const ValueKey('sidebar-new-note'),
-                        tall: true,
-                        icon: KapyIcons.addRounded,
-                        label: label ? 'New $noun' : null,
-                        quiet: true,
-                        sageIcon: true,
-                        shortcut: keycap ? newNoteShortcut?.keycapLabel : null,
-                        // Without its keycap the button still teaches the
-                        // chord, on hover.
-                        tooltip: keycap
-                            ? null
-                            : newTooltip(noun, newNoteShortcut),
-                        onPressed: onCreate,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (onAskKapy != null) ...[
+                    CompactIconButton(
+                      key: const ValueKey('sidebar-ask-kapy'),
+                      tooltip: askKapyShortcut == null
+                          ? 'Ask Kapy'
+                          : 'Ask Kapy  ${askKapyShortcut.displayLabel}',
+                      extent: 32,
+                      radius: AppRadii.control,
+                      onPressed: onAskKapy,
+                      icon: const KapyIcon(
+                        KapyIcons.sparklesOutlined,
+                        size: 16,
                       ),
-                      if (!desktop) const SizedBox(width: 8),
-                      CompactIconButton(
-                        key: const ValueKey('sidebar-hide'),
-                        tooltip: hideShortcut == null
-                            ? 'Hide notes'
-                            : 'Hide notes  ${hideShortcut.displayLabel}',
-                        extent: 32,
-                        radius: AppRadii.control,
-                        onPressed: onHide,
-                        icon: KapyIcon(
-                          KapyIcons.menuOpenRounded,
-                          size: AppControlMetrics.iconAction,
-                        ),
-                      ),
-                    ],
-                  );
-                },
+                    ),
+                    gap(),
+                  ],
+                  CompactIconButton(
+                    key: const ValueKey('sidebar-new-note'),
+                    tooltip: newTooltip(noun, newNoteShortcut),
+                    semanticLabel: 'New $noun',
+                    extent: 32,
+                    radius: AppRadii.control,
+                    onPressed: onCreate,
+                    icon: KapyIcon(
+                      KapyIcons.addRounded,
+                      size: AppControlMetrics.iconAction,
+                    ),
+                  ),
+                  gap(),
+                  CompactIconButton(
+                    key: const ValueKey('sidebar-hide'),
+                    tooltip: hideShortcut == null
+                        ? 'Hide notes'
+                        : 'Hide notes  ${hideShortcut.displayLabel}',
+                    extent: 32,
+                    radius: AppRadii.control,
+                    onPressed: onHide,
+                    icon: KapyIcon(
+                      KapyIcons.menuOpenRounded,
+                      size: AppControlMetrics.iconAction,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -2777,8 +2729,9 @@ class SidebarSearchField extends StatefulWidget {
   /// elsewhere in the well calls [onSearch].
   final Widget? field;
 
-  /// A phone's filter button, beside the well. It stands outside the well's
-  /// own tap area, so pressing it never starts a search.
+  /// What sits beside the field, outside its own tap area so pressing it
+  /// never starts a search: a phone's filter button, or the View menu's
+  /// icon beside the rail.
   final Widget? trailing;
 
   final VoidCallback onSearch;
@@ -2788,17 +2741,44 @@ class SidebarSearchField extends StatefulWidget {
   final ShortcutBinding? shortcut;
   final String placeholder;
 
+  /// The line a phone's placeholder and field are set on.
+  static TextStyle phoneLine(Color color) =>
+      uiStyle(AppTypeScale.row, 22, FontWeight.w400, color);
+
+  /// How tall a phone's well stands with the room round it at [scaler]: 44
+  /// at least, and taller as its line grows with the text size.
+  static double phoneExtent(TextScaler scaler) =>
+      4 +
+      math.max(
+        44,
+        12 + scaler.scale(AppTypeScale.row) * 22 / AppTypeScale.row,
+      ) +
+      6;
+
   @override
   State<SidebarSearchField> createState() => _SidebarSearchFieldState();
 }
 
 class _SidebarSearchFieldState extends State<SidebarSearchField> {
-  /// The desktop field's keycap shows only under the pointer.
-  bool _hovered = false;
+  /// Whether the pointer is on the field, which brings out its keycap.
+  bool _hovering = false;
 
-  Widget? _end(CalcPalette palette, double extent) {
+  String get query => widget.query;
+  String get placeholder => widget.placeholder;
+
+  /// What ends the field: Clear while it holds a search, else the chord
+  /// that opens it, where the placeholder keeps at least as much of the
+  /// [room] beside the icon as the chord takes. A long one in a list dragged
+  /// narrow is left out rather than crowding the placeholder off the field,
+  /// and Settings still shows it.
+  Widget? _end(
+    BuildContext context,
+    CalcPalette palette,
+    double extent, {
+    double room = double.infinity,
+  }) {
     final onClear = widget.onClear;
-    if (widget.query.isNotEmpty && onClear != null) {
+    if (query.isNotEmpty && onClear != null) {
       // Inside the field's tap region, so Clear keeps the keyboard up.
       return TextFieldTapRegion(
         child: CompactIconButton(
@@ -2815,9 +2795,12 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
       );
     }
     final shortcut = widget.shortcut;
-    if (shortcut == null || !AppPlatform.hasPointer || !_hovered) return null;
+    if (shortcut == null || !AppPlatform.hasPointer || !_hovering) return null;
+    if (Keycap.widthOf(context, shortcut.keycapLabel, plain: true) * 2 > room) {
+      return null;
+    }
     return Tooltip(
-      message: '${widget.placeholder} · ${shortcut.displayLabel}',
+      message: '$placeholder · ${shortcut.displayLabel}',
       child: Semantics(
         label: 'Search shortcut ${shortcut.displayLabel}',
         excludeSemantics: true,
@@ -2829,8 +2812,6 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
             line: 14,
             weight: AppWeight.regular,
             color: palette.textTertiary,
-            family: AppFonts.mono,
-            fallback: AppFonts.monoFallback,
           ),
         ),
       ),
@@ -2840,41 +2821,43 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
-    final query = widget.query;
-    final placeholder = widget.placeholder;
-    final onSearch = widget.onSearch;
     final searching = query.isNotEmpty;
-    final end = _end(palette, widget.phone ? 32 : 20);
-    if (!widget.phone) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        child: Semantics(
-          button: true,
-          label: searching ? 'Search, $query' : placeholder,
-          child: GestureDetector(
-            key: const ValueKey('sidebar-search-field'),
-            behavior: HitTestBehavior.opaque,
-            onTap: onSearch,
-            child: MouseRegion(
-              cursor: SystemMouseCursors.text,
-              onEnter: (_) => setState(() => _hovered = true),
-              onExit: (_) => setState(() => _hovered = false),
-              child: Container(
-                key: const ValueKey('sidebar-search-box'),
-                height: 30,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: palette.controlBackground,
-                  borderRadius: BorderRadius.circular(AppRadii.control),
-                ),
-                child: Row(
+    final phone = widget.phone;
+    final onSearch = widget.onSearch;
+    final trailing = widget.trailing;
+    if (!phone) {
+      const icon = 14.0;
+      const gap = 8.0;
+      final field = Semantics(
+        button: true,
+        label: searching ? 'Search, $query' : placeholder,
+        child: GestureDetector(
+          key: const ValueKey('sidebar-search-field'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onSearch,
+          child: MouseRegion(
+            cursor: SystemMouseCursors.text,
+            // The keycap waits for the pointer, and its tooltip names the
+            // chord too.
+            onEnter: (_) => setState(() => _hovering = true),
+            onExit: (_) => setState(() => _hovering = false),
+            child: Container(
+              key: const ValueKey('sidebar-search-box'),
+              height: 30,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: palette.controlBackground,
+                borderRadius: BorderRadius.circular(AppRadii.control),
+              ),
+              child: LayoutBuilder(
+                builder: (context, constraints) => Row(
                   children: [
                     KapyIcon(
                       KapyIcons.searchRounded,
-                      size: 14,
+                      size: icon,
                       color: palette.textSecondary,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: gap),
                     Expanded(
                       child: Text(
                         searching ? query : placeholder,
@@ -2890,7 +2873,12 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
                         ),
                       ),
                     ),
-                    ?end,
+                    ?_end(
+                      context,
+                      palette,
+                      20,
+                      room: constraints.maxWidth - icon - gap,
+                    ),
                   ],
                 ),
               ),
@@ -2898,9 +2886,18 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
           ),
         ),
       );
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(
+          children: [
+            Expanded(child: field),
+            if (trailing != null) ...[const SizedBox(width: 6), trailing],
+          ],
+        ),
+      );
     }
 
-    final trailing = widget.trailing;
+    final end = _end(context, palette, 32);
     final field = widget.field;
     final well = MouseRegion(
       cursor: SystemMouseCursors.text,
@@ -2930,10 +2927,7 @@ class _SidebarSearchFieldState extends State<SidebarSearchField> {
                     searching ? query : placeholder,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: uiStyle(
-                      AppTypeScale.row,
-                      22,
-                      FontWeight.w400,
+                    style: SidebarSearchField.phoneLine(
                       searching ? palette.textPrimary : palette.textSecondary,
                     ),
                   ),
@@ -3325,9 +3319,8 @@ class _NoteRowState extends State<NoteRow> {
           if (TagShelf.maybeOf(context) != null)
             const KapyMenuAction(
               value: 'tags',
-              label: 'Tags',
+              label: 'Tags…',
               icon: KapyIcons.tagRounded,
-              hint: '›',
             ),
           if (widget.folders != null)
             const KapyMenuAction(
@@ -4393,15 +4386,21 @@ class _PhoneShareHeading extends StatelessWidget {
   }
 }
 
-/// A day's heading over its card on a phone's list: "Today" in the section
-/// label's grey, then the date a grey quieter. A day with no name is headed
-/// by its date alone. Folders heads its notes in no folder with it too
-/// (M02): the words alone.
-class _PhoneDayHeading extends StatelessWidget {
-  const _PhoneDayHeading({required this.lead, this.date});
+/// A day's heading over its card on a phone's list: "Today" firm in the
+/// text's own colour, then the date smaller and a grey quieter. A day with
+/// no name is headed by its date alone. Folders heads its notes in no folder
+/// with it too (M02): the words alone. Pinned leads with its pin.
+class PhoneDayHeading extends StatelessWidget {
+  const PhoneDayHeading({
+    super.key,
+    required this.lead,
+    this.date,
+    this.pin = false,
+  });
 
   final String? lead;
   final String? date;
+  final bool pin;
 
   @override
   Widget build(BuildContext context) {
@@ -4419,19 +4418,36 @@ class _PhoneDayHeading extends StatelessWidget {
           textBaseline: TextBaseline.alphabetic,
           spacing: 6,
           children: [
+            if (pin)
+              KapyIcon(
+                KapyIcons.pinOutlined,
+                size: 18,
+                color: palette.textPrimary,
+              ),
             if (lead case final lead?)
-              Text(lead, style: metaStyle(13, 18, palette.textSecondary)),
+              Flexible(
+                child: Text(
+                  lead,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _phoneHeadingStyle(palette),
+                ),
+              ),
             if (date case final date?)
               Flexible(
                 child: Text(
                   date,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: metaStyle(
-                    13,
-                    18,
-                    lead == null ? palette.textSecondary : palette.textQuiet,
-                  ),
+                  style: lead == null
+                      ? _phoneHeadingStyle(palette)
+                      : chromeStyle(
+                          size: 15,
+                          line: 22,
+                          weight: AppWeight.regular,
+                          color: palette.textTertiary,
+                          tabular: true,
+                        ),
                 ),
               ),
           ],
@@ -4487,25 +4503,47 @@ class PhonePinnedCards extends StatelessWidget {
 /// A heading over a phone's list: Pinned, where it has no View all, and
 /// Recent.
 class _PhoneHeading extends StatelessWidget {
-  const _PhoneHeading(this.label);
+  const _PhoneHeading(this.label, {this.pin = false});
 
   final String label;
+  final bool pin;
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    header: true,
-    child: Padding(
-      padding: const EdgeInsets.only(left: 16),
-      child: Text(
-        label,
-        style: metaStyle(13, 18, context.palette.textSecondary),
+  Widget build(BuildContext context) {
+    final palette = context.palette;
+    return Semantics(
+      header: true,
+      child: Padding(
+        padding: const EdgeInsets.only(left: 16),
+        child: Row(
+          spacing: 6,
+          children: [
+            if (pin)
+              KapyIcon(
+                KapyIcons.pinOutlined,
+                size: 18,
+                color: palette.textPrimary,
+              ),
+            Text(label, style: _phoneHeadingStyle(palette)),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
+/// A section heading on a phone's list: Pinned, Today, a day, Recent.
+TextStyle _phoneHeadingStyle(CalcPalette palette) => chromeStyle(
+  size: 17,
+  line: 22,
+  weight: AppWeight.semibold,
+  color: palette.textPrimary,
+  tabular: true,
+);
+
 /// A phone list's title: the space's name large, its count small and quiet
-/// beside it (M02, M03).
+/// beside it (M02, M03), in Home's header frame ([PhoneTitleBar]) so a tab
+/// or page switched to keeps the title's line, S and the search under it.
 class PhoneListTitle extends StatelessWidget {
   const PhoneListTitle({
     super.key,
@@ -4513,9 +4551,14 @@ class PhoneListTitle extends StatelessWidget {
     this.count,
     this.onBack,
     this.trailing,
+    this.handwritten = false,
   });
 
   final String title;
+
+  /// Set for a tab's own title, Folders' and Kapy AI's: handwritten at
+  /// Home's Notes size, as Refine D sets a phone's screen titles.
+  final bool handwritten;
 
   /// Left out where the page counts nothing, as Folders does.
   final int? count;
@@ -4545,12 +4588,14 @@ class PhoneListTitle extends StatelessWidget {
               key: const ValueKey('phone-list-title'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: uiStyle(
-                AppTypeScale.spaceTitle,
-                32,
-                FontWeight.w600,
-                palette.textHeading,
-              ),
+              style: handwritten
+                  ? handTitle(size: 30, line: 36, color: palette.textHeading)
+                  : uiStyle(
+                      AppTypeScale.spaceTitle,
+                      32,
+                      FontWeight.w600,
+                      palette.textHeading,
+                    ),
             ),
           ),
           if (count != null) ...[
@@ -4569,19 +4614,10 @@ class PhoneListTitle extends StatelessWidget {
         ],
       ),
     );
-    final trailing = this.trailing;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        onBack == null ? 20 : 6,
-        12,
-        trailing == null ? 20 : 14,
-        14,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (onBack != null)
-            IconButton(
+    return PhoneTitleBar(
+      leading: onBack == null
+          ? null
+          : IconButton(
               key: const ValueKey('page-back'),
               tooltip: 'Back',
               onPressed: onBack,
@@ -4590,10 +4626,13 @@ class PhoneListTitle extends StatelessWidget {
               color: palette.textPrimary,
               icon: KapyIcon(KapyIcons.arrowBackRounded, size: 22),
             ),
-          Expanded(child: heading),
-          if (trailing != null) ...[const SizedBox(width: 6), trailing],
-        ],
+      // Home's titles are 44 tall to tap, their words at the top: the same
+      // box puts this one on their line.
+      title: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: heading,
       ),
+      trailing: [?trailing],
     );
   }
 }

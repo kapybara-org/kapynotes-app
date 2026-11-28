@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../core/file_export.dart';
-import '../../core/platform.dart';
 import '../../core/text_file_export.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
@@ -708,8 +707,8 @@ class _GeneratedPassphraseState extends State<GeneratedPassphrase> {
             key: const ValueKey('generated-passphrase'),
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontFamily: AppPlatform.monoFontFallback.first,
-              fontFamilyFallback: AppPlatform.monoFontFallback,
+              fontFamily: AppFonts.mono,
+              fontFamilyFallback: AppFonts.monoFallback,
               fontSize: AppTypeScale.control,
               fontWeight: AppWeight.font(AppWeight.regular),
               fontVariations: AppWeight.wght(AppWeight.regular),

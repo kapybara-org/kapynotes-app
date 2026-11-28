@@ -101,8 +101,9 @@ android {
         }
     }
 
-    // See android/speech_runtime/build.gradle.kts.
-    dynamicFeatures += setOf(":speech_runtime")
+    // See android/speech_runtime/build.gradle.kts and
+    // android/translation_runtime/build.gradle.kts.
+    dynamicFeatures += setOf(":speech_runtime", ":translation_runtime")
 }
 
 // The speech engines' native code leaves the base here and is packaged by
@@ -131,6 +132,17 @@ dependencies {
     // Gemini Nano through AICore, for automatic note titles. Its minSdk is 26
     // against the app's 24: see the overrideLibrary in AndroidManifest.xml.
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta5")
+
+    // Lets ML Kit find the components of the on-demand translation_runtime
+    // module once Play has added it, without a restart: Google's documented
+    // requirement for ML Kit in a dynamic feature. A 4 KB registrar, with no
+    // translation code or models of its own. It still names the monolithic
+    // Play Core 1.10, whose classes clash with feature-delivery's above; the
+    // one call it makes, InternalFrameworkListenerExtensions'
+    // registerFrameworkListener, is in feature-delivery 2.1.0 unchanged.
+    implementation("com.google.mlkit:playstore-dynamic-feature-support:16.0.0-beta2") {
+        exclude(group = "com.google.android.play", module = "core")
+    }
 
     // The version integration_test already puts in every debug build, so
     // the widget renders run against the same runner the app carries.

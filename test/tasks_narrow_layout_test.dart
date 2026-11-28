@@ -371,7 +371,8 @@ void main() {
       });
     }
 
-    testWidgets('at 3.1x, the first pair and Start with fit', (tester) async {
+    testWidgets('at 3.1x, the first pair and Stop choosing fit, Stop '
+        'choosing on one line', (tester) async {
       await setUpTasks(tester, 'Errands\n☐ Hide the menu\n☐ Two\n☐ Three');
       await pumpTasks(
         tester,
@@ -393,13 +394,9 @@ void main() {
       expectInside(tester, start, 390);
       final label = find.descendant(
         of: start,
-        matching: find.textContaining('Start with'),
+        matching: find.text('Stop choosing'),
       );
-      expectWholeLine(
-        tester,
-        label,
-        find.ancestor(of: label, matching: find.byType(Container)).first,
-      );
+      expectWholeLine(tester, label, start);
       await tester.pump(const Duration(seconds: 3));
     });
 
@@ -450,6 +447,9 @@ void main() {
         label: 'Errands',
         scale: 3.1,
       );
+      _focus.requestFocus();
+      await tester.pump();
+      await tester.pump();
       expectWholeLine(
         tester,
         find.text('Add a task'),

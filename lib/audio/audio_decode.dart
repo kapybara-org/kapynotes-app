@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../core/platform.dart';
@@ -115,6 +116,7 @@ class AudioDecoder {
         'This build cannot read recordings on the device.',
       );
     } on PlatformException catch (error) {
+      debugPrint('KapyNotes: decode failed: ${error.details}');
       throw AudioDecodeException(
         error.message ?? 'This recording could not be read.',
       );
@@ -134,5 +136,111 @@ class AudioDecoder {
           : sampleRate,
       frames: frames,
     );
+  }
+}
+
+/// Raised when cleaned-up audio could not be saved as a recording.
+///
+/// Its own type for the reason [AudioDecodeException] is: samples that will
+/// not encode now will not encode on a second try, and the honest thing to
+/// tell somebody is that this recording could not be saved, with the original
+/// still theirs, rather than to spin.
+class AudioEncodeException implements Exception {
+  const AudioEncodeException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// The other direction of the `kapynotes/audio_decode` channel, and ffmpeg on
+/// Linux.
+///
+/// Removing noise works on raw samples, so a cleaned recording comes back as
+/// the same headerless 16-bit PCM [DecodedAudio] holds. But a note's recording
+/// is AAC in an `.m4a` everywhere — it is what plays, syncs and shares — so
+/// the samples have to go back into that before they can stand in for the
+/// original. Every platform with a decoder in the box has the encoder beside
+/// it — `AVAudioFile`, `MediaCodec` with `MediaMuxer`, Media Foundation's
+/// sink writer — so this reaches them over the decoder's own channel rather
+/// than a second one. Linux has [encodeWithFfmpeg].
+///
+/// ## Why both ends are files
+///
+/// For the reason [DecodedAudio] is one: thirty minutes of PCM is 57 MB, and
+/// a method channel would hold it twice. The native side reads the samples a
+/// chunk at a time and never holds the whole recording.
+///
+/// ## Why the destination is never half written
+///
+/// The encoder writes beside the destination and the finished file is renamed
+/// into place, so a failure, or an app killed halfway through, leaves whatever
+/// was there before rather than a recording that plays for a second and
+/// stops. Beside it rather than in a temporary directory, so the rename never
+/// crosses volumes; and ending in `.m4a`, because Apple's and Windows'
+/// writers pick the container from the extension.
+class AacEncoder {
+  const AacEncoder({
+    MethodChannel channel = const MethodChannel(AudioDecoder.channelName),
+  }) : _channel = channel;
+
+  final MethodChannel _channel;
+
+  /// Encodes [pcm] — raw little-endian 16-bit mono at [sampleRate], no
+  /// header — into a mono AAC-LC `.m4a` at [destination].
+  ///
+  /// The defaults are `VoiceRecorder.config`'s, so a cleaned recording is the
+  /// same kind of file as the one it replaces. Windows bends them the way it
+  /// bends a recording: its encoder takes only 44.1 or 48 kHz at 96 kbps or
+  /// more, so it writes what a Windows recording would have been.
+  Future<void> encode(
+    File pcm,
+    File destination, {
+    int sampleRate = 16000,
+    int bitRate = 48000,
+  }) async {
+    final partial = File('${destination.path}.part.m4a');
+    try {
+      if (await pcm.length() < 2) {
+        throw const AudioEncodeException('This recording has no audio in it.');
+      }
+      if (AppPlatform.isLinux) {
+        await encodeWithFfmpeg(
+          pcm,
+          partial,
+          sampleRate: sampleRate,
+          bitRate: bitRate,
+        );
+      } else {
+        try {
+          await _channel.invokeMethod<void>('encode', {
+            'path': pcm.path,
+            'destination': partial.path,
+            'sampleRate': sampleRate,
+            'bitRate': bitRate,
+          });
+        } on MissingPluginException {
+          throw const AudioEncodeException(
+            'This build cannot save recordings on the device.',
+          );
+        } on PlatformException catch (error) {
+          throw AudioEncodeException(
+            error.message ?? 'This recording could not be saved.',
+          );
+        }
+      }
+      await partial.rename(destination.path);
+    } on Exception catch (error) {
+      try {
+        if (await partial.exists()) await partial.delete();
+      } on FileSystemException {
+        // A file that will not delete will not be renamed into place either;
+        // the next save writes over it.
+      }
+      if (error is AudioEncodeException) rethrow;
+      debugPrint('KapyNotes: could not save a recording: $error');
+      throw const AudioEncodeException('This recording could not be saved.');
+    }
   }
 }

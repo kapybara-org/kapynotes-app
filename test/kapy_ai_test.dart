@@ -5,6 +5,7 @@ import 'package:hugeicons/hugeicons.dart';
 import 'package:kapy_notes/ai/kapy_ai.dart';
 import 'package:kapy_notes/core/platform.dart';
 import 'package:kapy_notes/core/theme.dart';
+import 'package:kapy_notes/ui/back_forward.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_chats.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_conversation.dart';
 import 'package:kapy_notes/ui/kapy_ai/kapy_ai_markdown.dart';
@@ -14,6 +15,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'fake_kapy_ai.dart';
 import 'kapy_icon_finder.dart';
+import 'support/back_forward.dart';
 import 'test_fonts.dart';
 
 /// The panel, its picker, its chats, its notices and its answers, one piece
@@ -114,6 +116,27 @@ void main() {
     kapyAiAvailable = true;
   });
   tearDown(() => kapyAiAvailable = wasAvailable);
+
+  for (final by in StepBy.values) {
+    testWidgets('${by.name}: a swipe or the mouse buttons go back from the '
+        'chat to the chats, and forward to it again', (tester) async {
+      asDesktop();
+      final controller = KapyAiPanelController()..open(noteId: 'n1');
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(_harness(_panel(FakeKapyAi(), controller)));
+      final panel = find.byKey(const ValueKey('kapy-ai-panel'));
+      expect(find.text('Kapy AI'), findsOneWidget);
+
+      await stepOver(tester, panel, BackForwardStep.back, by);
+      expect(find.text('Chats'), findsOneWidget);
+      expect(find.byType(KapyAiChats), findsOneWidget);
+      await stepOver(tester, panel, BackForwardStep.back, by);
+      expect(find.byType(KapyAiChats), findsOneWidget, reason: 'the first');
+      await stepOver(tester, panel, BackForwardStep.forward, by);
+      expect(find.byType(KapyAiChats), findsNothing);
+      expect(find.text('Kapy AI'), findsOneWidget);
+    }, variant: TargetPlatformVariant.desktop());
+  }
 
   group('Punycode', () {
     for (final (host, ascii) in [
@@ -287,7 +310,7 @@ void main() {
       return null;
     }
 
-    testWidgets('docked, the header is D10’s: an interface-face title, the '
+    testWidgets('docked, the header is D10’s: a handwritten title, the '
         'notes-history icon and a hairline', (tester) async {
       final controller = KapyAiPanelController()..open(noteId: 'n1');
       addTearDown(controller.dispose);
@@ -301,10 +324,13 @@ void main() {
           matching: find.text('Kapy AI'),
         ),
       );
-      expect(title.style?.fontFamily, AppFonts.ui);
-      expect(title.style?.fontSize, 13);
-      expect(title.style?.height, 18 / 13);
-      expect(title.style?.fontWeight, FontWeight.w400);
+      expect(title.style?.fontFamily, AppFonts.hand);
+      expect(title.style?.fontSize, 17);
+      expect(title.style?.height, 22 / 17);
+      expect(
+        title.style?.fontVariations,
+        contains(const FontVariation('wght', 500)),
+      );
       expect(title.style?.color, palette.textPrimary);
 
       final icon = tester.widget<KapyIcon>(
@@ -1100,10 +1126,49 @@ void main() {
       );
 
       expect(find.text('You’re offline'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'needs a connection. Apple Intelligence answers offline.',
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Try again'));
       await tester.tap(find.text('Use Apple Intelligence'));
       expect(ai.calls, ['proceed', 'answerWith:apple']);
     });
+
+    for (final (platform, word) in [
+      (TargetPlatform.android, 'phone'),
+      (TargetPlatform.windows, 'computer'),
+      (TargetPlatform.linux, 'computer'),
+    ]) {
+      testWidgets('on ${platform.name}, the limit and offline cards name this '
+          '$word, not "On this device" (KAP-402)', (tester) async {
+        AppPlatform.debugTargetPlatformOverride = platform;
+        addTearDown(() => AppPlatform.debugTargetPlatformOverride = null);
+        await hold(
+          tester,
+          KapyLimitReached(
+            resetsAt: DateTime(2026, 12),
+            fallback: FakeKapyAi.gemma,
+          ),
+        );
+        expect(
+          find.textContaining(
+            'Until then, this $word and your accounts still answer.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining('On this device'), findsNothing);
+
+        await hold(tester, const KapyOffline(fallback: FakeKapyAi.gemma));
+        expect(
+          find.textContaining('This $word answers offline.'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('On this device'), findsNothing);
+      });
+    }
 
     testWidgets('a signed-out Codex: Check again looks, then answers', (
       tester,

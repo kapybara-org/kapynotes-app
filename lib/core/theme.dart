@@ -157,8 +157,14 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
   /// Riverbank's sage, and each theme's own accent.
   final Color accent;
 
-  /// Ink set on [accent]: the check in a ticked box, a filled button's label.
+  /// Ink set on an orange fill, text and icons alike: white, the check in a
+  /// ticked box, a filled button's label, a total's figures.
   final Color onAccent;
+
+  /// The fill under words in [onAccent]: a filled button, a total's pill. A
+  /// deeper shade of [accent], so white reads at 4.5:1; fills that carry only
+  /// an icon keep [accent].
+  final Color accentFill;
 
   /// Code in a note, Paper's p-5-0: clay keywords, sage strings, ochre
   /// numbers and teal built-ins, each a shade deeper in light.
@@ -281,6 +287,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     final hairline = _mix(editorBackground, ink, 0.22);
     final outline = _mix(editorBackground, ink, 0.5);
     final strongAccent = _mix(accent, extreme, 0.18);
+    final deeperFill = _mix(accentFill, const Color(0xFF000000), 0.18);
     return copyWith(
       number: ink,
       keyword: ink,
@@ -311,7 +318,8 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       accent: strongAccent,
       selectedBorder: strongAccent,
       focusRing: _mix(focusRing, extreme, 0.18),
-      totalPillBackground: strongAccent,
+      accentFill: deeperFill,
+      totalPillBackground: deeperFill,
       accentText: _mix(accentText, extreme, 0.3),
       tonalForeground: _mix(tonalForeground, extreme, 0.45),
       increasedContrast: true,
@@ -387,6 +395,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     required this.shadow,
     required this.accent,
     required this.onAccent,
+    required this.accentFill,
     required this.codeKeyword,
     required this.codeString,
     required this.codeNumber,
@@ -470,6 +479,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     Color? shadow,
     Color? accent,
     Color? onAccent,
+    Color? accentFill,
     Color? codeKeyword,
     Color? codeString,
     Color? codeNumber,
@@ -550,6 +560,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
     shadow: shadow ?? this.shadow,
     accent: accent ?? this.accent,
     onAccent: onAccent ?? this.onAccent,
+    accentFill: accentFill ?? this.accentFill,
     codeKeyword: codeKeyword ?? this.codeKeyword,
     codeString: codeString ?? this.codeString,
     codeNumber: codeNumber ?? this.codeNumber,
@@ -639,6 +650,7 @@ class CalcPalette extends ThemeExtension<CalcPalette> {
       shadow: mix(shadow, other.shadow),
       accent: mix(accent, other.accent),
       onAccent: mix(onAccent, other.onAccent),
+      accentFill: mix(accentFill, other.accentFill),
       codeKeyword: mix(codeKeyword, other.codeKeyword),
       codeString: mix(codeString, other.codeString),
       codeNumber: mix(codeNumber, other.codeNumber),
@@ -705,11 +717,11 @@ class EditorMetrics {
   /// [padding] gives the column what it has.
   static const double columnWidth = 680;
 
-  /// The note's first line, its title: 26 semibold, the one title on the
+  /// The note's first line, its title: 28 semibold, the one title on the
   /// page, so it names the note without shouting over it. The meta row sits under it, 10 below the title and 24
   /// above the body. On a tablet it keeps a second line's room for the tags;
   /// a phone's facts and tags share one line, as M07 draws them.
-  static const double titleFontSize = 26;
+  static const double titleFontSize = 28;
   static const double titleRow = 32;
   static const FontWeight titleWeight = FontWeight.w600;
   static const double metaGap = 10;
@@ -861,18 +873,31 @@ class EditorMetrics {
 /// The radii of the design system (handoffs/design-system/tokens.md).
 ///
 /// Controls and selected rows share [control]. A card of settings rows is
-/// [group], a card of notes in a list is [card], and a dialog, menu or
-/// floating panel is [surface]. Chips are full pills. Fills one or two steps
-/// apart separate one layer from another: no borders, no shadows.
+/// [group], a note's card is [card], a phone list's card of rows is
+/// [phoneList], and a dialog, menu or floating panel is [surface]. Chips are
+/// full pills. Fills one or two steps apart separate one layer from another:
+/// no borders, no shadows.
 class AppRadii {
   const AppRadii._();
 
   static const double small = 4;
   static const double control = 7;
-  static const double group = 10;
+  static const double group = 8;
   static const double surface = 12;
-  static const double card = 20;
+  static const double card = 14;
+  static const double phoneList = 18;
   static const double pill = 999;
+}
+
+/// A count in a small circle, such as the one beside Notes on a phone's
+/// Home: [desktop] or [phone] across, widening into a pill past one digit
+/// with [padding] each side, in the selected fill with secondary text.
+class AppCountBadge {
+  const AppCountBadge._();
+
+  static const double desktop = 16;
+  static const double phone = 18;
+  static const double padding = 4;
 }
 
 class AppHairline {
@@ -1174,28 +1199,45 @@ class AppTypeScale {
   static double get display => _touch ? 34 : 32;
 }
 
+/// Geist's tracking by size: tighter as text grows, a little open at 13 and
+/// below so small text keeps its air. Text past 17, the screen titles,
+/// keeps its own.
+class AppTracking {
+  const AppTracking._();
+
+  static double of(double size) => switch (size.round()) {
+    > 17 => 0,
+    17 => -0.2,
+    16 => -0.1,
+    15 => -0.05,
+    14 => 0,
+    13 => 0.1,
+    _ => 0.15,
+  };
+}
+
 /// The faces the interface is set in. The writing surface has its own: see
 /// [WritingFont].
 class AppFonts {
   const AppFonts._();
 
-  /// Every control and label: San Francisco through the system face on a Mac
-  /// or an iPhone, which its licence keeps out of the bundle, and Inter,
-  /// bundled, on Windows, Android and Linux.
-  static String get ui => AppPlatform.isMacOS || AppPlatform.isIOS
-      ? AppPlatform.uiFontFamily
-      : inter;
+  /// Every control, label and result, and the Clean writing style: Geist,
+  /// bundled, so the app reads the same on every device.
+  static const String ui = 'Geist';
 
-  static const String inter = 'Inter';
-
-  /// The handwritten accent's face: see [handAccent].
+  /// The handwritten face: the screen titles ([handTitle]), the empty
+  /// moments ([handAccent]) and the Handwritten and Mixed writing styles.
   static const String hand = 'Shantell Sans';
 
-  /// Figures that have to line up and keys that have to look like keys:
-  /// calculation results, keycaps and code.
+  /// Fixed-width letters, where they are the point: code and the Monospace
+  /// writing style.
   static const String mono = 'Geist Mono';
 
-  /// What draws the scripts and symbols the interface face does not have.
+  /// The Pixel writing style's face, Geist Pixel's Square cut.
+  static const String pixel = 'Geist Pixel';
+
+  /// What draws the scripts and symbols Geist does not have (⌘, ⌥, ⌃, ⎋,
+  /// some currency signs, Devanagari and other scripts): the device's own.
   static List<String> get uiFallback => [
     AppPlatform.uiFontFamily,
     ...AppPlatform.uiFontFallback,
@@ -1205,26 +1247,35 @@ class AppFonts {
   static const List<String> monoFallback = AppPlatform.monoFontFallback;
 }
 
-/// The interface's two weights: [regular] for everything people read, and
-/// [semibold] for a window's, a dialog's or a page's title. Hierarchy
-/// otherwise comes from size and grey level, never from weight.
+/// The waiting marker: Shared's count on the rail, the phone's Folders dot
+/// and the invitations dot in Settings. One red in every theme and mode, with
+/// white on it at 5 : 1 (tokens.md, Refine D).
+const Color waitingMarker = Color(0xFFC93B36);
+
+/// The interface's three weights: [regular] for everything people read,
+/// [medium] for a row's title, and [semibold] for a section heading and a
+/// window's, a dialog's or a note's title.
 class AppWeight {
   const AppWeight._();
 
   static const double regular = 400;
+  static const double medium = 500;
   static const double semibold = 600;
 
-  /// A Flutter weight on this ladder: w600 and up is a title, 400 to 599
-  /// reads, and anything under 400 (a display cut) is left alone.
+  /// A Flutter weight on this ladder: w600 and up is a title, w500 a row's
+  /// title, 400 to 499 reads, and anything under 400 (a display cut) is left
+  /// alone.
   static double axisOf(FontWeight weight) {
     final value = weight.value;
     if (value < 400) return value.toDouble();
-    return value >= 600 ? semibold : regular;
+    if (value >= 600) return semibold;
+    return value >= 500 ? medium : regular;
   }
 
   /// Nearest named weight, for a face with no `wght` axis.
   static FontWeight named(double axis) {
-    if (axis < 500) return FontWeight.w400;
+    if (axis < 450) return FontWeight.w400;
+    if (axis < 550) return FontWeight.w500;
     if (axis < 650) return FontWeight.w600;
     return FontWeight.w700;
   }
@@ -1265,10 +1316,10 @@ class AppWeight {
 
 /// Interface text on the ladder.
 ///
-/// Letter spacing stays 0: small text with tracking looks soft, and macOS
-/// already draws Flutter's glyphs with grayscale antialiasing, which is the
-/// smoothing this face wants. Times and counts pass [tabular] so the figures
-/// don't shuffle as they change.
+/// Geist takes [AppTracking] for its size unless [letterSpacing] is given;
+/// other faces take none. Times, dates, counts and amounts pass [tabular]
+/// for tabular lining figures, so they line up and don't shuffle as they
+/// change.
 TextStyle chromeStyle({
   required double size,
 
@@ -1280,10 +1331,11 @@ TextStyle chromeStyle({
   List<String>? fallback,
   List<FontVariation> extra = const [],
   bool tabular = false,
-  double letterSpacing = 0,
+  double? letterSpacing,
   FontStyle? fontStyle,
 }) {
   final axis = AppWeight.bold(weight);
+  final geist = family == null || family == AppFonts.ui;
   return TextStyle(
     fontFamily: family ?? AppFonts.ui,
     fontFamilyFallback: fallback ?? AppFonts.uiFallback,
@@ -1293,9 +1345,11 @@ TextStyle chromeStyle({
     fontWeight: AppWeight.named(axis),
     fontVariations: AppWeight.variations(axis, extra: extra),
     color: color,
-    letterSpacing: letterSpacing,
+    letterSpacing: letterSpacing ?? (geist ? AppTracking.of(size) : 0),
     fontStyle: fontStyle,
-    fontFeatures: tabular ? const [FontFeature.tabularFigures()] : null,
+    fontFeatures: tabular
+        ? const [FontFeature.tabularFigures(), FontFeature.liningFigures()]
+        : null,
   );
 }
 
@@ -1303,12 +1357,30 @@ TextStyle chromeStyle({
 /// the secondary grey, the same on a desktop and a phone. Only for the three
 /// friendly moments the design names (handoffs/design-system/tokens.md): an
 /// empty list's line, an empty Kapy AI chat and a cleared Tasks list. Never a
-/// list, tab, heading, button, Settings or a note's title.
+/// list, button, Settings or a note's title; the screen titles take
+/// [handTitle].
 TextStyle handAccent(CalcPalette palette) => chromeStyle(
   size: 17,
   line: 24,
   weight: AppWeight.regular,
   color: palette.textSecondary,
+  family: AppFonts.hand,
+  extra: WritingFont.handwritten.faceVariations,
+);
+
+/// A screen's name in handwriting: Shantell Sans at 500, the only handwritten
+/// word on its screen. Only for the titles tokens.md names: the notes list's
+/// name and the Kapy AI panel's on a desktop, and a phone's Notes, Tasks and
+/// Kapy AI.
+TextStyle handTitle({
+  required double size,
+  required double line,
+  required Color color,
+}) => chromeStyle(
+  size: size,
+  line: line,
+  weight: 500,
+  color: color,
   family: AppFonts.hand,
   extra: WritingFont.handwritten.faceVariations,
 );
@@ -1504,23 +1576,24 @@ class KapyTheme {
 
   static const _riverbankDark = _Tones(
     window: Color(0xFF0D0D0D),
-    pane: Color(0xFF0F0E0E),
-    card: Color(0xFF131313),
-    raised: Color(0xFF20201F),
-    selected: Color(0xFF191918),
-    hairline: Color(0xFF202020),
-    divider: Color(0xFF252524),
-    chip: Color(0xFF1E1E1E),
-    switchOff: Color(0xFF2A2A28),
-    ring: Color(0xFF4D4D4D),
-    text: Color(0xFFDBDBDB),
-    title: Color(0xFFDADADA),
-    secondary: Color(0xFF969696),
-    tertiary: Color(0xFF878787),
-    quiet: Color(0xFF7C7C7B),
-    mark: Color(0xFF494948),
+    pane: Color(0xFF1A1A1A),
+    card: Color(0xFF1A1A1A),
+    raised: Color(0xFF262626),
+    selected: Color(0xFF262626),
+    hairline: Color(0xFF262626),
+    divider: Color(0xFF2E2E2E),
+    chip: Color(0xFF262626),
+    switchOff: Color(0xFF333333),
+    ring: Color(0xFF5C5C5C),
+    text: Color(0xFFEDEDED),
+    title: Color(0xFFEDEDED),
+    secondary: Color(0xFFA3A3A3),
+    tertiary: Color(0xFF8F8F8F),
+    quiet: Color(0xFF8F8F8F),
+    mark: Color(0xFF4A4A4A),
     accent: Color(0xFFE8772E),
-    onAccent: Color(0xFF1A0E06),
+    onAccent: Color(0xFFFFFFFF),
+    accentFill: Color(0xFFC05815),
     accentText: Color(0xFFE8772E),
     dots: [
       Color(0xFFC9A447),
@@ -1537,24 +1610,25 @@ class KapyTheme {
   /// The dark ladder turned over, each text tier at the contrast its dark
   /// twin has: about 13.4, 6.2, 5.3 and 4.6 to 1.
   static const _riverbankLight = _Tones(
-    window: Color(0xFFF3F3F2),
+    window: Color(0xFFF4F4F4),
     pane: Color(0xFFFFFFFF),
-    card: Color(0xFFF9F9F8),
-    raised: Color(0xFFEBEBEA),
-    selected: Color(0xFFECECEB),
-    hairline: Color(0xFFE6E6E5),
-    divider: Color(0xFFDEDEDD),
-    chip: Color(0xFFEFEFEE),
-    switchOff: Color(0xFFDCDCDA),
-    ring: Color(0xFFADADAB),
-    text: Color(0xFF2B2B2B),
-    title: Color(0xFF262626),
-    secondary: Color(0xFF5E5E5E),
-    tertiary: Color(0xFF666666),
-    quiet: Color(0xFF6E6E6D),
-    mark: Color(0xFFB5B5B3),
+    card: Color(0xFFFFFFFF),
+    raised: Color(0xFFEDEDED),
+    selected: Color(0xFFEDEDED),
+    hairline: Color(0xFFF0F0F0),
+    divider: Color(0xFFE5E5E5),
+    chip: Color(0xFFF1F1F1),
+    switchOff: Color(0xFFDCDCDC),
+    ring: Color(0xFFA3A3A3),
+    text: Color(0xFF171717),
+    title: Color(0xFF171717),
+    secondary: Color(0xFF525252),
+    tertiary: Color(0xFF6B6B6B),
+    quiet: Color(0xFF6B6B6B),
+    mark: Color(0xFFB5B5B5),
     accent: Color(0xFFD9692A),
-    onAccent: Color(0xFF1A0E06),
+    onAccent: Color(0xFFFFFFFF),
+    accentFill: Color(0xFFBD5A22),
     accentText: Color(0xFFB9551A),
     dots: [
       Color(0xFFA88424),
@@ -1812,6 +1886,14 @@ class KapyTheme {
           borderRadius: BorderRadius.circular(AppRadii.control),
           borderSide: BorderSide(color: color, width: width),
         );
+    final fieldBorders = WidgetStateInputBorder.resolveWith((states) {
+      final focused = states.contains(WidgetState.focused);
+      final width = focused ? 1.25 : 1.0;
+      if (states.contains(WidgetState.error)) {
+        return fieldBorder(scheme.error, width: width);
+      }
+      return fieldBorder(focused ? accent : Colors.transparent, width: width);
+    });
 
     return base.copyWith(
       extensions: [palette],
@@ -1938,7 +2020,7 @@ class KapyTheme {
               ),
             ).copyWith(
               backgroundColor: fillStates(
-                accent,
+                palette.accentFill,
                 ink: onAccent,
                 disabled: palette.controlBackground,
               ),
@@ -2077,11 +2159,10 @@ class KapyTheme {
         ),
         prefixIconColor: palette.textTertiary,
         suffixIconColor: palette.textTertiary,
-        border: fieldBorder(Colors.transparent),
-        enabledBorder: fieldBorder(Colors.transparent),
-        focusedBorder: fieldBorder(accent, width: 1.25),
-        errorBorder: fieldBorder(scheme.error),
-        focusedErrorBorder: fieldBorder(scheme.error, width: 1.25),
+        border: fieldBorders,
+        activeIndicatorBorder: WidgetStateBorderSide.resolveWith(
+          (states) => fieldBorders.resolve(states).borderSide,
+        ),
       ),
       switchTheme: SwitchThemeData(
         materialTapTargetSize: tapTarget,
@@ -2089,7 +2170,7 @@ class KapyTheme {
         thumbColor: WidgetStatePropertyAll(palette.switchThumb),
         trackColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? accent
+              ? palette.accentFill
               : palette.switchTrackOff,
         ),
         trackOutlineColor: const WidgetStatePropertyAll(Colors.transparent),
@@ -2104,7 +2185,7 @@ class KapyTheme {
         ),
         fillColor: WidgetStateProperty.resolveWith(
           (states) => states.contains(WidgetState.selected)
-              ? accent
+              ? palette.accentFill
               : Colors.transparent,
         ),
         checkColor: WidgetStatePropertyAll(onAccent),
@@ -2208,6 +2289,7 @@ class _Tones {
     required this.mark,
     required this.accent,
     required this.onAccent,
+    required this.accentFill,
     required this.accentText,
     required this.dots,
   });
@@ -2251,6 +2333,7 @@ class _Tones {
 
   final Color accent;
   final Color onAccent;
+  final Color accentFill;
   final Color accentText;
   final List<Color> dots;
 
@@ -2276,6 +2359,7 @@ class _Tones {
         mark: mark,
         accent: accent,
         onAccent: onAccent,
+        accentFill: accentFill,
         accentText: accentText,
         dots: dots,
       );
@@ -2346,7 +2430,7 @@ CalcPalette _fromTones(_Tones t) {
     scrim: dark ? const Color(0xB3000000) : t.text.withAlpha(0x33),
     resultPillBackground: t.chip,
     resultPillText: t.text,
-    totalPillBackground: accent,
+    totalPillBackground: t.accentFill,
     totalPillText: t.onAccent,
     clay: accent,
     clayText: accentText,
@@ -2370,6 +2454,7 @@ CalcPalette _fromTones(_Tones t) {
     shadow: dark ? const Color(0xFF000000) : t.text.withAlpha(0x66),
     accent: accent,
     onAccent: t.onAccent,
+    accentFill: t.accentFill,
     codeKeyword: accentText,
     codeString: code(t.dots[4]),
     codeNumber: code(t.dots[0]),

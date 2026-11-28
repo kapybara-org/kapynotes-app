@@ -15,10 +15,12 @@ import '../data/note.dart';
 import '../data/notes_store.dart';
 import '../data/shortcut_prefs.dart';
 import '../data/task_board.dart';
+import 'back_forward.dart';
 import 'keycap.dart';
 import 'sidebar_timestamp.dart';
 import 'tasks/task_marks.dart';
 import 'tasks/tasks_controller.dart';
+import 'editor/live_text_card.dart';
 
 /// Whether the panel may check [note]'s tasks or add one to it: not while the
 /// plan holds the note read-only, and not in a note shared view-only.
@@ -111,6 +113,10 @@ final class _MicrophoneRefused extends _Notice {
 
 final class _NoMicrophone extends _Notice {
   const _NoMicrophone();
+}
+
+final class _SilentMicrophone extends _Notice {
+  const _SilentMicrophone();
 }
 
 /// Two tabs, each with its own capture field and its own list, opening on the
@@ -420,10 +426,15 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     if (mounted) _say(const _MicrophoneRefused());
   }
 
+  /// A microphone that never gave a sound leaves nothing to save, so the note
+  /// made for the recording goes with it, unless someone has written in it
+  /// meanwhile from the main window.
   Future<void> _stopRecording() async {
     final id = _recordingNoteId;
-    await widget.recording?.finishRecordingAndFlush();
-    if (mounted && id != null) _say(_Saved(id));
+    final silent = await widget.recording?.finishRecordingAndFlush(discardSilent: true) ?? false;
+    if (id == null) return;
+    if (silent && widget.notes.byId(id)?.body == Note.blankBody) widget.notes.delete(id);
+    if (mounted) _say(silent ? const _SilentMicrophone() : _Saved(id));
   }
 
   Future<void> _discardRecording() async {
@@ -522,64 +533,69 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
             _show(_Tab.tasks),
         const SingleActivator(LogicalKeyboardKey.escape): _escape,
       },
-      child: Material(
-        type: MaterialType.transparency,
-        child: DefaultTextStyle(
-          style: TextStyle(
-            fontFamily: AppFonts.ui,
-            fontSize: 13.5,
-            height: 18 / 13.5,
-            color: palette.textPrimary,
-          ),
-          child: Align(
-            alignment: Alignment.topCenter,
-            child: OverflowBox(
+      child: BackForwardArea(
+        onStep: _stepTab,
+        child: Material(
+          type: MaterialType.transparency,
+          child: DefaultTextStyle(
+            style: TextStyle(
+              fontFamily: AppFonts.ui,
+              fontSize: 13.5,
+              height: 18 / 13.5,
+              color: palette.textPrimary,
+            ),
+            child: Align(
               alignment: Alignment.topCenter,
-              minHeight: 0,
-              maxHeight: MenuBarPanelController.maxHeight,
-              child: _ReportHeight(
-                onHeight: widget.controller.fitHeight,
-                child: Container(
-                  key: const ValueKey('menu-bar-panel'),
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    color: palette.editorBackground,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: dark
-                          ? palette.textPrimary.withAlpha(0x17)
-                          : palette.textPrimary.withAlpha(0x1A),
+              child: OverflowBox(
+                alignment: Alignment.topCenter,
+                minHeight: 0,
+                maxHeight: MenuBarPanelController.maxHeight,
+                child: _ReportHeight(
+                  onHeight: widget.controller.fitHeight,
+                  child: Container(
+                    key: const ValueKey('menu-bar-panel'),
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: palette.editorBackground,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: dark
+                            ? palette.textPrimary.withAlpha(0x17)
+                            : palette.textPrimary.withAlpha(0x1A),
+                      ),
                     ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                        child: _Tabs(tab: _tab, onTab: _show),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                        child: _captureField(context),
-                      ),
-                      _hintRow(context),
-                      Divider(height: 1, thickness: 1, color: palette.hover),
-                      Flexible(
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
-                          child: Focus(
-                            focusNode: _list,
-                            onKeyEvent: _onListKey,
-                            child: _tab == _Tab.tasks
-                                ? _tasksList(context)
-                                : _notesList(context),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                          child: _Tabs(tab: _tab, onTab: _show),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                          child: _captureField(context),
+                        ),
+                        _hintRow(context),
+                        Divider(height: 1, thickness: 1, color: palette.hover),
+                        Flexible(
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
+                            child: Focus(
+                              focusNode: _list,
+                              onKeyEvent: _onListKey,
+                              child: BackForwardSlide(
+                                child: _tab == _Tab.tasks
+                                    ? _tasksList(context)
+                                    : _notesList(context),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                      Divider(height: 1, thickness: 1, color: palette.hover),
-                      _footer(context),
-                    ],
+                        Divider(height: 1, thickness: 1, color: palette.hover),
+                        _footer(context),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -590,13 +606,49 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
     );
   }
 
+  /// A swipe or the mouse's Back and Forward over the panel: Notes is the
+  /// first tab and Tasks the second.
+  bool _stepTab(BackForwardStep step) {
+    final tab = step == BackForwardStep.back ? _Tab.notes : _Tab.tasks;
+    if (tab == _tab) return false;
+    _show(tab);
+    return true;
+  }
+
   Widget _captureField(BuildContext context) {
     final palette = context.palette;
     final theme = Theme.of(context);
     final dark = theme.brightness == Brightness.dark;
     final sage = theme.colorScheme.primary;
     final notes = _tab == _Tab.notes;
-    if (_isRecording) return _recordingBar(context);
+    if (_isRecording) {
+      final text = widget.recording?.liveText;
+      if (text == null) return _recordingBar(context);
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            key: const ValueKey('menu-bar-live-text'),
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            decoration: BoxDecoration(
+              color: palette.wellBackground,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: palette.controlBorder),
+            ),
+            child: ListenableBuilder(
+              listenable: text,
+              builder: (context, _) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: LiveTextLines.of(context, text, most: 2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          _recordingBar(context),
+        ],
+      );
+    }
     return ListenableBuilder(
       listenable: _field,
       builder: (context, _) {
@@ -665,8 +717,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
 
   Widget _recordingBar(BuildContext context) {
     final palette = context.palette;
-    final elapsed = widget.recording?.session?.elapsed ?? Duration.zero;
-    final seconds = elapsed.inSeconds;
+    final session = widget.recording?.session;
+    final seconds = (session?.elapsed ?? Duration.zero).inSeconds;
     return Container(
       key: const ValueKey('menu-bar-recording'),
       height: 37,
@@ -694,6 +746,14 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
               color: palette.textPrimary,
             ),
           ),
+          if (session?.silent ?? false) ...[
+            const SizedBox(width: 10),
+            Text(
+              'Microphone is silent',
+              key: const ValueKey('menu-bar-silent'),
+              style: TextStyle(fontSize: 13, color: palette.textSecondary),
+            ),
+          ],
           const Spacer(),
           _TextButton(
             key: const ValueKey('menu-bar-stop'),
@@ -858,6 +918,11 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
       ),
       _NoMicrophone() => _Hint(
         children: [Text('No microphone found', style: style)],
+      ),
+      _SilentMicrophone() => _Hint(
+        children: [
+          Text('Nothing saved: the microphone was silent', style: style),
+        ],
       ),
       null when _draft.text.trim().isNotEmpty && !_isRecording => _Hint(
         children: [
@@ -1128,8 +1193,8 @@ class _MenuBarPanelState extends State<MenuBarPanel> {
                     Text(
                       open.keycapLabel,
                       style: TextStyle(
-                        fontFamily: AppFonts.mono,
-                        fontFamilyFallback: AppFonts.monoFallback,
+                        fontFamily: AppFonts.ui,
+                        fontFamilyFallback: AppFonts.uiFallback,
                         fontSize: 11,
                         height: 14 / 11,
                         color: palette.textSecondary,
@@ -1217,8 +1282,8 @@ class _Tabs extends StatelessWidget {
                     child: Text(
                       meta ? '⌘$keys' : 'Ctrl+$keys',
                       style: TextStyle(
-                        fontFamily: AppFonts.mono,
-                        fontFamilyFallback: AppFonts.monoFallback,
+                        fontFamily: AppFonts.ui,
+                        fontFamilyFallback: AppFonts.uiFallback,
                         fontSize: 11,
                         height: 14 / 11,
                         color: palette.textTertiary,
@@ -1328,7 +1393,7 @@ class _TaskRow extends StatelessWidget {
             width: 15,
             height: 15,
             decoration: BoxDecoration(
-              color: done ? sage : null,
+              color: done ? palette.accentFill : null,
               shape: BoxShape.circle,
               border: done
                   ? null
