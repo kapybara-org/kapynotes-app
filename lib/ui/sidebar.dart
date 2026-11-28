@@ -1345,6 +1345,8 @@ extension on Sidebar {
     final groups = _noteGroups;
     final pinned = _shownPinned(groups);
     final rows = <WidgetBuilder>[];
+    // The Pinned page is rows whatever the layout, as a folder's list.
+    final cards = this.cards && !pinnedOnly;
     // A phone's lists are rows only, a drawing's led by its thumbnail: its
     // list is never given cards, which are the Mac's choice.
     final style = switch ((cards, drawings)) {
@@ -2257,9 +2259,13 @@ class SidebarWindowBar extends StatelessWidget {
                               if (onBack != null) ...[
                                 const SizedBox(width: 6),
                                 ExcludeSemantics(
-                                  child: CountBadge(
-                                    count,
-                                    key: const ValueKey('sidebar-space-count'),
+                                  child: UnconstrainedBox(
+                                    child: CountBadge(
+                                      count,
+                                      key: const ValueKey(
+                                        'sidebar-space-count',
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],

@@ -13779,7 +13779,7 @@ void main() {
       expect(rowTitles(tester), hasLength(6));
       expect(
         tester.widgetList<NoteRow>(find.byType(NoteRow)).map((r) => r.style),
-        everyElement(isNot(NoteRowStyle.phoneCard)),
+        everyElement(NoteRowStyle.row),
       );
       expect(row, findsNothing);
       expect(viewAll, findsNothing);
