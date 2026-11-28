@@ -61,6 +61,25 @@ void main() {
     expect(find.text('Image added'), findsNothing);
   });
 
+  testWidgets('a result of several sentences stays six seconds', (
+    tester,
+  ) async {
+    late BuildContext context;
+    await tester.pumpWidget(_harness((value) => context = value));
+
+    Toast.showProgress(context, 'Adding video…').error(
+      'big.mp4 (300 MB) is too big to add. Videos can be up to 25 MB. Try a '
+      'shorter clip.',
+      duration: Toast.longLifetime,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 5900));
+    expect(find.textContaining('is too big to add'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.textContaining('is too big to add'), findsNothing);
+  });
+
   testWidgets('an Undo toast stays its full time with animations turned off', (
     tester,
   ) async {

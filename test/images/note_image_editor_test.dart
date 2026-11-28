@@ -729,7 +729,9 @@ void main() {
         editorKey: editorKey,
         fileIngestor: (_, _) async => const FileBatch(
           files: [],
-          rejections: [(name: 'Photos', reason: FileRejection.directory)],
+          rejections: [
+            (name: 'Photos', reason: FileRejection.directory, bytes: 0),
+          ],
         ),
       ),
     );
@@ -964,7 +966,13 @@ void main() {
         ],
         videoIngestor: (_, _) async => const VideoBatch(
           videos: [],
-          rejections: [(name: 'large.mp4', reason: VideoRejection.tooLarge)],
+          rejections: [
+            (
+              name: 'large.mp4',
+              reason: VideoRejection.tooLarge,
+              bytes: 300 * 1024 * 1024,
+            ),
+          ],
         ),
       ),
     );
@@ -973,7 +981,13 @@ void main() {
     unawaited(editorKey.currentState!.pickAndInsertVideos());
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('100 MB attachment limit'), findsOneWidget);
+    expect(
+      find.text(
+        'large.mp4 (300 MB) is too big to add. Videos can be up to 100 MB. '
+        'Try a shorter clip.',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a video sits in the note with a photo\'s corners, and one '
@@ -1139,7 +1153,13 @@ void main() {
         'picture beside it still goes in', (tester) async {
       videoIngestor = (_, _) async => const VideoBatch(
         videos: [],
-        rejections: [(name: 'big.mp4', reason: VideoRejection.tooLarge)],
+        rejections: [
+          (
+            name: 'big.mp4',
+            reason: VideoRejection.tooLarge,
+            bytes: 300 * 1024 * 1024,
+          ),
+        ],
       );
       await openAttach(
         tester,
@@ -1150,7 +1170,97 @@ void main() {
       expect(find.byType(NoteImageView), findsOneWidget);
       expect(find.byType(NoteVideoView), findsNothing);
       expect(
-        find.text('big.mp4 is larger than the 25 MB attachment limit'),
+        find.text(
+          'big.mp4 (300 MB) is too big to add. Videos can be up to 25 MB. Try '
+          'a shorter clip.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a video that is too big is named beside the one that went '
+        'in', (tester) async {
+      videoIngestor = (_, _) async => VideoBatch(
+        videos: [videoAt(0)],
+        rejections: const [
+          (
+            name: 'big.mp4',
+            reason: VideoRejection.tooLarge,
+            bytes: 300 * 1024 * 1024,
+          ),
+        ],
+      );
+      await openAttach(
+        tester,
+        photos: (_) async => [file('clip.mov'), file('big.mp4')],
+      );
+      await choose(tester, 'attach-photos');
+
+      expect(find.byType(NoteVideoView), findsOneWidget);
+      expect(
+        find.text(
+          'Added 1 video. big.mp4 (300 MB) is too big to add. Videos can be '
+          'up to 25 MB. Try a shorter clip.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('several videos that are too big are named together', (
+      tester,
+    ) async {
+      const refused = (
+        name: 'big.mp4',
+        reason: VideoRejection.tooLarge,
+        bytes: 300 * 1024 * 1024,
+      );
+      videoIngestor = (_, _) async => VideoBatch(
+        videos: [videoAt(0)],
+        rejections: const [
+          refused,
+          (name: 'huge.mov', reason: VideoRejection.tooLarge, bytes: 900),
+          (name: 'vast.mov', reason: VideoRejection.tooLarge, bytes: 900),
+        ],
+      );
+      await openAttach(
+        tester,
+        photos: (_) async => [file('clip.mov'), file('big.mp4')],
+      );
+      await choose(tester, 'attach-photos');
+
+      expect(
+        find.text(
+          'Added 1 video. big.mp4 and 2 others are too big to add. Videos can '
+          'be up to 25 MB. Try shorter clips.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('refusals for different reasons are not all called too '
+        'big', (tester) async {
+      videoIngestor = (_, _) async => VideoBatch(
+        videos: [videoAt(0)],
+        rejections: const [
+          (
+            name: 'big.mp4',
+            reason: VideoRejection.tooLarge,
+            bytes: 300 * 1024 * 1024,
+          ),
+          (name: 'odd.avi', reason: VideoRejection.unsupported, bytes: 0),
+        ],
+      );
+      await openAttach(
+        tester,
+        photos: (_) async => [file('clip.mov'), file('big.mp4')],
+      );
+      await choose(tester, 'attach-photos');
+
+      expect(
+        find.text(
+          'Added 1 video. big.mp4 (300 MB) is too big to add. Videos can be up '
+          'to 25 MB. Try a shorter clip. 1 more could not be added.',
+        ),
         findsOneWidget,
       );
     });

@@ -187,6 +187,49 @@ void main() {
       expect(await store.totalBytes(), 3);
     });
 
+    test('a file too big says its size, the most a note holds and what to '
+        'do', () async {
+      final big = await write('big.bin', List.filled(2048, 1));
+      final batch = await ingestFileAttachments(
+        [big],
+        store: store,
+        attachmentMaxBytes: 1024 + fileSealingOverhead,
+      );
+      final first = batch.rejections.single;
+      expect(first.reason, FileRejection.tooLarge);
+      expect(first.bytes, 2048);
+      expect(
+        describeFileRejection(
+          first.reason,
+          name: 'report.pdf',
+          bytes: 300 * 1024 * 1024,
+        ),
+        'report.pdf (300 MB) is too big to add. Files can be up to 25 MB. Try '
+        'a smaller file.',
+      );
+      expect(
+        describeFileRejection(
+          first.reason,
+          name: 'report.pdf',
+          others: 3,
+          bytes: 300 * 1024 * 1024,
+        ),
+        'report.pdf and 3 others are too big to add. Files can be up to 25 '
+        'MB. Try smaller files.',
+      );
+    });
+
+    test('a picker copy is named by the file it was copied from', () {
+      String nameOf(String name) => displayNameOf(XFile('/tmp/$name'));
+      const copy =
+          'image_picker_2B55E2FD-4F1A-4C6A-9F05-3D9C5E3C1B1E-1234-'
+          '0000A1B2C3D4E5F6';
+      expect(nameOf('${copy}IMG_0042.MOV'), 'IMG_0042.MOV');
+      expect(nameOf(copy), copy);
+      expect(nameOf('image_picker_notes.mov'), 'image_picker_notes.mov');
+      expect(nameOf('report.pdf'), 'report.pdf');
+    });
+
     test('names the files beyond the selection limit', () async {
       final picked = [
         for (var i = 0; i < 3; i++) await write('f$i.txt', [i + 1]),
@@ -196,6 +239,7 @@ void main() {
       expect(batch.rejections.single, (
         name: 'f2.txt',
         reason: FileRejection.tooMany,
+        bytes: 0,
       ));
     });
 
