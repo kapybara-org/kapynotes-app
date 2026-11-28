@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/type_ahead.dart';
 import '../back_entry.dart';
 import '../keycap.dart';
+import 'editor_context_menu.dart';
 
 /// A block that Text ▾ turns the selection's line into.
 class SelectionBlock {
@@ -567,6 +568,7 @@ class _LinkField extends StatelessWidget {
             type: MaterialType.transparency,
             child: TextField(
               key: const ValueKey('selection-link-field'),
+              contextMenuBuilder: kapyTextFieldMenu,
               controller: controller._link,
               focusNode: controller._linkFocus,
               style: style,

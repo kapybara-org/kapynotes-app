@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../ai/kapy_ai.dart';
 import '../../core/platform.dart';
 import '../../core/theme.dart';
+import '../editor/editor_context_menu.dart';
 import 'kapy_ai_parts.dart';
 
 /// The chats (kapy-ai-3/4): a search, then every chat newest first under
@@ -245,6 +246,7 @@ class _KapyAiChatsState extends State<KapyAiChats> {
               },
               child: TextField(
                 key: const ValueKey('kapy-ai-rename-field'),
+                contextMenuBuilder: kapyTextFieldMenu,
                 controller: _rename,
                 autofocus: true,
                 maxLines: 1,
@@ -342,6 +344,7 @@ class _SearchField extends StatelessWidget {
           Expanded(
             child: TextField(
               key: const ValueKey('kapy-ai-chat-search'),
+              contextMenuBuilder: kapyTextFieldMenu,
               controller: controller,
               maxLines: 1,
               style: kapyText(13, 16, palette.textPrimary),

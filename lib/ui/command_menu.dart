@@ -15,6 +15,7 @@ import '../data/shortcut_prefs.dart';
 import '../data/tags.dart';
 import '../data/task_board.dart';
 import 'compact_icon_button.dart';
+import 'editor/editor_context_menu.dart';
 import 'keycap.dart';
 import 'notes_list.dart' show NotesShow;
 import 'settings_dialog.dart' show SettingsIndex, SettingsSection;
@@ -946,6 +947,7 @@ class _CommandMenuState extends State<CommandMenu> {
                     Expanded(
                       child: TextField(
                         key: const ValueKey('command-menu-field'),
+                        contextMenuBuilder: kapyTextFieldMenu,
                         controller: picker?.query ?? _field,
                         autofocus: true,
                         inputFormatters: picker == null
@@ -1116,6 +1118,7 @@ class _CommandMenuState extends State<CommandMenu> {
               canRequestFocus: false,
               child: TextField(
                 key: const ValueKey('command-menu-field'),
+                contextMenuBuilder: kapyTextFieldMenu,
                 controller: picker?.query ?? _field,
                 autofocus: true,
                 inputFormatters: picker == null

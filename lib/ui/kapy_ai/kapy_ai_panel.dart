@@ -11,6 +11,7 @@ import '../../core/platform.dart';
 import '../../core/popup_keyboard.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
+import '../editor/editor_context_menu.dart';
 import 'kapy_ai_chats.dart';
 import 'kapy_ai_conversation.dart';
 import 'kapy_ai_parts.dart';
@@ -462,6 +463,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                     onKeyEvent: _onFieldKey,
                     child: TextField(
                       key: const ValueKey('kapy-ai-field'),
+                      contextMenuBuilder: kapyTextFieldMenu,
                       controller: _field,
                       focusNode: _fieldFocus,
                       minLines: 1,
@@ -652,6 +654,7 @@ class _KapyAiPanelState extends State<KapyAiPanel> {
                       onKeyEvent: _onFieldKey,
                       child: TextField(
                         key: const ValueKey('kapy-ai-field'),
+                        contextMenuBuilder: kapyTextFieldMenu,
                         controller: _field,
                         focusNode: _fieldFocus,
                         minLines: 1,

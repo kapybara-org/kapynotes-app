@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../../sync/account.dart';
+import '../editor/editor_context_menu.dart';
 import '../settings_rows.dart';
 import 'encryption_pane.dart' show keyCodeProblemText, maskedEmail;
 
@@ -236,6 +237,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   List<Widget> _fields() => [
     TextField(
       key: const ValueKey('password-code'),
+      contextMenuBuilder: kapyTextFieldMenu,
       controller: _code,
       autofocus: true,
       keyboardType: TextInputType.number,
@@ -248,6 +250,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
     const SizedBox(height: 8),
     TextField(
       key: const ValueKey('new-password'),
+      contextMenuBuilder: kapyTextFieldMenu,
       controller: _password,
       obscureText: true,
       autocorrect: false,

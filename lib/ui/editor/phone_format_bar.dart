@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../kapy_ai/kapy_ai_parts.dart';
+import 'editor_context_menu.dart';
 
 /// One button on the [PhoneFormatBar].
 ///
@@ -269,6 +270,7 @@ class _LinkAddressDialogState extends State<_LinkAddressDialog> {
     title: const Text('Add a link'),
     content: TextField(
       key: const ValueKey('link-address'),
+      contextMenuBuilder: kapyTextFieldMenu,
       controller: _address,
       autofocus: true,
       keyboardType: TextInputType.url,

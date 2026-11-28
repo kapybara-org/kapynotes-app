@@ -9,6 +9,7 @@ import '../../ai/open_router.dart';
 import '../../core/theme.dart';
 import '../../core/toast.dart';
 import '../context_menu.dart';
+import '../editor/editor_context_menu.dart';
 import '../settings_rows.dart';
 import 'kapy_ai_parts.dart';
 
@@ -365,6 +366,7 @@ class _KapyAccountRowState extends State<KapyAccountRow> {
           const SizedBox(height: 10),
           TextField(
             key: const ValueKey('kapy-openrouter-key-field'),
+            contextMenuBuilder: kapyTextFieldMenu,
             controller: _key,
             autofocus: true,
             obscureText: true,

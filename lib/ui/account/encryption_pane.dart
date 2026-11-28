@@ -14,6 +14,7 @@ import '../../sync/key_bundle.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_api.dart' show protocolVersion;
 import '../control_surface.dart';
+import '../editor/editor_context_menu.dart';
 import '../settings_rows.dart';
 import 'recovery_key_dialog.dart';
 
@@ -360,8 +361,9 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
         if (prepared is PreparedPassphrase) {
           Toast.show(context, 'Passphrase changed');
         }
-        Navigator.of(context)
-            .pop(prepared is PreparedPassphrase ? null : prepared);
+        Navigator.of(
+          context,
+        ).pop(prepared is PreparedPassphrase ? null : prepared);
       case KeyChangeNeedsCode():
         setState(() {
           _proof = null;
@@ -590,6 +592,7 @@ class _KeyChangeDialogState extends State<_KeyChangeDialog> {
       _Line('We sent a 6-digit code to $_email. It works for 10 minutes.'),
       TextField(
         key: const ValueKey('key-change-code'),
+        contextMenuBuilder: kapyTextFieldMenu,
         controller: _code,
         autofocus: true,
         keyboardType: TextInputType.number,
@@ -703,6 +706,7 @@ class _GeneratedPassphraseState extends State<GeneratedPassphrase> {
         KapyControlSurface(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: SelectableText(
+            contextMenuBuilder: kapyTextFieldMenu,
             widget.passphrase,
             key: const ValueKey('generated-passphrase'),
             textAlign: TextAlign.center,
@@ -840,6 +844,7 @@ class _RestoreDialogState extends State<_RestoreDialog> {
             ),
             TextField(
               key: const ValueKey('restore-secret'),
+              contextMenuBuilder: kapyTextFieldMenu,
               controller: _secret,
               autofocus: true,
               obscureText: true,

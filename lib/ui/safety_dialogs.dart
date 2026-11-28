@@ -9,6 +9,7 @@ import '../sync/joining.dart';
 import '../sync/safety.dart';
 import '../sync/sharing.dart';
 import '../sync/sync_api.dart';
+import 'editor/editor_context_menu.dart';
 
 /// The two screens sharing needs in order to be somewhere people can be
 /// protected from each other: the rules, and the way to report a breach of
@@ -258,6 +259,7 @@ class _ReportDialogState extends State<_ReportDialog> {
               const SizedBox(height: 8),
               TextField(
                 key: const ValueKey('report-details'),
+                contextMenuBuilder: kapyTextFieldMenu,
                 controller: _details,
                 enabled: !_busy,
                 maxLines: 3,

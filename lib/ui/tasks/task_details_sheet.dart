@@ -9,6 +9,7 @@ import '../../data/note_attachment.dart';
 import '../../data/task_board.dart';
 import '../../data/task_details.dart';
 import '../../images/note_image_provider.dart';
+import '../editor/editor_context_menu.dart';
 import '../page_toolbar.dart';
 import '../sidebar_timestamp.dart';
 import '../window_drag_area.dart';
@@ -175,6 +176,7 @@ class _TaskDetailsSheetState extends State<TaskDetailsSheet> {
       alignment: Alignment.centerLeft,
     );
     Widget field(int i) => TextField(
+      contextMenuBuilder: kapyTextFieldMenu,
       controller: _parts[i],
       focusNode: _focuses[i],
       readOnly: !editable,

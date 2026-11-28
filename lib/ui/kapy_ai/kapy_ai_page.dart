@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../ai/kapy_ai.dart';
 import '../../core/theme.dart';
+import '../editor/editor_context_menu.dart';
 import '../sidebar.dart';
 import '../sidebar_timestamp.dart';
 import '../tag_colours.dart';
@@ -93,6 +94,7 @@ class _KapyAiPageState extends State<KapyAiPage> {
                 onSearch: _searchFocus.requestFocus,
                 field: TextField(
                   key: const ValueKey('kapy-ai-page-search'),
+                  contextMenuBuilder: kapyTextFieldMenu,
                   controller: _search,
                   focusNode: _searchFocus,
                   textInputAction: TextInputAction.search,

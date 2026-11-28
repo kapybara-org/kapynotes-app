@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../core/theme.dart';
 import 'compact_icon_button.dart';
 import 'control_surface.dart';
+import 'editor/editor_context_menu.dart';
 import 'keycap.dart';
 import 'settings_rows.dart';
 
@@ -208,6 +209,7 @@ class SettingsSearchField extends StatelessWidget {
           height: 34,
           child: TextField(
             key: const ValueKey('settings-search'),
+            contextMenuBuilder: kapyTextFieldMenu,
             controller: controller,
             focusNode: focusNode,
             autofocus: autofocus,

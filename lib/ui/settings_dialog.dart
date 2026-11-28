@@ -44,6 +44,7 @@ import '../sync/account.dart';
 import 'account/plan_group.dart';
 import 'account/sync_pane.dart';
 import 'control_surface.dart';
+import 'editor/editor_context_menu.dart';
 import 'export_import.dart';
 import 'hidden_notes_gate.dart';
 import 'kapy_ai/kapy_ai_parts.dart';
@@ -4408,6 +4409,7 @@ class _ShortcutFilter extends StatelessWidget {
               height: 34,
               child: TextField(
                 key: const ValueKey('shortcut-filter'),
+                contextMenuBuilder: kapyTextFieldMenu,
                 controller: controller,
                 focusNode: focusNode,
                 readOnly: pressing,
@@ -6523,6 +6525,7 @@ class _TimeZonePickerDialogState extends State<_TimeZonePickerDialog> {
           children: [
             TextField(
               key: const ValueKey('time-zone-search'),
+              contextMenuBuilder: kapyTextFieldMenu,
               style: TextStyle(
                 fontSize: AppPlatform.isWindows ? AppTypeScale.control : 13,
               ),

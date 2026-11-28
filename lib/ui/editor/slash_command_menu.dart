@@ -8,6 +8,7 @@ import '../../core/platform.dart';
 import '../back_entry.dart';
 import '../floating_surface.dart';
 import '../keycap.dart';
+import 'editor_context_menu.dart';
 import 'slash_commands.dart';
 
 enum _CommandGroup {
@@ -923,6 +924,7 @@ class _SearchField extends StatelessWidget {
               type: MaterialType.transparency,
               child: TextField(
                 key: const ValueKey('slash-command-search'),
+                contextMenuBuilder: kapyTextFieldMenu,
                 controller: controller._search,
                 focusNode: controller._searchFocus,
                 style: style,

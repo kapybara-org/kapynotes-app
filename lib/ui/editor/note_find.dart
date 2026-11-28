@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../core/theme.dart';
 import '../compact_icon_button.dart';
+import 'editor_context_menu.dart';
 import 'markdown_syntax.dart';
 import 'table_geometry.dart';
 
@@ -252,6 +253,7 @@ class NoteFindBar extends StatelessWidget {
                   onKeyEvent: _key,
                   child: TextField(
                     key: const ValueKey('note-find-field'),
+                    contextMenuBuilder: kapyTextFieldMenu,
                     controller: find.query,
                     focusNode: find.field,
                     style: style,

@@ -13,6 +13,7 @@ import '../../data/task_board.dart';
 import '../back_forward.dart';
 import '../checklist_pie.dart';
 import '../context_menu.dart';
+import '../editor/editor_context_menu.dart';
 import '../sidebar.dart' show PhoneFiltersButton, SidebarSearchField;
 import '../note_day_scope.dart';
 import '../notes_grouping.dart' show dayShown;
@@ -430,6 +431,7 @@ class TasksScreenState extends State<TasksScreen> {
               onSearch: _searchFocus.requestFocus,
               field: TextField(
                 key: const ValueKey('tasks-search-field'),
+                contextMenuBuilder: kapyTextFieldMenu,
                 controller: _search,
                 focusNode: _searchFocus,
                 textInputAction: TextInputAction.search,
@@ -1266,6 +1268,7 @@ class _AddRow extends StatelessWidget {
                 },
                 child: TextField(
                   key: const ValueKey('tasks-add-field'),
+                  contextMenuBuilder: kapyTextFieldMenu,
                   controller: controller,
                   focusNode: focus,
                   onSubmitted: (_) => onSubmit(),

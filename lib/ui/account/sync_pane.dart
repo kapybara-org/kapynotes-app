@@ -15,6 +15,7 @@ import '../../sync/device_name.dart';
 import '../../sync/key_bundle.dart';
 import '../../sync/recovery_key.dart';
 import '../../sync/sync_service.dart';
+import '../editor/editor_context_menu.dart';
 import 'encryption_pane.dart';
 import 'password_row.dart';
 import 'recovery_key_dialog.dart';
@@ -160,6 +161,7 @@ class _Field extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: TextField(
+        contextMenuBuilder: kapyTextFieldMenu,
         controller: controller,
         obscureText: obscure,
         autofocus: autofocus,
@@ -326,7 +328,8 @@ class _SignInFormState extends State<_SignInForm> {
           'Enter the 6-digit code sent to $_address. It expires in 10 minutes.',
         _SignInStep.resetCode =>
           'Enter the code sent to $_address and choose a new password.',
-        _SignInStep.resetRequest => 'We will email a reset code. Your passphrase and notes will not change.',
+        _SignInStep.resetRequest =>
+          'We will email a reset code. Your passphrase and notes will not change.',
         _ =>
           widget.account.signedOutReason ??
               'Sync encrypted notes across your devices.',
@@ -631,6 +634,7 @@ class _ProfileEditorState extends State<_ProfileEditor> {
         const SizedBox(height: 12),
         TextField(
           key: const ValueKey('profile-name'),
+          contextMenuBuilder: kapyTextFieldMenu,
           controller: _name,
           autofocus: widget.firstRun,
           maxLength: 50,

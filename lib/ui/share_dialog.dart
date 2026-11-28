@@ -18,6 +18,7 @@ import '../sync/sync_api.dart' show SyncRefusedException;
 import 'account/encryption_pane.dart' show changeDate;
 import 'billing/pro_sheet.dart';
 import 'control_surface.dart';
+import 'editor/editor_context_menu.dart';
 import 'join/join_requests_panel.dart';
 import 'join/joining_ui.dart';
 import 'join/space_link_panel.dart';
@@ -2216,6 +2217,7 @@ class _EmailField extends StatelessWidget {
         );
     return TextField(
       key: const ValueKey('share-email'),
+      contextMenuBuilder: kapyTextFieldMenu,
       controller: controller,
       focusNode: focus,
       enabled: enabled,
